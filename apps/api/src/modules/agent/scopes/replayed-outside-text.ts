@@ -129,7 +129,7 @@ export async function outsideTextSources(
           canonical && idx > 0
             ? toolRegistry.get([orgId, canonical.slice(0, idx), canonical.slice(idx + 1)])
             : undefined
-        marked = !tool || (await taintSourceApplies(tool, tc.args, orgId))
+        marked = !tool || (await taintSourceApplies(tool, tc.args, orgId, { result: tc.result }))
       }
       if (!marked) continue
       const server = outsideTextSourceOf(canonical)

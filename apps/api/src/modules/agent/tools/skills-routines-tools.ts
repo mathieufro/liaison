@@ -1518,6 +1518,8 @@ export interface RoutineListItem {
   eventFilter: { fromContactIds?: string[]; fromGroupIds?: string[] } | null
   /** Who decides the routine's gated drafts (S29): the default audience or its owner. */
   approver: "default" | "owner"
+  /** A follow-up: its runs stage drafts and end without waiting for them. */
+  followUp: boolean
 }
 
 /**
@@ -1608,6 +1610,7 @@ export async function handleListRoutines(
       runsOn: r.runsOn ?? "cloud",
       eventFilter: r.eventFilter ?? null,
       approver: r.approver ?? "default",
+      followUp: r.followUp ?? false,
     })),
     notes: listRoutinesNotes(),
   }
@@ -3188,6 +3191,7 @@ export async function handleCreateRoutine(
           runsOn: params.runsOn ?? "cloud",
           eventFilter: filterCheck.filter,
           approver: params.approver ?? "default",
+          followUp: params.followUp ?? false,
           enabled: params.enabled ?? true,
           status: "active",
           // ownerUserId is the RUN-AS identity (may be a delegatee); createdByUserId is the person who
@@ -3721,6 +3725,7 @@ export async function handleUpdateRoutine(
     if (approverError) return approverError
   }
   if (params.approver !== undefined) updates.approver = params.approver
+  if (params.followUp !== undefined) updates.followUp = params.followUp
   if (params.enabled !== undefined) updates.enabled = params.enabled
   if (params.kind !== undefined) updates.kind = params.kind
   // Schedule columns — keep them consistent with the (possibly new) kind.
@@ -4398,6 +4403,7 @@ export async function handleEnableRoutineTemplate(
         prompt: tpl.promptTemplate,
         scopes: templateScopes,
         visibility: tpl.visibility ?? "personal",
+        followUp: tpl.followUp === true,
         enabled: true,
         status: "active",
         // A kernel template's routine has no app (S28, F5).
@@ -4541,6 +4547,7 @@ export async function handleResetRoutineToTemplate(
         description: tpl.description,
         kind: tpl.kind,
         prompt: tpl.promptTemplate,
+        followUp: tpl.followUp === true,
         cron: resetCron,
         timezone: tpl.kind === "recurring" ? tz : null,
         runAt: tpl.kind === "scheduled" && tpl.runAt ? new Date(tpl.runAt) : null,
@@ -5117,6 +5124,7 @@ export async function summarizeCreateRoutine(
   const periodSnapshotSteer = routinePeriodSnapshotSteer(p.prompt)
   if (periodSnapshotSteer) lines.push(`• ${periodSnapshotSteer}`)
   if (p.approver === "owner") lines.push("Drafts it raises are approved by its owner alone")
+  if (p.followUp === true) lines.push("A follow-up: each run stages its drafts and ends")
   return {
     kind: "create_routine",
     title: `Create routine ${p.name ?? ""}`,
@@ -5145,6 +5153,13 @@ export async function summarizeUpdateRoutine(
       p.approver === "owner"
         ? "approver → the routine owner alone"
         : "approver → whoever may approve each draft",
+    )
+  }
+  if (p.followUp !== undefined) {
+    lines.push(
+      p.followUp
+        ? "follow-up → each run stages its drafts and ends"
+        : "follow-up → off: each run waits for its approvals",
     )
   }
   if (p.visibility !== undefined) lines.push(`visibility → ${p.visibility}`)
@@ -5292,7 +5307,7 @@ function registerAuthoringTools(orgId: string): void {
     deferLoading: true,
     description:
       "Create a personal or org shared SKILL: a reusable named playbook (reply macro, decision rule, tone guide) the agent later loads by name with kernel__skill_read and follows. Gated: it lands as a pending approval, never as an active skill. Read the catalog with kernel__list_skills first, since a skill that already covers the task is refused and must be updated instead.",
-    searchKeywords: ["compétence", "procédure", "playbook"],
+    searchKeywords: ["compétence", "procédure", "playbook", "créer"],
     requiredScopes: ["kernel:skills:write"],
     trustBoundary: "user",
     gated: true,
@@ -5423,6 +5438,7 @@ function registerAuthoringTools(orgId: string): void {
     deferLoading: true,
     description:
       "Hide or unhide an app-shipped skill for the user (scope=user) or the whole org (scope=org).",
+    searchKeywords: ["compétence", "activer", "désactiver", "application"],
     requiredScopes: ["kernel:skills:write"],
     approveScope: "kernel:approve",
     trustBoundary: "user",
@@ -5481,6 +5497,7 @@ function registerAuthoringTools(orgId: string): void {
       "recurring",
       "automatiser",
       "automate",
+      "créer",
     ],
     requiredScopes: ["kernel:routines:write"],
     approveScope: "kernel:approve",
@@ -5620,7 +5637,16 @@ function registerAuthoringTools(orgId: string): void {
     deferLoading: true,
     description:
       "Create or update an AUTO-APPROVE policy for a gated tool: it LOOSENS a gate, letting the tool skip the human approver while your conditions and spend limits hold. It does NOT add, tighten, or impose an approval requirement, so it is the inverse of a 'refunds over 200 need a second approver' ask: use kernel__approval_policy_set for that, or kernel__capture_business_knowledge to record an operating rule. Admin authority, gated.",
-    searchKeywords: ["automatique", "autoriser", "approve", "loosen", "auto"],
+    searchKeywords: [
+      "automatique",
+      "autoriser",
+      "approve",
+      "loosen",
+      "auto",
+      "règle",
+      "approbation",
+      "définir",
+    ],
     // Loosening a gate is an admin authority, like tightening one (owner ruling
     // 2026-09-28): kernel:policies:write alone no longer reaches this tool.
     requiredScopes: ["kernel:policies:admin"],
@@ -5723,6 +5749,7 @@ function registerAuthoringTools(orgId: string): void {
     name: "reset_routine_to_template",
     deferLoading: true,
     description: "Re-apply an app template's prompt and schedule to a routine, discarding edits.",
+    searchKeywords: ["réinitialiser", "routine", "modèle"],
     requiredScopes: ["kernel:routines:write"],
     approveScope: "kernel:approve",
     trustBoundary: "user",

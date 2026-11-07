@@ -4,6 +4,7 @@ import type { RlsClient } from "~/db"
 import type { ActorContext } from "~/db/rls"
 import { createRlsSession, withRlsContext } from "~/db/rls"
 import { appsLogger as log } from "~/lib/logger"
+import { readStandingInFor } from "~/modules/approvals/route-world"
 import { appBridgeManifest, attentionItemsRegistry } from "~/modules/apps/app-registries"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import { isAppOffForOrg, isAppUnavailableFor, primeOrgApps } from "~/modules/apps/org-apps"
@@ -25,6 +26,8 @@ interface RegistryEntry {
   scope?: string
   bundlePath: string
   trusted: boolean
+  /** Declared `passesOn`: also returns the items of the people the viewer stands in for. */
+  passesOn?: boolean
 }
 
 function compareAttentionItems(a: AttentionItem, b: AttentionItem): number {
@@ -95,7 +98,12 @@ export function dedupeByApproval(sorted: AttentionItem[]): AttentionItem[] {
   return out
 }
 
-type KernelHandler = (tx: RlsClient, orgId: string, userId: string) => Promise<AttentionItem[]>
+type KernelHandler = (
+  tx: RlsClient,
+  orgId: string,
+  userId: string,
+  forUserIds?: readonly string[],
+) => Promise<AttentionItem[]>
 
 /**
  * One trusted in-process kernel provider (no sandbox), in its own savepoint of
@@ -107,13 +115,16 @@ async function invokeKernelProvider(
   reg: RegistryEntry,
   orgId: string,
   userId: string,
+  forUserIds: readonly string[],
 ): Promise<AttentionItem[]> {
   const mod = await import(reg.bundlePath)
   const handler = mod[reg.handler] as KernelHandler | undefined
   if (typeof handler !== "function") {
     throw new Error(`Kernel attention handler "${reg.handler}" not exported from ${reg.bundlePath}`)
   }
-  return tx.transaction((sp) => handler(sp as unknown as RlsClient, orgId, userId))
+  // Only a provider that declared `passesOn` hears of anyone but the viewer.
+  const passOn = reg.passesOn === true && forUserIds.length > 0 ? [forUserIds] : []
+  return tx.transaction((sp) => handler(sp as unknown as RlsClient, orgId, userId, ...passOn))
 }
 
 async function invokeManifestProvider(
@@ -121,8 +132,12 @@ async function invokeManifestProvider(
   appName: string,
   actor: ActorContext,
   orgId: string,
+  forUserIds: readonly string[],
 ): Promise<AttentionItem[]> {
   const source = await loadBundle(reg.bundlePath)
+  // Only a provider that declared `passesOn` hears of anyone but the viewer.
+  const passOn =
+    reg.passesOn === true && forUserIds.length > 0 ? { forUserIds: [...forUserIds] } : {}
   const aliasedActor = withAppDimensionAliases(actor, appName)
   const userId = aliasedActor.actorType === "user" ? aliasedActor.userId : "system"
   // The bridge must carry the app's REAL manifest: db_findMany validates every
@@ -157,7 +172,7 @@ async function invokeManifestProvider(
     return getWorkerPool().execute({
       bundleSource: source,
       exportName: reg.handler,
-      params: { actor: aliasedActor },
+      params: { actor: aliasedActor, ...passOn },
       bridge,
       appId: appName,
     }) as Promise<AttentionItem[]>
@@ -172,7 +187,7 @@ async function invokeManifestProvider(
       pool: getSandboxPool(),
       bundleSource,
       exportName: reg.handler,
-      params: { actor: aliasedActor },
+      params: { actor: aliasedActor, ...passOn },
       bridge,
     })) as AttentionItem[]
   } catch (err) {
@@ -215,6 +230,18 @@ export async function aggregateAttentionItems(args: {
   }
 
   const callerScopes = args.actor.actorType === "user" ? args.actor.scopes : ["*"]
+
+  // The people away today who name the viewer next in line, read once and only when a provider
+  // passes items on. Unreadable means nobody: the viewer's own feed never waits on it.
+  let forUserIds: string[] = []
+  if (viewerId && [...byApp.values()].some(({ reg }) => reg.passesOn === true)) {
+    forUserIds = await withRlsContext(args.actor, (tx) =>
+      readStandingInFor(tx, args.orgId, viewerId),
+    ).catch((err: unknown) => {
+      log.warn({ err, orgId: args.orgId }, "could not read whom the viewer stands in for")
+      return []
+    })
+  }
 
   // App providers are independent (each acquires per bridge call) and run in
   // parallel: sequential per-app awaits added N×DB-round-trip latency to
@@ -302,14 +329,19 @@ export async function aggregateAttentionItems(args: {
     }
     if (entryOrgId === "*") kernelProviders.push({ appName, reg })
     else
-      tasks.push(runProvider(appName, invokeManifestProvider(reg, appName, args.actor, args.orgId)))
+      tasks.push(
+        runProvider(
+          appName,
+          invokeManifestProvider(reg, appName, args.actor, args.orgId, forUserIds),
+        ),
+      )
   }
   if (kernelProviders.length > 0) {
     const userId = args.actor.actorType === "user" ? args.actor.userId : ""
     const orgId = args.orgId
     const shared = withRlsContext(args.actor, async (tx) => {
       for (const { appName, reg } of kernelProviders) {
-        const run = invokeKernelProvider(tx, reg, orgId, userId)
+        const run = invokeKernelProvider(tx, reg, orgId, userId, forUserIds)
         await runProvider(appName, run)
         // A provider that timed out may still be running on this connection:
         // the next savepoint starts only once it has settled.
@@ -328,6 +360,9 @@ export async function aggregateAttentionItems(args: {
     )
   }
   await Promise.all(tasks)
+  // A calendar question shows its event's title, read now under the viewer's own access.
+  const { withLiveCalendarTitles } = await import("~/apps/calendar/away-from-calendar")
+  await withLiveCalendarTitles(args.actor, items)
 
   items.sort(compareAttentionItems)
   return { items: dedupeByEntity(dedupeByApproval(items)), errors }

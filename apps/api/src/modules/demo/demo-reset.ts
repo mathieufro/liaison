@@ -327,6 +327,9 @@ export const KERNEL_RESET_RULES: Record<string, KernelResetRule> = {
   approval_handle_counters: "clear",
   approved_handler_executions: "clear",
   attention_events: "clear",
+  // A visitor's away records and the app features they switched go with them.
+  away_ranges: "clear",
+  org_app_features: "clear",
   notification_deliveries: "clear",
   notification_receipts: "clear",
   resource_grants: "clear",

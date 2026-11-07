@@ -224,7 +224,7 @@
       }
     ]
   },
-  "version": "0.20.50",
+  "version": "0.20.57",
   "iconName": "receipt",
   "description": "Liaison Invoicing app: invoices, quotes, proformas, purchase orders, credit notes.",
   "listing": {
@@ -1491,6 +1491,7 @@
       }
     }
   },
+  "outsideTextFields": ["buyer", "supplier", "counterparty_name", "counterparty_address", "counterparty_shipping_name", "counterparty_shipping_address", "counterparty_email", "po_number", "customer_reference", "notes", "description", "customs_description", "billing_line1", "billing_line2", "billing_city", "customer", "email", "supplier_name", "invoice_number", "status_reason", "history", "filename", "lifecycle_reason", "lifecycle_log", "last_error", "registry_name", "registry_line1", "registry_city", "contact_name", "vies_name", "vies_address", "buyer_legal_name", "legal_name", "name", "address", "sigle", "enseignes", "line1", "city", "summary", "blocked_on", "label", "refusal", "buyer_refusal"],
   "tools": {
     "einvoicing_settings_values": {
       "description": "The settings page's own read of the four e-invoicing fields (platform, cut-over date, send and booking switches), in the shape einvoicing_settings_set takes back. Not for agents (einvoicing_settings_get is).",
@@ -1535,8 +1536,9 @@
       }
     },
 "received_einvoices_list": {
+      "taintSource": true,
       "description": "List the supplier e-invoices delivered by the e-invoicing platform (the invoicing app's Received tab): supplier, number, issue and due dates, total with currency, status (received, approved, in_dispute, refused, rejected, partially_collected, collected), received date, newest first. Read only.",
-      "searchKeywords": ["fournisseur", "fournisseurs", "supplier", "reçue", "reçues", "facture", "factures", "achat", "électronique"],
+      "searchKeywords": ["fournisseur", "fournisseurs", "supplier", "reçue", "reçues", "achat", "électronique"],
       "requiredScopes": [
         "invoicing:received:read"
       ],
@@ -1568,6 +1570,7 @@
       }
     },
     "received_einvoices_get": {
+      "taintSource": true,
       "description": "One received supplier e-invoice: supplier, number, dates, totals (the platform's, and the original file's own figures when they differ), status with its official code and history, its files (the original as received, the platform's PDF), and the actions possible now with their reasons. Read only.",
       "searchKeywords": ["fournisseur", "supplier", "reçue"],
       "requiredScopes": [
@@ -1612,7 +1615,7 @@
     },
     "received_einvoice_action_request": {
       "description": "Ask for the approval to refuse, dispute, or withdraw the dispute on ONE received supplier e-invoice. action is refuse (final: the invoice is closed), dispute (the supplier is told it is contested; can be withdrawn) or undispute. refuse and dispute need a reason, one of those received_einvoices_get lists for that action (the platform's reasons, each with its official code); comment is kept in Liaison. It only creates the approval request: nothing reaches the supplier's platform before a person approves. Refused with received_action_not_allowed when the platform no longer allows it (a payment is linked, already refused).",
-      "searchKeywords": ["contester", "accepter", "refuser", "litige", "dispute", "approve"],
+      "searchKeywords": ["contester", "accepter", "refuser", "litige", "dispute", "approve", "facture"],
       "requiredScopes": [
         "invoicing:received:write"
       ],
@@ -1846,6 +1849,7 @@
       }
     },
     "einvoice_transmission_get": {
+      "taintSource": true,
       "description": "The e-invoicing transmission of one document: whether it was sent or booked, its platform status with history (raw provider value, official code, times), the last error, and whether a send approval is pending. Read only.",
       "requiredScopes": [
         "invoicing:documents:read"
@@ -1866,8 +1870,9 @@
       }
     },
     "documents_search": {
+      "taintSource": true,
       "description": "Search invoices, quotes, credit notes, proformas and purchase orders issued here, by query, type, status, contact, date range, or tax treatment. The free-text `query` matches, word by word and in any case, the document NUMBER, the COUNTERPARTY NAME, ADDRESS and EMAIL (billing and shipping), the SHOPIFY ORDER (e.g. query='#1149'), the PO NUMBER, the notes and the line descriptions; best matches come first. To find a customer's invoices, search their name directly (e.g. query='Claudine Moreau'): a person named only in a company invoice's address is found too. `contact_id` also returns the documents made out to the contact's email or address. For a customer's earlier prices ('same price as last time') use customer_history.",
-      "searchKeywords": ["facture", "factures", "invoice", "invoices", "devis", "quote", "quotes", "avoir", "proforma", "chercher", "rechercher", "trouver", "retrouver", "find", "numéro", "number", "impayé", "impayée", "impayées", "unpaid", "overdue", "retard", "list", "liste", "issued"],
+      "searchKeywords": ["facture", "factures", "invoice", "invoices", "devis", "quote", "quotes", "avoir", "proforma", "chercher", "rechercher", "trouver", "retrouver", "find", "numéro", "number", "impayé", "impayée", "impayées", "unpaid", "overdue", "retard", "list", "liste", "issued", "relance", "paiement", "payment", "due", "failed"],
       "requiredScopes": ["invoicing:documents:read"],
       "handler": "documentsSearchHandler",
       "params": {
@@ -1945,6 +1950,7 @@
       "readOnly": true
     },
     "customer_history": {
+      "taintSource": true,
       "description": "A customer's past sales with each line's unit price, the latest sale of a product (last_sale) and their Shopify orders. Use this to answer 'same price as last time'. Finds the customer by name, company, email, address or contact.",
       "searchKeywords": ["historique", "client"],
       "requiredScopes": ["invoicing:documents:read"],
@@ -1977,8 +1983,9 @@
       "readOnly": true
     },
     "documents_get": {
+      "taintSource": true,
       "description": "Get one invoicing document by id, including lines.",
-      "searchKeywords": ["facture", "invoice", "devis", "détail", "ouvrir", "voir", "lire", "open"],
+      "searchKeywords": ["invoice", "devis", "détail", "ouvrir", "voir", "lire", "open"],
       "requiredScopes": ["invoicing:documents:read"],
       "handler": "documentsGetHandler",
       "params": {
@@ -1995,6 +2002,7 @@
       "readOnly": true
     },
     "documents_for_orders": {
+      "taintSource": true,
       "description": "Resolve the invoicing documents linked to a set of Shopify order ids. IDs are normally the NUMERIC Shopify order ids (e.g. \"12954422706507\"; string or number both accepted, gid://shopify/Order/<n> also accepted). The human order name (\"#3276\") also resolves, for documents that recorded it, so a #name no longer has to be turned into an id with shopify__orders_search first - though the numeric id is still the surest lookup for older documents. Returns compact links {shopify_order_id, id, number, type, scope, status, payment_status, po_number} for building order->invoice deep links.",
       "searchKeywords": ["commande", "commandes", "order", "orders"],
       "requiredScopes": ["invoicing:documents:read"],
@@ -2037,6 +2045,9 @@
       "readOnly": true
     },
     "pending_approvals_list": {
+      "agentVisible": false,
+      "useInstead": "kernel__approvals_list",
+      "taintSource": true,
       "description": "List the caller's pending approvals originating from invoicing-app tools (credit notes, refunds, dealer invoices), each with its summary, requester, and amount. READ-ONLY: you CANNOT approve, edit, or deny on the user's behalf — deciding is a human action the user takes in the approvals UI, and agent- or system-initiated requests can only be cleared by a human approver. When you present them: summarize each (amount, requester, reason), recommend routine vs. scrutinize (refunds over a policy threshold, credit notes / anything needing two-eyes), and tell the user they must approve/edit/deny each one themselves in the UI; never imply or claim you approved anything. For a full cross-app 'what's waiting on me' queue, use the kernel approvals_list instead.",
       "requiredScopes": ["invoicing:documents:read"],
       "handler": "pendingApprovalsListHandler",
@@ -2047,6 +2058,7 @@
       "readOnly": true
     },
     "vat_validate": {
+      "taintSource": true,
       "description": "Authoritatively validate an EU VAT number against the official EU VIES service. ALWAYS use THIS tool (never web_fetch) to check whether an intra-EU VAT number is valid for reverse-charge — it returns an authoritative VIES result (isValid, registered name, address, and the VIES requestDate). Pass the 2-letter country code and the VAT number (with or without the country prefix). If the result is isValid:false or carries an error, report honestly that the number could NOT be confirmed — never assert validity without a successful tool result.",
       "searchKeywords": ["tva", "numéro", "intracommunautaire", "vérifier", "valider", "check", "verify"],
       "requiredScopes": ["invoicing:contacts:read"],
@@ -2150,6 +2162,7 @@
       "approvalCard": { "summary": "Issue the parked Shopify order {{params.deferred_id}} with tax: {{params.mode}}" }
     },
     "deferred_list": {
+      "taintSource": true,
       "description": "List parked/deferred auto-flow events for the org: Shopify orders whose invoice did not issue automatically. Each item names its order (order_number, order_id), why it is parked (reason, e.g. customer_email_missing when the Shopify order and customer carry no email, which an issued invoice requires) and what it waits on (blocked_on). It retries on its own once the blocker is fixed at the source, EXCEPT a tax review (reason shopify_tax_mismatch, tax_on_exempt_treatment or tax_rate_placeholder, with resolution_options): those wait for a person to choose a tax source with deferred_tax_override. A park with reason email_outcome_unknown is an automatic invoice mail that may or may not have gone and is never resent on its own: a person checks the mailbox's sent folder and, when it is not there, sends the document with documents_send_to_customer, which closes the park.",
       "requiredScopes": ["invoicing:documents:read"],
       "handler": "deferredListHandler",
@@ -2175,6 +2188,7 @@
       "readOnly": true
     },
     "documents_update_preview": {
+      "taintSource": true,
       "description": "The document plus the VAT status a documents_update would give its buyer (evidence when the agent declares a private consumer). Backs the documents_update approval card.",
       "requiredScopes": [
         "invoicing:documents:read"
@@ -2265,6 +2279,7 @@
       }
     },
     "documents_issue_preview": {
+      "taintSource": true,
       "description": "The issuer profiles plus the VAT status of a buyer about to be issued a document: VAT number (as given or found on an earlier document), its VIES check, or why a business buyer without one is refused. Backs the issue approval cards.",
       "searchKeywords": ["aperçu", "vérifier", "check"],
       "requiredScopes": ["invoicing:settings:read"],
@@ -3174,7 +3189,7 @@
     },
     "quote_issue": {
       "description": "Issue a quote from a legacy unnumbered draft row (gated). New quotes do not go through a draft: use quote_create_and_issue, which creates the Shopify draft order when the shop is mapped. There is no user facing draft document category.",
-      "searchKeywords": ["devis", "émettre", "valider"],
+      "searchKeywords": ["devis", "émettre"],
       "requiredScopes": ["invoicing:documents:write"],
       "handler": "quoteIssueHandler",
       "preflight": "quoteIssuePreflightHandler",
@@ -3414,7 +3429,7 @@
     },
     "proforma_issue": {
       "description": "Issue a proforma from a draft (always gated).",
-      "searchKeywords": ["émettre", "valider"],
+      "searchKeywords": ["émettre"],
       "requiredScopes": ["invoicing:documents:write"],
       "handler": "proformaIssueHandler",
       "timeoutMs": 60000,
@@ -3967,7 +3982,7 @@
     },
     "documents_record_refund": {
       "description": "Record a refund against a document (full or partial): records only, moves no money. PAYMENT STATUS ONLY: it does not issue a credit note, and a partial marks the document 'partial' while a full one marks it 'refunded'. A refund or cancellation taken in Shopify already auto issues the matching credit note, so check documents_for_orders before adding one by hand. On a split order (goods plus software) record the refund against the document that actually carries the refunded line.",
-      "searchKeywords": ["remboursement", "rembourser", "refund", "enregistrer", "noter", "facture", "factures", "paiement"],
+      "searchKeywords": ["remboursement", "rembourser", "refund", "enregistrer", "noter", "paiement"],
       "requiredScopes": ["invoicing:documents:write"],
       "handler": "documentsRecordRefundHandler",
       "preflight": "documentsRecordRefundPreflightHandler",
@@ -4005,7 +4020,7 @@
     },
     "documents_convert_to_invoice": {
       "description": "Convert a quote or proforma into an invoice. For a quote linked to a Shopify draft order (shopify_draft_order_id set) this COMPLETES the draft order in Shopify with payment pending (the B2B customer pays by wire against the invoice, no Shopify email goes out), Shopify creates the real order, the quote becomes 'invoiced' with the order id and number, and the invoice is issued automatically by the order-created auto-flow moments later (threshold gated like any store invoice). Returns mode 'shopify_order_created' in that case: do NOT call invoice_create_and_issue afterwards, the invoice arrives on its own; find it with documents_for_orders or documents_search on the order number. A quote or proforma without a draft order is converted locally (mode 'local') and the new invoice is returned. Gated for agents (approval card); a human clicking Convert in the UI confirms a dialog and needs no approval. The quote's po_number is carried onto the invoice.",
-      "searchKeywords": ["convertir", "transformer", "devis", "quote", "facturer"],
+      "searchKeywords": ["convertir", "transformer", "devis", "quote", "facturer", "facture"],
       "requiredScopes": ["invoicing:documents:write"],
       "handler": "documentsConvertToInvoiceHandler",
       "preflight": "documentsConvertToInvoicePreflightHandler",
@@ -4309,7 +4324,7 @@
     },
     "credit_note_issue": {
       "description": "Issue a credit note from a draft (drafts_create with type='credit_note'). Handler-conditional gating against issuer.invoice_approval_threshold_minor (unset means always approve, threshold 0; a credit note with no original_document_id is ALWAYS approved), compared against the ABSOLUTE VALUE of the credit note's grand total. When the draft's external_refs.original_document_id references an invoice, that invoice's lifecycle_log gets a `credit_note_issued` entry on success.",
-      "searchKeywords": ["avoir", "émettre", "valider"],
+      "searchKeywords": ["avoir", "émettre"],
       "requiredScopes": ["invoicing:documents:write"],
       "atomic": true,
       "handler": "creditNoteIssueHandler",
@@ -4337,6 +4352,7 @@
     },
     "order_reissue_apply": {
       "description": "Reissue an invoice after a Shopify order edit changed the LINE SET or the AMOUNTS (an order edit that only touches address, notes, tags, or fulfilment does NOT call this). ALWAYS GATED, one human approval covers BOTH documents together: a credit note that fully reverses the original invoice, and a replacement invoice carrying the order's current items and amounts, issued only once the human signs off. Do NOT call credit_note_create_and_issue and invoice_create_and_issue separately for an order-edit reissue: this tool exists precisely so the operator sees and approves both documents as ONE decision. PAYMENT: any payment already recorded stays on the ORIGINAL invoice; the credit note reverses that invoice as a legal document, and the REPLACEMENT invoice is issued UNPAID (nothing is auto-transferred or auto-marked paid, so re-applying the payment or refunding the difference is a separate, deliberate step). This is invoked by the invoicing app's own onShopifyOrderUpdated handler when the order's billing signature diverges from what was last invoiced; it is not meant to be called ad hoc with an unrelated items list. Do NOT documents_mark_paid the replacement to simulate transferring the payment: re-applying it or refunding the difference is a deliberate, separate decision. The original's po_number is carried onto BOTH the credit note and the replacement.",
+      "searchKeywords": ["réémettre", "commande", "commandes"],
       "requiredScopes": ["invoicing:documents:write"],
       "atomic": true,
       "handler": "orderReissueApplyHandler",
@@ -4931,8 +4947,9 @@
       }
     },
     "documents_preview_pdf": {
-      "description": "Resolve a document's rendered-PDF file id + inline URL for preview.",
       "agentVisible": false,
+      "useInstead": "documents_download_pdf",
+      "description": "Resolve a document's rendered-PDF file id + inline URL for preview.",
       "requiredScopes": ["invoicing:documents:read"],
       "handler": "documentsPreviewPdfHandler",
       "params": {
@@ -4967,6 +4984,7 @@
       "readOnly": true
     },
     "einvoicing_classify": {
+      "taintSource": true,
       "description": "THE tool for 'can I e-invoice this customer / this order, and why?': always call it for that question. E-invoicing regime (e_invoice, e_reporting, out_of_scope, needs_review) with its reasons, and what the issue gate would refuse and which tool fixes it. Pass exactly one of document_id (a draft is computed; an issued document returns its recorded regime), shopify_order_id (the invoice that order would get, or its issued invoice's regime) or contact_id (an invoice to that counterparty). Read only.",
       "requiredScopes": [
         "invoicing:documents:read"
@@ -5002,6 +5020,7 @@
       }
     },
     "counterparty_identity_get": {
+      "taintSource": true,
       "description": "The e-invoicing identity of a counterparty: customer kind, SIREN / SIRET and whether the SIREN is confirmed against the business registry, registry name and head office, territory treatment. Pass contact_id, or document_id (a document linked to no contact returns its buyer snapshot). Read only. It shows the stored identity only: to answer whether a customer, an order or a document is e-invoiced and why, call einvoicing_classify.",
       "searchKeywords": ["siren", "siret"],
       "requiredScopes": [
@@ -5028,6 +5047,7 @@
       }
     },
     "counterparty_identity_lookup": {
+      "taintSource": true,
       "description": "Look a French company up in the official business registry (recherche-entreprises.api.gouv.fr) by name, SIREN or SIRET, optionally narrowed to a postcode. With contact_id, a French VAT id on file is turned into its SIREN first and every candidate says whether its registered name matches the counterparty. Returns candidates (siren, names, head office, active or ceased, legal category); it NEVER picks one: choose the one that is this counterparty, then record it with counterparty_identity_set. Use this, never a web page, as the source of a SIREN; a web search may only point you to the name to look up. Read only.",
       "searchKeywords": ["siren", "siret"],
       "requiredScopes": [
@@ -5296,6 +5316,7 @@
       }
     },
     "einvoicing_readiness": {
+      "taintSource": true,
       "description": "What still blocks e-invoicing, by counterparty and draft: each item names its subject (contact_id and/or document_id, label), the blocker_code (the same code the issue gate refuses with), the one action that fixes it (action.tool, action.label, action.params_hint) and the date of the counterparty's last document. Most recent first. An empty list means nothing blocks. Separately, issuer_time_zones_to_choose lists each issuer nobody chose a time zone for: it blocks nothing (dates follow the organization's zone, then UTC), so ask which zone once and set it with settings_issuer_profile_update (timezone; UTC on purpose counts). Read only. It lists what blocks e-invoicing across customers: to answer whether one customer or order is e-invoiced and why, call einvoicing_classify.",
       "searchKeywords": ["électronique", "facturation", "prêt", "préparation", "réforme", "ready"],
       "requiredScopes": [
@@ -5550,6 +5571,7 @@
     }
   },
   "attention": {
+    "groupLabel": { "label": "Invoicing", "labelKey": "kernel.homeGroupInvoicing" },
     "translations": [
       {
         "event": "einvoicing:transmission_refused",

@@ -379,8 +379,12 @@ export async function runApprovedToolHandler(args: RunApprovedToolHandlerArgs): 
   // from the fetched site, a record not found) is what the call returned. It is
   // recorded as the execution's result and handed to the agent, which can try
   // something else; nothing is reverted, so nothing is left to approve again.
+  //
+  // A `final` refusal is not that answer on a read either: it says the call cannot
+  // pass (a feature switched off while it waited), so the read closes like a write
+  // and never reads as a tool that ran and returned an error.
   const softError = softErrorOf(result)
-  if (softError && !readsOnly) {
+  if (softError && (!readsOnly || softError.final === true)) {
     const code = typeof softError.code === "string" ? softError.code : "tool_error"
     const message =
       typeof softError.message === "string" ? softError.message : "handler returned an error"

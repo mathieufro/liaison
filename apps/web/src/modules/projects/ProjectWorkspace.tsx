@@ -61,6 +61,7 @@ import { useApi } from "~/modules/shell/ApiContext"
 import { BulkActionToolbar } from "~/modules/shell/bulk/BulkActionToolbar"
 import { copyLink, entityRoute } from "~/modules/shell/entity-link"
 import { MarkdownContent } from "~/modules/shell/markdown-content"
+import { SlotPanels } from "~/modules/shell/SlotPanels"
 import { shellTier } from "~/modules/shell/shell-tier"
 import { openTab, tabStore, updateTabRoutePath } from "~/modules/shell/tab-store"
 import { addToast } from "~/modules/shell/toast-store"
@@ -735,6 +736,12 @@ export const ProjectWorkspace: Component<ProjectWorkspaceProps> = (props) => {
             </Button>
           </div>
         </Show>
+        {/* Panels other apps add to the project. */}
+        <SlotPanels
+          slot="project:detail:panel"
+          entityId={props.entityId}
+          class="flex shrink-0 flex-col gap-3 px-6 pb-3"
+        />
         <div class="flex-1 min-h-0 overflow-auto">
           <Show
             when={view() === "list"}

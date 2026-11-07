@@ -459,27 +459,67 @@ export async function taintThreadForTriggerEvent(
   await clearTaintFlag(threadId, orgId)
 }
 
+/** A manifest's `taintSourceWhen`: the field of a row read and the value that makes it outside text. */
+export interface TaintSourceRowCondition {
+  field: string
+  equals: string | number | boolean
+}
+
+/** How deep the row walk looks into a result: a row sits in a list, a list in an object or two. */
+const ROW_WALK_DEPTH = 6
+
 /**
- * Does this successful call of a `taintSource` tool taint the turn? Always, unless the host
- * narrowed the tool with `taintSourceWhen` (analyze_media: only a file from outside the org). A
- * narrowing that cannot answer counts as yes: fail closed.
+ * Does a result hold a row the condition calls outside text? A row is any object in the result
+ * that carries the condition's field. One matching row taints the turn; rows that all carry
+ * another value leave it clean. A result with no row carrying the field cannot be judged, so it
+ * taints (fail closed): a projection that drops the field must not make outside text read clean.
+ */
+export function rowsMatchTaintCondition(result: unknown, cond: TaintSourceRowCondition): boolean {
+  let sawRow = false
+  const walk = (value: unknown, depth: number): boolean => {
+    if (value === null || typeof value !== "object" || depth > ROW_WALK_DEPTH) return false
+    if (Array.isArray(value)) return value.some((item) => walk(item, depth + 1))
+    const row = value as Record<string, unknown>
+    if (Object.hasOwn(row, cond.field)) {
+      sawRow = true
+      if (row[cond.field] === cond.equals) return true
+    }
+    return Object.values(row).some((child) => walk(child, depth + 1))
+  }
+  if (walk(result, 0)) return true
+  return !sawRow
+}
+
+/**
+ * Does this successful call of a `taintSource` tool taint the turn? Always, unless the tool is
+ * narrowed: by the host's `taintSourceWhen` function (analyze_media: only a file from outside the
+ * org), or by the manifest's row condition read on the result (`taintSourceWhenRow`). A narrowing
+ * that cannot answer counts as yes, and so does a row condition with no result to read: fail closed.
  */
 export async function taintSourceApplies(
   tool: {
     taintSource?: boolean
     taintSourceWhen?: (params: unknown, ctx: { orgId: string }) => Promise<boolean>
+    taintSourceWhenRow?: TaintSourceRowCondition
   },
   params: unknown,
   orgId: string,
+  read?: { result: unknown },
 ): Promise<boolean> {
   if (!tool.taintSource) return false
-  if (!tool.taintSourceWhen) return true
-  try {
-    return await tool.taintSourceWhen(params, { orgId })
-  } catch (err) {
-    log.error({ err }, "taintSourceWhen failed: the turn is marked")
-    return true
+  if (tool.taintSourceWhen) {
+    try {
+      return await tool.taintSourceWhen(params, { orgId })
+    } catch (err) {
+      log.error({ err }, "taintSourceWhen failed: the turn is marked")
+      return true
+    }
   }
+  if (tool.taintSourceWhenRow) {
+    if (!read) return true
+    return rowsMatchTaintCondition(read.result, tool.taintSourceWhenRow)
+  }
+  return true
 }
 
 /**
@@ -496,8 +536,9 @@ export async function markThreadsForTaintSourceResult(
   orgId: string,
   threadIds: ReadonlyArray<string | null | undefined>,
   toolName?: string,
+  read?: { result: unknown },
 ): Promise<boolean> {
-  if (!(await taintSourceApplies(tool, params, orgId))) return false
+  if (!(await taintSourceApplies(tool, params, orgId, read))) return false
   const source = outsideTextSourceOf(toolName) ?? undefined
   for (const threadId of new Set(threadIds.filter((t): t is string => Boolean(t)))) {
     await setTaintFlag(threadId, orgId, source ? { source } : {})

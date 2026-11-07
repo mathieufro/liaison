@@ -16,6 +16,7 @@ import { invalidateAuthCache } from "~/modules/auth/auth-state"
 import { revokeSessions } from "~/modules/auth/session-revocation"
 import { assertSeatRoom } from "~/modules/org/caps"
 import { removeAllPushDeliveryForUser } from "~/modules/push/end-user-push"
+import { deleteAwayRangesOf } from "~/modules/users/away"
 
 /**
  * Which org users a list shows. `people` (the default) are the accounts of
@@ -384,6 +385,8 @@ export async function deactivateUser(
     .returning({ id: sessions.id })
   // A deactivated person's devices stop receiving their notifications.
   await removeAllPushDeliveryForUser(db, targetId)
+  // Their away ranges go at once; a standing next in line naming them reads as absent.
+  await deleteAwayRangesOf(db, orgId, targetId)
 
   // Credential revocation: the auth_version bump above is the durable backstop,
   // but every process caches auth state for 15s. Broadcast the invalidation so

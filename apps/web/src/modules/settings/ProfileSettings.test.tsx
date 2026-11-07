@@ -412,4 +412,142 @@ describe("ProfileSettings", () => {
     const on = await screen.findByTestId("settings-dictation-auto-clean")
     await waitFor(() => expect(on.getAttribute("aria-checked")).toBe("true"))
   })
+
+  describe("Away", () => {
+    const json = (data: unknown) =>
+      new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    const AWAY = {
+      today: "2026-11-07",
+      standingNextInLine: { id: "u-lea", name: "Léa Fontaine", active: false },
+      people: [
+        { id: "u-tom", name: "Tom Reyes", awayUntil: "2026-11-20" },
+        { id: "u-sara", name: "Sara Benali", awayUntil: null },
+      ],
+      ranges: [
+        {
+          id: "r-1",
+          from: "2026-11-23",
+          to: "2026-11-27",
+          everyWeekday: null,
+          days: ["Mon 23 Nov 2026", "Tue 24 Nov 2026", "Wed 25 Nov 2026"],
+          nextInLine: { id: "u-sara", name: "Sara Benali", active: true },
+          nextInLineIsDefault: false,
+          setBy: { id: "u-lead", name: "Nadia Lead" },
+          runningToday: false,
+        },
+      ],
+      questions: [{ id: "q-1", said: "from Mon 14 Dec 2026 to Fri 18 Dec 2026" }],
+    }
+
+    function mountAway(calls: Array<{ url: string; method: string; body?: unknown }>) {
+      fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET"
+        calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+        if (url.includes("/user/preferences/away") && method === "GET") return json(AWAY)
+        if (url.endsWith("/user/preferences/away") && method === "POST") {
+          return json({
+            id: "r-new",
+            message: "Recorded: you are away from Mon 30 Nov 2026 to Fri 4 Dec 2026.",
+            cannotDecide: [],
+            staysWithYou: [],
+          })
+        }
+        if (url.includes("/user/preferences/away/"))
+          return json({ message: "Ended.", undone: true })
+        return json({ id: "1", name: "Test", email: "test@test.com" })
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      resetToastStore()
+      render(() => (
+        <I18nProvider initialLocale="en">
+          <Router>
+            <Route
+              path="*"
+              component={() => (
+                <ApiProvider>
+                  <ProfileSettings />
+                </ApiProvider>
+              )}
+            />
+          </Router>
+        </I18nProvider>
+      ))
+    }
+
+    it("lists a range with who set it and its next in line, and End early ends it", async () => {
+      const calls: Array<{ url: string; method: string; body?: unknown }> = []
+      mountAway(calls)
+      const row = await screen.findByTestId("settings-away-range")
+      expect(row.textContent).toContain("Mon 23 Nov 2026 to 2026-11-27")
+      expect(row.textContent).toContain("Next in line: Sara Benali")
+      expect(row.textContent).toContain("Set by Nadia Lead")
+      // A standing next in line who left is named, with what to do.
+      expect(screen.getByText("Léa Fontaine has left, choose someone.")).toBeInTheDocument()
+      fireEvent.click(screen.getByTestId("settings-away-end"))
+      await waitFor(() =>
+        expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/away/r-1/end"))).toBe(
+          true,
+        ),
+      )
+    })
+
+    it("asks about a calendar event with its dates only, and Yes answers it", async () => {
+      const calls: Array<{ url: string; method: string; body?: unknown }> = []
+      mountAway(calls)
+      const q = await screen.findByTestId("settings-away-question")
+      expect(q.textContent).toContain(
+        "Your calendar has an event from Mon 14 Dec 2026 to Fri 18 Dec 2026 that looks like time off.",
+      )
+      fireEvent.click(screen.getByTestId("settings-away-question-yes"))
+      await waitFor(() =>
+        expect(
+          calls.find((c) => c.method === "POST" && c.url.endsWith("/away/q-1/answer"))?.body,
+        ).toEqual({ yes: true }),
+      )
+    })
+
+    it("says the chosen next in line is away too before saving", async () => {
+      mountAway([])
+      const next = (await screen.findByTestId("settings-away-next")) as HTMLSelectElement
+      expect(screen.queryByTestId("settings-away-too")).toBeNull()
+      fireEvent.change(next, { target: { value: "u-tom" } })
+      expect((await screen.findByTestId("settings-away-too")).textContent).toBe(
+        "Tom Reyes is away too, until 2026-11-20.",
+      )
+      fireEvent.change(next, { target: { value: "u-sara" } })
+      await waitFor(() => expect(screen.queryByTestId("settings-away-too")).toBeNull())
+    })
+
+    it("saving posts the dates, states the result, and Undo takes it back", async () => {
+      const calls: Array<{ url: string; method: string; body?: unknown }> = []
+      mountAway(calls)
+      fireEvent.input(await screen.findByTestId("settings-away-from"), {
+        target: { value: "2026-11-30" },
+      })
+      fireEvent.input(screen.getByTestId("settings-away-to"), { target: { value: "2026-12-04" } })
+      fireEvent.change(screen.getByTestId("settings-away-next"), { target: { value: "u-sara" } })
+      fireEvent.click(screen.getByTestId("settings-away-save"))
+      await waitFor(() =>
+        expect(calls.find((c) => c.method === "POST" && c.url.endsWith("/away"))?.body).toEqual({
+          from: "2026-11-30",
+          to: "2026-12-04",
+          nextInLineId: "u-sara",
+        }),
+      )
+      expect((await screen.findByTestId("settings-away-result")).textContent).toContain(
+        "Mon 30 Nov 2026",
+      )
+      const toast = toasts().find((tt) => tt.message.startsWith("Recorded:"))
+      expect(toast?.action?.label).toBe("Undo")
+      toast?.action?.onClick()
+      await waitFor(() =>
+        expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/away/r-new"))).toBe(
+          true,
+        ),
+      )
+    })
+  })
 })

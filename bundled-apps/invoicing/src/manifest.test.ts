@@ -50,6 +50,11 @@ function findOpaqueParams(m: unknown): string[] {
 }
 
 describe("invoicing manifest", () => {
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    const attention = (manifest as { attention?: { groupLabel?: unknown } }).attention
+    expect(attention?.groupLabel).toEqual({ label: "Invoicing", labelKey: "kernel.homeGroupInvoicing" })
+  })
+
   it("validates against packageManifestSchema", () => {
     const r = packageManifestSchema.safeParse(manifest)
     if (!r.success) {
@@ -1491,7 +1496,11 @@ describe("invoicing manifest", () => {
     //   states the total that issues.
     // 0.20.49: above both lines of work, which each changed it under the number before; no change of its own.
     // 0.20.50: a search for a number no document carries says so and names the numbers ending in the same digits.
-    expect(m.version).toBe("0.20.50")
+    // 0.20.51: the shared settings types it builds against changed; no change of its own.
+    // 0.20.52: its attention heading is declared here, not in the web shell.
+    // 0.20.56: document search declares one search keyword fewer.
+    // 0.20.57: hidden tools name the visible one to use instead.
+    expect(m.version).toBe("0.20.57")
     const overdue = (manifest as unknown as { jobs: Record<string, { runsFor?: unknown }> }).jobs["overdue-scan"]
     expect(overdue?.runsFor).toEqual({
       rows: { entity: "documents", where: { status: "issued", type: "invoice", due_at: { not: null } } },

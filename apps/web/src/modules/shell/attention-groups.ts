@@ -9,6 +9,7 @@
 // grouped ledger than as a wall of rows.
 
 import { type AttentionItem, NOW_URGENCY } from "@liaison/shared"
+import { getAttentionGroupLabel } from "~/framework/app-registry"
 import { tNow } from "~/modules/i18n/i18n-context"
 import { pluralFormFor } from "~/modules/projects/plural"
 import type { RowLocale } from "~/modules/shell/attention-row-format"
@@ -78,29 +79,6 @@ function isCardedElsewhereInActivity(item: AttentionItem): boolean {
 /** Groups at or under this many items render expanded by default. */
 export const GROUP_AUTO_EXPAND_MAX = 5
 
-/** App -> catalog key for the group label a reader sees. An app with no key
- *  (a third party one) keeps the English/capitalized fallback below. */
-const APP_GROUP_LABEL_KEYS: Record<string, string> = {
-  tickets: "kernel.homeGroupSupport",
-  shopify: "kernel.homeGroupOrders",
-  invoicing: "kernel.homeGroupInvoicing",
-  projects: "kernel.homeGroupTasks",
-  knowledge: "kernel.homeGroupKnowledge",
-  kernel: "kernel.homeGroupTeam",
-  mail: "kernel.homeGroupMail",
-}
-
-/** App -> human group label. Unknown apps fall back to a capitalized app name. */
-const APP_GROUP_LABELS: Record<string, string> = {
-  tickets: "Support",
-  shopify: "Orders",
-  invoicing: "Invoicing",
-  projects: "Tasks",
-  knowledge: "Knowledge",
-  kernel: "Team",
-  mail: "Mail",
-}
-
 export interface AttentionGroup {
   /** The item app — mark-read group calls are keyed by app (+ kinds). */
   app: string
@@ -130,9 +108,9 @@ export function isNowItem(item: AttentionItem): boolean {
   return NOW_KINDS.has(item.kind) || item.urgency >= NOW_URGENCY
 }
 
-/** Catalog key for an app's group label, or undefined for an app with none. */
+/** Catalog key for an app's group label, or undefined for an app that declares none. */
 export function groupLabelKeyForApp(app: string): string | undefined {
-  return APP_GROUP_LABEL_KEYS[app]
+  return getAttentionGroupLabel(app)?.labelKey
 }
 
 /**
@@ -146,9 +124,11 @@ export function groupLabel(t: (key: string) => string, group: AttentionGroup): s
   return translated === group.labelKey ? group.label : translated
 }
 
+/** The group heading an app's manifest declares; an app that declares none
+ *  gets its capitalised name. */
 export function groupLabelForApp(app: string): string {
-  const known = APP_GROUP_LABELS[app]
-  if (known) return known
+  const declared = getAttentionGroupLabel(app)?.label
+  if (declared) return declared
   return app.length > 0 ? app.charAt(0).toUpperCase() + app.slice(1) : app
 }
 

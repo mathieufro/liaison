@@ -160,6 +160,15 @@ async function get(params: unknown, ctx: TicketsSandboxCtx): Promise<unknown> {
   return JSON.parse(await ctx.tickets_get(JSON.stringify(params ?? {})))
 }
 
+/** Who a pending approval about a ticket is for: whoever the ticket is assigned to. */
+async function approvalRouteRead(params: unknown, ctx: TicketsSandboxCtx): Promise<unknown> {
+  const { entityType, entityId } = (params ?? {}) as { entityType?: unknown; entityId?: unknown }
+  if (entityType !== "ticket" || typeof entityId !== "string") return { personId: null }
+  const data = JSON.parse(await ctx.tickets_get(JSON.stringify({ ticketId: entityId })))
+  const assignee = data?.ticket?.assignedTo
+  return { personId: typeof assignee === "string" ? assignee : null }
+}
+
 async function create(params: unknown, ctx: TicketsSandboxCtx): Promise<unknown> {
   return JSON.parse(await ctx.tickets_create(JSON.stringify(params ?? {})))
 }

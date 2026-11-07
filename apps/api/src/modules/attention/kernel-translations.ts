@@ -241,7 +241,19 @@ export const kernelTranslations: Translation[] = [
     // row itself: Allow / Deny on what is asked, from which node.
     // `routineAlert` (D21): a routine that failed or paused, filed by Home
     // under Agents > "Routines failed or paused" (routine-alert.ts).
-    metadataFromData: ["link", "nodePermissionPromptId", "nodePermission", "routineAlert"],
+    // `awayNamed`: a colleague marked the person away (modules/users/away.ts).
+    // `awayCalendar`: the person's own calendar made, moved or asks about an away range.
+    metadataFromData: [
+      "link",
+      "nodePermissionPromptId",
+      "nodePermission",
+      "routineAlert",
+      "awayNamed",
+      "awayCalendar",
+      // `routedReminder`: a request waiting a day tells its deciders once
+      // (approvals/routed-reminders.ts); `link` opens the request's conversation.
+      "routedReminder",
+    ],
   },
   {
     // A routine run waiting for its owner's private mailbox

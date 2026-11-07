@@ -48,6 +48,7 @@ import {
 } from "~/modules/org/caps"
 import { isConfigToolSection } from "~/modules/provisioning/config-tool-input"
 import { ensureUser } from "~/modules/provisioning/ensure-user"
+import { createExternalUser } from "~/modules/users/external-user"
 import { createInvitation } from "~/modules/users/invites"
 import { reactivateUser } from "~/modules/users/service"
 import * as minimal from "~/seed/tiers/minimal"
@@ -143,6 +144,22 @@ describe("seats", () => {
     expect(await activeSeats(orgId)).toBe(2)
     await sql`UPDATE kernel.users SET status = 'deactivated' WHERE id = ${member.id}`
     expect(await activeSeats(orgId)).toBe(1)
+  })
+
+  it("a client's portal account takes no seat, and is added at a full cap", async () => {
+    const { orgId } = await minimal.secondOrg()
+    const used = await activeSeats(orgId)
+    await setCaps(orgId, { seats: used })
+    const email = `client-${crypto.randomUUID().slice(0, 8)}@caps.test`
+    const created = await withPrivilegedDb(orgId, "caps-test-portal-account", (tx) =>
+      createExternalUser(tx, { orgId, companyId: crypto.randomUUID(), email, name: "Client" }),
+    )
+    if (!created.ok) throw new Error(created.code)
+    await sql`UPDATE kernel.users SET status = 'active' WHERE id = ${created.userId}`
+    expect(await activeSeats(orgId)).toBe(used)
+    // The cap still refuses the next member.
+    const res = await accept(await invite(orgId, "after-client@caps.test"), "After")
+    expect(res.status).toBe(409)
   })
 
   it("reactivate at the limit → CapLimitError (409); under it, reactivated", async () => {

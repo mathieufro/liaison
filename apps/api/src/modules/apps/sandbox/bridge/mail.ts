@@ -6,8 +6,22 @@ import { withReleasedSavepoint } from "~/db/savepoint"
 import { schemaRef } from "~/db/schema-ref"
 import { rootLogger } from "~/lib/logger"
 import { quoteIdent } from "~/lib/sql-utils"
+import { currentRunContext } from "~/modules/agent/runtime/run-context"
 import type { BridgeContext } from "~/modules/apps/sandbox/bridge/context"
 import { snakeCase } from "~/modules/apps/sandbox/bridge/shared"
+import {
+  type BuildSendGuardInput,
+  buildSendGuard,
+  commercialFooterFor,
+  describeStop,
+  evaluateSendGuard,
+  isPinnedSendGuard,
+  personZone,
+  plainGuardSince,
+  recipientsOf,
+  requestFacts,
+  stopCode,
+} from "~/modules/mail/send-guard"
 
 const K = () => drizzleSql.raw(schemaRef("kernel"))
 
@@ -59,8 +73,11 @@ async function mailboxSealErrorContext<T>(
 /** Mail search and the mailbox sealing surface. */
 export function createMailMethods(ctx: BridgeContext): Record<string, any> {
   const {
+    actorType,
     appName,
+    approvalContext,
     assertMailboxNotResetMidRun,
+    bridgeOptions,
     callerScopes,
     coerceByteaRowFields,
     coerceNumericRowFields,
@@ -75,6 +92,48 @@ export function createMailMethods(ctx: BridgeContext): Record<string, any> {
     validateEntity,
     validateFields,
   } = ctx
+  // Captured here, in the run's frame: a callback from the sandbox has lost it.
+  const followUpRun = currentRunContext()?.routineFollowUp === true
+  // A person's own click decides for itself. Their request approved by someone
+  // else later has `approvalContext`, and is checked like any other.
+  const directHumanCall = () =>
+    bridgeOptions?.origin === "human-ui" && actorType === "user" && !approvalContext
+
+  /** The contacts behind these addresses, as far as the caller can see them. */
+  const contactIdsFor = async (addresses: readonly string[]): Promise<string[]> => {
+    if (addresses.length === 0) return []
+    const rows = extractRows<{ id: string }>(
+      await txDb.execute(
+        drizzleSql`SELECT id FROM ${K()}.contacts
+                    WHERE org_id = ${orgId}::uuid AND lower(email) = ANY(
+                      ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(addresses)}::jsonb)))`,
+      ),
+    )
+    return rows.map((row) => row.id)
+  }
+
+  /** A stop names the record only if the caller can open it: a colleague's mailbox stays unnamed. */
+  const withReadableRecord = async <T extends { record?: { kind: string; id: string } }>(
+    verdict: T,
+  ): Promise<T> => {
+    const record = verdict.record
+    if (!record) return verdict
+    const target =
+      record.kind === "ticket"
+        ? drizzleSql.raw(`${quoteIdent(schemaRef("app_tickets"))}.tickets`)
+        : drizzleSql.raw(`${quoteIdent(schemaRef("app_mail"))}.conversations`)
+    try {
+      const rows = extractRows(
+        await txDb.execute(drizzleSql`SELECT 1 FROM ${target} WHERE id = ${record.id}::uuid`),
+      )
+      if (rows.length > 0) return verdict
+    } catch {
+      // Not readable by this caller, by any means: the stop stays, unnamed.
+    }
+    const { record: _unnamed, ...rest } = verdict
+    return rest as T
+  }
+
   return {
     // ── Mailbox sealing (spec section 5.2) ──────────────────────────────────
     //
@@ -438,6 +497,127 @@ export function createMailMethods(ctx: BridgeContext): Record<string, any> {
         { accountId: params.accountId, messageIds: params.messageIds },
       )
       return JSON.stringify({ count })
+    },
+
+    /**
+     * The send check's value for a staged `mail:compose` or `mail:reply`, in the
+     * preflight, last. A person's own call has none. A follow-up the check would
+     * stop is refused here, so no card is staged that could never send.
+     */
+    mail_buildSendGuard: async (paramsJson: string): Promise<string> => {
+      requireApp("mail", "mail_buildSendGuard")
+      if (directHumanCall()) return JSON.stringify({ applies: false })
+      const params = JSON.parse(paramsJson) as {
+        toolName: "mail:compose" | "mail:reply"
+        to?: unknown
+        cc?: unknown
+        bcc?: unknown
+        conversationId?: string
+        followUp?: BuildSendGuardInput["followUp"]
+      }
+      const recipients = recipientsOf(params.to, params.cc, params.bcc)
+      const zone = await personZone(orgId, userId)
+      const built = await buildSendGuard({
+        ...zone,
+        orgId,
+        toolName: params.toolName,
+        followUpRun,
+        followUp: params.followUp ?? null,
+        recipients,
+        contactIds: await contactIdsFor(recipients),
+        ...(params.conversationId ? { conversationId: params.conversationId } : {}),
+      })
+      if ("commercialIdentityMissing" in built) {
+        return JSON.stringify({
+          applies: true,
+          refusal: {
+            code: "commercial_identity_missing",
+            message:
+              "Nothing was sent and no draft was staged. This organization has not set the identity a commercial mail must state. Next: an admin fills it in, then stage this again.",
+            retryable: false,
+          },
+        })
+      }
+      const { state } = built.verdict
+      if (state !== "clear" && state !== "held") {
+        const verdict = await withReadableRecord(built.verdict)
+        return JSON.stringify({
+          applies: true,
+          refusal: {
+            code: `SEND_GUARD_${state.toUpperCase()}`,
+            message: describeStop(verdict, "stage"),
+            retryable: !verdict.final,
+            body: { guard: verdict },
+          },
+        })
+      }
+      return JSON.stringify({
+        applies: true,
+        sendGuard: built.sendGuard,
+        ...(built.guardKey ? { guardKey: built.guardKey } : {}),
+      })
+    },
+
+    /**
+     * The check at send, after the approval is recorded and before anything leaves,
+     * on the payload as it stands now. A call staged with no value (a chained
+     * `@ref` step, or one from before this check) is built here as plain.
+     */
+    mail_checkSendGuard: async (paramsJson: string): Promise<string> => {
+      requireApp("mail", "mail_checkSendGuard")
+      if (directHumanCall()) return JSON.stringify({ applies: false })
+      const params = JSON.parse(paramsJson) as {
+        sendGuard?: unknown
+        to?: unknown
+        cc?: unknown
+        bcc?: unknown
+        conversationId?: string
+        textBody?: unknown
+        htmlBody?: unknown
+      }
+      const recipients = recipientsOf(params.to, params.cc, params.bcc)
+      const request = approvalContext
+        ? await requestFacts(orgId, approvalContext.approvalRequestId)
+        : null
+      const guard = isPinnedSendGuard(params.sendGuard)
+        ? params.sendGuard
+        : plainGuardSince(
+            recipients,
+            await contactIdsFor(recipients),
+            request?.createdAt ?? new Date(),
+            params.conversationId,
+          )
+      const zone = await personZone(orgId, request?.requestedBy ?? userId)
+      const checked = await evaluateSendGuard({
+        ...zone,
+        orgId,
+        guard,
+        recipients,
+        at: "send",
+      })
+      if (checked.state === "clear") {
+        const first = recipients[0]
+        return JSON.stringify({
+          applies: true,
+          state: "clear",
+          record: {
+            guard: { state: "clear", mode: guard.mode, classification: guard.classification },
+          },
+          ...(guard.classification === "marketing" && first
+            ? { footer: await commercialFooterFor(orgId, first, params.textBody, params.htmlBody) }
+            : {}),
+        })
+      }
+      const verdict = await withReadableRecord(checked)
+      return JSON.stringify({
+        applies: true,
+        state: verdict.state,
+        final: verdict.final,
+        code: stopCode(verdict),
+        message: describeStop(verdict, approvalContext ? "approved" : "auto"),
+        approved: approvalContext !== undefined,
+        guard: { ...verdict, mode: guard.mode, classification: guard.classification },
+      })
     },
 
     /** Mirror a Gmail write-back onto the stored labels, as a delta (modules/mail/gmail-write-back.ts). */

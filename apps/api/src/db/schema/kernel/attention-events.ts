@@ -42,6 +42,8 @@ export const attentionEvents = kernel.table(
     metadata: jsonb("metadata"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     readAt: timestamp("read_at", { withTimezone: true }),
+    // "Not now": out of the feed until this moment. NULL = not set aside.
+    setAsideUntil: timestamp("set_aside_until", { withTimezone: true }),
     isUrgent: boolean("is_urgent").notNull().default(false),
     digestState: text("digest_state").notNull().default("pending"),
     digestEligibleAt: timestamp("digest_eligible_at", { withTimezone: true }).notNull(),

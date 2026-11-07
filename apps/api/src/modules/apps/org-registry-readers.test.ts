@@ -37,6 +37,8 @@ const READERS: Record<string, string> = {
   "infra/jobs/webhook-worker.ts": JOB,
   "modules/agent/context/connected-systems.ts": AGENT,
   "modules/agent/context/context.ts": AGENT,
+  // Registers the host's tools under its own measuring org, reads that org, removes it.
+  "modules/agent/context/ladder-budget.ts": SETUP,
   "modules/agent/routines/routine-incident.ts": JOB,
   "modules/agent/routines/routine-tick-outcome.ts": JOB,
   "modules/agent/runtime/turn-focus.ts": AGENT,
@@ -61,6 +63,7 @@ const READERS: Record<string, string> = {
   "modules/approvals/edit.ts": REQUEST,
   "modules/approvals/poll-output.ts": JOB,
   "modules/approvals/required-step.ts": REQUEST,
+  "modules/approvals/routed-reminders.ts": ENSURES,
   "modules/approvals/result-notice.ts": JOB,
   "modules/apps/activation.ts": SETUP,
   "modules/apps/app-registries.ts": SETUP,
@@ -95,6 +98,16 @@ const READERS: Record<string, string> = {
   "modules/secret-requests/targets.ts": REQUEST,
   "modules/threads/reference-display.ts": REQUEST,
   "modules/webhooks/routes.ts": WEBHOOK,
+  "modules/agent/context/context-providers.ts": AGENT,
+  "modules/agent/runtime/tool-card-store.ts":
+    "agent turn (agent-service) or HTTP request (agent and apps routes): each sets the org up at its entry",
+  "modules/agent/tools/tool-name-resolve.ts": AGENT,
+  "modules/approvals/route-world.ts":
+    "approval routing: reached from a tool call, a decision or a Home read, each set up at its entry",
+  "modules/mail/send-guard.ts":
+    "send check: reached from the mail bridge (tool call) or the approval list and cascade (request)",
+  "modules/users/away.ts":
+    "away days: reached from set_away (tool call) and the preferences and Home routes (request)",
 }
 
 function sourceFiles(dir: string): string[] {

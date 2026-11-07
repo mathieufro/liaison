@@ -17,7 +17,6 @@ import {
   Show,
   Suspense,
 } from "solid-js"
-import { getContributions } from "~/framework/app-registry"
 import { disambiguatedLabel, markAmbiguousNames } from "~/lib/name-collision"
 import { relativeTime } from "~/lib/relative-time"
 import { appLink, canShare, share } from "~/lib/share"
@@ -29,6 +28,8 @@ import { AssigneeListStatus, AssigneeSearchField } from "~/modules/members/Assig
 import { createAssignableMembers } from "~/modules/members/assignable-members"
 import { useApi } from "~/modules/shell/ApiContext"
 import { BacklinksPanel } from "~/modules/shell/references/BacklinksPanel"
+import { awayLabel } from "~/modules/shell/route-line"
+import { createSlotPanels, SlotPanels } from "~/modules/shell/SlotPanels"
 import { shellTier } from "~/modules/shell/shell-tier"
 import { makeTabId, openTab, tabStore } from "~/modules/shell/tab-store"
 import { addToast } from "~/modules/shell/toast-store"
@@ -154,6 +155,8 @@ function discStyle(seed: string) {
 
 /** The contribution slot other apps add sidepanel panels through; each gets `{ ticketId }`. */
 export const TICKET_DETAIL_PANEL_SLOT = "ticket:detail:panel"
+/** The slot other apps add header actions through; each gets `entityId` = the ticket. */
+export const TICKET_DETAIL_ACTIONS_SLOT = "ticket:detail:actions"
 
 /** One row of a phone action sheet: full width, 44px tall, left aligned. */
 const phoneSheetRowClass =
@@ -238,7 +241,9 @@ export const TicketDetail: Component<Props> = (props) => {
   // is TicketPhoneHeader, a SEPARATE component rendered by MainPanel's phone
   // top bar (see that file's comment for why), not this one.
   const moreOpen = () => isTicketMoreSheetOpen(props.entityId)
-  const panelContributions = () => getContributions(TICKET_DETAIL_PANEL_SLOT)
+  // What other apps add, from the one server list: the viewer's, from apps that are on.
+  const panelEntries = createSlotPanels(() => TICKET_DETAIL_PANEL_SLOT)
+  const actionEntries = createSlotPanels(() => TICKET_DETAIL_ACTIONS_SLOT)
   const setMoreOpen = (open: boolean) => {
     if (open) openTicketMoreSheet(props.entityId)
     else closeTicketMoreSheet()
@@ -698,10 +703,18 @@ export const TicketDetail: Component<Props> = (props) => {
                       closeLabel={i18n.t("kernel.close")}
                     >
                       <div class="flex flex-col pb-2" data-testid="ticket-more-sheet">
+                        {/* Phone: the header actions other apps add sit here, never in a pinned row. */}
+                        <SlotPanels
+                          slot={TICKET_DETAIL_ACTIONS_SLOT}
+                          entries={actionEntries}
+                          entityId={t().id}
+                          position="actions"
+                          class="px-4 py-2"
+                        />
                         {/* The desktop's details panel is not shown at phone
                             width: what other apps add there (the customer
                             card) opens from here. */}
-                        <Show when={panelContributions().length > 0}>
+                        <Show when={panelEntries().length > 0}>
                           <button
                             type="button"
                             data-testid="ticket-more-customer"
@@ -823,16 +836,12 @@ export const TicketDetail: Component<Props> = (props) => {
                       closeLabel={i18n.t("kernel.close")}
                     >
                       <div class="flex flex-col pb-2" data-testid="ticket-customer-sheet">
-                        <For each={panelContributions()}>
-                          {(entry) => {
-                            const Panel = entry.component as Component<{ ticketId: string }>
-                            return (
-                              <Suspense>
-                                <Panel ticketId={t().id} />
-                              </Suspense>
-                            )
-                          }}
-                        </For>
+                        <SlotPanels
+                          slot={TICKET_DETAIL_PANEL_SLOT}
+                          entries={panelEntries}
+                          entityId={t().id}
+                          panelProps={{ ticketId: t().id }}
+                        />
                       </div>
                     </OverlaySheet>
 
@@ -1066,6 +1075,13 @@ export const TicketDetail: Component<Props> = (props) => {
                         </Show>
 
                         <div class="ml-auto flex items-center gap-1">
+                          {/* Actions other apps add to the ticket's header. */}
+                          <SlotPanels
+                            slot={TICKET_DETAIL_ACTIONS_SLOT}
+                            entries={actionEntries}
+                            entityId={t().id}
+                            position="actions"
+                          />
                           <PopupMenu open={kebabOpen()} onOpenChange={setKebabOpen}>
                             <PopupMenu.Trigger>
                               <button
@@ -1331,6 +1347,16 @@ export const TicketDetail: Component<Props> = (props) => {
                                         {avatarInitials(m.name, m.id.slice(0, 2))}
                                       </span>
                                       {disambiguatedLabel(m.name, m.email, ambiguous)}
+                                      <Show when={awayLabel(m.away, i18n.t, i18n.locale())}>
+                                        {(away) => (
+                                          <span
+                                            data-testid={`tickets-detail-assign-away-${m.id}`}
+                                            class="text-[11px] text-text-tertiary"
+                                          >
+                                            {away()}
+                                          </span>
+                                        )}
+                                      </Show>
                                     </span>
                                   </PopupMenu.Item>
                                 )}
@@ -1544,16 +1570,12 @@ export const TicketDetail: Component<Props> = (props) => {
                     <TicketSummaryCard ticketId={t().id} />
                     {/* Panels other apps add to the sidepanel (an API connector's
                     customer card): each gets the ticket id and owns its data. */}
-                    <For each={panelContributions()}>
-                      {(entry) => {
-                        const Panel = entry.component as Component<{ ticketId: string }>
-                        return (
-                          <Suspense>
-                            <Panel ticketId={t().id} />
-                          </Suspense>
-                        )
-                      }}
-                    </For>
+                    <SlotPanels
+                      slot={TICKET_DETAIL_PANEL_SLOT}
+                      entries={panelEntries}
+                      entityId={t().id}
+                      panelProps={{ ticketId: t().id }}
+                    />
                     {/* LOCAL Suspense boundaries: these children mount AFTER the
                   ticket header has already painted (they sit behind the
                   `when={ticket()}` gate) and each owns a createResource whose

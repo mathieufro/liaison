@@ -89,6 +89,9 @@ export const userPreferences = kernel.table("user_preferences", {
   // only when `mac` verifies under the mailbox key. NULL = never synced.
   // Written ONLY via `updateAgentMailAccess` (same trap as above).
   agentMailAccess: jsonb("agent_mail_access").$type<AgentMailAccessRecord | null>(),
+  // Who takes over by default while this person is away. NULL = nobody named.
+  // Never written through the full-replace `updatePreferences` (same trap as above).
+  nextInLineId: uuid("next_in_line_id").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 })
 

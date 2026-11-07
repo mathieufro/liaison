@@ -1132,6 +1132,91 @@ describe("erase-user cascade (G2–G6)", () => {
     expect(stale).toEqual([])
   })
 
+  test("erasing a person takes their away records and every place they are named as next in line, on a route or as a changer", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const seeded = await withSystemDb("erase-away-seed", async (tx) => {
+      const otherId = extractRows<{ id: string }>(
+        await tx.execute(drizzleSql`
+          INSERT INTO kernel.users (org_id, email, name)
+          VALUES (${orgId}, ${`other-away-${suffix}@t.co`}, 'Other') RETURNING id
+        `),
+      )[0].id
+      const roomId = extractRows<{ id: string }>(
+        await tx.execute(drizzleSql`
+          INSERT INTO kernel.threads (org_id, handle, created_by)
+          VALUES (${orgId}, ${`erase-away-${suffix}`}, ${otherId}) RETURNING id
+        `),
+      )[0].id
+      const approvalId = extractRows<{ id: string }>(
+        await tx.execute(drizzleSql`
+          INSERT INTO kernel.approval_requests (org_id, handle, thread_id, originating_thread_id,
+                                                tool_name, tool_params, current_payload,
+                                                requested_by, route_person_id, status, expires_at)
+          VALUES (${orgId}, ${`ap-${suffix}`}, ${roomId}, ${roomId}, 'kernel:x', '{}'::jsonb, '{}'::jsonb,
+                  ${otherId}, ${userId}, 'denied', now() + interval '1 day')
+          RETURNING id
+        `),
+      )[0].id
+      await tx.execute(drizzleSql`
+        INSERT INTO kernel.away_ranges (org_id, user_id, starts_on, ends_on, source)
+        VALUES (${orgId}, ${userId}, '2026-12-01', '2026-12-05', 'said')
+      `)
+      const theirRangeId = extractRows<{ id: string }>(
+        await tx.execute(drizzleSql`
+          INSERT INTO kernel.away_ranges (org_id, user_id, starts_on, ends_on, next_in_line_id, source, set_by)
+          VALUES (${orgId}, ${otherId}, '2026-12-01', '2026-12-05', ${userId}, 'said', ${userId})
+          RETURNING id
+        `),
+      )[0].id
+      await tx.execute(drizzleSql`
+        INSERT INTO kernel.user_preferences (user_id, next_in_line_id) VALUES (${otherId}, ${userId})
+      `)
+      await tx.execute(drizzleSql`
+        INSERT INTO kernel.org_app_features (org_id, app_name, feature, enabled, changed_by, changed_at)
+        VALUES (${orgId}, 'projects', ${`f-${suffix}`}, true, ${userId}, now())
+      `)
+      return { otherId, approvalId, theirRangeId }
+    })
+
+    expect((await eraseUser(userId)).exitCode).toBe(0)
+
+    const after = await withSystemDb("erase-away-read", async (tx) => ({
+      own: extractRows<{ n: number }>(
+        await tx.execute(
+          drizzleSql`SELECT count(*)::int AS n FROM kernel.away_ranges WHERE user_id = ${userId}`,
+        ),
+      )[0].n,
+      theirs: extractRows<{ next_in_line_id: string | null; set_by: string | null }>(
+        await tx.execute(drizzleSql`
+          SELECT next_in_line_id, set_by FROM kernel.away_ranges WHERE id = ${seeded.theirRangeId}
+        `),
+      )[0],
+      prefs: extractRows<{ next_in_line_id: string | null }>(
+        await tx.execute(drizzleSql`
+          SELECT next_in_line_id FROM kernel.user_preferences WHERE user_id = ${seeded.otherId}
+        `),
+      )[0],
+      route: extractRows<{ route_person_id: string | null }>(
+        await tx.execute(drizzleSql`
+          SELECT route_person_id FROM kernel.approval_requests WHERE id = ${seeded.approvalId}
+        `),
+      )[0],
+      feature: extractRows<{ changed_by: string | null; enabled: boolean }>(
+        await tx.execute(drizzleSql`
+          SELECT changed_by, enabled FROM kernel.org_app_features
+           WHERE org_id = ${orgId} AND feature = ${`f-${suffix}`}
+        `),
+      )[0],
+    }))
+    expect(after).toEqual({
+      own: 0,
+      theirs: { next_in_line_id: null, set_by: null },
+      prefs: { next_in_line_id: null },
+      route: { route_person_id: null },
+      feature: { changed_by: null, enabled: true },
+    })
+  })
+
   test("a user with notification devices, mailbox keys and org attributions can be erased and leaves none of their rows", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const shared = await withSystemDb("erase-devices-seed", async (tx) => {

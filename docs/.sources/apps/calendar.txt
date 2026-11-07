@@ -50,3 +50,11 @@ Time zones and recurring events kept, override becomes its own event -> apps/api
 Re-import skips events already there -> apps/api/src/apps/calendar/import-kind.ts:168
 Imported calendar is the importer's own account -> apps/api/src/apps/calendar/import-kind.ts:103
 Imported calendars never granted to members who join later -> apps/api/src/apps/calendar/sync.ts:547
+Away days only from the person's own primary calendar on a personal connection -> apps/api/src/apps/calendar/away-from-calendar.ts:161
+Out-of-office over whole working days counts at once; part days, focus time, location, birthdays, Gmail events never -> apps/api/src/apps/calendar/away-from-calendar.ts:78 ; apps/api/src/modules/attention/work-hours.ts:184
+Leave-looking all-day event organised or accepted is asked once, three open at most -> apps/api/src/apps/calendar/away-from-calendar.ts:42 ; apps/api/src/modules/users/away.ts:1271
+Moves, outsider moves re-ask, over 30 days asked, cancel removes unless ended early -> apps/api/src/modules/users/away.ts:1231
+Recurring occurrences over 60 days, daily refresh -> apps/api/src/apps/calendar/away-from-calendar.ts:39 ; apps/api/src/infra/jobs/kernel-jobs.ts
+Disconnect removes calendar days, keeps said ones -> apps/api/src/apps/calendar/sync.ts:266 ; apps/api/src/modules/users/away.ts
+Yes and No on the profile -> apps/web/src/modules/settings/ProfileSettings.tsx ; apps/api/src/modules/users/preferences-routes.ts
+Title read live for Home, never stored -> apps/api/src/apps/calendar/away-from-calendar.ts ; apps/api/src/modules/apps/attention-aggregator.ts

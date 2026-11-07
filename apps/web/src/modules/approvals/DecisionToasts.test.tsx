@@ -44,7 +44,7 @@ describe("DecisionToasts", () => {
     const toast = await screen.findByTestId("decision-toast")
     expect(screen.getByTestId("decision-toast-title").textContent).toBe("ticket-10889: subject 9")
     expect(toast.textContent).toContain("Reply")
-    expect(screen.getByTestId("decision-toast-status").textContent).toBe("Approving in 5s")
+    expect(screen.getByTestId("decision-toast-status").textContent).toBe("Approving in 8s")
     // Fixed width: a long title truncates instead of stretching the toast across Home.
     expect(toast.className).toContain("w-[380px]")
     expect(toast.className).toContain("max-w-full")
@@ -64,7 +64,7 @@ describe("DecisionToasts", () => {
     const { api, post } = makeApi()
     render(() => <DecisionToasts />)
     const done = queueDecision(api, "approval", "a1", { decision: "deny" }, { label: label(1) })
-    expect((await screen.findByTestId("decision-toast-status")).textContent).toBe("Rejecting in 5s")
+    expect((await screen.findByTestId("decision-toast-status")).textContent).toBe("Rejecting in 8s")
     fireEvent.click(screen.getByTestId("decision-toast-undo"))
     await expect(done).rejects.toBeInstanceOf(DecisionUndoneError)
     expect(screen.queryByTestId("decision-toast")).toBeNull()

@@ -20,12 +20,16 @@
 import { and, sql as drizzleSql, eq } from "drizzle-orm"
 import type { RlsClient } from "~/db"
 import { extractRows, type PrivilegedDb } from "~/db"
-import { withPrivilegedDb } from "~/db/privileged"
 import { contacts } from "~/db/schema/kernel"
 import { schemaRef } from "~/db/schema-ref"
-import { contactsLogger as log } from "~/lib/logger"
 import { quoteIdent } from "~/lib/sql-utils"
 import { getOrCreateContactPrimaryThread } from "~/modules/threads/contact-primary"
+import {
+  deleteEntityDiscussions,
+  entityDiscussionThreads,
+  pruneEntityDiscussion,
+  unindexDiscussionThreads,
+} from "~/modules/threads/entity-discussion"
 
 const ks = drizzleSql.raw(`"${schemaRef("kernel")}"`)
 
@@ -51,14 +55,14 @@ async function contactVisible(tx: RlsClient, orgId: string, contactId: string): 
 export async function openContactDiscussion(
   tx: RlsClient,
   params: { orgId: string; contactId: string; userId: string },
-): Promise<{ threadId: string } | null> {
+): Promise<{ threadId: string; created: boolean } | null> {
   if (!(await contactVisible(tx, params.orgId, params.contactId))) return null
-  const { id } = await getOrCreateContactPrimaryThread(
+  const { id, created } = await getOrCreateContactPrimaryThread(
     params.orgId,
     params.contactId,
     params.userId,
   )
-  return { threadId: id }
+  return { threadId: id, created }
 }
 
 /**
@@ -73,70 +77,27 @@ export async function pruneContactDiscussion(
   params: { orgId: string; contactId: string; keepUserId: string | null },
   db?: PrivilegedDb | RlsClient,
 ): Promise<void> {
-  const run = async (h: PrivilegedDb | RlsClient): Promise<void> => {
-    const [thread] = extractRows<{ id: string }>(
-      await h.execute(drizzleSql`
-        SELECT id::text AS id FROM ${ks}.threads
-         WHERE org_id = ${params.orgId}::uuid AND handle = ${discussionHandle(params.contactId)}
-         LIMIT 1`),
-    )
-    if (!thread) return
-    await h.execute(drizzleSql`
-      DELETE FROM ${ks}.thread_participants
-       WHERE org_id = ${params.orgId}::uuid AND thread_id = ${thread.id}::uuid
-         AND user_id IS NOT NULL
-         AND (${params.keepUserId}::uuid IS NULL OR user_id <> ${params.keepUserId}::uuid)`)
-  }
-  if (db) return run(db)
-  await withPrivilegedDb(params.orgId, "contact-discussion-prune", run)
+  await pruneEntityDiscussion(
+    {
+      orgId: params.orgId,
+      ref: { app: "kernel", entityType: "contact", entityId: params.contactId },
+      keepUserId: params.keepUserId,
+    },
+    db,
+  )
 }
 
 type Handle = PrivilegedDb | RlsClient
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const CONTACT = { app: "kernel", entityType: "contact" } as const
 
 /** The discussion thread of each contact that has one, by contact id. */
-async function discussionThreads(
+function discussionThreads(
   h: Handle,
   orgId: string,
   contactIds: string[],
 ): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  if (contactIds.length === 0) return out
-  const handles = drizzleSql.join(
-    contactIds.map((id) => drizzleSql`${discussionHandle(id)}`),
-    drizzleSql`, `,
-  )
-  const rows = extractRows<{ id: string; handle: string }>(
-    await h.execute(drizzleSql`
-      SELECT id::text AS id, handle FROM ${ks}.threads
-       WHERE org_id = ${orgId}::uuid AND handle IN (${handles})`),
-  )
-  for (const r of rows) out.set(r.handle.slice("contact-primary:".length), r.id)
-  return out
-}
-
-/**
- * Take every search document of a thread out of the index: its messages, its
- * windows, its brief rows and episodes all carry `thread_id`. Best effort: the
- * rows are gone from every read path already, search re-checks each message
- * hit against them, and a rebuild drops whatever is left.
- */
-async function unindexThreads(orgId: string, threadIds: string[]): Promise<void> {
-  const ids = threadIds.filter((id) => UUID.test(id))
-  if (ids.length === 0 || !UUID.test(orgId)) return
-  try {
-    const { rawDeleteItem, recordLiveIndex } = await import("~/modules/search/live-index-queue")
-    await recordLiveIndex(
-      ids.map((threadId) =>
-        rawDeleteItem(orgId, `contact-discussion:${threadId}:removed`, {
-          filter: `org_id = "${orgId}" AND thread_id = "${threadId}"`,
-        }),
-      ),
-    )
-  } catch (err) {
-    log.warn({ err, orgId, threadIds: ids }, "Could not queue removal of a contact discussion")
-  }
+  return entityDiscussionThreads(h, orgId, CONTACT, contactIds)
 }
 
 /**
@@ -158,38 +119,15 @@ export async function deleteContactDiscussions(
   params: { orgId: string; contactIds: string[] },
   db?: PrivilegedDb,
 ): Promise<void> {
-  const run = async (h: Handle): Promise<string[]> => {
-    const threads = [...(await discussionThreads(h, params.orgId, params.contactIds)).values()]
-    if (threads.length === 0) return []
-    const list = drizzleSql.join(
-      threads.map((id) => drizzleSql`${id}::uuid`),
-      drizzleSql`, `,
-    )
-    await h.execute(drizzleSql`
-      DELETE FROM ${ks}.threads th
-       WHERE th.org_id = ${params.orgId}::uuid AND th.id IN (${list})
-         AND NOT EXISTS (
-           SELECT 1 FROM ${ks}.approval_requests ar
-            WHERE ar.thread_id = th.id OR ar.originating_thread_id = th.id)`)
-    // What an approval still holds: emptied, nobody seated, linked to nothing.
-    for (const table of [
-      "messages",
-      "thread_participants",
-      "user_thread_state",
-      "thread_references",
-    ]) {
-      await h.execute(drizzleSql`
-        DELETE FROM ${ks}.${drizzleSql.raw(quoteIdent(table))}
-         WHERE org_id = ${params.orgId}::uuid AND thread_id IN (${list})`)
-    }
-    return threads
-  }
-  if (db) {
-    await unindexThreads(params.orgId, await run(db))
-    return
-  }
-  const removed = await withPrivilegedDb(params.orgId, "contact-discussion-delete", run)
-  await unindexThreads(params.orgId, removed)
+  await deleteEntityDiscussions(
+    {
+      orgId: params.orgId,
+      app: CONTACT.app,
+      entityType: CONTACT.entityType,
+      entityIds: params.contactIds,
+    },
+    db,
+  )
 }
 
 /**
@@ -313,6 +251,6 @@ export async function mergeContactDiscussion(
     DELETE FROM ${ks}.threads WHERE org_id = ${orgId}::uuid AND id = ${source}::uuid`)
   // The moved messages' old documents name the source thread; the survivor's
   // are rebuilt from the committed rows by the merge event.
-  await unindexThreads(orgId, [source])
+  await unindexDiscussionThreads(orgId, [source])
   return true
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test"
 import {
   summarizeCaptureBusinessKnowledge,
   summarizeContactsExport,
+  summarizeSetAway,
 } from "~/modules/agent/tools/kernel-summarizers"
 
 const ctx = {} as Parameters<typeof summarizeContactsExport>[1]
@@ -23,5 +24,20 @@ describe("kernel approval summaries", () => {
     )
     expect(s.title).toBe("Add to company knowledge: Support inbox")
     expect(s.lines).toContain("Write to support@example.com.")
+  })
+
+  it("says whose away days a parked set_away changes, and which dates", async () => {
+    const own = await summarizeSetAway({ from: "2026-12-07", to: "2026-12-11" }, ctx)
+    expect(own.title).toBe("Mark yourself away")
+    expect(own.lines).toEqual(["From Mon 7 Dec 2026 to Fri 11 Dec 2026."])
+    const other = await summarizeSetAway(
+      { userId: "00000000-0000-4000-8000-000000000001", everyWeekday: [3] },
+      ctx,
+    )
+    expect(other.title).toBe("Mark someone else away")
+    expect(other.lines).toEqual(["Every week on Wed."])
+    expect((await summarizeSetAway({ end: true }, ctx)).title).toBe(
+      "End your away days running today",
+    )
   })
 })

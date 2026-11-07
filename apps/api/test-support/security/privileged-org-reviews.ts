@@ -89,6 +89,10 @@ export const REVIEWED_DISPATCH: Record<string, string> = {
  * follow to a trusted source, could not be traced, or is a literal: `file#enclosing` → why.
  */
 export const REVIEWED_OUTSIDE_ROUTES: Record<string, string> = {
+  "apps/api/src/modules/agent/runtime/tool-card-store.ts#clearToolCardsByKey":
+    "no product caller yet (an app's own retention will call it, tests only today): the org of the thread the caller names, matched again on every message row it reads and writes (messages.org_id = orgId)",
+  "apps/api/src/modules/apps/org-features.ts#setOrgAppFeature":
+    "no product caller yet (the settings door that switches a feature will call it with the org of the admin's session, tests only today): writes only the (orgId, app, feature) row it is given",
   "apps/api/src/seed/factories/support/inboxes.ts#ensureTicketMailboxInbox":
     "the /api/_test/seed route's factories (test-support/seed/factories.ts, mounted only in test builds; no product caller): the org a browser test names in its request, the one its lane seeded",
   "apps/api/src/seed/factories/support/inboxes.ts#ensureTicketMailboxAccount":
@@ -131,6 +135,8 @@ export const REVIEWED_OUTSIDE_ROUTES: Record<string, string> = {
     "MCP token refresh: the org of the connection row it refreshes (head.orgId, read by connection id)",
   "apps/api/src/modules/agent/providers/openrouter-blocked-hosts.ts#readFromDb":
     "reads one string list (settings.ai.models.blockedHosts) of the org it is asked about; callers pass the org of the OpenRouter call they are about to send (preCheck's own orgId carried on its credit, the idle-compaction job's org, the web search's ctx.orgId, the admin route's signed-in org), and a wrong org could only change which OpenRouter hosts that request avoids, never return another org's data; the trace stops at a `get` name collision",
+  "apps/api/src/modules/approvals/route-world.ts#updateItemRoutePerson":
+    "an item changed hands: every caller (the ticket and task assign, claim and update paths) passes the org of the item it just wrote, and the UPDATE is further pinned to that org_id",
   "apps/api/src/modules/approvals/resource-owner.ts#loadRoutineApproverSetting":
     "name collision in the trace (CredentialStore.get is not a settings getter): callers pass the approval's own org",
   "apps/api/src/apps/mail/search-enrichment.ts#streamFragmentsForRebuild":
@@ -242,11 +248,23 @@ export const REVIEWED_OUTSIDE_ROUTES: Record<string, string> = {
 }
 
 /**
+ * Entries above reviewed for having no product caller: the product files that use each function,
+ * pinned (none today). src/db/privileged-org-source.test.ts fails on a new caller, so the first
+ * one cannot pass unreviewed: rewrite the entry for that caller's org id, then add it here.
+ */
+export const REVIEWED_CALLERS: Record<string, readonly string[]> = {
+  "apps/api/src/modules/agent/runtime/tool-card-store.ts#clearToolCardsByKey": [],
+  "apps/api/src/modules/apps/org-features.ts#setOrgAppFeature": [],
+}
+
+/**
  * Functions whose calls hand on an org id that was reviewed here (a boot or job sweep over
  * every org, an operator command, a row the function just claimed): `file#enclosing` → why.
  * The caller trace stops at a call made from one of them.
  */
 export const REVIEWED_ORIGINS: Record<string, string> = {
+  "apps/api/src/modules/apps/org-features.ts#setOrgAppFeature":
+    "no product caller yet (the settings door that switches a feature will call it with the org of the admin's session, tests only today); what it hands on is the org id it was given, for that one org's cache and broadcast",
   "apps/api/src/modules/apps/connections/revoke.ts#isAccountUsedElsewhere":
     "the org of an active connection on the same provider account, read by this function: its apps are loaded only to learn which provider endpoints that connection declares; nothing of that org is written or returned, the answer is one boolean",
   "apps/api/src/modules/org/transfer/import.ts#importOrg":
@@ -349,6 +367,8 @@ export const REVIEWED_ORIGINS: Record<string, string> = {
     "sweep: stale node rows; each closed in its own row's org and owner",
   "apps/api/src/modules/approvals/approving-reaper.ts#runApprovingReaper":
     "sweep: approval rows stuck in approving; each reaped in its own row's org",
+  "apps/api/src/modules/approvals/routed-reminders.ts#runRoutedReminderSweep":
+    "sweep: pending approval rows a day old; each org's rows are reminded in that org",
   "apps/api/src/modules/search/reindex.ts#runReindex":
     "reindex sweep: every org id (listOrgIds); each org's documents streamed in that org",
   "apps/api/src/modules/search/reindex.ts#setUpOrgsOf":

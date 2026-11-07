@@ -326,3 +326,7 @@ shopify_app_toml: managed installation, file posted again after full order histo
 A message from a device sign-in is not a typed turn -> apps/api/src/modules/agent/runtime/agent-service.ts:1931-1938
 ai_models_get tool: scope and approval flag -> apps/api/src/modules/agent/tools/kernel-tools.ts:2857
 ai_models_set tool: scope and approval flag -> apps/api/src/modules/agent/tools/kernel-tools.ts:2876
+tool_search: no match names the apps and loads nothing -> apps/api/src/modules/agent/tools/tool-search.ts:597
+tool_search: select: of a bare name two apps share loads neither -> apps/api/src/modules/agent/tools/tool-search.ts:493
+set_away tool: scope, conditional park, other person's scopes -> apps/api/src/modules/agent/tools/kernel-tools.ts:3651 ; apps/api/src/modules/users/away.ts:749
+threads_create createdFrom: posts into the discussion as the agent, drops and names participants who cannot see it, created_from_not_visible -> apps/api/src/modules/agent/tools/chat-tools.ts:494-575 ; apps/api/src/modules/agent/tools/kernel-tools.ts (threads_create createdFrom)

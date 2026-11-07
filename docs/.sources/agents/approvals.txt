@@ -228,3 +228,15 @@ Closed approval notice carries the handler's own reason -> apps/api/src/modules/
 Request raised in the conversation you are reading does not notify you -> apps/api/src/modules/attention/state-materializer.ts:342
 Decisions on your requests group, feed and digest only by default -> packages/shared/src/i18n/locales/en/kernel.json:4393
 Approver eligibility counts every-member scopes, with the app restriction -> apps/api/src/modules/permissions/eligible-approvers.ts:36
+Undo window is eight seconds -> apps/web/src/modules/approvals/decision-queue.ts:43
+Home approvals fold over five rows, three shown -> apps/web/src/modules/shell/Home.tsx:109-111
+A decided row leaves the count at once -> apps/web/src/modules/shell/home-action-count.ts:157
+Provider pill names the row over the tool's -> apps/api/src/modules/approvals/attention.ts:121
+Held draft is not on Home and not counted -> apps/api/src/modules/approvals/attention.ts:635
+Stopped draft is not counted -> apps/api/src/modules/approvals/attention.ts:711
+Send check line on a clear draft -> packages/shared/src/i18n/locales/en/kernel.json:6481
+Not now only on stored items -> apps/web/src/modules/shell/AttentionRowExtras.tsx:40
+Not now lasts until next Monday 00:00 in the person's zone -> apps/api/src/modules/attention/set-aside.ts:76-79
+A set-aside item comes back when the moment passes -> apps/api/src/modules/attention/event-provider.ts:48
+Ask agent to draft posts to the Personal agent conversation -> apps/web/src/modules/shell/AttentionRowExtras.tsx:145
+A failed source is named with Retry -> packages/shared/src/i18n/locales/en/kernel.json:6482

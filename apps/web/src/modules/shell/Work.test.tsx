@@ -19,7 +19,6 @@ import {
   ensureBrandingLoaded,
   ensureSignedInOrgNameLoaded,
 } from "~/modules/shell/branding-store"
-import { setShowPeerRequests } from "~/modules/shell/home-action-count"
 import { resetTabStore, tabStore } from "~/modules/shell/tab-store"
 import { Work } from "~/modules/shell/Work"
 
@@ -97,11 +96,8 @@ describe("Work screen", () => {
     expect(screen.getByTestId("work-row-count-approvals").textContent).toBe("2")
   })
 
-  // A gestalt walk read Work "Approvals 9" beside Home "8, Show 1 more, from
-  // colleagues": one queue, two counts. Work counts what Home's card lists,
-  // peer requests folded exactly when the card folds them.
-  it("the Approvals count folds peer requests the way Home's card does", () => {
-    setShowPeerRequests(false)
+  // Work counts what Home's card counts: the viewer's own rows, never a row for someone else.
+  it("the Approvals count leaves out rows for others, as Home's card does", () => {
     approvalsState.items = [
       { id: "a-1", kind: "approval_pending", urgency: 0, action: { type: "decide_approval" } },
       {
@@ -109,16 +105,18 @@ describe("Work screen", () => {
         kind: "approval_pending",
         urgency: 0,
         action: { type: "decide_approval" },
+        metadata: { placement: "others", peerSelfApprovable: true },
+      },
+      {
+        id: "a-3",
+        kind: "approval_pending",
+        urgency: 0,
+        action: { type: "decide_approval" },
         metadata: { peerSelfApprovable: true },
       },
     ]
     renderWork()
-    expect(screen.getByTestId("work-row-count-approvals").textContent).toBe("1")
-    cleanup()
-    setShowPeerRequests(true)
-    renderWork()
     expect(screen.getByTestId("work-row-count-approvals").textContent).toBe("2")
-    setShowPeerRequests(false)
   })
 
   // This root printed "Default Organization": the deployment's PUBLIC branding

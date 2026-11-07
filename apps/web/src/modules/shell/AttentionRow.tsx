@@ -60,6 +60,16 @@ import { nodePermissionPromptOf } from "~/modules/nodes/NodePermissionCard"
 import { openNotificationRoute } from "~/modules/notifications/open-route"
 import { useApi } from "~/modules/shell/ApiContext"
 import { AppPill, appIdOfTool } from "~/modules/shell/AppPill"
+import {
+  AskDraftButton,
+  DismissButton,
+  GuardLine,
+  isStoppedDraft,
+  isStoppedSendNotice,
+  NotNowButton,
+  offersAskDraft,
+  offersNotNow,
+} from "~/modules/shell/AttentionRowExtras"
 import { clearApprovalFocus, focusedApproval } from "~/modules/shell/approval-focus"
 import {
   formatMetaLine,
@@ -73,6 +83,7 @@ import {
 } from "~/modules/shell/attention-row-format"
 import { attentionStore } from "~/modules/shell/attention-store"
 import { markAttentionRead, openAttentionLink, openEntity } from "~/modules/shell/entity-opener"
+import { AwayRecapLines, RouteWhyLine } from "~/modules/shell/route-line"
 import { shellTier } from "~/modules/shell/shell-tier"
 import { addToast } from "~/modules/shell/toast-store"
 import { openReplyPanel } from "~/modules/threads/reply-panel-store"
@@ -168,7 +179,10 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
   // 77-day-old RGPD delete) and no countdown: Details opens the card, which
   // explains the state and offers the close-out.
   const wedged = (): boolean => isApproval() && props.item.metadata?.wedged === true
-  const hasInlineActions = (): boolean => isApproval() && !decideInContext() && !wedged()
+  // A draft the send check stopped can no longer go out as written: Dismiss only.
+  const stoppedDraft = (): boolean => isApproval() && isStoppedDraft(props.item)
+  const hasInlineActions = (): boolean =>
+    isApproval() && !decideInContext() && !wedged() && !stoppedDraft()
   // The cause of the last approve that ran and failed with no effect (the
   // request is back at pending). Set from this row's own failed decide so the
   // banner shows at once, and read from the feed item (`metadata.lastFailure`,
@@ -215,6 +229,16 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
   const namedToolName = (): unknown =>
     props.item.metadata?.outcomeToolName ?? props.item.metadata?.toolName
   const actionLabel = (): string | null => {
+    // A declared pill names the row: a send-guard provider's for the mail's record ("Billing:
+    // payment reminder"), else the tool's own (attention.ts).
+    const pill = props.item.metadata?.pill as { label?: unknown; labelKey?: unknown } | undefined
+    if (pill && typeof pill.label === "string" && pill.label.length > 0) {
+      if (typeof pill.labelKey === "string") {
+        const said = i18n.t(pill.labelKey)
+        if (said !== pill.labelKey) return said
+      }
+      return pill.label
+    }
     const v = props.item.metadata?.actionLabel
     const tool = namedToolName()
     return approvalActionLabel(
@@ -686,7 +710,7 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
                   e.stopPropagation()
                   setExpanded((v) => !v)
                 }}
-                class="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary"
+                class="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-secondary"
               >
                 <span
                   aria-hidden="true"
@@ -715,8 +739,16 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
             </Show>
           </span>
           <LastFailureBanner />
+          <GuardLine item={props.item} testId={testId()} />
+          <RouteWhyLine item={props.item} testId={testId()} />
+          <AwayRecapLines item={props.item} testId={testId()} />
           <Show
-            when={hasInlineActions() || isNavigable() || (props.item.persisted && !isNavigable())}
+            when={
+              hasInlineActions() ||
+              isNavigable() ||
+              stoppedDraft() ||
+              (props.item.persisted && !isNavigable())
+            }
           >
             <div data-testid={`${testId()}-actions`} class="mt-1 flex items-stretch gap-2">
               {/* One live pair at a time. Expanding the row renders the full
@@ -745,7 +777,7 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
                     e.stopPropagation()
                     openLinked()
                   }}
-                  class="flex h-9 shrink-0 items-center justify-center rounded-md border border-border px-3 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text"
+                  class="flex min-h-11 shrink-0 items-center justify-center rounded-md border border-border px-3 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text"
                 >
                   {i18n.t("kernel.homeRowOpen")}
                 </button>
@@ -758,14 +790,32 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
                     e.stopPropagation()
                     handleClick()
                   }}
-                  class="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-accent-border bg-accent-glow px-3 text-[13px] font-medium text-accent transition-colors hover:bg-accent-wash"
+                  class="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md border border-accent-border bg-accent-glow px-3 text-[13px] font-medium text-accent transition-colors hover:bg-accent-wash"
                 >
                   {isApproval() && decideInContext()
                     ? i18n.t("kernel.homeRowOpenTicket")
                     : i18n.t("kernel.homeRowOpen")}
                 </button>
               </Show>
-              <Show when={props.item.persisted && !hasInlineActions()}>
+              <Show when={offersAskDraft(props.item)}>
+                <AskDraftButton item={props.item} testId={testId()} compact />
+              </Show>
+              <Show when={offersNotNow(props.item)}>
+                <NotNowButton item={props.item} testId={testId()} compact />
+              </Show>
+              <Show when={stoppedDraft() || isStoppedSendNotice(props.item)}>
+                <DismissButton
+                  item={props.item}
+                  testId={testId()}
+                  compact
+                  {...(stoppedDraft() ? { onDismiss: () => void decide("deny") } : {})}
+                />
+              </Show>
+              <Show
+                when={
+                  props.item.persisted && !hasInlineActions() && !isStoppedSendNotice(props.item)
+                }
+              >
                 <button
                   type="button"
                   data-testid={`${testId()}-mark-read`}
@@ -774,7 +824,7 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
                     e.stopPropagation()
                     markAttentionRead(api, props.item.app, props.item.entity, props.item.entityId)
                   }}
-                  class="flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text"
+                  class="flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text"
                 >
                   <Check size={13} />
                   {i18n.t("kernel.homeRowRead")}
@@ -914,6 +964,9 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
               </span>
             </Show>
             <LastFailureBanner />
+            <GuardLine item={props.item} testId={testId()} />
+            <RouteWhyLine item={props.item} testId={testId()} />
+            <AwayRecapLines item={props.item} testId={testId()} />
             <span class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-snug text-text-tertiary">
               <Show
                 when={isApproval()}
@@ -984,7 +1037,23 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
             clear through their decision instead. Dimmed at rest,
             never hidden (ticket-10174): opacity only, so nothing resizes under
             the cursor (ticket-10226). */}
-            <Show when={props.item.persisted && !hasInlineActions()}>
+            <Show when={offersAskDraft(props.item)}>
+              <AskDraftButton item={props.item} testId={testId()} compact={false} />
+            </Show>
+            <Show when={offersNotNow(props.item)}>
+              <NotNowButton item={props.item} testId={testId()} compact={false} />
+            </Show>
+            <Show when={stoppedDraft() || isStoppedSendNotice(props.item)}>
+              <DismissButton
+                item={props.item}
+                testId={testId()}
+                compact={false}
+                {...(stoppedDraft() ? { onDismiss: () => void decide("deny") } : {})}
+              />
+            </Show>
+            <Show
+              when={props.item.persisted && !hasInlineActions() && !isStoppedSendNotice(props.item)}
+            >
               <button
                 type="button"
                 data-testid={`${testId()}-mark-read`}
@@ -1083,7 +1152,7 @@ const AttentionRowBody: Component<AttentionRowProps> = (props) => {
 }
 
 const ApprovalActions: Component<{
-  /** Phone tier: Approve and Reject as two equal 36px buttons on their own
+  /** Phone tier: Approve and Reject as two equal 44px buttons on their own
    *  row, no keyboard hints (there is no keyboard behind them). */
   compact?: boolean
   testId: string
@@ -1117,7 +1186,7 @@ const ApprovalActions: Component<{
               type="text"
               class={
                 props.compact
-                  ? "h-9 min-w-0 flex-1 rounded-md border border-border bg-bg px-2.5 text-[13px] text-text outline-none focus:border-accent-border"
+                  ? "min-h-11 min-w-0 flex-1 rounded-md border border-border bg-bg px-2.5 text-[13px] text-text outline-none focus:border-accent-border"
                   : "w-full min-w-0 flex-1 rounded-md border border-border bg-bg px-2.5 py-1.5 text-[12.5px] text-text outline-none focus:border-accent-border sm:w-44 sm:flex-none"
               }
               placeholder={i18n.t("kernel.reasonOptional")}
@@ -1130,7 +1199,7 @@ const ApprovalActions: Component<{
               data-testid={`${props.testId}-reject-submit`}
               class={
                 props.compact
-                  ? "flex h-9 shrink-0 items-center gap-1 rounded-md border border-warning-border bg-warning-glow px-3 text-[13px] font-medium text-warning hover:bg-warning-glow/80 disabled:opacity-50"
+                  ? "flex min-h-11 shrink-0 items-center gap-1 rounded-md border border-warning-border bg-warning-glow px-3 text-[13px] font-medium text-warning hover:bg-warning-glow/80 disabled:opacity-50"
                   : "flex shrink-0 items-center gap-1 rounded-md border border-warning-border bg-warning-glow px-2.5 py-1.5 text-[12.5px] font-medium text-warning hover:bg-warning-glow/80 disabled:opacity-50"
               }
               disabled={props.submitting}
@@ -1152,7 +1221,7 @@ const ApprovalActions: Component<{
           data-testid={`${props.testId}-approve`}
           class={
             props.compact
-              ? "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-bg shadow-sm transition-colors hover:bg-accent-hover disabled:opacity-50"
+              ? "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-bg shadow-sm transition-colors hover:bg-accent-hover disabled:opacity-50"
               : "flex flex-1 items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[12.5px] font-medium text-bg shadow-sm transition-colors hover:bg-accent-hover disabled:opacity-50 sm:flex-initial"
           }
           disabled={props.submitting}
@@ -1169,7 +1238,7 @@ const ApprovalActions: Component<{
           data-testid={`${props.testId}-reject`}
           class={
             props.compact
-              ? "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-3 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50"
+              ? "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-3 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50"
               : "flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12.5px] font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50 sm:flex-initial"
           }
           disabled={props.submitting}

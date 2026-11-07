@@ -89,9 +89,9 @@ test("home-cards.reorder-collapse-persist-scroll", async ({ page, env, qa, world
   )
   await resetAttentionForUser(env, orgId, aminaToken, qa.admin.token)
 
-  // 9 pending approvals -- exceeds the 8-row fold cap (Home.tsx
-  // APPROVALS_FOLD), so the card folds the extras behind a "Show N more"
-  // button rather than pushing Alerts/Activity below the fold.
+  // 9 pending approvals -- over the fold threshold of 5 (Home.tsx
+  // APPROVALS_FOLD_OVER), so the card shows the first 3 and folds the rest
+  // behind a "Show N more" button rather than pushing Alerts/Activity below.
   await seedApprovalsForFacets(env, {
     orgId,
     userId: aminaId,
@@ -138,11 +138,11 @@ test("home-cards.reorder-collapse-persist-scroll", async ({ page, env, qa, world
     expect(timeLimited + rest).toBe(9)
   }).toPass({ timeout: 5_000 })
 
-  // Approvals card folds the row past the cap (9 rows > the 8-row fold cap)
-  // behind a "Show 1 more" button instead of scrolling.
+  // Approvals card shows 3 of the 9 rows and folds the other 6 behind
+  // "Show 6 more" instead of scrolling.
   const approvalsBody = page.getByTestId("home-card-body-approvals")
   await expect(approvalsBody).toBeVisible()
-  await expect(page.getByTestId("home-approvals-fold")).toHaveText(/Show\s+1\s+more/)
+  await expect(page.getByTestId("home-approvals-fold")).toHaveText(/Show\s+6\s+more/)
 
   // Default order puts approvals before the alerts.
   const beforeDrag = await cardOrderInDom(page)

@@ -27,6 +27,30 @@ function feed(apps: unknown[]): Response {
 
 const withMail = () => feed([{ name: "mail", manifest: mailManifest, uiBundleUrl: null }])
 
+/**
+ * Stub `fetch`: each manifests read takes the next answer in turn; the app
+ * features read that follows a successful manifests read answers an empty list.
+ * The counters below count each endpoint on its own.
+ */
+function stubFeed(manifestAnswers: Array<() => Promise<Response>>) {
+  const manifestReads = vi.fn((_url: string) => {
+    const next = manifestAnswers.shift()
+    if (!next) throw new Error("unexpected manifests read")
+    return next()
+  })
+  const featureReads = vi.fn((_url: string) => Promise.resolve(feed([])))
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith("/apps/manifests")) return manifestReads(url)
+      if (url.endsWith("/apps/features")) return featureReads(url)
+      throw new Error(`unexpected fetch ${url}`)
+    }),
+  )
+  return { manifestReads, featureReads }
+}
+
 /** Let pending fetch/json/registration work run (it imports the app's module). */
 async function until(check: () => boolean): Promise<void> {
   const deadline = Date.now() + 5_000
@@ -58,41 +82,41 @@ describe("manifest feed: no session left without apps", () => {
   })
 
   it("a failed first read is read again until it succeeds", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
-      .mockResolvedValueOnce(withMail())
-    vi.stubGlobal("fetch", fetchMock)
+    const { manifestReads, featureReads } = stubFeed([
+      async () => new Response("busy", { status: 503 }),
+      async () => withMail(),
+    ])
 
     await loadManifestApps()
     expect(getTabType("mail:inbox")).toBeUndefined()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(manifestReads).toHaveBeenCalledTimes(1)
+    // A failed manifests read reads no features either.
+    expect(featureReads).toHaveBeenCalledTimes(0)
 
     await vi.advanceTimersByTimeAsync(30_000)
     await until(() => getTabType("mail:inbox") !== undefined)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(manifestReads).toHaveBeenCalledTimes(2)
+    expect(featureReads).toHaveBeenCalledTimes(1)
     expect(getTabType("mail:inbox")).toBeDefined()
 
     // Loaded: no further reads on a timer.
     await vi.advanceTimersByTimeAsync(120_000)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(manifestReads).toHaveBeenCalledTimes(2)
+    expect(featureReads).toHaveBeenCalledTimes(1)
   })
 
   it("a reload asked for during the first read runs after it", async () => {
     let answerFirst: (r: Response) => void = () => {}
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(
-        () =>
-          new Promise<Response>((resolve) => {
-            answerFirst = resolve
-          }),
-      )
-      .mockResolvedValueOnce(withMail())
-    vi.stubGlobal("fetch", fetchMock)
+    const { manifestReads, featureReads } = stubFeed([
+      () =>
+        new Promise<Response>((resolve) => {
+          answerFirst = resolve
+        }),
+      async () => withMail(),
+    ])
 
     const first = loadManifestApps()
-    await until(() => fetchMock.mock.calls.length > 0)
+    await until(() => manifestReads.mock.calls.length > 0)
     // The scopes changed while the first read was on the wire (its token was
     // the old one): the reload must not be lost.
     const reload = reloadManifestApps()
@@ -101,7 +125,9 @@ describe("manifest feed: no session left without apps", () => {
     await reload
     await until(() => getTabType("mail:inbox") !== undefined)
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(manifestReads).toHaveBeenCalledTimes(2)
+    // One features read per successful manifests read, never a repeat.
+    expect(featureReads).toHaveBeenCalledTimes(2)
     expect(getTabType("mail:inbox")).toBeDefined()
   })
 })

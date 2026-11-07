@@ -104,6 +104,7 @@ import { fileDownloadRelay, files as filesRoutes, fileUploadRelay } from "~/modu
 import { health } from "~/modules/health/routes"
 import { healthzRoutes, systemHealthRoutes } from "~/modules/healthz"
 import { readyzRoutes } from "~/modules/healthz/readyz"
+import { homeBriefRoutes } from "~/modules/home/brief-route"
 import { serverT } from "~/modules/i18n/server-i18n"
 import { importRoutes } from "~/modules/imports/routes"
 import { importUploadRoutes } from "~/modules/imports/uploads/routes"
@@ -230,6 +231,12 @@ registerKernelAttentionProvider({
   handler: "computeApprovalAttentionItems",
   scope: "kernel:approvals:read",
   bundlePath: new URL("./modules/approvals/attention.ts", import.meta.url).pathname,
+})
+// "While you were away": decisions taken for the person while they were away, once back.
+registerKernelAttentionProvider({
+  appName: "kernel.away_recap",
+  handler: "getAwayRecapAttentionItems",
+  bundlePath: new URL("./modules/approvals/away-recap.ts", import.meta.url).pathname,
 })
 registerKernelAttentionProvider({
   appName: "kernel.attention_events",
@@ -1042,6 +1049,10 @@ app.route("/api/apps", appRoutes)
 app.use("/api/attention-items", authMw, orgLimiter)
 app.use("/api/attention-items/*", authMw, orgLimiter)
 app.route("/api/attention-items", attentionRoutes)
+
+// Home's "Today's brief": the caller's own morning-brief routine's newest output.
+app.use("/api/home/*", authMw, orgLimiter)
+app.route("/api/home", homeBriefRoutes)
 
 // Phase 16 Task A8a — user-scoped subscription rules + installed-app axes registry.
 app.use("/api/attention/subscriptions", authMw, orgLimiter)

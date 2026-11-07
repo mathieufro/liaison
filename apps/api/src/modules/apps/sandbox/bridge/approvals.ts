@@ -263,6 +263,7 @@ export function createApprovalsMethods(ctx: BridgeContext): Record<string, any> 
         current_payload: unknown
         editable_fields?: string[]
         auto_approvable?: boolean
+        approve_scope?: string
       }
       // FX13: the same captured value `ctx.executeTool` forwards below. A
       // handler that parks itself mid-run reaches the identical recording site

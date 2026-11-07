@@ -777,6 +777,9 @@ export const envSchema = z
     // mail server (deploy/quickstart.sh sets it); never for an instance other
     // people sign in to.
     LIAISON_CONSOLE_EMAIL_BODIES: envBoolean(false),
+    // Operator-only, for an incident: 0 switches off the send check on staged mail,
+    // except the opt-out check. Off nowhere by default, logged at error on boot.
+    MAIL_SEND_GUARD_ENFORCE: envBoolean(true),
     // Email (SMTP) — optional. When SMTP_HOST is absent, emails are logged to console.
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().default(587),

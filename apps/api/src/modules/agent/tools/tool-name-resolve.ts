@@ -25,6 +25,10 @@ import {
   type ToolSet,
 } from "ai"
 import { rootLogger } from "~/lib/logger"
+import { checkToolScopes } from "~/modules/agent/scopes/required-scopes"
+import { toolRegistry } from "~/modules/apps/app-registries"
+import { isFeatureOffForTool } from "~/modules/apps/org-apps"
+import { type FeatureOffAnswer, featureOffAnswer } from "~/modules/apps/org-features"
 
 const log = rootLogger.child({ module: "tool-name-resolve" })
 
@@ -123,9 +127,48 @@ export function unresolvedToolCallMessage(
   return `No tool named "${called}" is available to you. Closest tools you hold: ${resolution.suggestions.join(", ")}. ${form} Call one of them by its exact name${search}.`
 }
 
+/**
+ * The answer for a call naming a tool that left with its feature, from a schema in
+ * the history or a stale list. Null when the name is no such tool, or the caller does
+ * not hold its scope: they read "no tool" as they would for any tool out of their
+ * reach. Looks in the org's whole registry, not in what the turn holds.
+ */
+export function featureOffAnswerForCall(
+  orgId: string,
+  called: string,
+  scopes: readonly string[],
+): FeatureOffAnswer | null {
+  const off = new Map<string, Parameters<typeof featureOffAnswer>[1]>()
+  for (const [key, def] of toolRegistry.entriesOf(orgId)) {
+    if (!isFeatureOffForTool(orgId, def)) continue
+    if (!checkToolScopes(def, [...scopes]).authorized) continue
+    off.set(`${key[1]}__${key[2].replace(/[^a-zA-Z0-9_-]/g, "_")}`, def)
+  }
+  if (off.size === 0) return null
+  const resolution = resolveHeldToolName(called, [...off.keys()])
+  if (resolution.kind !== "exact" && resolution.kind !== "resolved") return null
+  const tool = off.get(resolution.name)
+  return tool ? featureOffAnswer(orgId, tool) : null
+}
+
+/**
+ * Whose a built tool set is. The repair hook gets only the set, and a call naming no
+ * tool in it may name one that left with its feature.
+ */
+const heldToolSetOwners = new WeakMap<object, { orgId: string; scopes: readonly string[] }>()
+
+/** Record whose this tool set is (`buildToolSet`, `buildScopedToolSet`). */
+export function rememberHeldToolSet(
+  tools: object,
+  owner: { orgId: string; scopes: readonly string[] },
+): void {
+  heldToolSetOwners.set(tools, owner)
+}
+
 /** Marks the error a refused call carries, so its log line stays a warn. */
 export const UNRESOLVED_TOOL_CALL_MARKER = "No tool named"
 const AMBIGUOUS_TOOL_CALL_MARKER = "No tool is named"
+const FEATURE_OFF_CALL_MARKER = '"code":"feature_off"'
 
 /** True when a tool-error (object or the SDK's flattened string) is the model naming a tool wrongly. */
 export function isUnresolvedToolCallError(error: unknown): boolean {
@@ -138,7 +181,9 @@ export function isUnresolvedToolCallError(error: unknown): boolean {
     text.startsWith("Model tried to call unavailable tool") ||
     text.startsWith("Invalid input for tool") ||
     (text.startsWith("Error repairing tool call:") &&
-      (text.includes(UNRESOLVED_TOOL_CALL_MARKER) || text.includes(AMBIGUOUS_TOOL_CALL_MARKER)))
+      (text.includes(UNRESOLVED_TOOL_CALL_MARKER) ||
+        text.includes(AMBIGUOUS_TOOL_CALL_MARKER) ||
+        text.includes(FEATURE_OFF_CALL_MARKER)))
   )
 }
 
@@ -176,6 +221,12 @@ export function repairHeldToolCall(held: ToolSet) {
     // Read per call: a run's set grows mid-turn (admitLateTools in tool-bridge.ts).
     const resolution = resolveHeldToolName(toolCall.toolName, Object.keys(held))
     if (resolution.kind === "ambiguous" || resolution.kind === "unknown") {
+      const owner = heldToolSetOwners.get(held)
+      const off = owner && featureOffAnswerForCall(owner.orgId, toolCall.toolName, owner.scopes)
+      if (off) {
+        log.warn({ toolName: toolCall.toolName }, "Tool call names a tool whose feature is off")
+        throw new Error(JSON.stringify(off))
+      }
       log.warn(
         { toolName: toolCall.toolName, resolution: resolution.kind },
         "Tool call names no single held tool, refused with suggestions",

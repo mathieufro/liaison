@@ -76,6 +76,15 @@ export interface BridgeManifest {
    *  Phase-17+ app (invoicing, boxtal) that expects the K4 shape silently
    *  receives the legacy `{ data }` envelope and misreads every cross-app result. */
   cross_app_calls?: Array<{ target: string; reason: string }>
+  /** Per kind of record, the read-only tool that can stop a mail about it before it leaves. */
+  sendGuardProviders?: Record<
+    string,
+    { tool: string; serviceMessage?: boolean; pill?: { label: string; labelKey?: string } }
+  >
+  /** Per entity type, the read-only tool that says who an approval about such a record is for. */
+  approvalRoute?: Record<string, string>
+  /** Read-only tools that add a few lines about the entity a turn is about (context-providers.ts). */
+  contextProviders?: Array<{ on: string[]; tool: string; scope: string; loadTools?: string[] }>
 }
 
 // Track registered orgId:appName to prevent duplicate registration
@@ -362,6 +371,25 @@ export const toolRegistry = createTypedRegistry<
      *  when it answers true for these params (analyze_media taints only for a file that came from
      *  outside the org). A throw counts as true (fail closed). Not settable from a manifest. */
     taintSourceWhen?: (params: unknown, ctx: { orgId: string }) => Promise<boolean>
+    /** The manifest's `taintSourceWhen`: a field of a row the tool read and the value that makes
+     *  that row outside text. Carried here; the function above stays host-only. */
+    taintSourceWhenRow?: { field: string; equals: string | number | boolean }
+    /** Manifest `approvalCard`: the summary template and the `pill` shown on the card. */
+    approvalCard?: { summary?: string; pill?: { label: string; labelKey?: string } }
+    /** Manifest `resultCard`: how the tool's result is drawn as a card. */
+    resultCard?: Record<string, unknown>
+    /** Manifest `runningLabel` / `runningLabelKey`: the line shown while the tool runs. */
+    runningLabel?: string
+    runningLabelKey?: string
+    /** A call chaining `@ref` tokens to a tool with `pinnedParams` stages unpinned. */
+    pinnedOptionalOnRefs?: boolean
+    /** Manifest `feature`: the app feature this tool belongs to. */
+    feature?: string
+    /** Manifest `focusCore`: `true` loads the tool on its app's hard focus, a string only when the
+     *  focus verified that entity type. */
+    focusCore?: boolean | string
+    /** On a hidden tool: the visible tool of the same app to use instead. */
+    useInstead?: string
     /** The tool has an external side effect or an exfiltration channel. An ungated call after
      *  the turn read untrusted text parks as an approval (taint_escalation). */
     externalEffect?: boolean
@@ -577,6 +605,8 @@ export const routineTemplateRegistry = createTypedRegistry<
     promptTemplate: string
     scopes: string[]
     enabledByDefault: boolean
+    /** Copied to the routine when the template is enabled: its runs stage drafts and end. */
+    followUp?: boolean
     /** Pinned output visibility; absent = personal. */
     visibility?: "personal" | "shared"
     /**
@@ -834,6 +864,8 @@ export const attentionItemsRegistry = createTypedRegistry<
     scope?: string
     bundlePath: string
     trusted: boolean
+    /** Declared `passesOn`: also given the people away today who name the viewer next in line. */
+    passesOn?: boolean
   }
 >()
 
@@ -1158,6 +1190,11 @@ export const manifestRegistry = createTypedRegistry<
       { defaults: Array<{ key: string; name: string; payload: unknown }> }
     >
     entities?: Record<string, any>
+    /** Manifest `features`: the switches inside the app (org-features.ts reads them). */
+    features?: Record<
+      string,
+      { adminScope: string; labelKey: string; offMessageKey?: string; offNextKey?: string }
+    >
     /** Widget hints for the bulk form: only the bulk underlying tools' shared
      *  fields (see bulk-field-schemas.ts), never the full tool catalog. */
     tools?: Record<string, BulkToolSchema>

@@ -562,3 +562,86 @@ describe("resolveChannels", () => {
     expect(muted.userId).toBe(recipient.userId)
   })
 })
+
+describe("approvals routed to a person", () => {
+  const ask = (placement?: "mine" | "standing_in" | "others"): RouterItem => ({
+    kind: "approval_pending",
+    app: "kernel",
+    isUrgent: false,
+    approverIds: ["u1"],
+    ...(placement ? { placement } : {}),
+  })
+
+  it("approval_pending to route and stand-in: the person it is for and the one standing in are asked at once", async () => {
+    for (const placement of ["mine", "standing_in"] as const) {
+      const d = await run(ask(placement), ctx())
+      expect(d.urgent, placement).toBe(true)
+      expect(d.channels.in_app.deliver, placement).toBe(true)
+      expect(d.channels.push.deliver, placement).toBe(true)
+      expect(d.channels.desktop.deliver, placement).toBe(true)
+      expect(d.channels.email.deliver, placement).toBe(true)
+    }
+  })
+
+  it("usual to all deciders: a row with no placement asks every decider the same way", async () => {
+    for (const userId of ["u1", "u2", "u3"]) {
+      const d = await resolveChannels(
+        { userId, orgId: "o1" },
+        { ...ask(), approverIds: [userId] },
+        { now: INSIDE, loadContext: async () => ctx() },
+      )
+      expect(d.urgent, userId).toBe(true)
+      expect(d.channels.push.deliver, userId).toBe(true)
+    }
+  })
+
+  it("an others row sends no push: it stays in the feed and is nobody else's news", async () => {
+    const d = await run(ask("others"), ctx())
+    expect(d.urgent).toBe(false)
+    expect(d.channels.in_app.deliver).toBe(true)
+    for (const ch of ["push", "desktop", "email"] as const) {
+      expect(d.channels[ch], ch).toEqual({ deliver: false, reason: "not_for_you" })
+    }
+  })
+
+  it("an away person's non-urgent email waits for the first work window after the range", async () => {
+    // Away through Friday 2026-10-02, asked on Monday 2026-09-28 at 10:00 UTC.
+    const away = ctx({ awayUntil: "2026-10-02", workHoursExplicit: true })
+    const d = await run(directMessage, away)
+    expect(d.channels.push).toEqual({ deliver: false, reason: "away" })
+    expect(d.channels.desktop).toEqual({ deliver: false, reason: "away" })
+    expect(d.channels.in_app.deliver).toBe(true)
+    expect(d.channels.email.deliver).toBe(true)
+    // Saturday and Sunday are no work days: Monday 2026-10-05 at 09:00.
+    expect(d.channels.email.eligibleAt?.toISOString()).toBe("2026-10-05T09:00:00.000Z")
+
+    // The same item for someone who is not away is unchanged.
+    const home = await run(directMessage, ctx({ workHoursExplicit: true }))
+    expect(home.channels.email.eligibleAt?.toISOString()).toBe(INSIDE.toISOString())
+  })
+
+  it("an away person is still asked for what only they decide, and an urgent item still reaches them", async () => {
+    const away = ctx({ awayUntil: "2026-10-02", workHoursExplicit: true })
+    const d = await run(ask("mine"), away)
+    expect(d.channels.push.deliver).toBe(true)
+    expect(d.channels.email.eligibleAt?.toISOString()).toBe(INSIDE.toISOString())
+    const urgent = await run({ ...directMessage, isUrgent: true }, away)
+    expect(urgent.channels.push.deliver).toBe(true)
+  })
+
+  it("the last away day counts in the person's own zone", async () => {
+    const tokyo = ctx({
+      awayUntil: "2026-10-02",
+      workHoursExplicit: true,
+      workHours: {
+        workHoursStart: "09:00",
+        workHoursEnd: "17:00",
+        workDays: [1, 2, 3, 4, 5],
+        timezone: "Asia/Tokyo",
+      },
+    })
+    const d = await run(directMessage, tokyo)
+    // Monday 2026-10-05 09:00 in Tokyo is Monday 00:00 UTC.
+    expect(d.channels.email.eligibleAt?.toISOString()).toBe("2026-10-05T00:00:00.000Z")
+  })
+})

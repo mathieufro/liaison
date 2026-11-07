@@ -223,6 +223,7 @@ export const KERNEL_SCOPES = [{ scope: FIXTURE_SCOPE, app: "kernel", description
 const KERNEL_TOOLS_SRC = `import { z } from "zod"
 import { IMPORTED_SCOPE } from "./fixture-scopes"
 import { LOOP_DESCRIPTION } from "~/modules/fixture/descriptions"
+const FIXTURE_WORDS = ["fixture"]
 export async function registerKernelAgentTools(orgId: string) {
   const LOCAL_SCOPE = "kernel:fixture:read"
   toolRegistry.set([orgId, "kernel", "literal_tool"], {
@@ -231,6 +232,9 @@ export async function registerKernelAgentTools(orgId: string) {
     description: "A literal tool. Second sentence.",
     requiredScopes: ["kernel:fixture:write"],
     gated: true,
+    deferLoading: true,
+    searchKeywords: [...FIXTURE_WORDS, "littéral"],
+    params: z.object({ id: z.string() }),
   })
   toolRegistry.set([orgId, "kernel", "const_scope_tool"], {
     appName: "kernel",
@@ -294,7 +298,7 @@ describe("kernel tools", () => {
       "kernel:fixture:read",
       "kernel:fixture:imported",
     ])
-    expect(tools.find((t) => t.name === "literal_tool")).toEqual({
+    expect(tools.find((t) => t.name === "literal_tool")).toMatchObject({
       name: "literal_tool",
       description: "A literal tool.",
       gated: true,
@@ -302,9 +306,22 @@ describe("kernel tools", () => {
     })
   })
 
+  test("a tool carries what the tool search reads: whole description, keywords, deferLoading", () => {
+    const { tools } = collectKernelTools(kernelToolsRoot())
+    expect(tools.find((t) => t.name === "literal_tool")).toMatchObject({
+      fullDescription: "A literal tool. Second sentence.",
+      searchKeywords: ["fixture", "littéral"],
+      deferLoading: true,
+      agentVisible: true,
+      routineOnly: false,
+      paramsChars: "z.object({ id: z.string() })".length,
+    })
+    expect(tools.find((t) => t.name === "const_scope_tool")?.deferLoading).toBeUndefined()
+  })
+
   test("tools registered in a loop over a definition array are listed", () => {
     const { tools } = collectKernelTools(kernelToolsRoot())
-    expect(tools.find((t) => t.name === "loop_tool_a")).toEqual({
+    expect(tools.find((t) => t.name === "loop_tool_a")).toMatchObject({
       name: "loop_tool_a",
       description: "Loop tool a, described by an imported constant.",
       gated: false,

@@ -31,6 +31,7 @@ export const DOCS_MAP: { glob: string; pages: string[] }[] = [
   // Agents
   { glob: "apps/api/src/modules/approvals/**", pages: ["agents/approvals"] },
   { glob: "apps/web/src/modules/approvals/**", pages: ["agents/approvals"] },
+  { glob: "apps/api/src/modules/home/**", pages: ["agents/routines"] },
   { glob: "packages/shared/src/approvals/**", pages: ["agents/approvals"] },
   { glob: "apps/api/src/modules/scope-requests/**", pages: ["agents/permissions"] },
   { glob: "apps/web/src/modules/admin-scope-requests/**", pages: ["agents/permissions"] },

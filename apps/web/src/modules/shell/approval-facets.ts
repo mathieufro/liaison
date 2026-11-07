@@ -79,38 +79,33 @@ function approvalActionLabel(item: AttentionItem): string | null {
 }
 
 /**
- * True when the row is another person's request that they could have approved
- * themselves. The server classifies it (it is the only side that knows the
- * requester's scopes) and marks it on `metadata.peerSelfApprovable`; this is
- * the read side of that contract.
- *
- * Missing metadata reads as NOT peer noise, so a stale cached feed or an older
- * API hides nothing it should show — the filter can only ever remove rows it
- * was explicitly told about.
+ * True when the row is for someone else, a decision the viewer can also take
+ * ("For others, you can also approve"): the server's `metadata.placement` is
+ * `others`. Such a row is neither counted nor pushed for the viewer; it sits in
+ * Home's closed group with its count. A feed that predates `placement` reads
+ * every row as the viewer's own, so a stale feed hides nothing it should show.
  */
-export function isPeerSelfApprovableItem(item: AttentionItem): boolean {
+export function isOthersItem(item: AttentionItem): boolean {
   if (!isApprovalItem(item)) return false
-  return item.metadata?.peerSelfApprovable === true
+  return item.metadata?.placement === "others"
 }
 
 /**
- * Split the approvals into the ones the default feed shows and the peer rows it
- * folds away. Returns both halves so the caller can show a count of what is
- * hidden rather than hiding it silently — a filter nobody can see is
- * indistinguishable from a feed that is broken, which is the failure this whole
- * filter exists to fix.
+ * Split the approvals into the viewer's own and the rows for others. Both
+ * halves come back so Home can show the second as a closed group with its
+ * count rather than hiding it.
  */
-export function partitionPeerRequests(items: AttentionItem[]): {
+export function partitionOthersRows(items: AttentionItem[]): {
   mine: AttentionItem[]
-  peers: AttentionItem[]
+  others: AttentionItem[]
 } {
   const mine: AttentionItem[] = []
-  const peers: AttentionItem[] = []
+  const others: AttentionItem[] = []
   for (const item of items) {
-    if (isPeerSelfApprovableItem(item)) peers.push(item)
+    if (isOthersItem(item)) others.push(item)
     else mine.push(item)
   }
-  return { mine, peers }
+  return { mine, others }
 }
 
 /**

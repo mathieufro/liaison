@@ -19,6 +19,6 @@ slotsRoutes.get("/:slot", async (c) => {
   const orgId = c.get("orgId")
   await primeOrgApps(orgId)
   const scopes = c.get("scopes") as string[]
-  const panels = listSlotPanels({ orgId, scopes, slot })
+  const panels = listSlotPanels({ orgId, scopes, slot, userId: c.get("userId") })
   return success(c, { panels })
 })

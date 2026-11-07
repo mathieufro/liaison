@@ -50,6 +50,12 @@ import {
   type RecordedFrame,
   recordAgentStreamEvent,
 } from "~/modules/agent/runtime/stream-registry"
+import {
+  type ToolCallPresentation,
+  type ToolCardFields,
+  toolCallPresentation,
+  toolCardFieldsForResult,
+} from "~/modules/agent/runtime/tool-card-store"
 import { turnStatus } from "~/modules/agent/runtime/turn-ledger"
 import { takeStreamSlot } from "~/modules/agent/stream-slots"
 import { uiEffectRequester } from "~/modules/agent/tools/open-targets"
@@ -119,6 +125,9 @@ const chatRequestSchema = z
     message: "content is required unless fileIds are provided",
     path: ["content"],
   })
+
+type StepToolCall = { toolCallId: string; toolName: string; args: unknown } & ToolCallPresentation
+type StepToolResult = { toolCallId: string; result: unknown } & ToolCardFields
 
 export const agentRoutes = new Hono<AppEnv>()
 
@@ -504,11 +513,11 @@ async function chatTurn(
     let finalFinishReason = "stop"
     let stepNumber = 0
     const allSteps: Array<{
-      toolCalls?: Array<{ toolCallId: string; toolName: string; args: unknown }>
-      toolResults?: Array<{ toolCallId: string; result: unknown }>
+      toolCalls?: StepToolCall[]
+      toolResults?: StepToolResult[]
     }> = []
-    let currentStepToolCalls: Array<{ toolCallId: string; toolName: string; args: unknown }> = []
-    let currentStepToolResults: Array<{ toolCallId: string; result: unknown }> = []
+    let currentStepToolCalls: StepToolCall[] = []
+    let currentStepToolResults: StepToolResult[] = []
 
     // Track whether the stream yielded an error event so we skip the success
     // done event. `finalized` guards against double-finalize; the `finally`
@@ -566,6 +575,7 @@ async function chatTurn(
               toolCallId: part.toolCallId,
               toolName: part.toolName,
               args: await redactMailToolArgs(orgId, part.toolName, part.input),
+              ...toolCallPresentation(orgId, part.toolName),
             }
             currentStepToolCalls.push(call)
             finalTimeline.push({ kind: "tool", toolCallId: part.toolCallId })
@@ -585,9 +595,11 @@ async function chatTurn(
               (part as { toolName?: string }).toolName ??
               currentStepToolCalls.find((tc) => tc.toolCallId === part.toolCallId)?.toolName ??
               ""
+            const result = await redactMailToolResult(orgId, toolName, part.output)
             const entry = {
               toolCallId: part.toolCallId,
-              result: await redactMailToolResult(orgId, toolName, part.output),
+              result,
+              ...(await toolCardFieldsForResult(orgId, toolName, result, part.output)),
             }
             currentStepToolResults.push(entry)
             await writeEvent("tool-result", entry)

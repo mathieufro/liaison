@@ -2,6 +2,7 @@
 import { and, eq, ilike, or, sql } from "drizzle-orm"
 import type { RlsClient } from "~/db"
 import { users } from "~/db/schema/kernel"
+import { awayOf, readWhoIsAway } from "~/modules/users/away-today"
 
 interface UserToolContext {
   userId: string
@@ -19,6 +20,8 @@ interface UserToolContext {
  * `kernel:users:read` (granted in the BASE persona bundle), so any agent user can resolve colleagues
  * for assignment/@mention without admin rights. Only ACTIVE users are returned — a deactivated or
  * suspended account is not a valid assignee. Returns the same lightweight shape as `contacts_search`.
+ * Each row says `away: { until }` for someone away today, the last day of their current run of
+ * away days, read as Home reads it; no source and no reason. Who is returned does not change.
  */
 export async function handleUsersSearch(
   params: { query?: string; limit?: number },
@@ -45,8 +48,9 @@ export async function handleUsersSearch(
     .orderBy(users.name)
     .limit(limit)
 
+  const away = await readWhoIsAway(ctx.db, ctx.orgId)
   return {
-    items: rows.map(({ _total, ...rest }) => rest),
+    items: rows.map(({ _total, ...rest }) => ({ ...rest, away: awayOf(away, rest.id) })),
     totalCount: rows[0]?._total ?? 0,
   }
 }

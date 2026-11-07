@@ -214,6 +214,16 @@ import {
   turnSupersededByNewerMessage,
   waitForEarlierLiveTurn,
 } from "~/modules/agent/runtime/superseded-turn"
+import {
+  markSupersededWithinTurn,
+  supersedeOlderToolCards,
+  type ToolCallPresentation,
+  type ToolCardFields,
+  toolCallPresentation,
+  toolCardFieldsForError,
+  toolCardFieldsForResult,
+  withToolCardFieldsOnSteps,
+} from "~/modules/agent/runtime/tool-card-store"
 import { TurnEffectKeys } from "~/modules/agent/runtime/tool-effect-key"
 import {
   createTurnDeadline,
@@ -2274,6 +2284,15 @@ async function runAgentChatTurn(
     currentRunContext()?.routineMailboxReaderUserId
       ? { routineMailboxReaderUserId: currentRunContext()?.routineMailboxReaderUserId }
       : {}),
+    // A follow-up routine's tick (routines.follow_up): its turn stages drafts
+    // and runs on instead of pausing, and its mail checks as a follow-up.
+    // Only into the turn of THAT routine's tick, as the reader above.
+    ...(params.routineId &&
+    !params.coordination &&
+    currentRunContext()?.routineId === params.routineId &&
+    currentRunContext()?.routineFollowUp === true
+      ? { routineFollowUp: true }
+      : {}),
     // The same tick's park signal (routine-mailbox-wait.ts), and the browser
     // nonce of a run its owner started with Run now: only into the turn of
     // THAT routine's tick, under the same rule as the reader above.
@@ -3435,7 +3454,7 @@ async function runAgentChatTurn(
       // A routine run chaining on a parked call proposes steps only: same
       // tools, but a call that would run at once is refused (StepContext).
       stepCtx.chainOnly =
-        params.routineId && routineParkedEarlier && !routinePauseDue
+        params.routineId && !runFrame.routineFollowUp && routineParkedEarlier && !routinePauseDue
           ? ROUTINE_CHAIN_ONLY_RESULT
           : null
       const base = { activeTools: computeActiveTools() }
@@ -3642,7 +3661,9 @@ async function runAgentChatTurn(
           return
         }
       }
-      if (params.routineId && !routinePauseDue) {
+      // A follow-up routine never pauses: what it staged waits for a person
+      // while the run goes on and ends (routine-run-resume.ts).
+      if (params.routineId && !runFrame.routineFollowUp && !routinePauseDue) {
         if (routinePauseFallsDue(step, routineParkedEarlier, routineChainRetries)) {
           routinePauseDue = true
         } else if (routineParkedEarlier && !stepParkedACall(step)) {
@@ -4544,6 +4565,15 @@ async function runAgentChatTurn(
       ...(creditCheck.demo ? { demo: creditCheck.demo } : {}),
     })
 
+    await supersedeOlderToolCards({
+      orgId,
+      actorId: actor.userId,
+      threadId,
+      messageId: agentMsg.id,
+      createdAt: agentMsg.createdAt,
+      toolCalls,
+    })
+
     return {
       messageId: agentMsg.id,
       creditCost,
@@ -4598,7 +4628,9 @@ async function runAgentChatTurn(
           withheldCapabilities: [],
         }
       }
-      return await finalizeReply(withPriorSteps(finalParams, priorViews))
+      return await finalizeReply(
+        withPriorSteps(finalParams, await withToolCardFieldsOnSteps(orgId, priorViews)),
+      )
     } finally {
       unregisterTurn()
     }
@@ -5237,10 +5269,12 @@ async function runThreadTurn(
         // against an org admin or the operator. Every non-mail call passes
         // through by reference, unchanged.
         const persistableArgs = await redactMailToolArgs(orgId, chunk.toolName, chunk.input)
+        const presentation = toolCallPresentation(orgId, chunk.toolName)
         currentStep.toolCalls.push({
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: persistableArgs,
+          ...presentation,
           ...replayableProviderMetadata(chunk.providerMetadata),
         })
         timeline.push({ kind: "tool", toolCallId: chunk.toolCallId, step: steps.length })
@@ -5249,6 +5283,7 @@ async function runThreadTurn(
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: persistableArgs,
+          ...presentation,
           ...uiEffectRequester(chunk.toolName, actor.userId),
         })
       } else if (chunk.type === "tool-result") {
@@ -5269,13 +5304,22 @@ async function runThreadTurn(
           )?.toolName ??
           ""
         const persistableResult = await redactMailToolResult(orgId, resultToolName, chunk.output)
+        // The card reads the redacted result too, so a sealed value never reaches it.
+        const cardFields = await toolCardFieldsForResult(
+          orgId,
+          resultToolName,
+          persistableResult,
+          chunk.output,
+        )
         currentStep.toolResults.push({
           toolCallId: chunk.toolCallId,
           result: persistableResult,
+          ...cardFields,
         })
         emitStreamEvent("tool_result", {
           toolCallId: chunk.toolCallId,
           result: persistableResult,
+          ...cardFields,
         })
       } else if (chunk.type === "tool-error") {
         // The AI SDK emits this INSTEAD of a tool-result when the call never
@@ -5297,10 +5341,16 @@ async function runThreadTurn(
           },
           "Agent tool call errored",
         )
-        currentStep.toolErrors.push({ toolCallId: chunk.toolCallId, error: chunk.error })
+        const errorCardFields = toolCardFieldsForError(orgId, chunk.toolName)
+        currentStep.toolErrors.push({
+          toolCallId: chunk.toolCallId,
+          error: chunk.error,
+          ...errorCardFields,
+        })
         emitStreamEvent("tool_result", {
           toolCallId: chunk.toolCallId,
           result: { error: failed },
+          ...errorCardFields,
         })
       } else if (chunk.type === "finish-step") {
         const step = readStepUsage(chunk.usage)
@@ -5546,6 +5596,7 @@ export async function rerunAgentTurn(input: {
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: await redactMailToolArgs(orgId, chunk.toolName, chunk.input),
+          ...toolCallPresentation(orgId, chunk.toolName),
           ...replayableProviderMetadata(chunk.providerMetadata),
         })
       } else if (chunk.type === "tool-result") {
@@ -5553,9 +5604,11 @@ export async function rerunAgentTurn(input: {
           (chunk as { toolName?: string }).toolName ??
           currentStep.toolCalls.find((tc) => tc.toolCallId === chunk.toolCallId)?.toolName ??
           ""
+        const redacted = await redactMailToolResult(orgId, toolName, chunk.output)
         currentStep.toolResults.push({
           toolCallId: chunk.toolCallId,
-          result: await redactMailToolResult(orgId, toolName, chunk.output),
+          result: redacted,
+          ...(await toolCardFieldsForResult(orgId, toolName, redacted, chunk.output)),
         })
       } else if (chunk.type === "finish-step") {
         const step = readStepUsage(chunk.usage)
@@ -5803,28 +5856,33 @@ function replayableProviderMetadata(
 
 function extractToolCalls(
   steps: Array<{
-    toolCalls?: Array<{
-      toolCallId: string
-      toolName: string
-      args: unknown
-      providerMetadata?: ToolCallProviderMetadata
-    }>
-    toolResults?: Array<{ toolCallId: string; result: unknown }>
-    toolErrors?: Array<{ toolCallId: string; error: unknown }>
+    toolCalls?: Array<
+      {
+        toolCallId: string
+        toolName: string
+        args: unknown
+        providerMetadata?: ToolCallProviderMetadata
+      } & ToolCallPresentation
+    >
+    toolResults?: Array<{ toolCallId: string; result: unknown } & ToolCardFields>
+    toolErrors?: Array<{ toolCallId: string; error: unknown } & ToolCardFields>
   }>,
   /** The turn's calls that marked it as having read outside text; absent: not recorded. */
   taintedToolCallIds?: ReadonlySet<string>,
-): Array<{
-  toolCallId: string
-  toolName: string
-  args: unknown
-  result: unknown
-  status: "completed" | "error"
-  error?: { message: string; code?: string; status?: number }
-  providerMetadata?: ToolCallProviderMetadata
-  tainted?: boolean
-}> {
-  return steps.flatMap((step) =>
+): Array<
+  {
+    toolCallId: string
+    toolName: string
+    args: unknown
+    result: unknown
+    status: "completed" | "error"
+    error?: { message: string; code?: string; status?: number }
+    providerMetadata?: ToolCallProviderMetadata
+    tainted?: boolean
+  } & ToolCallPresentation &
+    ToolCardFields & { cardSuperseded?: true }
+> {
+  const calls = steps.flatMap((step) =>
     (step.toolCalls ?? []).map((tc) => {
       // A tool that errors in AI SDK v6 emits a `tool-error` chunk and never
       // produces a matching toolResult, so the entry is absent. Distinguish that
@@ -5837,6 +5895,14 @@ function extractToolCalls(
         toolName: tc.toolName,
         args: tc.args,
         ...(tc.providerMetadata ? { providerMetadata: tc.providerMetadata } : {}),
+        // Reload draws what the live row drew (never replayed: `convertToCoreMessages` names
+        // the fields a replay sends, and none of these is one).
+        ...(tc.readOnly !== undefined ? { readOnly: tc.readOnly } : {}),
+        ...(tc.appLabel ? { appLabel: tc.appLabel } : {}),
+        ...(tc.runningLabel ? { runningLabel: tc.runningLabel } : {}),
+        ...(tc.runningLabelKey ? { runningLabelKey: tc.runningLabelKey } : {}),
+        ...(tr?.card ? { card: tr.card } : {}),
+        ...((tr?.cardError ?? te?.cardError) ? { cardError: tr?.cardError ?? te?.cardError } : {}),
         result: tr?.result ?? null,
         status: tr === undefined ? ("error" as const) : ("completed" as const),
         // Present only on the failing half: a completed call has nothing to say here,
@@ -5848,6 +5914,7 @@ function extractToolCalls(
       }
     }),
   )
+  return markSupersededWithinTurn(calls)
 }
 
 /**

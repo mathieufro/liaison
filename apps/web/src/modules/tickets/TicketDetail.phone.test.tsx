@@ -98,7 +98,7 @@ vi.mock("~/lib/mention-service", () => ({ searchMentions: vi.fn(async () => []) 
 
 import { closeTicketMoreSheet } from "~/modules/tickets/ticket-phone-header-store"
 import { setShellTier } from "~/tests/helpers/shell-tier"
-import { TICKET_DETAIL_PANEL_SLOT, TicketDetail } from "./TicketDetail"
+import { TICKET_DETAIL_ACTIONS_SLOT, TICKET_DETAIL_PANEL_SLOT, TicketDetail } from "./TicketDetail"
 
 const TICKET = {
   id: "t1",
@@ -233,8 +233,15 @@ describe("TicketDetail at phone tier", () => {
     const { registerContribution, unregisterContributions } = await import(
       "~/framework/app-registry"
     )
+    // The server lists the panel for this viewer; the app's UI registered its component.
+    state.api.get = vi.fn(async (path: string) =>
+      path === "/v1/slots/ticket:detail:panel"
+        ? { panels: [{ id: "panel", app: "fixture-crm", label: "Panel" }] }
+        : { panels: [] },
+    )
     registerContribution(TICKET_DETAIL_PANEL_SLOT, {
       appId: "fixture-crm",
+      id: "panel",
       label: "Customer",
       component: ((p: { ticketId: string }) => (
         <div data-testid="customer-card" data-ticket={p.ticketId} />
@@ -250,6 +257,37 @@ describe("TicketDetail at phone tier", () => {
       expect(card.dataset.ticket).toBe("t1")
     } finally {
       unregisterContributions("fixture-crm")
+      delete state.api.get
+    }
+  })
+
+  it("what other apps add as ticket actions sit in the More sheet, each given the ticket", async () => {
+    const { registerContribution, unregisterContributions } = await import(
+      "~/framework/app-registry"
+    )
+    state.api.get = vi.fn(async (path: string) =>
+      path === `/v1/slots/${TICKET_DETAIL_ACTIONS_SLOT}`
+        ? { panels: [{ id: "act", app: "fixture-crm", label: "Act" }] }
+        : { panels: [] },
+    )
+    registerContribution(TICKET_DETAIL_ACTIONS_SLOT, {
+      appId: "fixture-crm",
+      id: "act",
+      label: "Act",
+      component: ((p: { entityId: string }) => (
+        <button type="button" data-testid="fixture-action" data-ticket={p.entityId} />
+      )) as never,
+    })
+    try {
+      render(() => <TicketDetail entityId="t1" />)
+      fireEvent.click(await screen.findByTestId("ticket-action-more"))
+      const sheet = await screen.findByTestId("ticket-more-sheet")
+      const action = await screen.findByTestId("fixture-action")
+      expect(sheet.contains(action)).toBe(true)
+      expect(action.dataset.ticket).toBe("t1")
+    } finally {
+      unregisterContributions("fixture-crm")
+      delete state.api.get
     }
   })
 

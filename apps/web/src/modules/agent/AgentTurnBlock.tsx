@@ -26,6 +26,7 @@ import type {
 import { TurnEndApprovals } from "~/modules/threads/NodeDispatchApprovalCard"
 import { AgentGlyph } from "~/ui/AgentGlyph"
 import AgentActivity from "./AgentActivity"
+import { SuggestionChips } from "./SuggestionChips"
 import { groupToolCalls, SingleToolCallRow, StackedToolCallGroup } from "./ToolCallRow"
 
 /**
@@ -411,6 +412,9 @@ function ExpandedTurn(props: AgentTurnBlockProps) {
       </Show>
       <Show when={props.isInterrupted}>
         <p class="mt-1 text-[12px] italic text-text-tertiary">{i18n.t("kernel.interrupted")}</p>
+      </Show>
+      <Show when={!props.isStreaming}>
+        <SuggestionChips toolCalls={props.toolCalls} />
       </Show>
       {/* Last, below the words still streaming in: a dispatch waiting for approval. */}
       <TurnEndApprovals toolCalls={props.toolCalls} />

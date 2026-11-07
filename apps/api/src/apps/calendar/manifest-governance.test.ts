@@ -15,6 +15,12 @@ import {
 } from "~/modules/permissions/rls-generator"
 
 describe("calendar manifest governance", () => {
+  it("declares event_type on events, optional, so a new instance's registration creates it", () => {
+    const field = calendarManifest.schema.events.fields.eventType
+    expect(field.type).toBe("string")
+    expect(field.required).toBe(false)
+  })
+
   it("counts role and tool scopes as grantable", () => {
     const grantable = declaredGrantableScopes(calendarManifest)
     expect(grantable).toContain("calendar:events:read")

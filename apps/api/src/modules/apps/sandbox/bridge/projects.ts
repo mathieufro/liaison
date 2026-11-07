@@ -1282,12 +1282,21 @@ export function createProjectsMethods(ctx: BridgeContext): Record<string, any> {
         removed: true,
       }))
     },
-    projects_attentionItems: async (_paramsJson: string): Promise<string> => {
+    projects_attentionItems: async (paramsJson: string): Promise<string> => {
       if (appName !== "projects") {
         throw new Error("projects_attentionItems is only available to the projects app")
       }
       const { computeAttentionItems } = await import("~/apps/projects/attention")
-      return JSON.stringify(await computeAttentionItems(txDb as never, orgId, userId))
+      // Someone else's tasks only for a person the caller stands in for today, read again
+      // here: a caller naming anyone else gets their own tasks alone.
+      const asked = (JSON.parse(paramsJson || "{}") as { forUserIds?: unknown }).forUserIds
+      let forUserIds: string[] = []
+      if (Array.isArray(asked) && asked.length > 0) {
+        const { readStandingInFor } = await import("~/modules/approvals/route-world")
+        const standing = new Set(await readStandingInFor(txDb as never, orgId, userId))
+        forUserIds = asked.filter((id): id is string => typeof id === "string" && standing.has(id))
+      }
+      return JSON.stringify(await computeAttentionItems(txDb as never, orgId, userId, forUserIds))
     },
   }
 }

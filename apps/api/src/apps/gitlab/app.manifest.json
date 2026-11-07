@@ -1,6 +1,6 @@
 {
   "name": "gitlab",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "kind": "connector",
   "description": "GitLab connector: sync group manuals into the knowledge base and provide read-only access to projects, commits, MRs, issues, releases, and more.",
   "listing": {
@@ -73,6 +73,7 @@
       }
     }
   },
+  "outsideTextFields": ["title", "description", "message", "content", "author_name", "name", "path"],
   "tools": {
     "gitlab_list_projects": {
       "taintSource": true,
@@ -227,6 +228,7 @@
       }
     },
     "gitlab_list_labels": {
+      "taintSource": true,
       "description": "List labels in a GitLab project, including issue/MR counts.",
       "readOnly": true,
       "requiredScopes": ["gitlab:repo:read"],
@@ -295,6 +297,7 @@
       }
     },
     "gitlab_list_tree": {
+      "taintSource": true,
       "description": "List files and directories in a GitLab project repository path.",
       "readOnly": true,
       "requiredScopes": ["gitlab:repo:read"],

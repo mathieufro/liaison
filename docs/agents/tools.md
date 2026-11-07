@@ -18,7 +18,7 @@ Every tool has a scope. The agent sees a tool only when the scope is inside its 
 
 ## How an agent finds a tool
 
-Most kernel tools and all app tools are loaded on demand. The agent calls `tool_search` with keywords, or with `select:name` when it knows the exact name, and the matching tools become callable on its next step. `tool_search` needs `kernel:threads:read`. A role agent without that scope has no app tools at all.
+Most kernel tools and all app tools are loaded on demand. The agent calls `tool_search` with keywords, or with `select:name` when it knows the exact name, and the matching tools become callable on its next step. When nothing matches, the search loads nothing and names the apps it can search, with how many tools each has. A `select:` with a bare name that two apps share, such as `refunds_create`, loads neither and lists both, so the agent names the one it means. `tool_search` needs `kernel:threads:read`. A role agent without that scope has no app tools at all.
 
 A conversation keeps the same tool list from its first turn to its last, so the model provider can reuse its cached copy of the conversation. A tool loaded later is not added to that list: its description and parameters arrive in the conversation, and the agent calls it through `call_tool` with the tool's name and arguments. When the arguments do not fit, `call_tool` answers with the tool's name and the parameters it expects. When the name is no tool the agent can call, for instance one that was replaced by another, `call_tool` says so and points at a `tool_search` by the job in words, since `select:name` only works for a name that a search has returned.
 
@@ -65,7 +65,7 @@ Scopes are shown in full. `kernel:agent:memory` is the gate for the memory and n
 | `threads_list` | List recent conversations you are in. | `kernel:threads:read` | No |
 | `threads_search` | Search conversations by title, participant or content. | `kernel:threads:read` | No |
 | `threads_read` | Read the messages of one conversation. | `kernel:threads:read` | No |
-| `threads_create` | Start a new conversation with chosen participants. | `kernel:threads:write` | No |
+| `threads_create` | Start a new conversation with chosen participants. With `createdFrom` naming a record that has a discussion, posts into that discussion instead, as the agent; people listed who cannot see the record are left out and named. A record you cannot see: `created_from_not_visible`, nothing is posted. | `kernel:threads:write` | No |
 | `threads_reply` | Post a message into an existing conversation, or into a contact's discussion (`contactId`). | `kernel:threads:write` | No |
 | `agents_ask` | Ask another agent a question, or hand it one piece of work, without adding it to the conversation. | `kernel:threads:write` | No |
 | `agents_invite` | Add another agent to the conversation, after you approve it there. | `kernel:threads:write` | Yes |
@@ -298,6 +298,7 @@ A change that changes nothing (an app that is already on, a setting already at t
 | `notifications_set` | Change your notification settings, including how often your agent reminds you of your requests waiting for approval (daily, every 3 days, weekly or off). | `kernel:agent:memory` | No |
 | `notification_rules_set` | Silence an app or keep only some notification kinds. | `kernel:agent:memory` | No |
 | `thread_mute_set` | Mute or unmute a conversation. | `kernel:agent:memory` | No |
+| `set_away` | Record the days someone is away (never why), end them, or name their standing next in line. The result states the dates with weekdays, who is next in line and what they cannot approve. Someone else's days need `kernel:users:admin` or `projects:capacity:write`. | `kernel:threads:read` | Only when the turn read outside text, or a routine or an MCP client asks: then it waits for the person who asked |
 | `report_bug` | File a bug report about Liaison itself. Where bug reports go only to the Liaison team, it prepares the report and you send it from its card. | `kernel:bug_reports:file` (every member holds it) | No |
 
 ### Sub-agents

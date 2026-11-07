@@ -57,7 +57,7 @@
       }
     ]
   },
-  "version": "1.0.8",
+  "version": "1.0.10",
   "description": "Knowledge workspace for local documents and curated source links",
   "license": "FSL-1.1-ALv2",
   "listing": {
@@ -926,7 +926,7 @@
     },
     "create": {
       "description": "Create a local Knowledge document. SEARCH BEFORE YOU CREATE: the knowledge base is curated and org-wide, so first look for a document that already covers this subject (search by topic, find_by_title when you know the exact title). If one exists, UPDATE it instead: a second doc on a subject someone already wrote splits the truth in two and both become untrustworthy. Create only when the subject is genuinely new. EVERY document MUST be filed into a collection via collectionId (never free-floating). ORGANIZATION documents must additionally be access-classified: pass an explicit sensitivity, and for 'confidential'/'restricted' pass shareWithRoles naming who may access it (roles_list gives role ids; finance, pricing, margin, revenue and contract material belongs to the executive/C-Level role, NOT org-wide). Missing placement or access rules returns a structured error listing existing collections so you can retry. Create a local Knowledge document. The result includes the new document's id, a `resourceUrl`, and a ready-made `mentionTag` (an @[Title](knowledge:document:<id>) entity tag) — after creating, ALWAYS confirm to the user by pasting the returned mentionTag verbatim in your reply (it renders as a clickable entity pill that opens the doc), never just a bare success sentence. NEVER FABRICATE DATES OR AN EVENT SCHEDULE INTO A DOC: do not author a document containing SPECIFIC dates (an event/expo/launch start or end date, a 'schedule', a 'calendar', a date-bounded window like 'July 1–14') unless those exact dates came from a source you actually READ (a retrieved Knowledge article, a project task's real due date, an order/invoice). If the user frames a request with a RELATIVE window ('in the two weeks before the launch', 'in the run-up to the expo', 'until the event') but the SPECIFIC dates are not in any readable source, do NOT search-then-invent and do NOT create a 'Schedule'/'Launch Calendar' doc to fill the gap — manufacturing concrete dates and persisting them here is a fabrication. Just report the real records you read (e.g. the project's open + overdue tasks) and, for a recurring digest, bound the recurrence with the cron schedule, not with an invented date doc.",
-      "searchKeywords": ["rédiger", "écrire", "write", "doc", "document", "politique", "policy", "procédure", "nouveau", "connaissances"],
+      "searchKeywords": ["rédiger", "écrire", "write", "doc", "document", "politique", "policy", "procédure", "nouveau", "connaissances", "créer"],
       "requiredScopes": ["knowledge:documents:create"],
       "writesToTable": "app_knowledge.documents",
       "trustBoundary": "user",
@@ -1162,7 +1162,7 @@
     },
     "collection_create": {
       "description": "Create a Knowledge collection (folder).",
-      "searchKeywords": ["dossier", "folder"],
+      "searchKeywords": ["dossier", "folder", "créer"],
       "requiredScopes": ["knowledge:collections:manage"],
       "trustBoundary": "user",
       "handler": "collection_create",
@@ -1673,5 +1673,9 @@
       "kind": "guide",
       "enabledByDefault": true
     }
+  },
+  "attention": {
+    "groupLabel": { "label": "Knowledge", "labelKey": "kernel.homeGroupKnowledge" },
+    "translations": []
   }
 }

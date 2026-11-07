@@ -37,6 +37,20 @@ interface AccessTokenPayload {
   // is how a refresh tells a lost response from a replayed token. Identity
   // only; it grants nothing. Same allowlist caveat.
   sid?: string
+  // The row's `user_type`, read from the database by the mint site. Never a
+  // claim: signAccessToken refuses an external user, whose only token is a
+  // portal token (signPortalToken).
+  userType?: string
+}
+
+/** Who a portal token is for, and nothing about what they may do. */
+export interface PortalTokenPayload {
+  userId: string
+  orgId: string
+  name: string
+  authVersion: number
+  permissionVersion: number
+  sid?: string
 }
 
 const ACCESS_TOKEN_EXPIRY = "15m"
@@ -70,6 +84,9 @@ export async function signAccessToken(
   secret: string,
   expiresInSeconds?: number,
 ): Promise<string> {
+  if (payload.userType === "external") {
+    throw new Error("an external user gets a portal token, never an access token")
+  }
   const key = new TextEncoder().encode(secret)
   const builder = new jose.SignJWT({
     userId: payload.userId,
@@ -98,6 +115,31 @@ export async function signAccessToken(
   }
 
   return builder.sign(key)
+}
+
+/**
+ * The token of an external user. Its audience is `portal`, so verifyAccessToken
+ * refuses it and no route behind the session middleware ever opens to it. It
+ * carries no roles, scopes or grants: the portal's reads are decided by the
+ * liaison_portal role and the views of schema `portal`.
+ */
+export async function signPortalToken(
+  payload: PortalTokenPayload,
+  secret: string,
+): Promise<string> {
+  return new jose.SignJWT({
+    userId: payload.userId,
+    orgId: payload.orgId,
+    name: payload.name,
+    authVersion: payload.authVersion,
+    permissionVersion: payload.permissionVersion,
+    ...(payload.sid && { sid: payload.sid }),
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setAudience("portal")
+    .setExpirationTime(ACCESS_TOKEN_EXPIRY)
+    .sign(new TextEncoder().encode(secret))
 }
 
 export async function verifyAccessToken(

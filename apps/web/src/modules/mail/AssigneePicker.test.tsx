@@ -57,4 +57,23 @@ describe("AssigneePicker", () => {
     expect(await screen.findByText("Priya Nair")).toBeInTheDocument()
     expect(screen.queryByText("Priya Nair (priya@example.test)")).not.toBeInTheDocument()
   })
+
+  it("shows away until a date beside someone away; who can be picked does not change", async () => {
+    mocks.api.get.mockResolvedValue({
+      data: [
+        { id: "user-2", name: "Élodie Renard", avatarUrl: null, away: { until: "2099-12-20" } },
+        { id: "user-3", name: "Tom Reyes", avatarUrl: null, away: null },
+      ],
+    })
+    render(() => (
+      <AssigneePicker assignedTo="user-1" accountId="acc-1" onReassign={mocks.onReassign} />
+    ))
+    await fireEvent.pointerDown(screen.getByRole("button", { name: /Assigned to/i }))
+    expect(await screen.findByTestId("assignee-picker-away-user-2")).toHaveTextContent(
+      /away until (20 Dec|Dec 20)/,
+    )
+    expect(screen.queryByTestId("assignee-picker-away-user-3")).toBeNull()
+    expect(screen.getByTestId("assignee-picker-option-user-2")).toBeInTheDocument()
+    expect(screen.getByTestId("assignee-picker-option-user-3")).toBeInTheDocument()
+  })
 })

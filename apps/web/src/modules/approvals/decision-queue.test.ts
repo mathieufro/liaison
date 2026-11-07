@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-// S15 (iPhone walk 2026-10-19): approve and reject wait out a 5 s Undo window.
+// S15 (iPhone walk 2026-10-19): approve and reject wait out an 8 s Undo window.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ApiError } from "~/lib/api-error"
 import { runBeforeSignOut } from "~/lib/session-lifecycle"
@@ -47,6 +47,42 @@ afterEach(() => {
 })
 
 describe("decision queue", () => {
+  it("the Undo window is 8 seconds", () => {
+    expect(UNDO_WINDOW_MS).toBe(8_000)
+  })
+
+  it("undo at 7999 ms: never sent", async () => {
+    const { api, post } = makeApi()
+    const done = queueDecision(api, "approval", "a1", { decision: "approve" }).catch((e) => e)
+    await vi.advanceTimersByTimeAsync(7_999)
+    expect(undoDecision("approval", "a1")).toBe(true)
+    expect(await done).toBeInstanceOf(DecisionUndoneError)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  // The decided-for audit row is written by the server's decide, which an undone decision never reaches.
+  it("Undo inside 8 s leaves no decided-for audit", async () => {
+    const { api, post } = makeApi()
+    const done = queueDecision(api, "approval", "a1", { decision: "approve" }).catch((e) => e)
+    await vi.advanceTimersByTimeAsync(4_000)
+    undoDecision("approval", "a1")
+    await done
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(post.mock.calls.filter(([path]) => String(path).endsWith("/decide"))).toEqual([])
+  })
+
+  it("at 8001 ms: sent once", async () => {
+    const { api, post } = makeApi()
+    const done = queueDecision(api, "approval", "a1", { decision: "approve" })
+    await vi.advanceTimersByTimeAsync(7_999)
+    expect(post).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(2)
+    await done
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
   it("sends nothing inside the window, names the decision in the toast, then sends", async () => {
     const { api, post } = makeApi()
     const done = queueDecision(

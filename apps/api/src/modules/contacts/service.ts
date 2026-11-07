@@ -1523,8 +1523,12 @@ export async function deleteContact(
     .returning({ id: contacts.id })
 
   if (!deleted) return null
-  // Its discussion goes with it: a contact has no bin to restore it from.
-  await deleteContactDiscussions({ orgId, contactIds: [contactId] }, privileged)
+  // Its discussion goes with it: a contact has no bin to restore it from. On the privileged
+  // transaction the caller holds, else on the caller's own one when it may elevate, so a caller
+  // already holding a privileged slot never takes a second one.
+  await privilegedFrom(privileged ?? db, orgId, "contact-discussion-delete", (ptx) =>
+    deleteContactDiscussions({ orgId, contactIds: [contactId] }, ptx),
+  )
 
   await db.queueEvent({
     app: "kernel",

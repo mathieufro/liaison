@@ -169,7 +169,8 @@ describe("the fan-out report", () => {
       const delays = spreadDelays(orgs, app, job, w)
       const byTenth = new Map<number, string[]>()
       for (const [orgId, d] of delays) {
-        const tenth = Math.floor((d / w) * 10)
+        // Bucketed where the report reads the start: 50 ms after the planned delay (below).
+        const tenth = Math.min(9, Math.floor(((d + 50) / w) * 10))
         byTenth.set(tenth, [...(byTenth.get(tenth) ?? []), orgId])
       }
       const full = [...byTenth.values()].find((ids) => ids.length === 3)

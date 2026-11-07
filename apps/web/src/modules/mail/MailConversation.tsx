@@ -19,7 +19,6 @@ import {
   Show,
   untrack,
 } from "solid-js"
-import { getContributions } from "~/framework/app-registry"
 import { ApiError } from "~/lib/api-error"
 import { createQuoteCache, splitQuotedHistory, splitQuotedHtml } from "~/lib/email-quote"
 import ApprovalCard from "~/modules/approvals/ApprovalCard"
@@ -59,6 +58,7 @@ import { useApi } from "~/modules/shell/ApiContext"
 import EntityPreview from "~/modules/shell/entity-preview/EntityPreview"
 import { presentMessageKind } from "~/modules/shell/message-kind"
 import { quotedHistoryLabels } from "~/modules/shell/quoted-history-labels"
+import { createSlotPanels, SlotPanels } from "~/modules/shell/SlotPanels"
 import { shellTier } from "~/modules/shell/shell-tier"
 import { makeTabId, openTab, tabStore, tabToUrl, updateTabLabel } from "~/modules/shell/tab-store"
 import { discussWithPersonalAgent } from "~/modules/threads/personal-dm-store"
@@ -309,8 +309,9 @@ export const MailConversation: Component<MailConversationProps> = (props) => {
     const a = account()
     return !!conversation() && a?.ownerType === "org"
   }
-  const banners = () => getContributions("mail:conversation:banner")
-  const actions = () => getContributions("mail:conversation:actions")
+  // What other apps add, from the one server list: the viewer's, from apps that are on.
+  const banners = createSlotPanels(() => "mail:conversation:banner")
+  const actions = createSlotPanels(() => "mail:conversation:actions")
 
   // Pending gated mail:reply/forward approvals for this conversation, rendered
   // INLINE at the bottom of the message stream (same treatment as tickets) so
@@ -466,14 +467,13 @@ export const MailConversation: Component<MailConversationProps> = (props) => {
                   </Show>
 
                   <div class="ml-auto flex items-center gap-1">
-                    <For each={actions()}>
-                      {(entry) => {
-                        const Contribution = entry.component as Component<{
-                          mailConversationId: string
-                        }>
-                        return <Contribution mailConversationId={props.entityId} />
-                      }}
-                    </For>
+                    <SlotPanels
+                      slot="mail:conversation:actions"
+                      entries={actions}
+                      entityId={props.entityId}
+                      panelProps={{ mailConversationId: props.entityId }}
+                      position="actions"
+                    />
                     <Tooltip content={i18n.t("kernel.mailDiscuss")}>
                       <button
                         type="button"
@@ -548,12 +548,12 @@ export const MailConversation: Component<MailConversationProps> = (props) => {
           scrollClass="flex flex-col"
           scrollTestId="mail-conversation-banners"
         >
-          <For each={banners()}>
-            {(entry) => {
-              const Contribution = entry.component as Component<{ mailConversationId: string }>
-              return <Contribution mailConversationId={props.entityId} />
-            }}
-          </For>
+          <SlotPanels
+            slot="mail:conversation:banner"
+            entries={banners}
+            entityId={props.entityId}
+            panelProps={{ mailConversationId: props.entityId }}
+          />
         </ScrollFade>
       </Show>
 

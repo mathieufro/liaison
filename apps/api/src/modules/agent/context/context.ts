@@ -79,6 +79,10 @@ import {
   loadConnectedSystems,
 } from "~/modules/agent/context/connected-systems"
 import {
+  applyContextProviderBlocks,
+  loadContextProviderBlocks,
+} from "~/modules/agent/context/context-providers"
+import {
   applyCustomerContext,
   CUSTOMER_CONTEXT_APP,
   CUSTOMER_CONTEXT_TOOLS,
@@ -146,7 +150,7 @@ import {
   skillRegistry,
   toolRegistry,
 } from "~/modules/apps/app-registries"
-import { isAppUnavailableFor, primeOrgApps } from "~/modules/apps/org-apps"
+import { isAppUnavailableFor, isFeatureOffForTool, primeOrgApps } from "~/modules/apps/org-apps"
 import { isVisitorDemoOrgId } from "~/modules/demo/demo-org"
 import { listMcpTools } from "~/modules/mcp/tool-projection"
 import { liveDesktopConnections } from "~/modules/nodes/presence"
@@ -1497,15 +1501,37 @@ Write numbers, amounts and dates the way that language writes them, never as a r
     )
     return customerTools
   }
-  const customerBlock = await loadCustomerContextBlock({
-    currentView,
-    orgId,
-    actor,
-    effectiveScopes: contextViewer.grants,
-    callableTools: connectorTools,
-  })
+  // App context providers (context-providers.ts) run beside it, under the same
+  // wall clock: the record in view and the record the conversation was made for.
+  const [customerBlock, providerBlocks] = await Promise.all([
+    loadCustomerContextBlock({
+      currentView,
+      orgId,
+      actor,
+      effectiveScopes: contextViewer.grants,
+      callableTools: connectorTools,
+    }),
+    loadContextProviderBlocks({
+      orgId,
+      actor,
+      grants: contextViewer.grants,
+      currentView,
+      createdFrom: threadInfo?.createdFrom,
+      callableTools: discoveredTools
+        ? (app, names) =>
+            new Set(
+              listDeferredTools(orgId, { ...actor, scopes: turnScopes })
+                .filter((tool) => tool.appName === app && names.includes(tool.toolName))
+                .map((tool) => tool.sdkName),
+            )
+        : undefined,
+    }),
+  ])
   if (customerBlock && discoveredTools) {
     for (const name of connectorTools()) discoveredTools.add(name)
+  }
+  if (providerBlocks && discoveredTools) {
+    for (const name of providerBlocks.loadTools) discoveredTools.add(name)
   }
   const discoveredApps = discoveredAppNames(discoveredTools)
   const canDiscover = canCallToolSearch(orgId, turnScopes)
@@ -1527,6 +1553,9 @@ Write numbers, amounts and dates the way that language writes them, never as a r
       continue
     }
     if (isAppUnavailableFor(orgId, tkey[1], actor.userId)) continue
+    // A tool of a feature that is off is loaded nowhere, so a guide section about
+    // it alone stays out of the prompt.
+    if (isFeatureOffForTool(orgId, tdef)) continue
     if (!isDeferredTool(tkey[1], tdef)) {
       hotApps.add(tkey[1])
       loadedAppTools.add(`${tkey[1]}__${tkey[2]}`)
@@ -2070,8 +2099,22 @@ Write numbers, amounts and dates the way that language writes them, never as a r
     },
   })
 
+  // The provider lines likewise: each provider's scope recorded, the thread tainted.
+  const providersAdded = await applyContextProviderBlocks({
+    blocks: providerBlocks,
+    tailLines,
+    turnScopeAccumulator,
+    markTainted: async () => {
+      if (threadInfo?.tainted || customerAdded) return
+      const { setTaintFlag } = await import("~/modules/agent/scopes/taint")
+      await setTaintFlag(threadId, orgId)
+    },
+  })
+
   // Taint notice
-  if (threadInfo?.tainted || customerAdded) tailLines.push(UNTRUSTED_CONTENT_NOTICE)
+  if (threadInfo?.tainted || customerAdded || providersAdded) {
+    tailLines.push(UNTRUSTED_CONTENT_NOTICE)
+  }
 
   // MEMORY.md — the agent's always loaded index, in the EPHEMERAL TAIL (I2).
   //

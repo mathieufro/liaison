@@ -62,6 +62,7 @@ import { emailBodyPreset } from "~/modules/approvals/email-body"
 import { createPayloadFileNames } from "~/modules/approvals/payload-file-names"
 import SkillApprovalView from "~/modules/approvals/SkillApprovalView"
 import { SummaryLineText } from "~/modules/approvals/SummaryLineText"
+import { sendGuardLine } from "~/modules/approvals/send-guard-line"
 import { useEditableDraft } from "~/modules/approvals/useEditableDraft"
 import { ComposerAssist } from "~/modules/assist/ComposerAssist"
 import { DictationMic, RecorderRow } from "~/modules/assist/RecorderBar"
@@ -1391,7 +1392,11 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
       if (handling.inline) setInlineError(handlerCause(err) ?? err.message)
       // The server holds a newer version than this card: read it now rather than wait for a live
       // update this device may have missed, so the card shows what the person must review.
-      if (err.status === 409 && err.code === "payload_changed" && apiCtx)
+      if (
+        ((err.status === 409 && err.code === "payload_changed") ||
+          (err.status === 422 && err.code === "send_guard_not_held")) &&
+        apiCtx
+      )
         void refreshRow(apiCtx, props.requestId).catch(() => {})
       // Some failures prove the approval is gone, in which case a feed row still
       // advertising it is stale and must not survive the error (ticket-10197 /
@@ -1507,12 +1512,15 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
   // not dropped: the unlock modal opens, and once the mailbox is open the
   // approve carries on by itself, so the user never has to find the button
   // and press it a second time.
-  const [approveAfterUnlock, setApproveAfterUnlock] = createSignal(false)
+  const [approveAfterUnlock, setApproveAfterUnlock] = createSignal<false | true | "auto_reply">(
+    false,
+  )
   createEffect(() => {
-    if (!approveAfterUnlock() || mailboxStore.status !== "unlocked") return
+    const pressed = approveAfterUnlock()
+    if (!pressed || mailboxStore.status !== "unlocked") return
     setApproveAfterUnlock(false)
     if (current()?.status !== "pending") return
-    void onApprove()
+    void onApprove(pressed === "auto_reply" ? "auto_reply" : undefined)
   })
 
   // Once per card, so a later re-render never approves a second time.
@@ -1526,7 +1534,7 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
   /** The card's own element: a decision is announced from it (`decided-event.ts`). */
   let cardEl: HTMLDivElement | undefined
 
-  async function onApprove() {
+  async function onApprove(sendGuardOverride?: "auto_reply") {
     if (!apiCtx) return
     if (changedSinceReview().length > 0) {
       addToast({ message: i18n.t("kernel.approvalsUi.err.payloadChanged"), type: "info" })
@@ -1544,7 +1552,7 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
         err.code === "mailbox_locked" &&
         mailboxStore.status !== "unlocked"
       ) {
-        setApproveAfterUnlock(true)
+        setApproveAfterUnlock(sendGuardOverride ?? true)
         requestMailboxUnlock()
         return
       }
@@ -1564,6 +1572,7 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
     try {
       await decide(apiCtx, props.requestId, "approve", {
         ...(mailboxFulfilment ? { mailboxFulfilment } : {}),
+        ...(sendGuardOverride ? { sendGuardOverride } : {}),
         label: sequenceDecisionLabel(),
       })
       setOptimistic("decided")
@@ -1662,7 +1671,20 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
 
   const phone = () => shellTier() === "phone"
 
-  const showApprove = () => !editing() && !denying() && isPending() && canApprove()
+  // The send check on an agent's mail draft, as the server read it for this card. A stop is
+  // final: the draft can never be approved as it is. A hold replaces Approve with Send now.
+  const sendGuard = () => current()?.sendGuard
+  const guardStopped = () => {
+    const state = sendGuard()?.state
+    return (
+      state === "replied" || state === "bounced" || state === "opted_out" || state === "ref_stop"
+    )
+  }
+  const guardHeld = () => sendGuard()?.state === "held"
+  const decidable = () => !editing() && !denying() && isPending() && canApprove()
+  const showApprove = () => decidable() && !guardStopped() && !guardHeld()
+  const showSendNow = () => decidable() && guardHeld()
+  const guardLine = (): string | null => sendGuardLine(sendGuard(), i18n.t, i18n.locale())
 
   /**
    * Task 9.9. A sealed send that re-attaches stored files decrypts them HERE at
@@ -1702,6 +1724,14 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
         label: i18n.t("kernel.common.edit"),
         testid: "approval-card-action-edit",
         onClick: enterEdit,
+      })
+    }
+    if (showSendNow()) {
+      actions.push({
+        label: i18n.t("kernel.approvalsUi.sendGuard.sendNow"),
+        testid: "approval-card-action-send-now",
+        entityId: props.requestId,
+        onClick: () => void onApprove("auto_reply"),
       })
     }
     if (showApprove()) {
@@ -1943,6 +1973,29 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
                         data-testid="approval-card-last-failure"
                       >
                         {i18n.t("kernel.approvalsUi.lastAttemptFailed")} {f().message}
+                      </div>
+                    )}
+                  </Show>
+
+                  {/* What the send check says now, read for this card. Calm: a line, not an alarm. */}
+                  <Show when={guardLine()}>
+                    {(line) => (
+                      <div
+                        class="mt-2 rounded border border-border px-2 py-1.5 text-[12px] text-text-secondary"
+                        data-testid="approval-card-send-guard"
+                        data-state={sendGuard()?.state}
+                      >
+                        <div>{line()}</div>
+                        <Show when={sendGuard()?.quote}>
+                          {(quote) => (
+                            <blockquote
+                              class="mt-1 border-l-2 border-border pl-2 italic"
+                              data-testid="approval-card-send-guard-quote"
+                            >
+                              {quote()}
+                            </blockquote>
+                          )}
+                        </Show>
                       </div>
                     )}
                   </Show>
@@ -2587,6 +2640,17 @@ const ApprovalCard: Component<ApprovalCardProps> = (props) => {
                             onClick={() => enterEdit()}
                           >
                             {i18n.t("kernel.approvalEdit")}
+                          </button>
+                        </Show>
+                        <Show when={showSendNow()}>
+                          <button
+                            type="button"
+                            data-testid="approval-card-action-send-now"
+                            data-entity-id={props.requestId}
+                            class="min-h-11 flex-[1.4] rounded-lg bg-accent text-[15px] font-medium text-accent-foreground"
+                            onClick={() => void onApprove("auto_reply")}
+                          >
+                            {i18n.t("kernel.approvalsUi.sendGuard.sendNow")}
                           </button>
                         </Show>
                         <Show when={showApprove()}>

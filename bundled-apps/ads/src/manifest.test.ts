@@ -85,7 +85,9 @@ describe("ads app.manifest.json", () => {
     // (the shared package depends on it by workspace protocol); no change to what it does.
     // 0.1.55: above 0.1.54, so an instance on either line of work upgrades; no change of its own.
     // 0.1.56: above both lines of work, which each changed it under the number before; no change of its own.
-    expect(m.version).toBe("0.1.56")
+    // 0.1.57: the shared settings types it builds against changed; no change of its own.
+    // 0.1.58: tool_search no longer offers the approvals read; the agent uses the kernel's one.
+    expect(m.version).toBe("0.1.58")
     for (const name of ["insights_query", "metrics_list", "metrics_run"]) {
       expect(m.tools[name]?.readOnly).toBe(true)
       expect(m.tools[name]?.writesToTable).toBeUndefined()

@@ -33,6 +33,8 @@ export interface ColumnInfo {
   generated: boolean
   /** An identity column (`GENERATED ALWAYS` needs OVERRIDING SYSTEM VALUE). */
   identity: "" | "a" | "d"
+  /** NOT NULL: a foreign key on such columns reaches every row of its table. */
+  notNull?: boolean
 }
 
 export interface ForeignKey {
@@ -166,11 +168,13 @@ export async function readCatalog(sql: TransferSql): Promise<Map<string, Catalog
     type: string
     generated: string
     identity: string
+    not_null: boolean
   }>(
     sql,
     `SELECT n.nspname AS schema, c.relname AS table, a.attname AS name,
             format_type(a.atttypid, a.atttypmod) AS type,
-            a.attgenerated::text AS generated, a.attidentity::text AS identity
+            a.attgenerated::text AS generated, a.attidentity::text AS identity,
+            a.attnotnull AS not_null
        FROM pg_attribute a
        JOIN pg_class c ON c.oid = a.attrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -188,6 +192,7 @@ export async function readCatalog(sql: TransferSql): Promise<Map<string, Catalog
       ordinal: t.columns.length + 1,
       generated: c.generated !== "",
       identity: (c.identity || "") as ColumnInfo["identity"],
+      notNull: c.not_null,
     })
   }
   const idx = await query<{
@@ -346,8 +351,14 @@ export function buildClosure(
     const level: Array<[CatalogTable, ForeignKey]> = []
     for (const t of catalog.values()) {
       if (byName.has(t.name) || excluded.has(t.name)) continue
+      // A key on NOT NULL columns first: a nullable one (a person's next in line) would
+      // leave behind every row where it is empty.
+      const parents = t.foreignKeys.filter((f) => byName.has(f.refTable) && f.refTable !== t.name)
+      const required = (f: ForeignKey) =>
+        f.columns.every((c) => t.columns.find((col) => col.name === c)?.notNull === true)
       const fk =
-        t.foreignKeys.find((f) => byName.has(f.refTable) && f.refTable !== t.name) ??
+        parents.find(required) ??
+        parents[0] ??
         SYNTHETIC_LINKS.find((f) => f.table === t.name && byName.has(f.refTable))
       if (fk) level.push([t, fk])
     }

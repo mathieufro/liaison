@@ -1,6 +1,6 @@
 {
   "name": "example",
-  "version": "0.0.2",
+  "version": "0.0.6",
   "description": "Reference app demonstrating every Liaison SDK surface",
   "listing": {
     "publisher": "Liaison",
@@ -28,15 +28,132 @@
       }
     }
   },
+  "features": {
+    "item_notes": {
+      "adminScope": "example:items:write",
+      "labelKey": "apps.example.features.itemNotes"
+    },
+    "slot_panels": {
+      "adminScope": "example:items:write",
+      "labelKey": "apps.example.features.slotPanels"
+    }
+  },
   "entities": {
     "items": {
       "labelField": "text",
       "searchable": true,
       "tableName": "items",
-      "readScope": "example:items:read"
+      "readScope": "example:items:read",
+      "discussion": true
     }
   },
+  "views": {
+    "tabTypes": {
+      "items": { "label": "Example item", "icon": "Square", "urlPattern": "/example/items/:entityId" }
+    }
+  },
+  "slots": {
+    "project:task:tabs": {
+      "panels": [
+        {
+          "id": "example-project-task-tabs",
+          "label": "Example",
+          "component": "ExampleTaskTab",
+          "visibility_scope": "example:items:read",
+          "feature": "slot_panels"
+        }
+      ]
+    },
+    "project:task:actions": {
+      "actions": [
+        {
+          "id": "example-project-task-actions",
+          "label": "Example action",
+          "component": "ExampleTaskAction",
+          "visibility_scope": "example:items:read",
+          "feature": "slot_panels"
+        }
+      ]
+    },
+    "project:detail:panel": {
+      "panels": [
+        {
+          "id": "example-project-detail-panel",
+          "label": "Example",
+          "component": "ExampleProjectPanel",
+          "visibility_scope": "example:items:read",
+          "feature": "slot_panels"
+        }
+      ]
+    },
+    "contact_detail": {
+      "panels": [
+        {
+          "id": "example-contact-detail",
+          "label": "Example",
+          "component": "ExampleContactPanel",
+          "visibility_scope": "example:items:read",
+          "feature": "slot_panels"
+        }
+      ]
+    },
+    "ticket:detail:panel": {
+      "panels": [
+        {
+          "id": "example-ticket-detail-panel",
+          "label": "Example",
+          "component": "ExampleTicketPanel",
+          "visibility_scope": "example:items:read",
+          "feature": "slot_panels"
+        }
+      ]
+    },
+    "ticket:detail:actions": {
+      "actions": [
+        {
+          "id": "example-ticket-detail-actions",
+          "label": "Example action",
+          "component": "ExampleTicketAction",
+          "visibility_scope": "example:items:read",
+          "feature": "slot_panels"
+        }
+      ]
+    }
+  },
+  "contextProviders": [
+    { "on": ["example:items"], "tool": "item_context", "scope": "example:items:read", "loadTools": ["items_list"] }
+  ],
   "tools": {
+    "item_context": {
+      "description": "Facts about one example item, for the agent's context while it is in view",
+      "requiredScopes": ["example:items:read"],
+      "handler": "item_context",
+      "readOnly": true,
+      "agentVisible": false,
+      "params": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": {
+              "app": { "type": "string" },
+              "entityType": { "type": "string" },
+              "entityId": { "type": "string" }
+            },
+            "required": ["app", "entityType", "entityId"]
+          }
+        },
+        "required": ["subject"]
+      }
+    },
+    "item_notes_count": {
+      "description": "Count example items for the notes feature",
+      "requiredScopes": ["example:items:read"],
+      "handler": "item_notes_count",
+      "readOnly": true,
+      "feature": "item_notes",
+      "params": { "type": "object", "properties": {} }
+    },
     "items_list": {
       "description": "List example items",
       "requiredScopes": ["example:items:read"],

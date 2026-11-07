@@ -121,7 +121,7 @@ describe("shared guidance: one source, two surfaces", () => {
     try {
       const create = toolRegistry.get([orgId, "kernel", "threads_create"])
       const reply = toolRegistry.get([orgId, "kernel", "threads_reply"])
-      expect(create?.description).toContain("how to message a teammate")
+      expect(create?.description).toContain("message a teammate directly")
       expect(create?.description).toContain("Never email a teammate with mail__compose")
       expect(reply?.description).toContain("how to message teammates in this organization")
     } finally {

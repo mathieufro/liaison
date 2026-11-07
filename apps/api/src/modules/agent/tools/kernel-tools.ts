@@ -195,6 +195,7 @@ import {
   summarizeCaptureBusinessKnowledge,
   summarizeContactsExport,
   summarizeEnableApp,
+  summarizeSetAway,
   summarizeSubagentCreate,
   summarizeSubagentDelete,
 } from "~/modules/agent/tools/kernel-summarizers"
@@ -229,6 +230,10 @@ import { registerSecretRequestTool } from "~/modules/agent/tools/secret-request-
 import { registerSetupGuideTools } from "~/modules/agent/tools/setup-guide-tools"
 import { registerSetupStateTool } from "~/modules/agent/tools/setup-state-tool"
 import { registerSkillRoutineTools } from "~/modules/agent/tools/skills-routines-tools"
+import {
+  handleSuggestNextSteps,
+  suggestNextStepsParams,
+} from "~/modules/agent/tools/suggest-steps-tool"
 import { handleToolSearch } from "~/modules/agent/tools/tool-search"
 import { handleUsersSearch } from "~/modules/agent/tools/user-tools"
 import { handleWatchStateTool, handleWebWatchTool } from "~/modules/agent/tools/watch-tools"
@@ -301,6 +306,7 @@ import {
   RUN_ON_MY_COMPUTER_DESCRIPTION,
   summarizeRunOnMyComputer,
 } from "~/modules/nodes/run-on-my-computer"
+import { handleSetAwayTool, setAwayRefusal } from "~/modules/users/away"
 import {
   handleMergeImportedUser,
   handleMergeImportedUserPreview,
@@ -580,6 +586,9 @@ async function buildKernelAgentTools(orgId: string): Promise<void> {
     appName: "kernel",
     name: "user_memory_get",
     deferLoading: true,
+    // The agent uses the memory file verbs; a screen or a parked approval still reaches this one.
+    agentVisible: false,
+    useInstead: "memory_view",
     readOnly: true,
     description:
       "Retrieve a stored memory about this user by type (user, feedback, project or reference) and name, or enumerate every memory of one type by passing type alone. The index of all memories is always in your system prompt: read that first and call this only when you need an entry's full body. Prefer kernel__memory_view, which reads the same files by the paths MEMORY.md gives you.",
@@ -598,6 +607,9 @@ async function buildKernelAgentTools(orgId: string): Promise<void> {
     appName: "kernel",
     name: "user_memory_set",
     deferLoading: true,
+    // The agent uses the memory file verbs; a screen or a parked approval still reaches this one.
+    agentVisible: false,
+    useInstead: "memory_create",
     description:
       "Save or update a private memory entry about this user, keyed by (type, name): user (who they are), feedback (rules from corrections), project (current work context) or reference (pointers to external systems). Reuse the same (type, name) to overwrite rather than accumulating duplicates. Prefer kernel__memory_create and kernel__memory_str_replace, which write the same files by path, where an incremental edit survives an interruption.",
     requiredScopes: ["kernel:agent:memory"],
@@ -643,6 +655,9 @@ async function buildKernelAgentTools(orgId: string): Promise<void> {
     appName: "kernel",
     name: "user_memory_delete",
     deferLoading: true,
+    // The agent uses the memory file verbs; a screen or a parked approval still reaches this one.
+    agentVisible: false,
+    useInstead: "memory_delete",
     description:
       "Remove a memory entry and its index line, by type and name. Prefer updating over deleting: delete only when a memory is genuinely wrong with no replacement, or the user asks to forget something specific. Prefer kernel__memory_delete, which removes the same file by path.",
     requiredScopes: ["kernel:agent:memory"],
@@ -667,12 +682,15 @@ async function buildKernelAgentTools(orgId: string): Promise<void> {
     writesToTable: SINK_KERNEL_AGENT_MEMORY,
   })
 
-  // --- The memory tree's file verbs (core, always loaded) ------------------
+  // --- The memory tree's file verbs ----------------------------------------
   //
-  // NONE of these is deferred. The memory verbs are part of the stable tool
-  // set from the FIRST turn of a session: a tools-array change invalidates the
-  // cached prefix, so a verb that appeared mid session would cost a full cache
-  // miss on the turn it appeared.
+  // view, create, str_replace, insert and search are in the stable tool set from
+  // the FIRST turn of a session (a tools-array change invalidates the cached
+  // prefix, so a verb that appeared mid session would cost a full cache miss).
+  // delete, rename and open are rarer verbs: deferred, found by tool_search and
+  // named in the deferred catalog, loaded when the model reaches for them.
+  // insert stays hot: deferred, the lines that say "remember that ..." stopped
+  // reaching it by search (held-out lines, 12 of 12 down to 2 of 12).
 
   toolRegistry.set([orgId, "kernel", "memory_view"], {
     appName: "kernel",
@@ -725,6 +743,15 @@ async function buildKernelAgentTools(orgId: string): Promise<void> {
     name: "memory_insert",
     description:
       "Insert a line into a memory file at a one based line number, pushing the rest down: add a bullet, or a line of MEMORY.md, without rewriting the file. To replace text use kernel__memory_str_replace, to start a file kernel__memory_create.",
+    searchKeywords: [
+      "souviens",
+      "souvenir",
+      "mémoriser",
+      "mémoire",
+      "retenir",
+      "remember",
+      "memory",
+    ],
     requiredScopes: ["kernel:agent:memory"],
     approvalImpact: "internal",
     trustBoundary: "user",
@@ -736,6 +763,7 @@ async function buildKernelAgentTools(orgId: string): Promise<void> {
   toolRegistry.set([orgId, "kernel", "memory_delete"], {
     appName: "kernel",
     name: "memory_delete",
+    deferLoading: true,
     description:
       "Remove a memory file and its line in MEMORY.md. Prefer correcting over deleting: delete only when a memory is wrong with no replacement, or the user asks to forget it. Never on MEMORY.md, episodes/ or checkpoints/.",
     requiredScopes: ["kernel:agent:memory"],
@@ -749,6 +777,7 @@ async function buildKernelAgentTools(orgId: string): Promise<void> {
   toolRegistry.set([orgId, "kernel", "memory_rename"], {
     appName: "kernel",
     name: "memory_rename",
+    deferLoading: true,
     description:
       "Move a memory file to another path and rewrite its line in MEMORY.md, for when a file's subject narrowed or widened. Both paths must be <type>/<slug>.md; a rename into, out of, or onto an existing path is refused.",
     requiredScopes: ["kernel:agent:memory"],
@@ -790,6 +819,7 @@ async function buildKernelAgentTools(orgId: string): Promise<void> {
   toolRegistry.set([orgId, "kernel", "memory_open"], {
     appName: "kernel",
     name: "memory_open",
+    deferLoading: true,
     readOnly: true,
     description:
       "Read the verbatim messages around one transcript hit from kernel__memory_search, so you see what was actually said rather than a summary. Pass its messageId plus how many messages you want before and after.",
@@ -1123,9 +1153,8 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
   toolRegistry.set([orgId, "kernel", "threads_create"], {
     appName: "kernel",
     name: "threads_create",
-    deferLoading: true,
     description:
-      "Create a new thread with the given participants. People who ALREADY have a thread together do not get a second one: an untitled create returns the existing thread, and a titled create fails with duplicate_thread naming that thread's id. This is how to message a teammate (someone in this organization) directly: participantIds [their user id, from kernel__users_search], no title, the text as initialMessage. It posts into your existing direct conversation with them, or opens one. Never email a teammate with mail__compose unless the user asks for an email. To post into a group thread or a titled thread you already share, find it (kernel__threads_search) and use kernel__threads_reply. Use a title or forceCreate only when the user asks for a separate conversation.",
+      "Start a thread with participants, or message a teammate directly: participantIds [their user id from kernel__users_search], no title, the text as initialMessage. Never email a teammate with mail__compose unless asked.",
     searchKeywords: [
       "message",
       "discussion",
@@ -1158,6 +1187,10 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
           }),
         )
         .optional(),
+      createdFrom: z
+        .object({ app: z.string(), entityType: z.string(), entityId: z.string() })
+        .optional()
+        .describe("The record it is about; posts into its discussion when it has one"),
     }),
     handler: handleThreadsCreate as (params: unknown, ctx: any) => Promise<unknown>,
     // Rule 11: the first message, title and references are read by these people; on a tainted
@@ -1759,10 +1792,9 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
   toolRegistry.set([orgId, "kernel", "users_search"], {
     appName: "kernel",
     name: "users_search",
-    deferLoading: true,
     readOnly: true,
     description:
-      "Search your organisation's TEAM members (colleagues) by name or email: up to 20 active users with id, name and email. Use it to resolve a teammate's user id before routing work to them, since assignee fields take a user UUID. For external people (customers, leads) use kernel__contacts_search instead.",
+      "Find colleagues (team members) by name or email: up to 20 active users with id, name and email, to resolve a teammate's user id. For customers and leads use kernel__contacts_search.",
     searchKeywords: [
       "collègue",
       "utilisateur",
@@ -2857,10 +2889,10 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
   toolRegistry.set([orgId, "kernel", "ai_models_get"], {
     appName: "kernel",
     name: "ai_models_get",
-    deferLoading: true,
-    // The OpenRouter search fetches the whole public model list from the fixed OpenRouter host
-    // (no query string) and filters it here, so nothing from the turn leaves Liaison.
+    // A read: the org's model settings, and with openRouterSearch the OpenRouter catalogue,
+    // fetched whole from the fixed host and filtered here, so the search text never leaves.
     readOnly: true,
+    deferLoading: true,
     description: `Read the organization's AI model settings (admin), the same as Settings > Models: what Auto runs, the default reasoning level, each model with its key, whether it is on and available, its price and reasoning levels. Pass openRouterSearch to also search OpenRouter's catalogue for a model to add with kernel__ai_models_set.`,
     searchKeywords: ["modèle", "raisonnement", "default", "reasoning", "openrouter", "auto", "llm"],
     requiredScopes: ["kernel:org:admin"],
@@ -3065,10 +3097,9 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
   toolRegistry.set([orgId, "kernel", "approvals_list"], {
     appName: "kernel",
     name: "approvals_list",
-    deferLoading: true,
     readOnly: true,
     description:
-      "List the approvals waiting on this user to decide, oldest first, each tagged with its origin app, requester, summary and ageDays. Returns { total, approvals[], recentlyDecided[] }, where total is the authoritative, never truncated count of the pending queue. recentlyDecided is a separate list, never part of total or approvals: the requests this user may see that were decided in the last 24 hours, newest first, each with its status (approved, approving = approved and executing, denied, withdrawn, expired, cancelled), decidedAt, decidedBy and reason. A request leaves approvals the moment it is decided, so to answer whether a requested action happened, look it up by handle in BOTH lists: found in recentlyDecided with status denied, withdrawn, expired or cancelled means it did not happen; found in neither means you cannot tell from here. Use it for approval inbox triage, before staging a gated action to see whether the same intent is already queued, and whenever the user reports that something never happened, never arrived, or is not working.",
+      "List the approvals waiting on this user to decide, oldest first, with origin app, requester, summary and age, plus recentlyDecided (last 24 hours) to check whether a requested action happened. Read-only.",
     searchKeywords: [
       "attente",
       "approbation",
@@ -3105,7 +3136,7 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
     name: "capture_business_knowledge",
     deferLoading: true,
     description:
-      "Capture a piece of company knowledge (a policy, a process, a shared fact) as an ORGANIZATION scoped Knowledge document every member can find, auto-enabling the Knowledge app if needed. Use this, not kernel__user_memory_set, whenever the user asks to write down, record or document a shared business fact such as a support inbox address, a company policy or operating rule, or company contact info: kernel__user_memory_set is private to the one operator and invisible to the org.",
+      "Capture a piece of company knowledge (a policy, a process, a shared fact) as an ORGANIZATION scoped Knowledge document every member can find, auto-enabling the Knowledge app if needed. Use this, not kernel__memory_create, whenever the user asks to write down, record or document a shared business fact such as a support inbox address, a company policy or operating rule, or company contact info: kernel__memory_create is private to the one operator and invisible to the org.",
     searchKeywords: [
       "retenir",
       "noter",
@@ -3180,7 +3211,7 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
     name: "data_subject_export",
     deferLoading: true,
     description: `Compile EVERYTHING the org holds on ONE data subject (a contact) across apps into a single downloadable GDPR data-subject-request (DSR) export bundle, and return its fileId. Use this for a GDPR/data-access request — "export everything we have on <person> so I can send it to them". This is the PER-SUBJECT export: pass the subject's contactId (resolve it FIRST with kernel__contacts_search by name/email) and it assembles their contact record + support tickets (tickets__listForContact) + invoices (invoicing documents by contact) into ONE bundle written as a real downloadable file (returns { fileId, filename, counts, shopifyIncluded }). It contains ONLY the subject's REAL records you can see (runs under your RLS — never an org-wide dump, never invented data). It is DISTINCT from the admin \`export\` tool, which is org-admin-scoped and dumps WHOLE APPS with no per-subject filter. SHOPIFY orders are a LIVE connector (fetched live, NOT stored locally), so they are NOT auto-included — BUT if the request needs them in the SAME single bundle (e.g. "I need one complete file including her orders"), FIRST retrieve them with the shopify orders read (customers_search → orders_search/orders_get for that subject) and pass the returned order records as the \`shopifyOrders\` array — this tool then FOLDS them into the one bundle file and returns its single real fileId. If you do NOT include them, say honestly that Shopify orders are a live connector not in this file (point to the shopify orders read / Shopify admin export). CRITICAL ANTI-FABRICATION: the deliverable is the SINGLE fileId THIS tool returns — NEVER claim you "generated" a separate or supplemental file, and NEVER emit a \`file:<id>\` reference for any id this tool did not return; to put orders in the package, pass them via \`shopifyOrders\` and hand back this tool's one real fileId (do not invent a second file). Scoped to the dedicated DSR authority (a privacy/finance handler can run it WITHOUT org-admin powers); a caller lacking that scope is denied (and should ask whoever holds the DSR/privacy authority). UNGATED read-to-file: it sends nothing and changes no business data — it only materializes a file from records you can already read.`,
-    searchKeywords: ["rgpd", "gdpr", "données", "personnelles"],
+    searchKeywords: ["rgpd", "gdpr", "données", "personnelles", "exporter", "export", "personne"],
     requiredScopes: ["kernel:data_subject:export"],
     params: z.object({
       contactId: z.string().uuid(),
@@ -3315,6 +3346,7 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
     deferLoading: true,
     description:
       "Grant a team member one or more VALUES for an EXISTING data-partitioning DIMENSION (e.g. territory=US, team=support-eu) — this slices what data they can see (row-level filtering: rows outside their granted values become silently invisible to them). You can only grant values you hold (over-reach returns DIMENSION_ESCALATION). FIRST call kernel__list_dimensions to confirm the dimension exists; this tool grants a value for a dimension ALREADY in the catalog and does NOT create new dimensions. NEVER call this with a dimension that is not in kernel__list_dimensions — it returns INVALID_DIMENSION and the (gated) attempt fails. For a NEW attribute that isn't a dimension yet (e.g. 'territory' when it's not in the catalog), the dimension must first be defined by an admin in Settings → Dimensions; say so and defer, do not fabricate one or attempt to grant it.",
+    searchKeywords: ["accorder", "accès", "restreint", "restreindre", "dimension"],
     requiredScopes: ["kernel:users:admin"],
     approveScope: "kernel:approve",
     trustBoundary: "user",
@@ -3339,7 +3371,16 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
     deferLoading: true,
     description:
       "Edit ONE team member's scopes directly, at fine granularity — the granular complement to kernel__assign_role (which grants a whole preset bundle). Pass `grant` and/or `revoke` arrays of exact scope ids to add/remove DIRECT user-level grants. Use this to fine-tune a single person without minting a role — e.g. 'give July refunds on top of her CS role' (grant) or 'take away her export ability' (revoke a direct grant). You can only grant/revoke scopes you hold yourself (over-reach returns SCOPE_ESCALATION and needs a higher approver). FIRST call kernel__list_scopes to get real scope ids — never invent one. IMPORTANT: a `revoke` only removes a DIRECT user grant; it does NOT strip a scope the member inherits from a ROLE (to remove that, change their role with kernel__assign_role). Granting a scope already held, or revoking one not directly granted, is an idempotent no-op. Prefer kernel__assign_role / kernel__create_role when the same permission set will apply to MANY people (roles stay auditable); use this for genuine per-person exceptions.",
-    searchKeywords: ["droit", "droits", "accès", "permission", "autoriser", "access"],
+    searchKeywords: [
+      "droit",
+      "droits",
+      "accès",
+      "permission",
+      "autoriser",
+      "access",
+      "accorder",
+      "utilisateur",
+    ],
     requiredScopes: ["kernel:users:admin"],
     approveScope: "kernel:approve",
     trustBoundary: "user",
@@ -3484,7 +3525,7 @@ When NOT to use: to browse a conversation (kernel__memory_search finds the right
 Design the \`scopeCeiling\` as the LEAST PRIVILEGE the role needs — e.g. a web-research role wants \`kernel:agent:web\` plus a light read like \`kernel:contacts:read\`, and NO write scopes. Use \`kernel__subagent_list\` to see existing roles.
 
 When to use: When an admin asks to set up a reusable role they will spawn repeatedly. When NOT to use: For a one-off task — \`kernel__spawn_agent\` accepts an ad-hoc prompt and is the right primitive when no durable role abstraction adds value.`,
-    searchKeywords: ["créer"],
+    searchKeywords: ["créer", "sous", "agent"],
     requiredScopes: ["kernel:agents:admin"],
     params: z.object({
       appName: z.string().min(1).optional(),
@@ -3637,6 +3678,100 @@ When to use: When an admin asks to set up a reusable role they will spawn repeat
       id: z.string().optional().describe("The record to open in that view."),
     }),
     handler: handleOpenApp as (params: unknown, ctx: any) => Promise<unknown>,
+  })
+
+  // Away days and next in line (one kernel record, modules/users/away.ts). It changes who sees
+  // approvals, so outside text must not make it happen, and a person saying "I'm away" must not
+  // pay a click for it: the person's own untainted turn runs it at once, and so does a holder of
+  // the scope for someone else. Any other call (outside text read, a routine, an MCP
+  // client) parks to the requester's own decision, never to the person named, and no
+  // auto-approve policy answers it. Refusals (another's range without the scope, a next in line
+  // who cannot be one) come before any gate.
+  toolRegistry.set([orgId, "kernel", "set_away"], {
+    appName: "kernel",
+    name: "set_away",
+    deferLoading: true,
+    description:
+      "Record that a person is away (dates only, never a reason), end it, or name their standing next in line. Own range: no userId. Someone else's needs kernel:users:admin or projects:capacity:write. Dates are resolved on the server: give on, from and to, week (ISO number), or everyWeekday (ISO days 1-7, optional from/to); MM-DD means the next one. Say back the dates the result states, with weekdays.",
+    searchKeywords: [
+      "absent",
+      "absence",
+      "congés",
+      "vacances",
+      "remplaçant",
+      "next in line",
+      "away",
+      "holiday",
+      "leave",
+      "office",
+      "next",
+      "line",
+      "semaine",
+      "week",
+    ],
+    requiredScopes: ["kernel:threads:read"],
+    params: z.object({
+      on: z.string().optional().describe("One day, YYYY-MM-DD or MM-DD."),
+      from: z.string().optional().describe("First day, YYYY-MM-DD or MM-DD."),
+      to: z.string().optional().describe("Last day, included, YYYY-MM-DD or MM-DD."),
+      week: z.number().int().min(1).max(53).optional().describe("ISO week number."),
+      weekYear: z.number().int().min(2000).max(2100).optional(),
+      everyWeekday: z
+        .array(z.number().int().min(1).max(7))
+        .min(1)
+        .max(7)
+        .optional()
+        .describe("Every week on these ISO days (Mon 1 to Sun 7)."),
+      userId: z.string().uuid().optional().describe("Someone else's range; omit for your own."),
+      nextInLineId: z
+        .string()
+        .uuid()
+        .optional()
+        .describe("Who stands in. With no dates: the standing next in line."),
+      end: z.boolean().optional().describe("true: end what is running today."),
+    }),
+    handler: handleSetAwayTool as (params: unknown, ctx: any) => Promise<unknown>,
+    writesToTable: "kernel.away_ranges",
+    conditionalGate: true,
+    externalEffect: true,
+    requiresHumanTurn: true,
+    noAutoApprove: true,
+    approvalImpact: "internal",
+    refuseBeforeGate: (params, ctx) =>
+      setAwayRefusal(params as { userId?: string; nextInLineId?: string }, ctx),
+  })
+  // A parked call is decided by the person who asked (a routine's card by its author), whatever
+  // the tool's own scope, so a colleague or an admin can never decide it (SEC-18).
+  approvalResourceOwnerRegistry.set([orgId, "kernel", "set_away"], { requesterAlways: true })
+  registerApprovalSummarizer(orgId, "kernel", "set_away", summarizeSetAway)
+
+  // One-click next steps under the agent's reply, drawn by the chat from this tool's result
+  // (suggest-steps-tool.ts). Like open_app its effect is on the requester's screen alone.
+  toolRegistry.set([orgId, "kernel", "suggest_next_steps"], {
+    appName: "kernel",
+    name: "suggest_next_steps",
+    readOnly: true,
+    taintFree: true,
+    gatewayHidden: true,
+    deferLoading: false,
+    description:
+      "Offer up to 4 one-click next steps under your reply: a chip sends its label as the person's message, or opens a tab (app, view, id).",
+    searchKeywords: [
+      "suggestions",
+      "suggérer",
+      "prochaines étapes",
+      "étapes suivantes",
+      "boutons",
+      "next steps",
+      "chips",
+      "étapes",
+      "suivantes",
+      "prochaines",
+      "steps",
+    ],
+    requiredScopes: ["kernel:threads:read"],
+    params: suggestNextStepsParams,
+    handler: handleSuggestNextSteps as (params: unknown, ctx: any) => Promise<unknown>,
   })
 
   // Liaison bug reports, the web form's twin for agents and MCP clients.

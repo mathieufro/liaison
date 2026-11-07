@@ -73,8 +73,8 @@ describe("monitoring app.manifest.json", () => {
     // 0.4.11: the app's own install resolves the control-plane contract through an override
     // (the shared package depends on it by workspace protocol); no change to what it does.
     // 0.4.12: the same number (0.4.11) carried different content on two lines of work; this one has both.
-    // 0.4.13: above both lines of work, which each changed it under the number before; no change of its own.
-    expect(MANIFEST.version).toBe("0.4.13")
+    // 0.4.14: the shared host package gained the discussion panel hooks; no change of its own.
+    expect(MANIFEST.version).toBe("0.4.15")
   })
 
   // The declarative settings page (/settings/apps/monitoring): the detailed

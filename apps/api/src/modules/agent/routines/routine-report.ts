@@ -414,6 +414,12 @@ export interface RoutineRunLineMetadata {
  */
 export type RoutineRunLineStatus = "running" | "waiting_approval" | "succeeded" | "failed"
 
+/** What a settled run line says besides its status. */
+export interface RoutineRunLineFacts {
+  /** A follow-up run that ended with drafts still waiting for a person: how many. */
+  draftsWaiting?: number
+}
+
 /** A running line older than this belongs to a tick that died (the routine lock is 10 minutes). */
 export const STALE_RUN_LINE_MS = 15 * 60 * 1000
 
@@ -438,17 +444,19 @@ async function settleRunLines(
   where: ReturnType<typeof sql>,
   status: RoutineRunLineStatus,
   from: RoutineRunLineStatus[] = ["running"],
+  facts?: RoutineRunLineFacts,
 ): Promise<number> {
   const settled = await withPrivilegedDb(orgId, "routine-run-line-settle", async (tx) => {
     const resumed = status === "running" ? new Date().toISOString() : null
+    const extra = JSON.stringify(facts ?? {})
     const rows = extractRows<{ id: string; thread_id: string; metadata: Record<string, unknown> }>(
       await tx.execute(sql`
         UPDATE ${messages}
-           SET metadata = CASE WHEN ${resumed}::text IS NULL
-               THEN jsonb_set(metadata, '{routineRun,status}', to_jsonb(${status}::text))
-               ELSE jsonb_set(jsonb_set(metadata, '{routineRun,status}', to_jsonb(${status}::text)),
-                 '{routineRun,resumedAt}', to_jsonb(${resumed}::text))
-             END
+           SET metadata = jsonb_set(metadata, '{routineRun}', (CASE WHEN ${resumed}::text IS NULL
+               THEN jsonb_set(metadata->'routineRun', '{status}', to_jsonb(${status}::text))
+               ELSE jsonb_set(jsonb_set(metadata->'routineRun', '{status}', to_jsonb(${status}::text)),
+                 '{resumedAt}', to_jsonb(${resumed}::text))
+             END) || ${extra}::jsonb)
          WHERE org_id = ${orgId}::uuid
            AND author_type = 'system'
            AND metadata->'routineRun'->>'status' IN (${sql.join(
@@ -582,12 +590,13 @@ export async function settleRunStarted(
   orgId: string,
   lineId: string | null,
   status: RoutineRunLineStatus,
+  facts?: RoutineRunLineFacts,
 ): Promise<void> {
   if (!lineId) return
   const from: RoutineRunLineStatus[] =
     status === "running" ? ["waiting_approval"] : ["running", "waiting_approval"]
   try {
-    await settleRunLines(orgId, sql`id = ${lineId}::uuid`, status, from)
+    await settleRunLines(orgId, sql`id = ${lineId}::uuid`, status, from, facts)
   } catch (err) {
     log.warn({ err, lineId }, "Routine run line not settled")
   }

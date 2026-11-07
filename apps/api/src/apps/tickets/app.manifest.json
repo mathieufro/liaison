@@ -106,7 +106,7 @@
       }
     ]
   },
-  "version": "1.2.3",
+  "version": "1.2.8",
   "description": "Customer-facing ticketing: local foundations (7.1)",
   "license": "FSL-1.1-ALv2",
   "listing": {
@@ -729,7 +729,26 @@
       }
     }
   },
+  "approvalRoute": { "ticket": "approval_route_read" },
+  "outsideTextFields": ["subject", "messages", "customer_name", "customer_email"],
   "tools": {
+    "approval_route_read": {
+      "description": "Who a pending approval about a ticket is for: its assignee, as personId (null when nobody holds it). Read by the kernel when an approval is proposed.",
+      "readOnly": true,
+      "agentVisible": false,
+      "requiredScopes": ["tickets:tickets:read"],
+      "readsFromTable": "app_tickets.tickets",
+      "trustBoundary": "user",
+      "handler": "approvalRouteRead",
+      "params": {
+        "type": "object",
+        "properties": {
+          "entityType": { "type": "string", "description": "The linked record's type." },
+          "entityId": { "type": "string", "description": "The linked record's id." }
+        },
+        "required": ["entityType", "entityId"]
+      }
+    },
     "search": {
       "description": "Search tickets. Filter by status (open/awaiting_customer/awaiting_followup/closed), priority, assignedTo, contactId, and free-text q. Returns a PAGED/truncated list — do NOT report a COUNT by tallying these results (that under-counts). inboxCounts is authoritative ONLY for the UNREAD count PER INBOX — it is NOT a status breakdown (open vs awaiting_customer vs awaiting_followup) and NOT a total-open count, so do NOT use an inbox's unread number as 'how many open tickets'. For a status breakdown / total-open / by-category / oldest / backlog-health read there IS an authoritative aggregate — use the backlogHealth tool (exact server-side GROUP BY over the whole backlog), NOT a tally of search pages. (backlogHealth ALSO returns authoritative SLA COUNTS — bySla.approaching + bySla.breached with named exemplars — so the count of at-risk/breached tickets comes from there, not a search tally. For a weekly SLA POST-MORTEM — which tickets breached in a date window, the breach MARGIN, PER-AGENT breach counts, and the overall SLA-ATTAINMENT RATE — there IS now an authoritative aggregate: use the slaReport tool (exact server-side counts + rate over the window), NOT a search tally. The only remaining gaps are resolution-time AVERAGES and an aggregate CSAT score/trend, which stay a bounded per-ticket sample / honest unavailability, never a fabricated percentage.) Use search to retrieve the actual matching ticket ROWS (e.g. the slaApproaching set, or the tickets behind a backlogHealth count when the user wants the list), noting any such list is a bounded page, not an exact total. OLDEST / BACKLOG-BURNDOWN — 'the 10 oldest still-open tickets, how long each has been open, what state they're stuck in, and who owns them': search is age-sortable — call search({ smartFilter: 'all-open', sort: 'oldest', limit: 10 }) to get the actual N OLDEST open tickets in ONE bounded call (sort='oldest' orders by created_at, so you get the real global oldest, not the first relevance page). Each returned row carries createdAt (compute age from it / now), status (open or awaiting_followup = on our plate / awaiting_customer = waiting on the customer — the stuck-state), and assigneeName (the OWNER — null = unassigned), so present age + stuck-state + owner per ticket WITHOUT a per-ticket get. (backlogHealth.oldest also returns the same oldest-10 with ageDays + assigneeName as an authoritative aggregate; either is the right oldest-first read — never present the default unsorted page as 'the oldest'.) 'OPEN' / BACKLOG SCOPE — when a request asks for someone's 'open tickets', a 'backlog' digest, or a list GROUPED BY STATUS (and especially one that must surface an 'awaiting customer / to nudge' section), 'open' means the WHOLE NON-CLOSED set — open AND awaiting_customer AND awaiting_followup — NOT the literal status='open' bucket alone. status='open' silently DROPS the awaiting_customer and awaiting_followup tickets, which (a) guts the awaiting-customer/nudge section entirely (those tickets ARE the awaiting_customer status), and (b) collapses a status-grouped digest to a single group. So read the full backlog with search({ smartFilter: 'all-open' }) (= status IN open/awaiting_customer/awaiting_followup, closed excluded) — or pass status: ['open','awaiting_customer','awaiting_followup'] explicitly — then GROUP the returned rows by their status field yourself. When the backlog is the CALLER'S OWN in INTERACTIVE chat ('my open tickets', 'my backlog', 'my queue'), use search({ smartFilter: 'my-backlog' }) — it returns exactly that non-closed set ASSIGNED TO YOU in ONE call (auto-scoped to the caller, NO assignee UUID to look up, and you can NOT accidentally fall into a whole-org read). CAUTION — in a ROUTINE PROMPT do NOT use smartFilter:'my-backlog' or assignedTo:'me': at tick time those resolve to the ROUTINE'S OWNER, which for an agent-authored, admin-approved routine may NOT be the person who asked — so they silently read the wrong queue. A routine that digests a specific person's tickets must filter by that person's EXPLICIT user id (resolved once at authoring time and baked into the prompt). Only filter to a single status when the user explicitly asks for that one bucket. AGING / 'OLDER THAN N DAYS' — THE SERVER COMPUTES IT, YOU RENDER IT. To flag tickets 'aging past N days', pass `agingThresholdDays: N` (e.g. `agingThresholdDays: 3` for 'aging past 3 days'; default 3) and EACH returned row then carries an `aging` BOOLEAN — already computed server-side as `ageDays > N`. Just RENDER each row's `aging` flag into your digest (true → flag it as aging, false → leave it unflagged). Do NOT recompute the comparison yourself, and do NOT mark a row 'aging' unless its `aging` field is true — copying the per-row boolean is the whole point (it removes the fragile in-context date arithmetic where rows get mis-flagged). Each row also carries `ageDays` (whole days open, = floor((now − createdAt)/1 day), the same figure backlogHealth.oldest reports) for display. The result is a real DISCRIMINATION: in a backlog some rows have aging:true and some aging:false, so the flagged set is EXACTLY the over-threshold rows — never the whole set, never none. CUSTOMER-SILENCE / 'NO REPLY FOR N+ DAYS' (auto-close) — THE SERVER COMPUTES IT, YOU RENDER IT. To find the awaiting_customer tickets that have gone SILENT (no inbound customer reply for N+ days — the stale-auto-close window), pass `silentForDays: N` (e.g. silentForDays: 7) ALONGSIDE status:'awaiting_customer' (or smartFilter:'awaiting-customer'). EACH returned row then carries `customerSilentDays` (whole days since the customer last wrote, from last_inbound_at) AND a `customerSilent` BOOLEAN (= customerSilentDays >= N) — already computed server-side. The STALE set to act on (final-notice reply + close) is EXACTLY the rows where customerSilent is true; the FRESH set to SKIP is the rows where it is false. Just RENDER each row's `customerSilent` flag — do NOT recompute the last-inbound age yourself, and do NOT act on a row whose customerSilent is false (a customer who replied 1-2 days ago is FRESH, not stale). This removes the fragile in-context staleness arithmetic where a tick acted on fresh tickets, sending a 'we haven't heard from you in over a week' notice to someone who just replied — copying the per-row boolean is the whole point. WHEN TO USE THE STRUCTURED FILTERS (not free-text q): to find a TOPIC's tickets that are AT SLA RISK — e.g. 'shipping tickets at SLA risk' — call search({ category: 'Shipping', slaApproaching: true }), NOT a free-text q of keywords. q matches subject+body text ONLY, so it both MISSES correctly-categorized tickets whose words differ and surfaces unrelated noise — the precise, grounded set comes from the category + slaApproaching filters. Each returned row carries categoryName (the topic) and slaDeadline. ANTI-FABRICATION: every ticket field you report (id, subject, priority, slaDeadline, order ref, category) MUST come from a search/get tool result row — NEVER reconstruct or 'flesh out' ticket cards from a sidebar/summary line, and NEVER assert a shipment↔ticket correlation unless a returned ticket's order ref actually matches the shipment's; if a shipment has no matching ticket, say so.",
       "searchKeywords": ["chercher", "rechercher", "retrouver", "trouver", "find", "attente", "lister", "liste", "list", "pending", "waiting", "ouvert", "ouverts", "statut"],
@@ -1659,6 +1678,7 @@
       }
     },
     "backlogHealth": {
+      "taintSource": true,
       "description": "AUTHORITATIVE backlog-health aggregate — the tool for 'how many open tickets / awaiting customer vs awaiting us / which are oldest / where are we bunching by category / are we drowning'. Computes EXACT server-side counts over the WHOLE open (non-closed, non-merged) backlog you can see, via a real GROUP BY (NOT a paged search sample): byStatus {open, awaitingCustomer (we're waiting on the customer), awaitingFollowup, totalOpen}, byCategory (open count per category — the bunching), byAge (0-7d / 7-14d / 14-30d / 30d+ buckets), oldest (the oldest open tickets, oldest first, with ageDays + category + assignee), unassignedOpen, and bySla {approaching, breached, approachingTop[], breachedTop[]} — the EXACT server-side counts of SLA-approaching vs already-breached tickets (same predicates as search slaApproaching/slaBreached) with up to 3 named exemplars each. So this single read DOES answer 'any SLA breaches / what's at risk': read bySla.breached and bySla.approaching — and NEVER claim zero breaches/at-risk from the ABSENCE of an SLA field (the field is bySla; 0 means a real 0, not 'not measured'). These totals are EXACT and authoritative — there is no pagination caveat and no need to sample or estimate. Use THIS instead of tallying search pages or reading inboxCounts when asked for a backlog/status/aging/category-distribution read. The result is the definitive answer to give even when the user demands 'a number I can trust' — it IS the trusted number, because it counts the entire backlog server-side. Note: awaitingCustomer = tickets where the customer owes us a reply; the live 'awaiting us / on our plate' set is open + awaitingFollowup.",
       "searchKeywords": ["backlog", "arriéré", "retard", "file", "charge"],
       "readOnly": true,
@@ -1678,6 +1698,7 @@
       }
     },
     "slaReport": {
+      "taintSource": true,
       "description": "AUTHORITATIVE weekly SLA-breach post-mortem aggregate — the tool for 'which tickets breached SLA in the last 7 days, by how much, per-agent breach counts, and our overall SLA-attainment rate this week'. Computes EXACT server-side counts over EVERY ticket you can see whose first-response SLA clock STARTED in the window (default last 7 days, override with windowDays), via a real aggregate (NOT a paged search sample, which has no 'breached' filter and no rate/margin/per-agent rollup): totalInWindow, breachedCount, metCount, attainmentRatePct (metCount/totalInWindow*100, 1 decimal — null ONLY when the window is empty, never fabricate a rate), perAgent[] (per-assignee breach counts with assigneeName, descending, including an unassigned bucket), and breachedTickets[] (every breached ticket, most-overdue first, each with assigneeName, slaDeadline, firstResponseAt, breachMarginSeconds + breachMarginHours = how LATE the first response was, and stillUnanswered). 'Breached' uses the SAME predicate as search slaBreached=true (an explicit slaBreachedAt OR a past slaDeadline on a non-paused SLA). These totals are EXACT and authoritative — there is no pagination caveat and no need to sample or estimate. Use THIS for any SLA post-mortem / attainment-rate / breach-margin / per-agent-breach question — NEVER tally search pages or invent a percentage. Report attainmentRatePct, breachedCount, and the perAgent split AS the definitive answer.",
       "searchKeywords": ["sla", "délai", "délais", "retard", "report", "rapport", "temps"],
       "readOnly": true,
@@ -1697,6 +1718,7 @@
       }
     },
     "listForContact": {
+      "taintSource": true,
       "description": "List recent tickets for a contact",
       "searchKeywords": ["contact", "client", "customer", "historique", "history"],
       "readOnly": true,
@@ -1952,6 +1974,7 @@
       }
     },
     "csat.list": {
+      "taintSource": true,
       "description": "List individual CSAT survey records (ticket handle/subject, status, score, sent/responded timestamps), optionally filtered by status (pending|responded|declined).",
       "searchKeywords": ["satisfaction", "csat", "avis", "réponses"],
       "readOnly": true,
@@ -2634,7 +2657,7 @@
     "nudge": {
       "outboundTextParams": ["textBody", "htmlBody"],
       "description": "Send a polite follow-up to the customer. Gated — only when awaiting_customer.",
-      "searchKeywords": ["relance", "relancer", "rappeler", "remind", "followup"],
+      "searchKeywords": ["relance", "relancer", "rappeler", "remind", "followup", "envoyer"],
       "requiredScopes": ["tickets:tickets:reply"],
       "writesToTable": "app_tickets.tickets",
       "targetRowParam": "ticketId",
@@ -3276,6 +3299,7 @@
     }
   },
   "attention": {
+    "groupLabel": { "label": "Support", "labelKey": "kernel.homeGroupSupport" },
     "translations": [
       {
         "event": "inbox:close_silent_stopped",
@@ -3850,7 +3874,7 @@
     ]
   },
   "views": {
-    "attentionItems": "computeAttentionItems",
+    "attentionItems": { "handler": "computeAttentionItems", "passesOn": true },
     "tabTypes": {
       "inbox": {
         "component": "TicketsInbox",
@@ -3877,7 +3901,7 @@
       "icon": "TicketsIcon",
       "label": "Tickets",
       "labelKey": "kernel.nav.tickets",
-      "order": 11,
+      "order": 12,
       "tabAction": {
         "type": "inbox",
         "entityId": "inbox",

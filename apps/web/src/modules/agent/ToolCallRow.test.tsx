@@ -1,6 +1,22 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { fireEvent, render, screen } from "@solidjs/testing-library"
+import { For } from "solid-js"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
+// The production build's `env.DEV` is false: a test flips it to see what a person sees there.
+const devFlag = vi.hoisted(() => ({ value: true }))
+vi.mock("~/lib/env", async (importOriginal) => {
+  const real = await importOriginal<typeof import("~/lib/env")>()
+  return {
+    ...real,
+    env: {
+      ...real.env,
+      get DEV() {
+        return devFlag.value
+      },
+    },
+  }
+})
 
 vi.mock("~/modules/approvals/ApprovalCard", () => ({
   default: (props: { requestId: string; compact?: boolean }) => (
@@ -32,7 +48,45 @@ vi.mock("~/modules/imports/ImportRunCard", () => ({
 
 import { installFakeBridge, liveSession, uninstallFakeBridge } from "~/modules/desktop/fake-bridge"
 import { resetLocalPrompts } from "~/modules/desktop/LocalPermissionCard"
-import ToolCallRow, { groupToolCalls } from "./ToolCallRow"
+import {
+  getAgentStream,
+  handleWsAgentStreamEvent,
+  resetMessageStore,
+  type ToolCallState,
+} from "~/modules/threads/message-store"
+import ToolCallRow, { groupToolCalls, StackedToolCallGroup } from "./ToolCallRow"
+
+/** A read of one app, as the server's `tool_call` and `tool_result` frames describe it. */
+const read = (
+  id: string,
+  app: string,
+  appLabel: string,
+  over: Partial<ToolCallState> = {},
+): ToolCallState => ({
+  toolCallId: id,
+  toolName: `${app}__records_read`,
+  args: { id },
+  status: "completed",
+  result: { ok: true },
+  readOnly: true,
+  appLabel,
+  ...over,
+})
+
+/** Draw a turn's calls as the turn blocks do: each group, a row or a stack. */
+function TurnCalls(props: { calls: ToolCallState[] }) {
+  return (
+    <For each={groupToolCalls(props.calls)}>
+      {(g) =>
+        g.calls.length > 1 ? (
+          <StackedToolCallGroup toolCalls={g.calls} />
+        ) : (
+          <ToolCallRow toolCall={g.calls[0]} />
+        )
+      }
+    </For>
+  )
+}
 
 describe("ToolCallRow", () => {
   it("walk N45: two identical request_secret calls are never folded into a group, and the card is drawn once", () => {
@@ -361,6 +415,141 @@ describe("ToolCallRow", () => {
         <ToolCallRow toolCall={{ toolCallId: "toolu_edit", toolName: "Edit", status: "running" }} />
       ))
       expect(screen.queryByTestId("local-permission-card")).toBeNull()
+    })
+  })
+
+  describe("result cards and the roll-up of reads", () => {
+    afterEach(() => {
+      devFlag.value = true
+      resetMessageStore()
+    })
+
+    it("with env.DEV false no pre in the DOM", async () => {
+      devFlag.value = false
+      // A tool whose card resolved to null: the ordinary row, and nothing of the JSON.
+      const { container } = render(() => (
+        <ToolCallRow
+          toolCall={{
+            toolCallId: "tc-raw",
+            toolName: "billing__subscriptions_list",
+            status: "completed",
+            args: { customer: "cus-1" },
+            result: { items: [{ id: "sub-1", secretish: "raw value" }] },
+          }}
+        />
+      ))
+      await fireEvent.click(screen.getByText("Subscriptions List").closest("button")!)
+      expect(container.querySelector("pre")).toBeNull()
+      expect(container.textContent).not.toContain("raw value")
+    })
+
+    it("a row with a card draws the card instead of its line and is never folded", () => {
+      const withCard = read("r1", "contacts", "Contacts", {
+        card: { kind: "entity", pill: { label: "Contacts" }, title: "Maison Arlon" },
+      })
+      expect(
+        groupToolCalls([withCard, read("r2", "billing", "Billing")]).map((g) => g.calls.length),
+      ).toEqual([1, 1])
+      render(() => <ToolCallRow toolCall={withCard} />)
+      expect(screen.getByTestId("card-entity")).toHaveTextContent("Maison Arlon")
+      expect(screen.queryByText("Records Read")).toBeNull()
+    })
+
+    it("Read N apps", () => {
+      const calls = [
+        read("r1", "contacts", "Contacts"),
+        read("r2", "billing", "Billing"),
+        read("r3", "invoicing", "Invoicing"),
+      ]
+      expect(groupToolCalls(calls).map((g) => g.calls.length)).toEqual([3])
+      render(() => <TurnCalls calls={calls} />)
+      expect(screen.getByTestId("tool-rollup-title")).toHaveTextContent("Read 3 apps")
+      expect(screen.getByTestId("tool-rollup-summary")).toHaveTextContent(
+        "Contacts, Billing, Invoicing",
+      )
+      expect(screen.queryAllByTestId("tool-call-row")).toHaveLength(0)
+    })
+
+    it("Read N-1 of N apps, and <App> did not answer", () => {
+      const calls = [
+        read("r1", "contacts", "Contacts"),
+        read("r2", "billing", "Billing", {
+          status: "error",
+          result: { error: { message: "timeout" } },
+        }),
+        read("r3", "invoicing", "Invoicing"),
+      ]
+      render(() => <TurnCalls calls={calls} />)
+      expect(screen.getByTestId("tool-rollup-title")).toHaveTextContent("Read 2 of 3 apps")
+      expect(screen.getByTestId("tool-rollup-summary")).toHaveTextContent("Billing did not answer")
+    })
+
+    it("while the reads run, one line per app in order, with the tool's running label", () => {
+      const calls = [
+        read("r1", "contacts", "Contacts"),
+        read("r2", "billing", "Billing", {
+          status: "running",
+          runningLabel: "Reading subscriptions",
+        }),
+      ]
+      render(() => <TurnCalls calls={calls} />)
+      const lines = screen.getAllByTestId("tool-rollup-line")
+      expect(lines.map((l) => l.textContent)).toEqual(["Contacts", "BillingReading subscriptions"])
+    })
+
+    it("1 read stays a plain row", () => {
+      const calls = [read("r1", "contacts", "Contacts")]
+      expect(groupToolCalls(calls).map((g) => g.calls.length)).toEqual([1])
+      render(() => <TurnCalls calls={calls} />)
+      expect(screen.queryByTestId("tool-rollup")).toBeNull()
+      expect(screen.getByTestId("tool-call-row")).toBeInTheDocument()
+    })
+
+    it("roll-up is the same live and after reload", () => {
+      // Live: the frames the server streams. A tool that returned an error object is "error"
+      // live and "completed" in the stored row: both read as did not answer.
+      const thread = "th-roll"
+      handleWsAgentStreamEvent("start", { threadId: thread, turnId: "turn-1" })
+      const frames: Array<[string, Record<string, unknown>]> = [
+        ["contacts", { appLabel: "Contacts" }],
+        ["billing", { appLabel: "Billing", runningLabel: "Reading subscriptions" }],
+        ["invoicing", { appLabel: "Invoicing" }],
+      ]
+      frames.forEach(([app, presentation], i) => {
+        handleWsAgentStreamEvent("tool_call", {
+          threadId: thread,
+          turnId: "turn-1",
+          toolCallId: `r${i}`,
+          toolName: `${app}__records_read`,
+          args: { id: `r${i}` },
+          readOnly: true,
+          ...presentation,
+        })
+      })
+      frames.forEach(([app], i) => {
+        handleWsAgentStreamEvent("tool_result", {
+          threadId: thread,
+          turnId: "turn-1",
+          toolCallId: `r${i}`,
+          result: app === "billing" ? { error: "timeout" } : { ok: true },
+        })
+      })
+      const live = render(() => <TurnCalls calls={getAgentStream(thread).toolCalls} />)
+      const liveText = live.container.textContent
+      live.unmount()
+      // Reload: the same calls as `metadata.toolCalls` stores them.
+      const storedCalls: ToolCallState[] = frames.map(([app, presentation], i) => ({
+        toolCallId: `r${i}`,
+        toolName: `${app}__records_read`,
+        args: { id: `r${i}` },
+        result: app === "billing" ? { error: "timeout" } : { ok: true },
+        status: "completed",
+        readOnly: true,
+        ...(presentation as Partial<ToolCallState>),
+      }))
+      const reloaded = render(() => <TurnCalls calls={storedCalls} />)
+      expect(liveText).toContain("Read 2 of 3 apps")
+      expect(reloaded.container.textContent).toBe(liveText)
     })
   })
 })

@@ -205,7 +205,8 @@ describe("mail routes", () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      data: [{ id: "user-1", name: "User One", avatarUrl: null }],
+      // `away` is null for someone not away today.
+      data: [{ id: "user-1", name: "User One", avatarUrl: null, away: null }],
     })
     expect(listAssignableUsersForAccount).toHaveBeenCalledWith(
       expect.anything(),

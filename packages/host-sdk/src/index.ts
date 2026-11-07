@@ -134,6 +134,27 @@ export interface SlotMountHandle {
 
 /** Host-driven slot mount. `callerApp` is the bound consuming app (reserved for
  *  future iframe routing/telemetry; resolution uses the descriptor). */
+/** Serializable descriptor for an entity's discussion mounted by a bundle. */
+export interface EntityDiscussionMountDescriptor {
+  /** The app whose entity it is; absent means the calling app. */
+  app?: string
+  /** The entity kind, as the app's manifest declares it (`entities.<type>.discussion`). */
+  entityType: string
+  entityId: string
+  /** The root data-testid (default `entity-discussion`). */
+  testId?: string
+  /** Shown while the discussion has no message. */
+  emptyText?: string
+  placeholder?: string
+  sendLabel?: string
+}
+
+export type EntityDiscussionMounter = (
+  callerApp: string,
+  anchor: SlotAnchor,
+  descriptor: EntityDiscussionMountDescriptor,
+) => SlotMountHandle
+
 export type SlotMounter = (
   callerApp: string,
   anchor: SlotAnchor,
@@ -228,6 +249,9 @@ export interface HostServices {
   /** Host-driven cross-app slot-body mount. The kernel's buildHostServices()
    *  always provides it; pre-existing shims may not. */
   mountSlot?: SlotMounter
+  /** Host-driven mount of an entity's discussion (who may read it is the
+   *  server's, from who may see the entity). Optional so older shims stay valid. */
+  mountEntityDiscussion?: EntityDiscussionMounter
   /**
    * The reader's UI language ("en", "fr"). A reactive accessor on the kernel
    * (reading it inside a render tracks a language switch). Optional so older
@@ -450,6 +474,20 @@ export const app = {
     const host = getHost()
     if (!host.mountSlot) return { resolved: false, dispose: () => {} }
     return host.mountSlot(getAppName(), anchor, descriptor)
+  },
+  /**
+   * Mount the discussion of one of the app's records into `anchor`: one
+   * conversation per record, read and written by whoever can see the record.
+   * A bundle cannot import the kernel's component, so the host renders it.
+   * Returns `{ resolved: false }` when the host predates it.
+   */
+  mountEntityDiscussion: (
+    anchor: SlotAnchor,
+    descriptor: EntityDiscussionMountDescriptor,
+  ): SlotMountHandle => {
+    const host = getHost()
+    if (!host.mountEntityDiscussion) return { resolved: false, dispose: () => {} }
+    return host.mountEntityDiscussion(getAppName(), anchor, descriptor)
   },
 }
 

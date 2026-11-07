@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import {
   APPROVING_WEDGE_GRACE_MS,
+  type ApprovalRoute,
+  type ApprovalSendGuard,
   type AttentionItem,
   appApprovesFromHome,
+  type HomePlacement,
+  homePlacement,
   isPeerSelfApprovable,
 } from "@liaison/shared"
 import { sql as drizzleSql } from "drizzle-orm"
@@ -10,24 +14,22 @@ import { extractRows, type RlsClient } from "~/db"
 import { withPrivilegedDb } from "~/db/privileged"
 import { schemaRef } from "~/db/schema-ref"
 import { appsLogger as log } from "~/lib/logger"
-import {
-  apiViewer,
-  authorityFacts,
-  canSeeInFeed,
-  decidingScope,
-} from "~/modules/approvals/authority"
+import { apiViewer, authorityFacts, canSeeInFeed } from "~/modules/approvals/authority"
 import { humanizeToolName, splitToolName } from "~/modules/approvals/event-data"
 import { readApprovalLastFailures } from "~/modules/approvals/last-failure"
+import {
+  isFinalSendGuardState,
+  readFeedSendGuardStates,
+  readFeedSendGuards,
+} from "~/modules/approvals/list"
 import { approvalPayloadHash } from "~/modules/approvals/payload-hash"
 import { approvalActionPhrase, deriveApprovalDetail } from "~/modules/approvals/payload-title"
 import { readApprovalRequesters } from "~/modules/approvals/requester"
+import { type RoutedRows, readApprovalRoutes } from "~/modules/approvals/route-world"
 import { withServedSummaries } from "~/modules/approvals/served-summary"
 import { toolRegistry } from "~/modules/apps/app-registries"
+import { sendGuardProviderPill } from "~/modules/mail/send-guard"
 import { isSeededWrite } from "~/modules/notifications/seeded"
-import {
-  everyMemberScopeFragment,
-  scopeMatchesFragment,
-} from "~/modules/permissions/eligible-approvers"
 
 const K = drizzleSql.raw(schemaRef("kernel"))
 
@@ -88,6 +90,8 @@ interface PendingApprovalRow {
   current_payload: Record<string, unknown> | null
   /** The conversation the request was raised in (where its card shows). */
   originating_thread_id: string | null
+  /** The person on the item, read only to route the row (route-world.ts). */
+  route_person_id: string | null
 }
 
 /** One step of a bundle, as the row names it. */
@@ -104,6 +108,91 @@ interface BundleOutcome extends BundleStepRow {
   /** Later steps run off earlier ones. A parallel bundle (independent
    *  requests, each decided on its own) has no single outcome to name. */
   sequenced: boolean
+}
+
+/**
+ * The row's pill: a send-guard provider's for the first ref's kind ("Billing: payment reminder"),
+ * else the tool's manifest `approvalCard.pill`, else none (the client names the action as before).
+ */
+function approvalRowPill(
+  orgId: string,
+  toolName: string,
+  payload: Record<string, unknown> | null,
+): { label: string; labelKey?: string } | undefined {
+  const guard = payload?.sendGuard as { refs?: unknown } | undefined
+  const first = Array.isArray(guard?.refs) ? (guard.refs[0] as { kind?: unknown }) : undefined
+  if (first && typeof first.kind === "string") {
+    const pill = sendGuardProviderPill(orgId, first.kind)
+    if (pill) return pill
+  }
+  const { appName, toolShortName } = splitToolName(toolName)
+  const pill = toolRegistry.get([orgId, appName, toolShortName])?.approvalCard?.pill
+  return pill && typeof pill.label === "string" && pill.label.length > 0 ? pill : undefined
+}
+
+/**
+ * The send check on each agent mail draft of the feed or badge. A failed read is a row without
+ * its guard line, never a failed feed.
+ */
+async function readGuardsQuietly(
+  tx: RlsClient,
+  orgId: string,
+  rows: Array<{
+    id: string
+    status: string
+    tool_name: string
+    current_payload: Record<string, unknown> | null
+    requested_by: string
+  }>,
+): Promise<Map<string, ApprovalSendGuard>> {
+  const guarded = rows.filter((r) => r.status === "pending" && r.current_payload?.sendGuard)
+  if (guarded.length === 0) return new Map()
+  try {
+    return await readFeedSendGuards(
+      tx,
+      orgId,
+      guarded.map((r) => ({
+        id: r.id,
+        status: "pending" as const,
+        tool_name: r.tool_name,
+        current_payload: r.current_payload ?? {},
+        requested_by: r.requested_by,
+      })),
+    )
+  } catch (err) {
+    log.warn({ err, orgId }, "could not read the send check for the attention feed")
+    return new Map()
+  }
+}
+
+/** The send check's state alone on each pending agent mail draft, as the badge counts it. */
+async function readGuardStatesQuietly(
+  orgId: string,
+  rows: Array<{
+    id: string
+    status: string
+    tool_name: string
+    current_payload: Record<string, unknown> | null
+    requested_by: string
+  }>,
+): Promise<Map<string, ApprovalSendGuard["state"]>> {
+  const guarded = rows.filter((r) => r.status === "pending" && r.current_payload?.sendGuard)
+  if (guarded.length === 0) return new Map()
+  try {
+    return await readFeedSendGuardStates(
+      orgId,
+      guarded.map((r) => ({
+        id: r.id,
+        status: "pending" as const,
+        tool_name: r.tool_name,
+        current_payload: r.current_payload ?? {},
+        requested_by: r.requested_by,
+      })),
+    )
+  } catch (err) {
+    log.warn({ err, orgId }, "could not read the send check for the badge")
+    return new Map()
+  }
 }
 
 /**
@@ -225,11 +314,6 @@ async function readAppsApprovingFromHome(
   }
 }
 
-/** The app a request's tool belongs to: it decides a restriction (S20), as the select policy does. */
-function approvalToolApp(r: { tool_name: string }): string {
-  return r.tool_name.split(":")[0] ?? ""
-}
-
 /** The facts the feed's "this person decides it" rule reads off a request row. */
 type DecidableApprovalRow = Pick<
   PendingApprovalRow,
@@ -241,65 +325,8 @@ type DecidableApprovalRow = Pick<
   | "requested_by"
   | "approve_scope"
   | "resource_owner_id"
+  | "route_person_id"
 >
-
-/**
- * PEER-NOISE CLASSIFICATION. When two people both hold `<app>:approve`,
- * every request each raises lands in the other's feed even though the
- * requester routinely approves their own. To tell those apart we need one
- * fact the row does not carry: can the REQUESTER decide their own request?
- * `requesterCanApprove` is computed at creation time (execute-tool) but never
- * persisted, so it is recomputed here, in ONE query over the distinct
- * (requester, deciding-scope) pairs actually present, using the same
- * `scopeMatchesFragment` predicate as `hasScope` and the RLS policy, so the
- * answer cannot drift from the real decide check. Keys are
- * `requester\u0000scope\u0000app`.
- */
-async function readRequesterDecides(
-  tx: RlsClient,
-  orgId: string,
-  rows: readonly DecidableApprovalRow[],
-): Promise<Set<string>> {
-  const pairs = new Map<string, { userId: string; scope: string; app: string }>()
-  for (const r of rows) {
-    const scope = decidingScope(authorityFacts(r))
-    const app = approvalToolApp(r)
-    pairs.set(`${r.requested_by}\u0000${scope}\u0000${app}`, {
-      userId: r.requested_by,
-      scope,
-      app,
-    })
-  }
-  const requesterDecides = new Set<string>()
-  if (pairs.size === 0) return requesterDecides
-  const values = drizzleSql.join(
-    [...pairs.values()].map(
-      (p) => drizzleSql`(${p.userId}::uuid, ${p.scope}::text, ${p.app}::text)`,
-    ),
-    drizzleSql`, `,
-  )
-  const decideRows = extractRows<{ user_id: string; scope: string; app: string }>(
-    await tx.execute(drizzleSql`
-      WITH wanted(user_id, scope, app) AS (VALUES ${values})
-      SELECT w.user_id, w.scope, w.app
-      FROM wanted w
-      WHERE NOT ${K}.app_access_denied(${orgId}::uuid, w.user_id, w.app)
-        AND (EXISTS (
-        SELECT 1 FROM ${K}.user_scope_grants g
-        WHERE g.user_id = w.user_id AND g.org_id = ${orgId}::uuid
-          AND ${scopeMatchesFragment(drizzleSql`g.scope`, drizzleSql`w.scope`)}
-      ) OR EXISTS (
-        SELECT 1
-        FROM ${K}.user_roles ur
-        JOIN ${K}.role_scope_grants rsg ON rsg.role_id = ur.role_id
-        WHERE ur.user_id = w.user_id AND ur.org_id = ${orgId}::uuid
-          AND ${scopeMatchesFragment(drizzleSql`rsg.scope`, drizzleSql`w.scope`)}
-      ) OR ${everyMemberScopeFragment(orgId, drizzleSql`w.user_id`, drizzleSql`w.scope`)})
-    `),
-  )
-  for (const d of decideRows) requesterDecides.add(`${d.user_id}\u0000${d.scope}\u0000${d.app}`)
-  return requesterDecides
-}
 
 /**
  * Whether a request is in the caller's feed as THEIR decision: the feed's
@@ -319,26 +346,37 @@ function isCallersDecision(
   return stalled || !(Array.isArray(signedOff) && signedOff.includes(callerUserId))
 }
 
-/** Home's peer-noise flag for one row (`metadata.peerSelfApprovable` on the feed item). */
+/**
+ * Home's peer-noise flag for one row (`metadata.peerSelfApprovable` on the feed item): another
+ * person raised it and can decide it themselves. When two people both hold the deciding scope,
+ * every request each raises lands in the other's feed though the requester routinely approves
+ * their own. Whether the requester decides it is not persisted, so `readApprovalRoutes` reads it
+ * in the same one query as the route, with the predicate `hasScope` and the select policy use.
+ * Under a two-approver policy the requester never finishes it alone, so it is never noise.
+ */
 function rowIsPeerSelfApprovable(
   r: DecidableApprovalRow,
   callerUserId: string,
-  requesterDecides: Set<string>,
+  routes: RoutedRows,
 ): boolean {
   return isPeerSelfApprovable(
     {
       requestedById: r.requested_by,
       originRoutineId: r.metadata?.originRoutineId ?? null,
-      // Under a two-approver policy the requester can never finish it
-      // alone: the others' sign-off is required, so it is never peer noise.
-      requesterCanDecide:
-        (r.metadata?.minApprovers ?? 1) < 2 &&
-        requesterDecides.has(
-          `${r.requested_by}\u0000${decidingScope(authorityFacts(r))}\u0000${approvalToolApp(r)}`,
-        ),
+      requesterCanDecide: routes.requesterDecides(r.id),
     },
     callerUserId,
   )
+}
+
+/** Where a row sits on this viewer's Home (shared `homePlacement`). */
+function rowPlacement(
+  r: DecidableApprovalRow,
+  route: ApprovalRoute,
+  callerUserId: string,
+  callerScopes: string[],
+): HomePlacement {
+  return homePlacement(authorityFacts(r), route, apiViewer(callerUserId, callerScopes))
 }
 
 /** The feed's predicate over `approval_requests ar`: pending, or approving and dead. */
@@ -374,14 +412,15 @@ export async function computeApprovalBadgeItems(
     kind: "approval_pending"
     entity: string
     entityId: string
-    metadata: { peerSelfApprovable: boolean }
+    metadata: { peerSelfApprovable: boolean; placement: HomePlacement }
   }>
 > {
   const callerScopes = await readCurrentScopes(tx)
-  const rows = extractRows<DecidableApprovalRow>(
+  const rows = extractRows<DecidableApprovalRow & Pick<PendingApprovalRow, "current_payload">>(
     await tx.execute(drizzleSql`
       SELECT ar.id, ar.tool_name, ar.status, ar.metadata, ar.notify_user_ids,
-             ar.requested_by, ar.approve_scope, ar.resource_owner_id
+             ar.requested_by, ar.approve_scope, ar.resource_owner_id, ar.route_person_id,
+             CASE WHEN ar.current_payload ? 'sendGuard' THEN ar.current_payload END AS current_payload
       FROM ${K}.approval_requests ar
       WHERE ar.org_id = ${orgId}
         AND ${FEED_STATUS_SQL}
@@ -394,13 +433,29 @@ export async function computeApprovalBadgeItems(
       LIMIT ${limit}
     `),
   ).filter((r) => isCallersDecision(r, callerUserId, callerScopes))
-  const requesterDecides = await readRequesterDecides(tx, orgId, rows)
-  return rows.map((r) => ({
-    kind: "approval_pending" as const,
-    entity: "approval_request",
-    entityId: r.id,
-    metadata: { peerSelfApprovable: rowIsPeerSelfApprovable(r, callerUserId, requesterDecides) },
-  }))
+  // As on Home: a held draft, or one that can no longer go out as written, is not counted.
+  // The state alone, read for every draft in shared queries: this runs on every push.
+  const states = await readGuardStatesQuietly(orgId, rows)
+  const counted = rows.filter((r) => {
+    const state = states.get(r.id)
+    return state === undefined || (state !== "held" && !isFinalSendGuardState(state))
+  })
+  const routes = await readApprovalRoutes(tx, orgId, counted)
+  return counted.map((r) => {
+    const placement = rowPlacement(r, routes.route(r.id), callerUserId, callerScopes)
+    return {
+      kind: "approval_pending" as const,
+      entity: "approval_request",
+      entityId: r.id,
+      metadata: {
+        // A row for someone else is never this person's ask, also for a client that
+        // predates `placement` and reads the peer flag alone.
+        peerSelfApprovable:
+          placement === "others" || rowIsPeerSelfApprovable(r, callerUserId, routes),
+        placement,
+      },
+    }
+  })
 }
 
 /**
@@ -462,7 +517,7 @@ export async function computeApprovalAttentionItems(
   const result = await tx.execute(drizzleSql`
     SELECT ar.id, ar.handle, ar.summary, ar.tool_name, ar.status, ar.metadata, ar.created_at, ar.expires_at,
            ar.notify_user_ids, ar.bundle_id, ar.approve_scope, ar.resource_owner_id, ar.requested_by,
-           ar.current_payload, ar.originating_thread_id
+           ar.current_payload, ar.originating_thread_id, ar.route_person_id
     FROM ${K}.approval_requests ar
     WHERE ar.org_id = ${orgId}
       AND (
@@ -491,7 +546,7 @@ export async function computeApprovalAttentionItems(
     rows.map((r) => r.id),
   )
 
-  const requesterDecides = await readRequesterDecides(tx, orgId, rows)
+  const routes = await readApprovalRoutes(tx, orgId, rows)
 
   // Per-bundle step count and OUTCOME step, built once (avoids N+1 when
   // several bundles pend). A bundle's head is its FIRST step (a CRM write), so
@@ -600,18 +655,28 @@ export async function computeApprovalAttentionItems(
     }
   }
 
+  // A held draft (an out-of-office until a date) is not on Home until its hold ends; that is
+  // read fresh each time, so the row comes back with no write. A draft whose check says it can
+  // no longer go out as written shows why, and is not counted.
+  const guards = await readGuardsQuietly(tx, orgId, rows)
+  const routeNames = await readRouteNames(tx, orgId, callerUserId, rows, routes)
+
   const items: AttentionItem[] = []
   for (const r of rows) {
     const { appName, toolShortName } = splitToolName(r.tool_name)
     // In the feed as THEIR decision (a two-approver request they already
     // signed off waits for someone else and leaves it; a stalled one stays).
     if (!isCallersDecision(r, callerUserId, callerScopes)) continue
+    const guard = guards.get(r.id)
+    if (guard?.state === "held") continue
 
     // A wedged row is NOT a fresh decision: it was already approved and its
     // execution died. It outranks any pending item (the work is half-done and
     // has been silently stalled for as long as nobody looked) and its
     // expiry countdown is meaningless, so it never takes the expiry bump.
     const wedged = r.status === "approving"
+    const route = routes.route(r.id)
+    const placement = rowPlacement(r, route, callerUserId, callerScopes)
 
     // THE ROW'S NAME. The author's summary title wins; a missing one (no
     // registered summarizer, a summarizer that threw, a row written outside
@@ -674,6 +739,12 @@ export async function computeApprovalAttentionItems(
         // What ACTION is gated ("Tickets: reply") + how risky it is, so the
         // feed row is decidable at a glance without expanding the card.
         actionLabel: humanizeToolName(shown.tool_name),
+        ...(() => {
+          const pill = approvalRowPill(orgId, shown.tool_name, shown.current_payload)
+          return pill ? { pill } : {}
+        })(),
+        ...(guard ? { sendGuard: guard } : {}),
+        ...(guard && isFinalSendGuardState(guard.state) ? { uncounted: true as const } : {}),
         // WHO/WHAT this acts on ("Reply to Alex Martin on ticket-10013",
         // "Ship draft ... to a dealer"). The summarizers have always
         // written it; the feed just never carried it, so a row led with the
@@ -712,7 +783,18 @@ export async function computeApprovalAttentionItems(
         // Peer noise: another person's request that they could have approved
         // themselves. The feed hides these BY DEFAULT (a display default, never
         // a permission — the row stays decidable and shows with the filter off).
-        peerSelfApprovable: rowIsPeerSelfApprovable(r, callerUserId, requesterDecides),
+        // A row for someone else ("For others, you can also approve") folds the same way, so a
+        // client that predates `placement` counts and pushes it as it always has.
+        peerSelfApprovable:
+          placement === "others" || rowIsPeerSelfApprovable(r, callerUserId, routes),
+        // Whose the row is, and where it sits on this viewer's Home.
+        route,
+        placement,
+        // The names Home's "why" line says, for a row routed to a person or with a blocked stand-in.
+        ...(() => {
+          const line = routeLineOf(route, routeNames)
+          return line ? { routeLine: line } : {}
+        })(),
         // A bundle reads as external when any end of it is (the chip shows the outcome).
         approvalImpact:
           shown !== r &&
@@ -780,4 +862,60 @@ export async function computeApprovalAttentionItems(
     })
   }
   return items
+}
+
+/** The names a row's "why" line says (`metadata.routeLine`): who it is for, who stands in. */
+export interface RouteLine {
+  forName?: string
+  standInName?: string
+  blockedName?: string
+}
+
+function routeLineOf(route: ApprovalRoute, names: Map<string, string>): RouteLine | null {
+  if (route.to !== "person") return null
+  const line: RouteLine = {}
+  const forName = names.get(route.userId)
+  if (forName) line.forName = forName
+  const standInName = route.standIn ? names.get(route.standIn) : undefined
+  if (standInName) line.standInName = standInName
+  const blockedName = route.blockedStandIn ? names.get(route.blockedStandIn) : undefined
+  if (blockedName) line.blockedName = blockedName
+  return line
+}
+
+/**
+ * The names of the people the feed's routes name, read once as the viewer. A name that cannot be
+ * read leaves the line without it, never a failed feed.
+ */
+async function readRouteNames(
+  tx: RlsClient,
+  orgId: string,
+  callerUserId: string,
+  rows: readonly { id: string }[],
+  routes: RoutedRows,
+): Promise<Map<string, string>> {
+  const ids = new Set<string>()
+  for (const r of rows) {
+    const route = routes.route(r.id)
+    if (route.to !== "person") continue
+    for (const id of [route.userId, route.standIn, route.blockedStandIn]) {
+      if (id && id !== callerUserId) ids.add(id)
+    }
+  }
+  const out = new Map<string, string>()
+  if (ids.size === 0) return out
+  try {
+    const found = extractRows<{ id: string; name: string }>(
+      await tx.execute(drizzleSql`
+        SELECT id, name FROM ${K}.users
+        WHERE org_id = ${orgId}::uuid AND id IN (${drizzleSql.join(
+          [...ids].map((id) => drizzleSql`${id}::uuid`),
+          drizzleSql`, `,
+        )})`),
+    )
+    for (const u of found) out.set(u.id, u.name)
+  } catch (err) {
+    log.warn({ err, orgId }, "could not read the names of the approval routes")
+  }
+  return out
 }

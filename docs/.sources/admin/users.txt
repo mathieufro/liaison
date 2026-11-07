@@ -84,3 +84,5 @@ password change or reset ends sessions and MCP connections -> apps/api/src/modul
 password change or reset stops push to registered phones and browsers -> apps/api/src/modules/auth/auth.ts:889 ; apps/api/src/modules/auth/routes.ts:1206 ; apps/api/src/modules/push/end-user-push.ts:30
 deactivation stops push to registered phones and browsers -> apps/api/src/modules/users/service.ts:386
 step-up for a full-access MCP connection (OAuth consent or device approval, no agent binding), emailed code only, sent when the page opens -> apps/api/src/modules/mcp/full-access-step-up.ts:52 ; apps/api/src/modules/auth/step-up.ts:99 ; apps/api/src/modules/auth/device-flow-routes.ts:353 ; apps/api/src/modules/mcp/oauth-server-routes.ts:584 ; apps/api/src/modules/mcp/oauth-server-routes.ts:411
+Deactivation deletes the person's away ranges -> apps/api/src/modules/users/away.ts:1052 ; apps/api/src/modules/users/service.ts
+Deactivation deletes calendar-derived away ranges too (one table, every source) -> apps/api/src/modules/users/away.ts:1057

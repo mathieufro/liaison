@@ -27,6 +27,8 @@ import { schemaRef } from "~/db/schema-ref"
 
 export interface ContactPrimaryThread {
   id: string
+  /** True when this call created the thread. */
+  created: boolean
 }
 
 /**
@@ -63,7 +65,7 @@ export async function getOrCreateContactPrimaryThread(
     // to a thread someone else created joins as `member`. Without this row their
     // subsequent RLS-scoped reads/writes 500 ("not visible under threads_select").
     await ensureParticipant(tx, id, orgId, callerUserId, created ? "admin" : "member")
-    return { id }
+    return { id, created }
   })
 }
 

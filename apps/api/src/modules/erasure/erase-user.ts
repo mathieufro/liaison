@@ -377,6 +377,30 @@ export const KERNEL_USER_COLUMN_DISPOSITION: Record<string, KernelColumnDisposit
     kind: "handled",
     reason: "delete (per-user attention rules)",
   },
+  "away_ranges.user_id": {
+    kind: "handled",
+    reason: "delete (when the person was away is about them)",
+  },
+  "away_ranges.next_in_line_id": {
+    kind: "handled",
+    reason: "anonymize → NULL (NULL = the away person's standing default)",
+  },
+  "away_ranges.set_by": {
+    kind: "handled",
+    reason: "anonymize → NULL (who set someone else's away range)",
+  },
+  "user_preferences.next_in_line_id": {
+    kind: "handled",
+    reason: "anonymize → NULL (another person's standing next in line)",
+  },
+  "approval_requests.route_person_id": {
+    kind: "handled",
+    reason: "anonymize → NULL (NULL = the usual deciders)",
+  },
+  "org_app_features.changed_by": {
+    kind: "handled",
+    reason: "anonymize → NULL (who changed an org's feature; the switch survives)",
+  },
   "attention_events.user_id": {
     kind: "handled",
     reason: "delete (per-user attention deliveries)",
@@ -1217,6 +1241,22 @@ export async function eraseUser(
       `)
       await tx.execute(drizzleSql`
         UPDATE ${K}.routines SET edited_by_user_id = NULL WHERE edited_by_user_id = ${userId}
+      `)
+      await tx.execute(drizzleSql`DELETE FROM ${K}.away_ranges WHERE user_id = ${userId}`)
+      await tx.execute(drizzleSql`
+        UPDATE ${K}.away_ranges SET next_in_line_id = NULL WHERE next_in_line_id = ${userId}
+      `)
+      await tx.execute(
+        drizzleSql`UPDATE ${K}.away_ranges SET set_by = NULL WHERE set_by = ${userId}`,
+      )
+      await tx.execute(drizzleSql`
+        UPDATE ${K}.user_preferences SET next_in_line_id = NULL WHERE next_in_line_id = ${userId}
+      `)
+      await tx.execute(drizzleSql`
+        UPDATE ${K}.approval_requests SET route_person_id = NULL WHERE route_person_id = ${userId}
+      `)
+      await tx.execute(drizzleSql`
+        UPDATE ${K}.org_app_features SET changed_by = NULL WHERE changed_by = ${userId}
       `)
       // skills.owner_agent_id is nullable and the existing disposition for
       // skills is ANONYMIZE (the skill survives the erasure), so a skill owned

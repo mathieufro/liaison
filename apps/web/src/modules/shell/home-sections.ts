@@ -20,7 +20,7 @@ import {
   type ApprovalFacet,
   approvalActionFacets,
   isApprovalItem,
-  partitionPeerRequests,
+  partitionOthersRows,
 } from "~/modules/shell/approval-facets"
 import {
   type AlertEntry,
@@ -36,6 +36,7 @@ import {
   homeActionItems,
   homeApprovalItems,
   isRoutineAlertItem,
+  isUncountedItem,
 } from "~/modules/shell/home-action-count"
 
 /** Conversation kinds: Messages owns the kernel's, so Home's queues never
@@ -56,10 +57,12 @@ export interface HomeSections {
     timeLimited: AttentionItem[]
     approvals: AttentionItem[]
     approvalFacets: ApprovalFacet[]
-    /** Peer requests folded out of `approvals` (the "Show N from peers" row). */
-    peerCount: number
+    /** Rows for someone else the viewer can also approve: Home's closed group, not counted. */
+    others: AttentionItem[]
     alerts: AttentionItem[]
     alertEntries: AlertEntry[]
+    /** Shown in Needs you, not counted: stopped sends and drafts that can no longer go out. */
+    uncounted: AttentionItem[]
   }
   /** Work groups by app, biggest urgency first (splitFeed's own order). */
   queues: AttentionGroup[]
@@ -74,12 +77,12 @@ export interface HomeSections {
 
 export function buildHomeSections(
   feedItems: AttentionItem[],
-  opts: { peersShown: boolean; viewer: HomeViewer; nowMs?: number },
+  opts: { viewer: HomeViewer; nowMs?: number },
 ): HomeSections {
   // One "needs your OK" row per node chat, its newest prompt (and one count).
   const items = newestPromptPerChat(feedItems)
   const nowMs = opts.nowMs ?? Date.now()
-  const needItems = homeActionItems(items, opts.peersShown, opts.viewer)
+  const needItems = homeActionItems(items, false, opts.viewer)
   const timeLimited: AttentionItem[] = []
   const approvals: AttentionItem[] = []
   const alerts: AttentionItem[] = []
@@ -91,13 +94,13 @@ export function buildHomeSections(
     else alerts.push(item)
   }
   const allApprovals = homeApprovalItems(splitFeed(items).now, true, opts.viewer)
-  const peerCount = opts.peersShown ? 0 : partitionPeerRequests(allApprovals).peers.length
+  const others = partitionOthersRows(allApprovals).others
 
   // Everything urgent that is not in Needs you is volume and joins its app's
   // queue: a ticket awaiting a reply that is not the viewer's, another app's
   // mention or reply suggestion (opened, not decided inline). What stays out
   // of the queues: Needs you itself, approvals (a folded peer request is
-  // behind its own toggle, access requests among them), routine alerts
+  // in the closed "For others" group, access requests among them), routine alerts
   // (Agents) and mail (Mail's).
   const needIds = new Set(needItems.map((i) => i.id))
   const staysNow = (i: AttentionItem): boolean =>
@@ -142,9 +145,10 @@ export function buildHomeSections(
       timeLimited,
       approvals,
       approvalFacets: approvalActionFacets(approvals),
-      peerCount,
+      others,
       alerts,
       alertEntries: clusterAlerts(alerts, nowMs),
+      uncounted: items.filter(isUncountedItem),
     },
     queues,
     queueTotal: queues.reduce((sum, g) => sum + g.items.length, 0),
@@ -184,7 +188,7 @@ function regroup(group: AttentionGroup, items: AttentionItem[]): AttentionGroup 
 //
 // One string names what the sidebar (or a phone chip) selected:
 //   overview
-//   needs | needs:time | needs:approvals[:<facet>] | needs:alerts[:<cluster>]
+//   needs | needs:time | needs:approvals[:<facet>] | needs:others | needs:alerts[:<cluster>]
 //   queues | queue:<groupKey>[|<kind>]
 //   agents | agents:failed | agents:waiting | agents:notifications
 //   today

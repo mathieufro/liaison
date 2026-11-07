@@ -412,6 +412,11 @@ export const SINK_KERNEL_SCOPE_REQUESTS = "kernel.scope_requests"
 export const SINK_KERNEL_USER_PREFERENCES = "kernel.user_preferences"
 export const SINK_KERNEL_ATTENTION_SUBSCRIPTIONS = "kernel.attention_subscriptions"
 export const SINK_KERNEL_USER_THREAD_STATE = "kernel.user_thread_state"
+//
+// Away days (kernel.away_ranges, `set_away`): dates, weekdays and member ids, no free text and
+// never a reason, so nothing scoped a turn read can be carried in one. Who may write which
+// person's range is the tool's own rule (outside text and non-person turns park it).
+export const SINK_KERNEL_AWAY_RANGES = "kernel.away_ranges"
 
 export const TAINT_CONTROL_PLANE_SINKS: ReadonlySet<string> = new Set([
   SINK_KERNEL_AGENT_RUNS,
@@ -420,6 +425,7 @@ export const TAINT_CONTROL_PLANE_SINKS: ReadonlySet<string> = new Set([
   SINK_KERNEL_USER_PREFERENCES,
   SINK_KERNEL_ATTENTION_SUBSCRIPTIONS,
   SINK_KERNEL_USER_THREAD_STATE,
+  SINK_KERNEL_AWAY_RANGES,
 ])
 
 // LOW-SENSITIVITY SINKS (owner decision, 2026-09-30). Project tasks, their checklist items and

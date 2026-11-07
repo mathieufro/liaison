@@ -352,6 +352,8 @@ export async function decide(
     reason?: string
     mailboxFulfilment?: MailboxFulfilmentBody
     payloadHash?: string
+    /** "Send now" on a held mail draft (approvals-service.ts `DecideBody`). */
+    sendGuardOverride?: "auto_reply"
     /** What the decision toast names, when the surface knows better than the
      *  row alone (a sequence's outcome and its steps). */
     label?: DecisionLabel | null
@@ -382,6 +384,7 @@ export async function decide(
               decision: "approve",
               ...(opts?.mailboxFulfilment ? { mailboxFulfilment: opts.mailboxFulfilment } : {}),
               ...(payloadHash ? { payloadHash } : {}),
+              ...(opts?.sendGuardOverride ? { sendGuardOverride: opts.sendGuardOverride } : {}),
               ...(stepPayloadHashes && Object.keys(stepPayloadHashes).length > 0
                 ? { stepPayloadHashes }
                 : {}),

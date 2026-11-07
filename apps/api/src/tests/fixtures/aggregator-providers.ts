@@ -75,3 +75,26 @@ export async function sqlFailingProvider(tx: RlsClient): Promise<AttentionItem[]
   await tx.execute(sql`SELECT 1 / 0`)
   return []
 }
+
+/** Echoes whom the aggregator passed on to it, as one item per provider. */
+function passOnEcho(app: string, userId: string, forUserIds?: readonly string[]): AttentionItem[] {
+  return [{ ...mkItem(app, 50, `${app}-${userId}`), metadata: { forUserIds: forUserIds ?? [] } }]
+}
+
+export async function passOnEchoA(
+  _tx: RlsClient,
+  _orgId: string,
+  userId: string,
+  forUserIds?: readonly string[],
+): Promise<AttentionItem[]> {
+  return passOnEcho("routePassOnDeclared", userId, forUserIds)
+}
+
+export async function passOnEchoB(
+  _tx: RlsClient,
+  _orgId: string,
+  userId: string,
+  forUserIds?: readonly string[],
+): Promise<AttentionItem[]> {
+  return passOnEcho("routePassOnUndeclared", userId, forUserIds)
+}

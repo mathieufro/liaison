@@ -36,7 +36,6 @@ import {
   Switch,
 } from "solid-js"
 import { cn } from "~/lib/cn"
-import { approvalActionLabel } from "~/modules/approvals/approval-copy"
 import { userFromToken } from "~/modules/auth/auth-store"
 import { setFocusedDate } from "~/modules/calendar/calendar-store"
 import { useI18n } from "~/modules/i18n/i18n-context"
@@ -44,19 +43,12 @@ import NotificationBanner from "~/modules/notifications/NotificationBanner"
 import { pluralFormFor } from "~/modules/projects/plural"
 import AlertClusterRow from "~/modules/shell/AlertClusterRow"
 import { useApi } from "~/modules/shell/ApiContext"
-import { AppPill, appIdOfTool } from "~/modules/shell/AppPill"
 import AttentionEmpty from "~/modules/shell/AttentionEmpty"
 import AttentionRow from "~/modules/shell/AttentionRow"
 import {
-  type ApprovalFacet,
-  approvalActionFacets,
   approvalActionKey,
-  facetsWithSelection,
   isApprovalItem,
-  partitionByAction,
-  partitionPeerRequests,
-  reconcileSelection,
-  shouldShowApprovalFacets,
+  partitionOthersRows,
 } from "~/modules/shell/approval-facets"
 import { focusedApproval } from "~/modules/shell/approval-focus"
 import {
@@ -70,13 +62,13 @@ import {
 } from "~/modules/shell/attention-groups"
 import { formatRelativeTime, rowLocaleFrom } from "~/modules/shell/attention-row-format"
 import { attentionStore } from "~/modules/shell/attention-store"
+import HomeBriefCard from "~/modules/shell/HomeBriefCard"
 import HomeCard from "~/modules/shell/HomeCard"
 import {
   currentHomeViewer,
   homeApprovalItems,
-  reloadShowPeerRequests,
-  setShowPeerRequests,
-  showPeerRequests,
+  isApprovalDecisionInFlight,
+  isUncountedItem,
 } from "~/modules/shell/home-action-count"
 import { homeAgents, type TodayEvent, waitingOnOthers } from "~/modules/shell/home-agents-store"
 import {
@@ -103,7 +95,6 @@ import { useTabIsActive } from "~/modules/shell/TabVisibilityContext"
 import { openTab } from "~/modules/shell/tab-store"
 import { addToast } from "~/modules/shell/toast-store"
 import { createNow } from "~/primitives/createNow"
-import { createScrollOverflow } from "~/primitives/createScrollOverflow"
 import { STALE_AFTER_MS } from "~/primitives/createStaleResource"
 
 interface HomeProps {
@@ -111,8 +102,10 @@ interface HomeProps {
 }
 
 const STAGGER_CAP = 8
-/** Approval rows shown before the "Show N more" fold. */
-const APPROVALS_FOLD = 8
+/** Over this many approval rows, the list folds behind "Show N more"... */
+export const APPROVALS_FOLD_OVER = 5
+/** ...and shows this many first, in the same order (urgency first). */
+export const APPROVALS_FOLD_SHOWN = 3
 /**
  * Rows of the merged Alerts & messages card visible before it starts
  * scrolling internally. The card sits ABOVE Approvals in the default order,
@@ -202,57 +195,35 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
   ])
 
   // --- Approvals card ---
+  // A draft the send check stopped is not a decision: it shows with the alerts, uncounted.
   const allApprovalItems = createMemo(() =>
-    homeApprovalItems(feed().now, true, currentHomeViewer()),
+    homeApprovalItems(feed().now, true, currentHomeViewer()).filter(
+      (i) => !isUncountedItem(i) && !isApprovalDecisionInFlight(i),
+    ),
   )
-  // PEER NOISE, FOLDED BY DEFAULT. Two holders of the same `<app>:approve` bury
-  // each other: every request one raises lands in the other's feed even though
-  // the requester approves their own as a matter of course. Hide those by
-  // default and say how many — never silently, or a filter is indistinguishable
-  // from a broken feed. Own requests, routine-raised ones, and anything from
-  // someone who cannot self-approve are NOT peer noise and always show.
-  // The preference is shared with the Home badge (home-action-count.ts), so
-  // the badge folds peers exactly when this card does.
-  reloadShowPeerRequests()
-  const approvalSplit = createMemo(() => partitionPeerRequests(allApprovalItems()))
-  const peerCount = createMemo(() => approvalSplit().peers.length)
-  const approvalItems = createMemo(() =>
-    showPeerRequests() ? allApprovalItems() : approvalSplit().mine,
-  )
-  const togglePeerRequests = (): void => setShowPeerRequests(!showPeerRequests())
-  const [approvalAction, setApprovalAction] = createSignal<string | null>(null)
-  const approvalFacets = createMemo<ApprovalFacet[]>(() => approvalActionFacets(approvalItems()))
-  // A selection whose last approval was just decided must not survive as a
-  // filter for something that no longer exists.
-  const activeApprovalAction = createMemo(() =>
-    reconcileSelection(approvalAction(), approvalFacets()),
-  )
-  // Input is pre-filtered to approval items only, so `alsoShown` is always
-  // empty here (non-approval NOW items live in the urgent strip, not this
-  // card) — partitionByAction is reused only for its `matched` narrowing.
-  const approvalRows = createMemo(
-    () => partitionByAction(approvalItems(), activeApprovalAction()).matched,
-  )
-  const visibleFacets = createMemo(() =>
-    facetsWithSelection(approvalFacets(), activeApprovalAction()),
-  )
+  // WHOSE THE ROW IS. A row for someone else the viewer can also approve (the server's
+  // `placement: others`: the person it is for decides it, or it is a colleague's own request
+  // they could approve themselves) is not the viewer's ask: it waits in one closed group at
+  // the card's end, with its count, and is in no badge. A feed with no placement reads mine.
+  const approvalSplit = createMemo(() => partitionOthersRows(allApprovalItems()))
+  const othersRows = createMemo(() => approvalSplit().others)
+  const approvalItems = createMemo(() => approvalSplit().mine)
+  // One list, no per-action filter (the pill on each row names the action). Over five rows the
+  // first three show and the rest fold behind "Show N more", order kept.
+  const approvalRows = approvalItems
   const [showAllApprovals, setShowAllApprovals] = createSignal(false)
   const visibleApprovalRows = createMemo(() =>
-    showAllApprovals() ? approvalRows() : approvalRows().slice(0, APPROVALS_FOLD),
+    showAllApprovals() || approvalRows().length <= APPROVALS_FOLD_OVER
+      ? approvalRows()
+      : approvalRows().slice(0, APPROVALS_FOLD_SHOWN),
   )
   const foldedApprovals = createMemo(() => approvalRows().length - visibleApprovalRows().length)
-  // LIF-18: a notification opened Home for one approval. A facet filter that
-  // hides it is dropped and a fold that hides it opens, so its row can bring
-  // itself into view (AttentionRow). The peer preference is the user's own
-  // and is left alone.
+  // LIF-18: a notification opened Home for one approval. A fold that hides it opens, so its row
+  // can bring itself into view (AttentionRow).
   createEffect(() => {
     const focus = focusedApproval()
     if (focus === null) return
     if (!approvalItems().some((item) => item.entityId === focus)) return
-    if (!approvalRows().some((item) => item.entityId === focus)) {
-      setApprovalAction(null)
-      return
-    }
     if (!visibleApprovalRows().some((item) => item.entityId === focus)) setShowAllApprovals(true)
   })
 
@@ -263,6 +234,8 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
   // The card's badge counts ITEMS, not rows: "3 alerts" must not read as "1"
   // just because they clustered.
   const messagesCount = createMemo(() => urgentStrip().length)
+  // Stopped sends: in the alerts card with their reason, never in a count.
+  const uncountedRows = createMemo(() => sections().needs.uncounted)
 
   // --- Activity card: the viewer's queues, then what agents reported (a
   // routine that failed or paused, then the FYIs). ---
@@ -276,9 +249,9 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
   function cardHasContent(id: CardId): boolean {
     switch (id) {
       case "approvals":
-        return approvalItems().length > 0
+        return approvalItems().length > 0 || othersRows().length > 0
       case "messages":
-        return messagesCount() > 0
+        return messagesCount() > 0 || uncountedRows().length > 0
       // New mail is Mail's (D21): Home no longer repeats it.
       case "mail":
         return false
@@ -297,6 +270,8 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
   const hasAnyContent = createMemo(
     () => urgentStrip().length > 0 || CARD_IDS.some((id) => cardHasContent(id)),
   )
+  // A source that did not answer is named in the section, with Retry; the rest still shows.
+  const failedSources = createMemo(() => [...new Set(attentionStore.errors.map((e) => e.app))])
 
   // "MIS À JOUR JUST NOW" was the tell: the label translated and the figure
   // beside it did not. Both come from the catalog-backed formatter now.
@@ -392,13 +367,7 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
                 <span class="text-text-tertiary">
                   {" · "}
                   <span class="font-mono tabular-nums">{groupedCount()}</span>{" "}
-                  {i18n.t("kernel.homeStatusQueuedIn")}{" "}
-                  <span class="font-mono tabular-nums">{sections().queues.length}</span>{" "}
-                  {i18n.t(
-                    pluralFormFor(i18n.locale(), sections().queues.length) === "one"
-                      ? "kernel.homeStatusAreaOne"
-                      : "kernel.homeStatusAreaMany",
-                  )}
+                  {i18n.t("kernel.homeStatusOtherWork")}
                 </span>
               </Show>
               <Show when={lastUpdated()}>
@@ -446,45 +415,6 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
                         title={cardTitles().approvals}
                         count={approvalItems().length}
                       >
-                        {/* Gated on the chips RENDERED, the kept selection's
-                            zero-count chip included: gated on the live facets
-                            alone, deciding the last approval of a filter left one
-                            live facet, the bar vanished with the "All" chip, and
-                            the operator sat in an empty filter ("Pick All")
-                            with nothing to pick (ticket-10225's chip unseen). */}
-                        <Show when={shouldShowApprovalFacets(visibleFacets())}>
-                          <div class="px-4 pt-3">
-                            <ApprovalFacetBar
-                              phone={isPhone()}
-                              facets={visibleFacets()}
-                              selected={activeApprovalAction()}
-                              onSelect={setApprovalAction}
-                            />
-                          </div>
-                        </Show>
-                        {/* Peer rows are folded by default. Render the toggle
-                            whenever there are any to fold OR the fold is
-                            currently off, so the state is always reversible and
-                            never invisible. Rendered outside the facet bar on
-                            purpose: peers can be hidden even when there is only
-                            one action facet, which suppresses that bar. */}
-                        <Show when={peerCount() > 0 || showPeerRequests()}>
-                          <div class="px-4 pt-3">
-                            <button
-                              type="button"
-                              data-testid="home-approval-peer-toggle"
-                              aria-pressed={showPeerRequests()}
-                              class="text-[11.5px] text-text-tertiary underline-offset-2 transition-colors hover:text-text-secondary hover:underline"
-                              onClick={togglePeerRequests}
-                            >
-                              {showPeerRequests()
-                                ? i18n.t("kernel.homeApprovalsHidePeers")
-                                : i18n.t("kernel.homeApprovalsShowPeers", {
-                                    count: String(peerCount()),
-                                  })}
-                            </button>
-                          </div>
-                        </Show>
                         <ul class="divide-y divide-border-subtle">
                           <For each={visibleApprovalRows()}>
                             {(item, idx) => (
@@ -514,13 +444,8 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
                             </Show>
                           </button>
                         </Show>
-                        <Show when={activeApprovalAction() !== null && approvalRows().length === 0}>
-                          <p
-                            data-testid="home-facet-cleared"
-                            class="px-4 py-4 text-[12px] text-text-tertiary"
-                          >
-                            {i18n.t("kernel.shellUi.nothingLeftInThisFilterPick")}
-                          </p>
+                        <Show when={othersRows().length > 0}>
+                          <OthersGroup rows={othersRows()} />
                         </Show>
                       </HomeCard>
                     </Match>
@@ -557,6 +482,13 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
                             </For>
                           </BoundedRows>
                         </Show>
+                        <Show when={uncountedRows().length > 0}>
+                          <ul data-testid="home-stopped-list" class="divide-y divide-border-subtle">
+                            <For each={uncountedRows()}>
+                              {(item) => <AttentionRow item={item} />}
+                            </For>
+                          </ul>
+                        </Show>
                       </HomeCard>
                     </Match>
                     <Match when={id === "feed"}>
@@ -572,16 +504,11 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
             </For>
           </div>
         </Show>
-        <Show when={attentionStore.errors.length > 0}>
-          <p
-            data-testid="home-feed.errors"
-            class="mt-6 text-[11px] text-text-tertiary"
-            title={attentionStore.errors
-              .map((e) => `${e.app} (${e.reason}): ${e.message}`)
-              .join("\n")}
-          >
-            {i18n.t("kernel.shellUi.someSourcesAreUnavailable")}
-          </p>
+        <For each={failedSources()}>
+          {(app) => <HomeSourceFailed app={app} onRetry={() => void attentionStore.load(api)} />}
+        </For>
+        <Show when={isOverview()}>
+          <HomeBriefCard />
         </Show>
       </div>
     </div>
@@ -589,118 +516,39 @@ const AttentionFeedView: Component<AttentionFeedViewProps> = (props) => {
 }
 
 /**
- * The per-action chip row above the approvals list. "All" plus one chip per
- * distinct gated action, each carrying its pending count, biggest pile first.
+ * One source that did not answer, named, in the section: what it holds is safe and still
+ * waiting, and Retry asks again. The rest of Home shows as usual.
  */
-const ApprovalFacetBar: Component<{
-  /** Phone tier: one horizontally scrollable row of 32px chips. Wrapping them
-   *  turned four filters into three stacked rows of tall pills that pushed the
-   *  first approval below the fold. */
-  phone?: boolean
-  facets: ApprovalFacet[]
-  selected: string | null
-  onSelect: (key: string | null) => void
-}> = (props) => {
+const HomeSourceFailed: Component<{ app: string; onRetry: () => void }> = (props) => {
   const i18n = useI18n()
-  const total = (): number => props.facets.reduce((sum, f) => sum + f.count, 0)
-  const selectedFacet = (): ApprovalFacet | undefined =>
-    props.facets.find((f) => f.key === props.selected)
-  // `gap-1`, and it is not cosmetic. The phone chip is a FLEX box, and a flex
-  // container drops the whitespace-only edges of its anonymous text items: the
-  // literal space between the label and its count vanished and the phone read
-  // "All8" and "Tickets: reply2" where the desktop chip (not a flex box) read
-  // "All 8". Both tiers are flex now, with the separation carried by the gap
-  // rather than by a space the layout is allowed to eat.
-  const chipShape = (): string =>
-    `inline-flex shrink-0 items-center gap-1 rounded-full border text-[11px] font-medium leading-tight transition-colors ${
-      props.phone ? "h-8 px-3" : "px-2.5 py-[3px]"
-    }`
-  const chipClass = (active: boolean): string =>
-    `${chipShape()} ${
-      active
-        ? "border-accent-border bg-accent-glow text-accent"
-        : "border-border-subtle text-text-tertiary hover:bg-surface-hover hover:text-text-secondary"
-    }`
-  // A phone chip row scrolls sideways, and its last chip was cut mid word with
-  // nothing to say the row continued. The row MASKS its own edges while there
-  // is more to scroll that way: the chips fade to transparent over whatever is
-  // behind them. A gradient element painted in a colour was wrong twice: it
-  // used the page colour on the lighter approvals card (a dark box over the
-  // chip), and it stopped short of the row's -mx-1 bleed (the chip showed past it).
-  let barEl: HTMLDivElement | undefined
-  const { canScrollStart, canScrollEnd } = createScrollOverflow(() => barEl, "horizontal")
-  const edgeMask = (): JSX.CSSProperties | undefined => {
-    if (!props.phone || !(canScrollStart() || canScrollEnd())) return undefined
-    const start = canScrollStart() ? "transparent, #000 24px" : "#000, #000"
-    const end = canScrollEnd() ? "#000 calc(100% - 32px), transparent" : "#000, #000"
-    const mask = `linear-gradient(to right, ${start}, ${end})`
-    return { "mask-image": mask, "-webkit-mask-image": mask }
+  const name = (): string => {
+    const t = i18n.t(`kernel.nav.${props.app}`)
+    return t === `kernel.nav.${props.app}`
+      ? props.app.charAt(0).toUpperCase() + props.app.slice(1)
+      : t
   }
   return (
-    <div
-      ref={barEl}
-      data-testid="home-approval-facets"
-      data-fade-start={props.phone && canScrollStart() ? "true" : undefined}
-      data-fade-end={props.phone && canScrollEnd() ? "true" : undefined}
-      style={edgeMask()}
-      class={cn(
-        "mb-3 flex items-center gap-1.5",
-        props.phone ? "-mx-1 overflow-x-auto px-1 [scrollbar-width:none]" : "flex-wrap",
-      )}
-      role="group"
-      aria-label={i18n.t("kernel.shellUi.filterApprovalsByAction")}
+    <section
+      data-testid={`home-source-failed-${props.app}`}
+      class="mb-5 flex items-start gap-3 rounded-md border border-border-subtle bg-surface px-4 py-3"
     >
+      <div class="min-w-0 flex-1">
+        <p class="text-[13px] font-medium text-text">
+          {i18n.t("kernel.homeDecisions.sourceFailedTitle", { app: name() })}
+        </p>
+        <p class="mt-0.5 text-[12px] leading-snug text-text-secondary">
+          {i18n.t("kernel.homeDecisions.sourceFailedBody", { app: name() })}
+        </p>
+      </div>
       <button
         type="button"
-        data-testid="home-approval-facet-all"
-        data-active={props.selected === null ? "true" : undefined}
-        aria-pressed={props.selected === null}
-        class={chipClass(props.selected === null)}
-        onClick={() => props.onSelect(null)}
+        data-testid={`home-source-failed-${props.app}-retry`}
+        class="shrink-0 rounded-md border border-border px-3 py-1.5 text-[12.5px] font-medium text-text-secondary hover:bg-surface-hover hover:text-text"
+        onClick={() => props.onRetry()}
       >
-        <span>{i18n.t("kernel.common.all")}</span>
-        <span class="font-mono tabular-nums">{total()}</span>
+        {i18n.t("kernel.homeDecisions.retry")}
       </button>
-      {/* Each action chip wears its app's colour (AppPill), the same pill the
-          rows below carry, so a chip and the rows it selects read as one. */}
-      <For each={props.facets}>
-        {(facet) => (
-          <AppPill
-            as="button"
-            type="button"
-            appId={appIdOfTool(facet.key)}
-            testid={`home-approval-facet-${facet.key}`}
-            data-active={props.selected === facet.key ? "true" : undefined}
-            pressed={props.selected === facet.key}
-            class={chipShape()}
-            title={facet.key}
-            onClick={() => props.onSelect(props.selected === facet.key ? null : facet.key)}
-          >
-            <span>
-              {facet.labelKey
-                ? i18n.t(facet.labelKey)
-                : (approvalActionLabel(facet.key, facet.label, {
-                    t: i18n.t,
-                    locale: i18n.locale(),
-                  }) ?? facet.label)}
-            </span>
-            <span class="font-mono tabular-nums">{facet.count}</span>
-          </AppPill>
-        )}
-      </For>
-      {/* Count parity (home.md): with a facet selected the card's own count
-          pill keeps reporting the whole approvals pile, so the rendered list
-          is deliberately shorter than that number. The filtered state states
-          its own arithmetic rather than leave the mismatch unexplained. */}
-      <Show when={selectedFacet()}>
-        {(facet) => (
-          <span data-testid="home-approval-facets-scope" class="text-[10px] text-text-tertiary">
-            {i18n.t("kernel.shellUi.showing")} {facet().count} {i18n.t("kernel.shellUi.of")}{" "}
-            {total()} {i18n.t("kernel.shellUi.approvals2")}
-          </span>
-        )}
-      </Show>
-    </div>
+    </section>
   )
 }
 
@@ -1072,6 +920,34 @@ const HomeReadAllButton: Component<{ phone: boolean }> = (props) => {
 }
 
 /**
+ * "For others, you can also approve": rows for someone else, closed by default with their
+ * count. Opening it shows each row with its "why" line saying who it is for; the rows stay
+ * decidable, they are just not the viewer's ask.
+ */
+const OthersGroup: Component<{ rows: AttentionItem[] }> = (props) => {
+  const i18n = useI18n()
+  return (
+    <details data-testid="home-approvals-others" class="group/others border-t border-border-subtle">
+      <summary
+        data-testid="home-approvals-others-summary"
+        class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[12px] text-text-tertiary hover:text-text-secondary"
+      >
+        <span class="font-mono text-[10px] transition-transform duration-150 group-open/others:rotate-90">
+          ›
+        </span>
+        <span>{i18n.t("kernel.homeRouting.othersGroup")}</span>
+        <span data-testid="home-approvals-others-count" class="font-mono tabular-nums">
+          {props.rows.length}
+        </span>
+      </summary>
+      <ul class="divide-y divide-border-subtle">
+        <For each={props.rows}>{(item) => <AttentionRow item={item} />}</For>
+      </ul>
+    </details>
+  )
+}
+
+/**
  * The main panel filtered to one sidebar entry (D21). It reuses Home's own
  * rows (AttentionRow, AlertClusterRow, the inline approval card), so Approve
  * and Reject stay where they are.
@@ -1104,6 +980,7 @@ const HomeSlice: Component<{ filter: HomeFilter; sections: HomeSections; phone: 
     if (f === "needs") return t("kernel.homeSidebar.needsYou")
     if (f === "needs:time") return t("kernel.homeSidebar.expiringSoon")
     if (f.startsWith("needs:approvals")) return t("kernel.homeCardApprovals")
+    if (f === "needs:others") return t("kernel.homeRouting.othersGroup")
     if (f.startsWith("needs:alerts")) return t("kernel.homeSectionAlerts")
     if (f === "queues") return t("kernel.homeSidebar.yourQueues")
     if (f.startsWith("queue:")) {
@@ -1128,6 +1005,7 @@ const HomeSlice: Component<{ filter: HomeFilter; sections: HomeSections; phone: 
     if (f === "needs") return s().needs.total
     if (f === "needs:time") return s().needs.timeLimited.length
     if (f.startsWith("needs:approvals")) return approvals().length
+    if (f === "needs:others") return s().needs.others.length
     if (f.startsWith("needs:alerts")) return alertItemsFor(s(), cluster()).length
     if (f === "queues") return s().queueTotal
     if (f.startsWith("queue:")) return queueItems().length
@@ -1209,6 +1087,7 @@ const HomeSlice: Component<{ filter: HomeFilter; sections: HomeSections; phone: 
             </Match>
             <Match when={props.filter === "needs:time"}>{rows(s().needs.timeLimited)}</Match>
             <Match when={props.filter.startsWith("needs:approvals")}>{rows(approvals())}</Match>
+            <Match when={props.filter === "needs:others"}>{rows(s().needs.others)}</Match>
             <Match when={props.filter.startsWith("needs:alerts")}>{alerts()}</Match>
             <Match when={props.filter === "queues"}>
               <For each={s().queues}>{(group) => <AttentionGroupSection group={group} />}</For>

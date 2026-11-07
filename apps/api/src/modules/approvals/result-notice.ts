@@ -203,6 +203,7 @@ export async function approvalResultForConversation(args: {
       args.orgId,
       [args.originatingThreadId],
       args.toolName,
+      { result: args.result },
     )
     return {
       text: formatApprovalResult(args.result),

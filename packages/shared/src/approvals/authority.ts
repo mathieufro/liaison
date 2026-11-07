@@ -290,8 +290,227 @@ export interface PeerRequestFacts {
  */
 export function isPeerSelfApprovable(f: PeerRequestFacts, viewerUserId: string): boolean {
   if (f.requestedById === viewerUserId) return false
+  return requesterApprovesTheirOwn(f)
+}
+
+/** A person, not a routine, raised this and can decide it themselves. */
+function requesterApprovesTheirOwn(f: PeerRequestFacts): boolean {
   if (f.originRoutineId) return false
   return f.requesterCanDecide
+}
+
+// ---------------------------------------------------------------------------
+// Who an approval is for. Routing sorts the audience `canSeeInFeed` already
+// answers; it never widens it. Nothing here grants anything, and no decide rule
+// reads it, so what someone may see or sign stays with the primitives above.
+// ---------------------------------------------------------------------------
+
+/** The row's routing inputs, kept apart from the frozen facts type like {@link PeerRequestFacts}. */
+export interface RoutingFacts {
+  /** The person on the item when it was proposed, kept current by assignment. */
+  routePersonId: string | null
+  /** Read now from the row's company, so a hand-over moves pending rows. */
+  managerId: string | null
+  minApprovers: number
+  /** A dead execution, which needs whoever signed it. */
+  stalled: boolean
+  peer: PeerRequestFacts
+}
+
+/** What the caller reads for the row at feed time. Injected, so this module stays pure. */
+export interface RoutingWorld {
+  /** In the row's notify set, active, and holding its deciding scope today. */
+  canDecide(userId: string): boolean
+  /** Still an active member. Tells someone who left from someone who cannot decide. */
+  isActive(userId: string): boolean
+  /** null when not away today in that person's own time zone. `until` is the last day of the current run of away days, also for a recurring row, never null while away. */
+  away(userId: string): { until: string | null; nextInLineId: string | null } | null
+}
+
+export type ApprovalRoute =
+  | { to: "owner"; userId: string }
+  | { to: "usual" }
+  | {
+      to: "person"
+      userId: string
+      why: "asked" | "on_item" | "manager"
+      awayUntil: string | null
+      standIn: string | null
+      blockedStandIn: string | null
+    }
+
+export type HomePlacement = "mine" | "standing_in" | "others" | "hidden"
+
+/**
+ * Whose a pending row is, in this order:
+ *  1. Owner-routed: the owner. Private, never passes on, and away is not read.
+ *  2. Stalled, or needing two approvers: the usual deciders. A second person must
+ *     be able to find a two-approver row, so it is never folded under someone.
+ *  3. The first candidate who can decide: a requester who could approve their own,
+ *     then the person on the item, then the manager. None: the usual deciders.
+ *  4. Candidate not away: that person, with no stand-in.
+ *  5. Candidate away: that person, plus whoever the next-in-line walk finds.
+ */
+export function routeApproval(
+  f: ApprovalAuthorityFacts,
+  r: RoutingFacts,
+  w: RoutingWorld,
+): ApprovalRoute {
+  assertFacts(f)
+  if (f.resourceOwnerId != null) return { to: "owner", userId: f.resourceOwnerId }
+  if (r.stalled || r.minApprovers >= 2) return { to: "usual" }
+
+  // A requester who cannot decide their own request is no candidate, whatever else they are.
+  const decides = (userId: string) =>
+    w.canDecide(userId) && (userId !== r.peer.requestedById || r.peer.requesterCanDecide)
+
+  const candidates = [
+    { userId: requesterApprovesTheirOwn(r.peer) ? r.peer.requestedById : null, why: "asked" },
+    { userId: r.routePersonId, why: "on_item" },
+    { userId: r.managerId, why: "manager" },
+  ] as const
+  for (const { userId, why } of candidates) {
+    if (userId === null || !decides(userId)) continue
+    const away = w.away(userId)
+    if (!away) {
+      return { to: "person", userId, why, awayUntil: null, standIn: null, blockedStandIn: null }
+    }
+    return {
+      to: "person",
+      userId,
+      why,
+      awayUntil: away.until,
+      ...walkNextInLine(userId, away.nextInLineId, w, decides),
+    }
+  }
+  return { to: "usual" }
+}
+
+/**
+ * Someone away moves on to their own next in line. The first person not away who
+ * can decide stands in. Someone who left ends the walk naming nobody, so no row
+ * names them. The first active person not away who cannot decide stops it as
+ * blocked. A repeat or a null stops it with nobody, and the usual deciders hold the row.
+ */
+function walkNextInLine(
+  from: string,
+  first: string | null,
+  w: RoutingWorld,
+  decides: (userId: string) => boolean,
+): { standIn: string | null; blockedStandIn: string | null } {
+  const seen = new Set([from])
+  let next = first
+  while (next !== null && !seen.has(next)) {
+    seen.add(next)
+    if (!w.isActive(next)) break
+    const away = w.away(next)
+    if (!away) {
+      return decides(next)
+        ? { standIn: next, blockedStandIn: null }
+        : { standIn: null, blockedStandIn: next }
+    }
+    next = away.nextInLineId
+  }
+  return { standIn: null, blockedStandIn: null }
+}
+
+/**
+ * Where the row sits on this viewer's Home. Not visible in the feed is hidden,
+ * always first, so a route can only sort the people {@link canSeeInFeed} already
+ * lets in. The person it is for keeps it while away, since they can still act.
+ * Away with no stand-in, it belongs to the usual deciders.
+ */
+export function homePlacement(
+  f: ApprovalAuthorityFacts,
+  route: ApprovalRoute,
+  viewer: AuthorityViewer,
+): HomePlacement {
+  if (!canSeeInFeed(f, viewer)) return "hidden"
+  if (route.to !== "person") return "mine"
+  if (route.userId === viewer.userId) return "mine"
+  if (route.standIn !== null) return route.standIn === viewer.userId ? "standing_in" : "others"
+  return route.awayUntil !== null ? "mine" : "others"
+}
+
+/** The dates of one away range. Dates are `YYYY-MM-DD` in the person's own time zone. */
+export interface AwayRangeDays {
+  startsOn: string
+  /** Inclusive. null only with `weekdays`. */
+  endsOn: string | null
+  /** ISO days, Monday 1 to Sunday 7. null means every day of the range. */
+  weekdays: readonly number[] | null
+  status: "active" | "asked" | "declined"
+  endedEarlyOn: string | null
+}
+
+/**
+ * What a reader of away days returns for `(orgId, userIds, from, to)`: each person's
+ * away dates in that window, as `YYYY-MM-DD`. Someone with none has no key. It holds
+ * dates alone, never where they came from or why.
+ */
+export type AwayDays = ReadonlyMap<string, readonly string[]>
+
+/** The one predicate for "is this person away on this date of theirs". */
+export function isAwayOn(range: AwayRangeDays, localDate: string): boolean {
+  if (range.status !== "active") return false
+  if (localDate < range.startsOn) return false
+  if (range.endsOn !== null && localDate > range.endsOn) return false
+  // Ending early brings the person back that same day.
+  if (range.endedEarlyOn !== null && localDate >= range.endedEarlyOn) return false
+  return range.weekdays === null || range.weekdays.includes(isoWeekday(localDate))
+}
+
+/** At most this many days ahead when finding the last day of a run of away days. */
+const AWAY_RUN_HORIZON_DAYS = 400
+
+/**
+ * The last day of the run of away days that includes `today`, or null when the person is not
+ * away that day. A recurring range ends its run on its last away day in a row, never later.
+ */
+export function awayRunEnd(ranges: readonly AwayRangeDays[], today: string): string | null {
+  const away = (date: string) => ranges.some((r) => isAwayOn(r, date))
+  if (!away(today)) return null
+  let last = today
+  for (let i = 1; i <= AWAY_RUN_HORIZON_DAYS; i++) {
+    const next = new Date(`${today}T00:00:00Z`)
+    next.setUTCDate(next.getUTCDate() + i)
+    const date = next.toISOString().slice(0, 10)
+    if (!away(date)) break
+    last = date
+  }
+  return last
+}
+
+function isoWeekday(localDate: string): number {
+  // A date alone parses as midnight UTC, so this day is the date's own.
+  const day = new Date(localDate).getUTCDay()
+  return day === 0 ? 7 : day
+}
+
+/** A person's date at an instant: their zone, else the org's, else UTC. A zone that cannot be read counts as none. */
+export function personLocalDate(
+  at: Date,
+  userTimezone: string | null,
+  orgTimezone: string | null,
+): string {
+  for (const zone of [userTimezone, orgTimezone]) {
+    if (!zone) continue
+    try {
+      return dateInZone(at, zone)
+    } catch {}
+  }
+  return dateInZone(at, "UTC")
+}
+
+function dateInZone(at: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(at)
+  const part = (type: string) => parts.find((p) => p.type === type)?.value
+  return `${part("year")}-${part("month")}-${part("day")}`
 }
 
 /** Who sees a ticket's pending drafts in the list's ticket mode: anyone who reads the ticket. */

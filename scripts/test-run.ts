@@ -528,6 +528,7 @@ const SUITES: Record<string, { cmd: string[]; cwd: string; env?: Record<string, 
             "src/tests/integration/attention-digest-resend.test.ts",
             "src/tests/integration/attention.feed.integration.test.ts",
             "src/tests/integration/attention.mark-read-bulk.integration.test.ts",
+            "src/tests/integration/home-brief-set-aside.integration.test.ts",
             "src/tests/integration/contacts-agent-merge.test.ts",
             "src/tests/integration/contacts-merge-taint-chat.test.ts",
             "src/tests/integration/private-contacts-security.test.ts",
@@ -874,6 +875,14 @@ const SUITES: Record<string, { cmd: string[]; cwd: string; env?: Record<string, 
             "scripts/ci-scope.test.ts",
             // The raw test INSERT ratchet's counter and comparison. Pure file reads.
             "scripts/check-raw-insert.test.ts",
+            // Tool finding: the phrase corpus through the real ranker over the
+            // catalog read from source, its baseline, the catalog lint and the
+            // known bad answers. Pure file reads, about 2 s.
+            "apps/api/src/modules/agent/tools/tool-bench/bench.test.ts",
+            // The tool ladder's numbers (announcement, tools listed, summary lines,
+            // each app's schema total) against their targets, from source with no
+            // server; a number over target needs a reason line. About 3 s.
+            "apps/api/src/modules/agent/context/ladder-budget.guard.test.ts",
           ]),
     ],
     cwd: ROOT,
@@ -2015,6 +2024,10 @@ const SUITES: Record<string, { cmd: string[]; cwd: string; env?: Record<string, 
             // can run them in a second.
             "src/modules/apps/tool-required-scopes-guard.test.ts",
             "src/modules/apps/tool-scope-read-oracle.test.ts",
+            // Outside text is declared by data (outsideTextFields and taint sources on every
+            // manifest), and the static half of the rule for tools called over MCP.
+            "src/modules/apps/outside-fields.guard.test.ts",
+            "src/modules/mcp/mcp-tool-rule.guard.test.ts",
             // the monitoring notification group lists the incident kinds
             // by name; this reads the monitoring manifest (pure fs, no database)
             // so a manifest-only edit, which the test map sends to this suite,

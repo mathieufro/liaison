@@ -48,11 +48,15 @@
 
 import { createHash } from "node:crypto"
 import {
+  type AwayRangeDays,
+  awayRunEnd,
   groupForChatMessage,
   groupForKind,
+  type HomePlacement,
   isUrgentFor,
   type NotificationGrid,
   type NotificationGroupId,
+  personLocalDate,
 } from "@liaison/shared"
 import { sql } from "drizzle-orm"
 import type { PrivilegedDb } from "~/db"
@@ -61,6 +65,7 @@ import { schemaRef } from "~/db/schema-ref"
 import { rootLogger } from "~/lib/logger"
 import { evaluateSubscriptionDecision, loadRulesForUser } from "~/modules/attention/subscriptions"
 import {
+  firstWorkWindowAfterDay,
   isOutsideWorkWindow,
   nextWorkWindowStart,
   type WorkHoursPrefs,
@@ -94,6 +99,10 @@ export type SuppressReason =
   | "kind_muted"
   /** An incident for someone who is not on call: push and desktop only (rule 9). */
   | "not_on_call"
+  /** A request that is another person's to decide: a row in the feed, nobody's news. */
+  | "not_for_you"
+  /** The recipient is away and the item is not urgent: push and desktop only. */
+  | "away"
 
 export interface ChannelDecision {
   deliver: boolean
@@ -129,6 +138,12 @@ export interface RouterItem {
   isUrgent: boolean
   /** `approval_pending`: the users who can decide it. */
   approverIds?: readonly string[]
+  /**
+   * `approval_pending`: where the row sits for this recipient (approvals/attention.ts). `others`
+   * is a request for someone else that the recipient may also decide: it stays in their feed and
+   * asks nothing of them. Absent reads as theirs.
+   */
+  placement?: Exclude<HomePlacement, "hidden">
   /** The recipient is @mentioned by this item. */
   isMention?: boolean
   /** Set for a chat message event: its group comes from the room, not the kind. */
@@ -192,6 +207,11 @@ export interface RecipientContext {
   onCall?: boolean
   /** Default quiet hours are on (rule 8); absent reads `NOTIFICATIONS_DEFAULT_QUIET_HOURS`. */
   defaultQuietHours?: boolean
+  /**
+   * The recipient is away today: the last day of the run of away days, `YYYY-MM-DD` in their own
+   * zone. Non-urgent push and desktop stay quiet and email waits for the first work window after it.
+   */
+  awayUntil?: string | null
 }
 
 export type RecipientContextLoader = (
@@ -317,6 +337,17 @@ function decide(
     if (!allowed) return { ...base, channels: all({ deliver: false, reason: "app_rule" }) }
   }
 
+  // Another person's request that this recipient may also decide: its row stays in the feed,
+  // but it asks nothing of them, so no push, no desktop banner and no digest line.
+  if (item.kind === "approval_pending" && item.placement === "others") {
+    const off: ChannelDecision = { deliver: false, reason: "not_for_you" }
+    return {
+      ...base,
+      urgent: false,
+      channels: { in_app: { deliver: true }, desktop: off, push: off, email: off },
+    }
+  }
+
   const muteReason: SuppressReason | null = ctx.threadMuted
     ? "thread_muted"
     : ctx.mutedGroups?.includes(group)
@@ -366,23 +397,32 @@ function decide(
     return d.deliver && here ? { deliver: false, reason: "active_in_thread" } : d
   }
 
+  // Someone away gets less noise, not less data: nothing non-urgent interrupts them, and what
+  // they would have read at their desk waits for the first work window after the range.
+  const awayHold = ctx.awayUntil && !urgent ? ctx.awayUntil : null
+  const quietForAway = (d: ChannelDecision): ChannelDecision =>
+    awayHold && d.deliver ? { deliver: false, reason: "away" } : d
+
   let push = device(cells.push)
   if (push.deliver && !ctx.hasPushDevice) push = { deliver: false, reason: "no_device" }
+  push = quietForAway(push)
+  const desktop = quietForAway(device(cells.desktop))
 
+  const usualEmailAt =
+    crossesQuiet || (urgent && (!outside || !window.quietLive))
+      ? now
+      : nextWorkWindowStart(now, window)
+  const afterAway = awayHold ? firstWorkWindowAfterDay(awayHold, window) : null
+  const emailAt =
+    afterAway && afterAway.getTime() > usualEmailAt.getTime() ? afterAway : usualEmailAt
   const emailOn = cells.email && ctx.digestCadence !== "off"
   const email: EmailDecision = emailOn
-    ? {
-        deliver: true,
-        eligibleAt:
-          crossesQuiet || (urgent && (!outside || !window.quietLive))
-            ? now
-            : nextWorkWindowStart(now, window),
-      }
+    ? { deliver: true, eligibleAt: emailAt }
     : { deliver: false, reason: "grid_off" }
 
   return {
     ...base,
-    channels: { in_app: { deliver: true }, desktop: device(cells.desktop), push, email },
+    channels: { in_app: { deliver: true }, desktop, push, email },
   }
 }
 
@@ -605,6 +645,13 @@ async function loadStoredRecipientContext(
         onCallFor: groupOfItem(item) === "monitoring" ? recipient.userId : null,
       })
 
+      const awayUntil = await readAwayUntil(
+        tx,
+        recipient,
+        pref?.profile_timezone ?? null,
+        org.timezone,
+      )
+
       return {
         grid: stored.grid,
         mutedGroups: stored.mutedGroups,
@@ -614,6 +661,7 @@ async function loadStoredRecipientContext(
         profileTimezone: pref?.profile_timezone ?? null,
         defaultQuietHours: defaultQuietHoursOn(),
         ...(org.onCall !== undefined ? { onCall: org.onCall } : {}),
+        ...(awayUntil ? { awayUntil } : {}),
         digestCadence: (pref?.digest_cadence ?? "daily") as RecipientContext["digestCadence"],
         workHours,
         workHoursExplicit: stored.workHoursExplicit,
@@ -625,4 +673,48 @@ async function loadStoredRecipientContext(
       }
     },
   )
+}
+
+/**
+ * The last day of the run of away days the recipient is in today, in their own zone, or null.
+ * Read on the loader's transaction (a range of one person; no second privileged acquisition).
+ * Unreadable means not away, so a failure can only make a notification arrive, never wait.
+ */
+async function readAwayUntil(
+  tx: PrivilegedDb,
+  recipient: RouterRecipient,
+  profileTimezone: string | null,
+  orgTimezone: string | null,
+): Promise<string | null> {
+  try {
+    const rows = (await tx.execute(
+      sql`SELECT starts_on::text AS starts_on, ends_on::text AS ends_on, weekdays, status,
+                 ended_early_on::text AS ended_early_on
+            FROM ${K}.away_ranges
+           WHERE org_id = ${recipient.orgId}::uuid AND user_id = ${recipient.userId}::uuid
+             AND status = 'active'
+             AND starts_on <= (now() AT TIME ZONE 'UTC')::date + 1
+             AND (ends_on IS NULL OR ends_on >= (now() AT TIME ZONE 'UTC')::date - 1)`,
+    )) as unknown as Array<{
+      starts_on: string
+      ends_on: string | null
+      weekdays: number[] | null
+      status: AwayRangeDays["status"]
+      ended_early_on: string | null
+    }>
+    if (rows.length === 0) return null
+    return awayRunEnd(
+      rows.map((r) => ({
+        startsOn: r.starts_on,
+        endsOn: r.ends_on,
+        weekdays: r.weekdays,
+        status: r.status,
+        endedEarlyOn: r.ended_early_on,
+      })),
+      personLocalDate(new Date(), profileTimezone, orgTimezone),
+    )
+  } catch (err) {
+    log.warn({ err, userId: recipient.userId }, "away days unreadable: notifying as if present")
+    return null
+  }
 }

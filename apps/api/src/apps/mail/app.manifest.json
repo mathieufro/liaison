@@ -67,7 +67,7 @@
       }
     ]
   },
-  "version": "1.8.5",
+  "version": "1.10.2",
   "description": "Email integration: Gmail and IMAP/SMTP",
   "license": "FSL-1.1-ALv2",
   "listing": {
@@ -622,6 +622,7 @@
       }
     }
   },
+  "outsideTextFields": ["from", "subject", "snippet", "body", "attachments"],
   "tools": {
     "listAccounts": {
       "description": "List the mailboxes this person can use, each with its sync status, last sync error and next retry. Disconnected ones are hidden unless includeDisconnected=true. A mailbox is connected by calling kernel__config_mail, then kernel__request_secret; to the person, say you will connect the mailbox, never a tool name.",
@@ -675,8 +676,9 @@
       }
     },
     "getSyncStatus": {
-      "description": "Get sync status for a connected email account",
       "agentVisible": false,
+      "useInstead": "listAccounts",
+      "description": "Get sync status for a connected email account",
       "readOnly": true,
       "requiredScopes": ["mail:accounts:read"],
       "handler": "getSyncStatus",
@@ -861,6 +863,8 @@
       "handler": "agentMailReply",
       "timeoutMs": 60000,
       "preflight": "agentMailReplyPreflight",
+      "pinnedParams": ["sendGuard", "guardKey"],
+      "pinnedOptionalOnRefs": true,
       "resourceOwner": {
         "table": "conversations",
         "param": "conversationId",
@@ -903,6 +907,28 @@
       "params": {
         "type": "object",
         "properties": {
+          "followUp": {
+            "type": "object",
+            "description": "This mail follows up on earlier mail: it stops if they reply.",
+            "properties": {
+              "refs": {
+                "type": "array",
+                "description": "The records it is about, as {kind, id}.",
+                "items": {
+                  "type": "object",
+                  "properties": { "kind": { "type": "string" }, "id": { "type": "string" } },
+                  "required": ["kind", "id"]
+                }
+              },
+              "classification": { "type": "string", "enum": ["marketing", "service"] }
+            }
+          },
+          "sendGuard": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Set by the server; leave it out."
+          },
+          "guardKey": { "type": "string", "description": "Set by the server; leave it out." },
           "conversationId": {
             "type": "string"
           },
@@ -1350,6 +1376,10 @@
       "handler": "agentMailCompose",
       "timeoutMs": 60000,
       "preflight": "agentMailComposePreflight",
+      "pinnedParams": ["sendGuard", "guardKey"],
+      "pinnedOptionalOnRefs": true,
+      "approvalDedupeKeyParam": "guardKey",
+      "approvalDedupeSameRequester": true,
       "resourceOwner": {
         "table": "accounts",
         "param": "accountId"
@@ -1391,6 +1421,28 @@
       "params": {
         "type": "object",
         "properties": {
+          "followUp": {
+            "type": "object",
+            "description": "This mail follows up on earlier mail: it stops if they reply.",
+            "properties": {
+              "refs": {
+                "type": "array",
+                "description": "The records it is about, as {kind, id}.",
+                "items": {
+                  "type": "object",
+                  "properties": { "kind": { "type": "string" }, "id": { "type": "string" } },
+                  "required": ["kind", "id"]
+                }
+              },
+              "classification": { "type": "string", "enum": ["marketing", "service"] }
+            }
+          },
+          "sendGuard": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Set by the server; leave it out."
+          },
+          "guardKey": { "type": "string", "description": "Set by the server; leave it out." },
           "accountId": {
             "type": "string",
             "description": "REQUIRED. The mailbox to send FROM: there is no default, a call without it is refused. Call listAccounts first. When the user writes as themselves (personal correspondence, or they say 'from me' / 'from my address'), pass the account whose ownerType is 'user' and whose emailAddress is theirs; pass the shared org mailbox (e.g. contact@) only for mail the org sends. Never invent a placeholder id."
@@ -1639,13 +1691,30 @@
       "conversation:update",
       "conversation:delete",
       "conversation:converted",
-      "message:create"
+      "message:create",
+      "send_guard:stopped"
     ],
     "subscribes": {
       "kernel/connected_account:create": "onAccountConnected",
       "kernel/connected_account:disconnect": "onAccountDisconnected",
       "kernel/contact:merge": "onContactMerge"
     }
+  },
+  "attention": {
+    "groupLabel": { "label": "Mail", "labelKey": "kernel.homeGroupMail" },
+    "translations": [
+      {
+        "event": "send_guard:stopped",
+        "kind": "mail:send_guard.stopped",
+        "urgency": 50,
+        "isUrgent": false,
+        "summary": "{{data.summary}}",
+        "recipients": {
+          "kind": "participants",
+          "path": "data.targetUserIds"
+        }
+      }
+    ]
   },
   "webhooks": {
     "gmail-push": {

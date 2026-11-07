@@ -8,7 +8,8 @@
 //
 //   - the rows its Approvals card lists (pending requests the user can decide,
 //     access requests they can grant, their routine runs waiting for their
-//     private mailbox; peer requests folded exactly when the card folds them), and
+//     private mailbox; never a row for someone else, which waits in the closed
+//     "For others" group uncounted), and
 //   - the "need you now" alerts its Messages card pins above the unread
 //     threads (`urgentStripItems`: scope requests, node permission prompts,
 //     SLA risks, system alerts, overdue work scored urgent, anything the
@@ -29,56 +30,26 @@
 //   - a routine that failed or paused is filed under Agents, never here.
 
 import type { AttentionItem } from "@liaison/shared"
-import { createMemo, createRoot, createSignal } from "solid-js"
+import { createMemo, createRoot } from "solid-js"
 import {
   collapseMailboxWaits,
   isExpiredMailboxWait,
 } from "~/modules/agent/routine-mailbox-wait-item"
+import { isDecisionInFlight } from "~/modules/approvals/decision-queue"
 import { hasScope, userFromToken } from "~/modules/auth/auth-store"
-import { isApprovalItem, partitionPeerRequests } from "~/modules/shell/approval-facets"
+import { isApprovalItem, partitionOthersRows } from "~/modules/shell/approval-facets"
 import { newestPromptPerChat, splitFeed, urgentStripItems } from "~/modules/shell/attention-groups"
 import { attentionStore } from "~/modules/shell/attention-store"
-
-const SHOW_PEER_REQUESTS_KEY = "liaison.home.showPeerRequests"
-
-/** Default FALSE (peer rows folded). Any storage failure keeps the default. */
-function readStoredShowPeerRequests(): boolean {
-  try {
-    return localStorage.getItem(SHOW_PEER_REQUESTS_KEY) === "1"
-  } catch {
-    return false
-  }
-}
-
-const [peerRequestsShown, setPeerRequestsShown] = createSignal(readStoredShowPeerRequests())
-
-/** Whether Home's Approvals card shows peer requests. Shared with the badge. */
-export function showPeerRequests(): boolean {
-  return peerRequestsShown()
-}
-
-export function setShowPeerRequests(next: boolean): void {
-  setPeerRequestsShown(next)
-  try {
-    localStorage.setItem(SHOW_PEER_REQUESTS_KEY, next ? "1" : "0")
-  } catch {
-    // Per-viewer convenience only: losing it costs the user nothing.
-  }
-}
-
-/** Re-reads the stored preference (Home mount, tests). */
-export function reloadShowPeerRequests(): void {
-  setPeerRequestsShown(readStoredShowPeerRequests())
-}
 
 /** The rows Home's Approvals card lists, before its action facet: approvals,
  *  access requests (only for someone who can grant them) and routine runs
  *  waiting for a private mailbox, all of them as one row. A waiting run whose
  *  24 hours are over has left the list (its run history says it expired; the
- *  server's sweep marks its row read too). */
+ *  server's sweep marks its row read too). With `othersShown` false, a row
+ *  for someone else ("For others, you can also approve") is left out. */
 export function homeApprovalItems(
   nowItems: AttentionItem[],
-  peersShown: boolean,
+  othersShown: boolean,
   viewer: HomeViewer = { userId: "", canGrantAccess: true },
 ): AttentionItem[] {
   const approvals = collapseMailboxWaits(
@@ -89,7 +60,7 @@ export function homeApprovalItems(
         (item.kind !== "scope_request" || viewer.canGrantAccess),
     ),
   )
-  return peersShown ? approvals : partitionPeerRequests(approvals).mine
+  return othersShown ? approvals : partitionOthersRows(approvals).mine
 }
 
 /** Who is looking: what decides an item is theirs to act on. */
@@ -120,18 +91,42 @@ export function isRoutineAlertItem(item: AttentionItem): boolean {
   return typeof alert === "object" && alert !== null
 }
 
+/** The mail app's notice that the send check stopped a send as it went out (manifest kind). */
+export const SEND_STOPPED_KIND = "mail:send_guard.stopped"
+
+/**
+ * Shown on Home, never counted: a send the check stopped, and a draft whose check says it can no
+ * longer go out as written (attention.ts `metadata.uncounted`). Each says why and offers Dismiss.
+ */
+export function isUncountedItem(item: AttentionItem): boolean {
+  // An app event's kind ("mail:...") rides in `kind` beside the kernel's own kinds.
+  const kind: string = item.kind
+  return kind === SEND_STOPPED_KIND || item.metadata?.uncounted === true
+}
+
+/** An approval whose decision is queued or being sent (decision-queue.ts). */
+export function isApprovalDecisionInFlight(item: AttentionItem): boolean {
+  return (
+    item.action?.type === "decide_approval" &&
+    isDecisionInFlight("approval", item.action.approvalId)
+  )
+}
+
 /** Every item Home presents as needing the user's action, each once. This is
  *  the sidebar's "Needs you" section and the Home badge (D21). */
 export function homeActionItems(
   items: AttentionItem[],
-  peersShown: boolean,
+  othersShown: boolean,
   viewer: HomeViewer = { userId: "", canGrantAccess: true },
 ): AttentionItem[] {
   const { now } = splitFeed(items)
   const seen = new Set<string>()
   const out: AttentionItem[] = []
-  for (const item of [...homeApprovalItems(now, peersShown, viewer), ...urgentStripItems(now)]) {
+  for (const item of [...homeApprovalItems(now, othersShown, viewer), ...urgentStripItems(now)]) {
     if (seen.has(item.id)) continue
+    if (isUncountedItem(item)) continue
+    // Decided, waiting out its Undo window or being carried out: the row is gone, so is its count.
+    if (isApprovalDecisionInFlight(item)) continue
     if (isQueueVolumeItem(item, viewer)) continue
     if (isRoutineAlertItem(item)) continue
     if (item.kind === "scope_request" && !viewer.canGrantAccess) continue
@@ -153,22 +148,18 @@ export function homeActionCount(): number {
   count ??= createRoot(() =>
     createMemo(
       () =>
-        homeActionItems(
-          newestPromptPerChat(attentionStore.items),
-          peerRequestsShown(),
-          currentHomeViewer(),
-        ).length,
+        homeActionItems(newestPromptPerChat(attentionStore.items), false, currentHomeViewer())
+          .length,
     ),
   )
   return count()
 }
 
 /**
- * The number of approvals Home's Approvals card lists from `items`: the same
- * rows, with peer requests folded exactly when the card folds them. Work's
- * Approvals row shows this, so the one queue never carries two counts (Work 9,
- * Home 8 plus "Show 1 more, from colleagues").
+ * The number of approvals Home's Approvals card counts from `items`: the
+ * viewer's own rows, never the ones for someone else. Work's Approvals row
+ * shows this, so the one queue never carries two counts.
  */
 export function homeApprovalCount(items: AttentionItem[]): number {
-  return homeApprovalItems(splitFeed(items).now, peerRequestsShown(), currentHomeViewer()).length
+  return homeApprovalItems(splitFeed(items).now, false, currentHomeViewer()).length
 }

@@ -83,6 +83,7 @@ Every variable the server reads at boot is a key of its environment schema. A mi
 | `LIAISON_SETUP_KICKOFF_ORG_MAX_AGE_DAYS` | `number` | `14` | no | A workspace older than this many days never gets the first-run card, whatever it holds: an org that runs on mail and tickets alone writes no chat message, and a deploy must not greet it as new. |
 | `BUG_REPORT_INBOX_ID` | `string` |  | no | In-app bug reports (POST /api/bug-reports) file a ticket into this inbox (UUID). Unset/empty → the org's default-for-create inbox. A bad id falls back to the default inbox at request time (logged), never drops a report. |
 | `LIAISON_CONSOLE_EMAIL_BODIES` | `boolean` | `false` | no | Without SMTP or Resend, mail goes to the log. Only its recipient and subject, unless this is set: then the body too, which holds sign-in codes, magic links, invite and reset links. For a local trial without a mail server (deploy/quickstart.sh sets it); never for an instance other people sign in to. |
+| `MAIL_SEND_GUARD_ENFORCE` | `boolean` | `true` | no | Operator-only, for an incident: 0 switches off the send check on staged mail, except the opt-out check. Off nowhere by default, logged at error on boot. |
 | `SMTP_HOST` | `string` |  | no | Email (SMTP) — optional. When SMTP_HOST is absent, emails are logged to console. |
 | `SMTP_PORT` | `number` | `587` | no |  |
 | `SMTP_USER` | `string` | `""` | no |  |
@@ -251,7 +252,7 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | Name | Read in |
 | --- | --- |
 | `ALLOW_PRIVATE_MAIL_HOSTS` | `apps/api/src/modules/apps/sandbox/host-validation.ts:20`, `apps/api/src/modules/apps/sandbox/smtp-bridge.ts:139` |
-| `APP_REGISTRATION_CONCURRENCY` | `apps/api/src/modules/apps/init.ts:781` |
+| `APP_REGISTRATION_CONCURRENCY` | `apps/api/src/modules/apps/init.ts:787` |
 | `APP_WORKER_MAX_EXECS` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:69` |
 | `APP_WORKER_MAX_RSS_MB` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:68` |
 | `APP_WORKER_POOL_MAX` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:28` |
@@ -263,9 +264,10 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `CLAMAV_HOST` | `apps/api/src/lib/clamav.ts:38` |
 | `CLAUDE_CONFIG_DIR` | `apps/desktop/sidecar/config-isolation.ts:23`, `apps/desktop/sidecar/session-import.ts:14` |
 | `CLAUDE_SECURESTORAGE_CONFIG_DIR` | `apps/desktop/sidecar/config-isolation.ts:17`, `apps/desktop/sidecar/config-isolation.ts:22` |
+| `CONTEXT_PROVIDERS_DISABLED` | `apps/api/src/modules/agent/context/context-providers.ts:271` |
 | `DRIVE_API_BASE_URL` | `apps/api/src/apps/google-drive/drive-rest.ts:33` |
 | `DRIVE_UPLOAD_API_BASE_URL` | `apps/api/src/apps/google-drive/drive-rest.ts:37` |
-| `EVENT_ROUTINE_COALESCE_MS` | `apps/api/src/infra/jobs/event-routine-subscriber.ts:47`, `apps/api/src/modules/agent/tools/skills-routines-tools.ts:5013` |
+| `EVENT_ROUTINE_COALESCE_MS` | `apps/api/src/infra/jobs/event-routine-subscriber.ts:47`, `apps/api/src/modules/agent/tools/skills-routines-tools.ts:5020` |
 | `GITLAB_API_BASE_URL` | `apps/api/src/apps/gitlab/gitlab-rest.ts:23` |
 | `GS_BIN` | `apps/api/src/modules/pdf/render.ts:376` |
 | `INBOUND_TRUSTED_AUTHSERV_IDS` | `apps/api/src/lib/email/sender-auth.ts:44` |
@@ -275,7 +277,7 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `LIAISON_APP_CATALOG_DIR` | `apps/api/src/modules/apps/catalog.ts:75`, `apps/api/src/modules/permissions/scope-registry.ts:81` |
 | `LIAISON_APP_PRIVATE_HOSTS` | `apps/api/src/modules/apps/sandbox/bridge/shared.ts:195` |
 | `LIAISON_BUNDLED_APPS_FROM_SOURCE` | `apps/api/src/modules/apps/sandbox/bundle-loader.ts:51` |
-| `LIAISON_CLI_OPERATOR` | `apps/api/src/cli/agent/ask.ts:168` |
+| `LIAISON_CLI_OPERATOR` | `apps/api/src/cli/agent/ask.ts:172` |
 | `LIAISON_DATABASE_ADAPTER` | `apps/api/src/apps/database/bridge.ts:1198` |
 | `LIAISON_DATABASE_ADAPTER_PATH` | `apps/api/src/apps/database/bridge.ts:1196` |
 | `LIAISON_DATABASE_ALLOW_RAW_QUERY` | `apps/api/src/apps/database/bridge.ts:1075` |
@@ -283,11 +285,11 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `LIAISON_DB_ALLOW_PLAINTEXT_LOCAL` | `apps/api/src/apps/database/bridge.ts:374`, `apps/api/src/apps/database/bridge.ts:394` |
 | `LIAISON_DB_ALLOW_PRIVILEGED_SESSION` | `apps/api/src/apps/database/bridge.ts:383` |
 | `LIAISON_DEBUG_GEMINI_REQ` | `apps/api/src/modules/agent/providers/provider.ts:154` |
-| `LIAISON_OFFLINE_SIDE_CALLS` | `apps/api/src/lib/env.ts:1587` |
+| `LIAISON_OFFLINE_SIDE_CALLS` | `apps/api/src/lib/env.ts:1590` |
 | `LIAISON_ONESHOT` | `apps/api/src/db/process-pool-plan.ts:17` |
 | `LIAISON_PUBLIC_DIR` | `apps/api/src/lib/server.ts:504`, `apps/api/src/modules/apps/app-frame.ts:35` |
 | `LIAISON_SANDBOX_FETCH_TIMEOUT_MS` | `apps/api/src/modules/apps/sandbox/bridge/egress.ts:49` |
-| `LIAISON_TRUSTED_SUMMARIZER_APPS` | `apps/api/src/modules/apps/runtime.ts:1281` |
+| `LIAISON_TRUSTED_SUMMARIZER_APPS` | `apps/api/src/modules/apps/runtime.ts:1309` |
 | `LIAISON_WEB_TOOLS_ALLOW_PRIVATE` | `apps/api/src/modules/agent/tools/web-tools.ts:160`, `apps/api/src/modules/agent/tools/web-tools.ts:253` |
 | `MAIL_INGEST_STALE_SEC` | `apps/api/src/modules/monitor/index.ts:306` |
 | `MAILBOX_DECRYPT_WAIT_BUDGET_MS` | `apps/api/src/modules/agent/mailbox-plaintext/mailbox-plaintext-broker.ts:101` |
@@ -310,18 +312,18 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `ORG_MAINTENANCE_FLAG_PATH` | `apps/api/src/middleware/org-maintenance.ts:25` |
 | `QA_DRIVE_REFRESH_TOKEN` | `apps/api/src/seed/tiers/standard/knowledge.ts:79` |
 | `QA_GMAIL_REFRESH_TOKEN` | `apps/api/src/seed/tiers/standard/rows.ts:462` |
-| `RATE_LIMIT_FORCE_ENABLED` | `apps/api/src/app.ts:545`, `apps/api/src/middleware/public-surface-limits.ts:116`, `apps/api/src/middleware/rate-limiter.ts:261` |
+| `RATE_LIMIT_FORCE_ENABLED` | `apps/api/src/app.ts:552`, `apps/api/src/middleware/public-surface-limits.ts:116`, `apps/api/src/middleware/rate-limiter.ts:261` |
 | `RECHECK_SYNC_BACKEND` | `apps/api/src/lib/manifest-regex.ts:33` |
 | `ROUTINE_EVENT_RECONCILE_LOOKBACK_DAYS` | `apps/api/src/modules/agent/routines/routine-event-reconciler.ts:62` |
 | `ROUTINE_EVENT_RECONCILE_MAX_RETRIES` | `apps/api/src/modules/agent/routines/routine-event-reconciler.ts:65` |
-| `ROUTINE_OVERLAP_DEFER_DELAY_MS` | `apps/api/src/infra/jobs/kernel-jobs.ts:69` |
-| `ROUTINE_OVERLAP_MAX_DEFERRALS` | `apps/api/src/infra/jobs/kernel-jobs.ts:73` |
-| `SANDBOX_BOOT_RAMP_MS` | `apps/api/src/index.ts:385` |
+| `ROUTINE_OVERLAP_DEFER_DELAY_MS` | `apps/api/src/infra/jobs/kernel-jobs.ts:70` |
+| `ROUTINE_OVERLAP_MAX_DEFERRALS` | `apps/api/src/infra/jobs/kernel-jobs.ts:74` |
+| `SANDBOX_BOOT_RAMP_MS` | `apps/api/src/index.ts:390` |
 | `SANDBOX_POOL_REPORT_INTERVAL_MS` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:92` |
 | `SANDBOX_QUEUE_WAIT_WARN_MS` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:89` |
 | `SANDBOX_WORKER_HOLD_WARN_MS` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:90` |
-| `TICKETS_GMAIL_PUSH_ISSUER` | `apps/api/src/modules/apps/sandbox/bridge/tickets.ts:1296`, `apps/api/src/modules/webhooks/routes.ts:181`, `apps/api/src/modules/webhooks/routes.ts:416` |
-| `TICKETS_GMAIL_PUSH_JWKS_URL` | `apps/api/src/modules/apps/sandbox/bridge/tickets.ts:1297`, `apps/api/src/modules/webhooks/routes.ts:182`, `apps/api/src/modules/webhooks/routes.ts:415` |
+| `TICKETS_GMAIL_PUSH_ISSUER` | `apps/api/src/modules/apps/sandbox/bridge/tickets.ts:1308`, `apps/api/src/modules/webhooks/routes.ts:181`, `apps/api/src/modules/webhooks/routes.ts:416` |
+| `TICKETS_GMAIL_PUSH_JWKS_URL` | `apps/api/src/modules/apps/sandbox/bridge/tickets.ts:1309`, `apps/api/src/modules/webhooks/routes.ts:182`, `apps/api/src/modules/webhooks/routes.ts:415` |
 | `TICKETS_GMAIL_SYNC_SINCE` | `apps/api/src/apps/tickets/sync.ts:310` |
 | `VITE_API_BASE` | `apps/web/src/lib/env.ts:10` |
 | `VITE_API_TARGET` | `apps/web/src/lib/env.ts:68` |

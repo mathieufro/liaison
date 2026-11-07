@@ -14,6 +14,7 @@ import { type MailCategory, parseMailCategory } from "~/modules/mail/category"
 import { enqueueGmailWriteBack } from "~/modules/mail/gmail-write-back"
 import * as providerSettings from "~/modules/mail/provider-settings"
 import * as mailService from "~/modules/mail/service"
+import { withAway } from "~/modules/users/away-today"
 
 /** Recipients per field (to, cc, bcc) of one draft: far above any real send. */
 const MAX_RECIPIENTS = 500
@@ -356,12 +357,17 @@ mailRoutes.get(
   requireScope("mail:conversations:read"),
   zValidator("param", idParam),
   async (c) => {
-    const result = await withRequestRls(c, (tx) =>
-      mailService.listAssignableUsersForAccount(tx, {
-        orgId: c.get("orgId"),
-        requesterId: c.get("userId"),
-        accountId: c.req.param("id"),
-      }),
+    // A colleague away today says until when; who can be picked does not change.
+    const result = await withRequestRls(c, async (tx) =>
+      withAway(
+        tx,
+        c.get("orgId"),
+        await mailService.listAssignableUsersForAccount(tx, {
+          orgId: c.get("orgId"),
+          requesterId: c.get("userId"),
+          accountId: c.req.param("id"),
+        }),
+      ),
     )
     return success(c, result)
   },

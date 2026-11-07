@@ -174,6 +174,15 @@ export function registerApp(def: AppDefinition): void {
   batch(() => registerAppImpl(def))
 }
 
+/** The feature of the tab type an app's rail entry opens, when it has one. */
+function navigationFeature(def: AppDefinition): string | undefined {
+  const tabAction = def.activityBar?.tabAction
+  const local =
+    (tabAction && (def.tabTypes?.[tabAction.type] ? tabAction.type : tabAction.entityId)) ??
+    Object.keys(def.tabTypes ?? {})[0]
+  return local ? def.tabTypes?.[local]?.feature : undefined
+}
+
 function registerAppImpl(def: AppDefinition): void {
   const previousIndex = appIndex[def.name]
   const nextTabTypeKeys = Object.keys(def.tabTypes ?? {}).map((type) =>
@@ -232,6 +241,7 @@ function registerAppImpl(def: AppDefinition): void {
       position: def.activityBar.position,
       external: def.activityBar.external,
       appId: def.name,
+      feature: navigationFeature(def),
       tabAction: def.activityBar.tabAction
         ? {
             ...def.activityBar.tabAction,
@@ -571,6 +581,8 @@ export interface AppManifest {
         preserveSubRoutes?: boolean
         resolveLabel?: string
         referenceable?: boolean
+        /** A feature the app declares under top-level `features`. */
+        feature?: string
       }
     >
     activityBar?: {
@@ -595,11 +607,17 @@ export interface AppManifest {
     saveable?: string[]
     wsHandlers?: Record<string, string | { key: string; handler: string }>
   }
-  slots?: Record<string, { position: string }>
-  contributions?: Record<string, { label: string; component: string }>
+  /** A host declares `position`; an app contributes `panels` or `actions`. */
+  slots?: Record<string, { position?: string; panels?: unknown[]; actions?: unknown[] }>
+  contributions?: Record<
+    string,
+    { label: string; component: string; visibility_scope?: string; order?: number; group?: string }
+  >
   bulk?: Record<string, any>
   savedViews?: Record<string, any>
   entities?: Record<string, any>
+  attention?: { groupLabel?: { label: string; labelKey?: string } }
+  approvalCard?: { pill?: { label: string; labelKey?: string } }
 }
 
 // Attach per-shared-field render hints (enum/type/widget/label) to each bulk
@@ -731,10 +749,14 @@ export function appSettingsLabelKey(
     : undefined
 }
 
-function pageSectionAccess(settings: AppManifest["settings"]): SettingsPageSectionAccess[] {
+function pageSectionAccess(
+  appId: string,
+  settings: AppManifest["settings"],
+): SettingsPageSectionAccess[] {
   return (settings?.sections ?? []).map((s) => ({
     scope: s.scope,
     ...(s.adminScope ? { adminScope: s.adminScope } : {}),
+    ...(s.feature ? { feature: s.feature, appId } : {}),
   }))
 }
 
@@ -819,6 +841,7 @@ export function registerAppFromManifest(
         preserveSubRoutes: reg.preserveSubRoutes,
         resolveLabel: reg.resolveLabel ? resolveExport(reg.resolveLabel) : undefined,
         referenceable: reg.referenceable,
+        feature: reg.feature,
       }
     }
   }
@@ -866,7 +889,7 @@ export function registerAppFromManifest(
     })
     if (manifest.kind === "connector") {
       // A connector is a card on the Connectors page: no row, no page of its own.
-      registerConnectorApp(manifest.name, pageSectionAccess(settings))
+      registerConnectorApp(manifest.name, pageSectionAccess(manifest.name, settings))
     } else {
       // ONE page per app, named like the app; visible when the viewer sees at
       // least one of its sections.
@@ -878,7 +901,7 @@ export function registerAppFromManifest(
           href: appSettingsHref(manifest.name),
           group: "app",
           order: 0,
-          pageSections: pageSectionAccess(settings),
+          pageSections: pageSectionAccess(manifest.name, settings),
           component: appSettingsPageFor(manifest.name),
         },
       ]
@@ -974,9 +997,13 @@ export function registerAppFromManifest(
   if (manifest.slots) {
     const legacyDecl: Record<string, { position: string }> = {}
     for (const [slotKey, raw] of Object.entries(manifest.slots)) {
-      // Contribution: `{ panels: [...] }` directly under the slot key.
-      const panels = (raw as { panels?: any[] } | null | undefined)?.panels
-      if (Array.isArray(panels)) {
+      // Contribution: `{ panels: [...] }` or `{ actions: [...] }` directly under the slot key.
+      const contributed = raw as { panels?: unknown[]; actions?: unknown[] } | null | undefined
+      const panels = [
+        ...(Array.isArray(contributed?.panels) ? contributed.panels : []),
+        ...(Array.isArray(contributed?.actions) ? contributed.actions : []),
+      ]
+      if (Array.isArray(contributed?.panels) || Array.isArray(contributed?.actions)) {
         for (const panel of panels as Array<{
           id: string
           label: string
@@ -1012,7 +1039,11 @@ export function registerAppFromManifest(
         }
       }
       // Legacy `{position}` declaration — passed through to `def.slots`.
-      if (raw && typeof raw === "object" && "position" in (raw as object)) {
+      if (
+        raw &&
+        typeof raw === "object" &&
+        typeof (raw as { position?: unknown }).position === "string"
+      ) {
         legacyDecl[slotKey] = raw as { position: string }
       }
     }
@@ -1024,7 +1055,9 @@ export function registerAppFromManifest(
   if (manifest.contributions) {
     def.contributions = {}
     for (const [slot, contrib] of Object.entries(manifest.contributions)) {
+      // The server lists a contribution under its component name as its id.
       def.contributions[slot] = {
+        id: contrib.component,
         label: contrib.label,
         component: resolveExport(contrib.component),
       }
@@ -1037,7 +1070,13 @@ export function registerAppFromManifest(
   if (manifest.bulk) manifestAppData.bulk = enrichBulkFieldSpecs(manifest)
   if (manifest.savedViews) manifestAppData.savedViews = manifest.savedViews as any
   if (manifest.entities) manifestAppData.entities = manifest.entities as any
-  if (manifestAppData.bulk || manifestAppData.savedViews || manifestAppData.entities) {
+  if (manifest.attention?.groupLabel) {
+    manifestAppData.attention = { groupLabel: manifest.attention.groupLabel }
+  }
+  if (manifest.approvalCard?.pill) {
+    manifestAppData.approvalCard = { pill: manifest.approvalCard.pill }
+  }
+  if (Object.keys(manifestAppData).length > 0) {
     registerManifestAppData(manifest.name, manifestAppData)
   }
 }

@@ -17,7 +17,7 @@ import {
   runContextStore,
   runWithToolCallScopesBefore,
 } from "~/modules/agent/runtime/run-context"
-import { resolveRequiredScopes } from "~/modules/agent/scopes/required-scopes"
+import { checkToolScopes, resolveRequiredScopes } from "~/modules/agent/scopes/required-scopes"
 import {
   checkToolScopeTaint,
   isPlatformTaintRefusal,
@@ -43,7 +43,8 @@ import { evaluateApprovalPolicy } from "~/modules/approvals/approval-policy"
 import { resolveApprovalRef } from "~/modules/approvals/resolve-ref"
 import { appCrossAppCallsRegistry, toolRegistry } from "~/modules/apps/app-registries"
 import { executeTool, validateParamsForTool } from "~/modules/apps/execute-tool"
-import { isAppOffForOrg, primeOrgApps } from "~/modules/apps/org-apps"
+import { isAppOffForOrg, isFeatureOffForTool, primeOrgApps } from "~/modules/apps/org-apps"
+import { featureOffAnswer } from "~/modules/apps/org-features"
 import { isToolAllowedByAgentPolicy, loadAgentToolPolicy } from "~/modules/mcp/agent-tool-policy"
 import { selectAppGuideToSurface } from "~/modules/mcp/app-guide-surfacing"
 import { getApprovalStatus } from "~/modules/mcp/approval-status"
@@ -254,7 +255,13 @@ function noticeOutsideText(result: McpResult): McpResult {
   return result
 }
 
-function mcpErrorResult(err: { code: string; message: string; retryable: boolean }): McpResult {
+function mcpErrorResult(err: {
+  code: string
+  message: string
+  retryable: boolean
+  feature?: string
+  next?: string
+}): McpResult {
   return {
     content: [{ type: "text", text: JSON.stringify(err) }],
     structuredContent: { ...err },
@@ -450,7 +457,16 @@ export async function handleToolCall(
       retryable: false,
     })
   }
-  if (!resolved) {
+  // A tool whose feature is off left tools/list too. The client that still holds
+  // its name reads why when it holds the scope; anyone else, that there is no such tool.
+  if (
+    resolved &&
+    isFeatureOffForTool(ctx.orgId, resolved.toolDef) &&
+    checkToolScopes(resolved.toolDef, ctx.actor.scopes ?? []).authorized
+  ) {
+    return mcpErrorResult(featureOffAnswer(ctx.orgId, resolved.toolDef))
+  }
+  if (!resolved || isFeatureOffForTool(ctx.orgId, resolved.toolDef)) {
     return mcpErrorResult({
       code: "tool_not_found",
       message: `tool ${toolName} not found. Your tools/list is the full catalog for your scopes, so this name is either misspelled or outside your access: call liaison_tool_search with task keywords to get the exact name, and if it comes back empty the capability needs a scope you do not hold (kernel__describe_user_access names it).`,

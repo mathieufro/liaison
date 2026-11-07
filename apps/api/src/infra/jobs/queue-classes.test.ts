@@ -158,15 +158,26 @@ describe("kernel queue classes: isolation", () => {
     })
     let cronWaitMs = -1
     let bulkDoneAtCron = -1
+    // The cron queue is shared with whatever else ran in this process or left work in Redis
+    // (the sweep's own every-minute scheduler, another file's delayed job), and such a job
+    // carries no start time. Only the job this test enqueued is measured.
+    const token = crypto.randomUUID()
     const cronRan = new Promise<void>((resolve) => {
-      registerJobWorker("kernel", "local-claim-lapse-sweep", async (p: { t: number }) => {
-        cronWaitMs = Date.now() - p.t
-        bulkDoneAtCron = bulkDone
-        resolve()
-      })
+      registerJobWorker(
+        "kernel",
+        "local-claim-lapse-sweep",
+        async (p: { t?: number; token?: string } | undefined) => {
+          if (p?.token !== token || typeof p.t !== "number") return
+          cronWaitMs = Date.now() - p.t
+          bulkDoneAtCron = bulkDone
+          resolve()
+        },
+      )
     })
+    // A tick as the scheduler enqueues it, ahead of the measured job.
+    await enqueueAppJob("kernel", "local-claim-lapse-sweep", {})
     for (let i = 0; i < BULK; i++) await enqueueAppJob("kernel", "search-index-upsert", { i })
-    await enqueueAppJob("kernel", "local-claim-lapse-sweep", { t: Date.now() })
+    await enqueueAppJob("kernel", "local-claim-lapse-sweep", { t: Date.now(), token })
     await cronRan
     // One shared FIFO queue made the cron wait for the whole backlog
     // (150 x 40 ms / 5 slots = 1.2 s); on its own class it starts at once.

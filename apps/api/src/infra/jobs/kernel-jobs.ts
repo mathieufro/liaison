@@ -45,6 +45,7 @@ import {
   APPROVAL_REMINDER_TURN_JOB,
   type ApprovalReminderTurnPayload,
 } from "~/modules/approvals/reminders"
+import { ROUTED_REMINDER_CRON } from "~/modules/approvals/routed-reminders"
 import { isDemoModeEnabled } from "~/modules/demo/demo-mode"
 import { sweepSkippingMoving } from "~/modules/org/transfer-state/skip-moving"
 import type { SetupKickoffPayload } from "~/modules/provisioning/setup-kickoff"
@@ -1031,6 +1032,18 @@ export async function registerKernelJobs(): Promise<void> {
     const { pruneEffectLedger } = await import("~/lib/effect-once")
     log.info(await pruneEffectLedger(), "effect_ledger_retention")
   })
+  // Away ranges 90 days past their last day (or the day they were ended): dates about a
+  // person are kept no longer than capacity and routing can use them.
+  await registerScheduledJob("kernel", "away-ranges-prune", "37 4 * * *", async () => {
+    const { pruneAwayRanges } = await import("~/modules/users/away")
+    log.info(await pruneAwayRanges(), "away_ranges_retention")
+  })
+  // Away days from each person's own calendar: recurring series kept to 60 days ahead, and
+  // leave-looking events that waited behind the open questions asked about.
+  await registerScheduledJob("kernel", "calendar-away-refresh", "47 4 * * *", async () => {
+    const { refreshCalendarAwayAll } = await import("~/apps/calendar/away-from-calendar")
+    log.info(await refreshCalendarAwayAll(), "calendar_away_refresh")
+  })
   await registerScheduledJob("kernel", "agent-turn-retention", "17 4 * * *", async () => {
     const { runTurnRetention } = await import("~/modules/agent/runtime/turn-resume")
     await runTurnRetention()
@@ -1133,6 +1146,19 @@ export async function registerKernelJobs(): Promise<void> {
     async (payload) => {
       const { runApprovalReminderTurn } = await import("~/modules/approvals/reminders")
       await runApprovalReminderTurn(payload)
+    },
+  )
+
+  // Routed reminders (modules/approvals/routed-reminders.ts) — hourly. A pending request routed
+  // to a person, or one only a person may sign, that has waited a day tells all its deciders once.
+  await registerScheduledJob(
+    "kernel",
+    "approval-routed-reminder-sweep",
+    ROUTED_REMINDER_CRON,
+    async () => {
+      const { runRoutedReminderSweep } = await import("~/modules/approvals/routed-reminders")
+      const res = await runRoutedReminderSweep()
+      if (res.notified > 0) log.info(res, "routed approval reminders sent")
     },
   )
 

@@ -105,6 +105,8 @@ export interface RunContext {
    * chat, sub-runs). Undefined ⇒ not a routine tick.
    */
   routineId?: string
+  /** On a routine tick: this routine follows up, so its mail runs the send check as a follow-up. */
+  routineFollowUp?: boolean
   /**
    * On a routine tick (and the agent turn it starts for that same routine):
    * the person whose SERVER-MANAGED mailbox the tick may read, its owner, set

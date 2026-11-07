@@ -89,6 +89,7 @@
       }
     }
   },
+  "outsideTextFields": ["records"],
   "tools": {
     "connector_list_operations": {
       "readOnly": true,

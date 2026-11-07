@@ -7,8 +7,10 @@ import {
   imapConnectError,
   imapProviderId,
   normalizeImapMessage,
+  parseImapHeaders,
   readImapBody,
 } from "~/modules/apps/sandbox/imap-bridge"
+import { classifyInbound } from "~/modules/mail/classify-inbound"
 
 /** Build an async-iterable IMAP-body stream from fixed-size chunks. */
 function fakeBodyStream(chunkSizes: number[]): AsyncIterable<Uint8Array> & {
@@ -169,6 +171,43 @@ describe("extractImapAttachments", () => {
     })
     expect(result).toHaveLength(1)
     expect(result[0]?.filename).toBe("small.txt")
+  })
+})
+
+describe("parseImapHeaders", () => {
+  const raw = [
+    "List-Id: News <news.client.test>",
+    "Content-Type: multipart/report;",
+    '\treport-type=disposition-notification; boundary="b1"',
+    "Auto-Submitted: auto-replied",
+    "X-Thing: one",
+    "X-Thing: two",
+    "",
+    "",
+  ].join("\r\n")
+
+  it("reads a fetched header block into a lowercased, unfolded map", () => {
+    expect(parseImapHeaders(Buffer.from(raw))).toEqual({
+      "list-id": "News <news.client.test>",
+      "content-type": 'multipart/report; report-type=disposition-notification; boundary="b1"',
+      "auto-submitted": "auto-replied",
+      "x-thing": "one, two",
+    })
+  })
+
+  it("no block is no headers, and a stored map stays as it is", () => {
+    expect(parseImapHeaders(undefined)).toEqual({})
+    expect(parseImapHeaders({ "list-id": "a" })).toEqual({ "list-id": "a" })
+  })
+
+  it("an IMAP newsletter and a read receipt do not read as a reply", () => {
+    const newsletter = parseImapHeaders(Buffer.from("List-Unsubscribe: <mailto:u@client.test>\r\n"))
+    expect(classifyInbound(newsletter, "Our news", "Hello", "news@client.test")).toBe("ignored")
+    const receipt = parseImapHeaders(
+      Buffer.from("Content-Type: multipart/report; report-type=disposition-notification\r\n"),
+    )
+    expect(classifyInbound(receipt, "Read: your order", "", "client@client.test")).toBe("ignored")
+    expect(classifyInbound({}, "Read: your order", "", "client@client.test")).toBe("reply")
   })
 })
 

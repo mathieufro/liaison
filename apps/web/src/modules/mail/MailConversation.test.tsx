@@ -21,15 +21,30 @@ fixtures.foxmail = readFileSync(
   "utf8",
 )
 
-const mocks = vi.hoisted(() => ({
-  api: {
-    get: vi.fn(),
-    post: vi.fn(),
-    getEnvelope: vi.fn(async () => ({ data: [] })),
-  },
-  claimConversation: vi.fn(),
-  reassignConversation: vi.fn(),
-}))
+const mocks = vi.hoisted(() => {
+  // The slot lists: the server says which banner and action this viewer gets.
+  const slotLists = async (path: string) => {
+    if (path === "/v1/slots/mail:conversation:banner") {
+      return {
+        panels: [{ id: "MailConvertToTicketBanner", app: "tickets", label: "Ticket banner" }],
+      }
+    }
+    if (path === "/v1/slots/mail:conversation:actions") {
+      return { panels: [{ id: "MailConvertToTicketAction", app: "tickets", label: "Convert" }] }
+    }
+    return undefined
+  }
+  return {
+    slotLists,
+    api: {
+      get: vi.fn(slotLists),
+      post: vi.fn(),
+      getEnvelope: vi.fn(async () => ({ data: [] })),
+    },
+    claimConversation: vi.fn(),
+    reassignConversation: vi.fn(),
+  }
+})
 
 vi.mock("~/modules/shell/ApiContext", () => ({
   useApi: () => mocks.api,
@@ -323,6 +338,7 @@ vi.mock("~/framework/app-registry", () => ({
       return [
         {
           appId: "tickets",
+          id: "MailConvertToTicketBanner",
           label: "Ticket banner",
           component: (props: { mailConversationId: string }) => (
             <div data-testid="mail-conversation-banner-slot">{props.mailConversationId}</div>
@@ -334,6 +350,7 @@ vi.mock("~/framework/app-registry", () => ({
       return [
         {
           appId: "tickets",
+          id: "MailConvertToTicketAction",
           label: "Convert to ticket",
           component: (props: { mailConversationId: string }) => (
             <button type="button" data-testid="mail-conversation-action-slot">
@@ -463,11 +480,11 @@ describe("MailConversation — Discuss button", () => {
 })
 
 describe("MailConversation — app contributions", () => {
-  test("renders registered banner and action contributions for the active conversation", () => {
+  test("renders registered banner and action contributions for the active conversation", async () => {
     render(() => <MailConversation entityId="conv-1" />)
 
-    expect(screen.getByTestId("mail-conversation-banner-slot")).toHaveTextContent("conv-1")
-    expect(screen.getByTestId("mail-conversation-action-slot")).toHaveTextContent("conv-1")
+    expect(await screen.findByTestId("mail-conversation-banner-slot")).toHaveTextContent("conv-1")
+    expect(await screen.findByTestId("mail-conversation-action-slot")).toHaveTextContent("conv-1")
   })
 })
 
@@ -601,8 +618,12 @@ describe("MailConversation: a conversation that cannot be loaded", () => {
 // below the panel's edge: the column then overflowed, the bar's bottom
 // reserve was clipped, and the dock's bar sat on Send.
 describe("MailConversation — banners never push the reply bar off screen", () => {
-  test("the banners share the column as a shrinkable, scrolling region; the reply bar does not shrink", () => {
+  beforeEach(() => {
+    mocks.api.get = vi.fn(mocks.slotLists) as any
+  })
+  test("the banners share the column as a shrinkable, scrolling region; the reply bar does not shrink", async () => {
     render(() => <MailConversation entityId="conv-1" />)
+    await screen.findByTestId("mail-conversation-banner-slot")
     const region = screen.getByTestId("mail-conversation-banners")
     expect(region.contains(screen.getByTestId("mail-conversation-banner-slot"))).toBe(true)
     for (const cls of ["min-h-0", "overflow-y-auto"]) expect(region.className).toContain(cls)
@@ -614,8 +635,9 @@ describe("MailConversation — banners never push the reply bar off screen", () 
 
   // Walk D64: the cap cut the customer card mid-row, right against the
   // thread's first message, which then read as drawn over the card's rows.
-  test("a cut banner fades out at the column's edge", () => {
+  test("a cut banner fades out at the column's edge", async () => {
     render(() => <MailConversation entityId="conv-1" />)
+    await screen.findByTestId("mail-conversation-banner-slot")
     const frame = screen.getByTestId("mail-conversation-banners").parentElement!
     expect(within(frame).getByTestId("scroll-fade-end")).toBeTruthy()
     expect(within(frame).getByTestId("scroll-fade-start")).toBeTruthy()

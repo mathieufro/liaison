@@ -23,7 +23,7 @@ import { ensureAppsForOrg } from "~/modules/apps/init"
 import { adminSecondFactorPending, holdsAdminScope } from "~/modules/auth/admin-second-factor"
 import { invalidateAuthCache } from "~/modules/auth/auth-state"
 import { ensureGoogleLoginProvider } from "~/modules/auth/google-login-provider"
-import { signAccessToken } from "~/modules/auth/jwt"
+import { signAccessToken, signPortalToken } from "~/modules/auth/jwt"
 import { applyScopeCeiling } from "~/modules/auth/session-ceiling"
 import { revokeSessions } from "~/modules/auth/session-revocation"
 import { assertOrgSessionAllowed, SUSPENDED_ADMIN_SCOPE } from "~/modules/cloud/suspension"
@@ -428,6 +428,7 @@ async function createSessionUnder(
           status: users.status,
           authVersion: users.authVersion,
           permissionVersion: users.permissionVersion,
+          userType: users.userType,
         })
         .from(users)
         .where(and(eq(users.id, userId), eq(users.orgId, orgId)))
@@ -532,7 +533,7 @@ async function createSessionUnder(
         user: u,
         permissions: perms,
         secondFactorPending: pending,
-        admin: holdsAdminScope(orgId, perms.scopes),
+        admin: u.userType !== "external" && holdsAdminScope(orgId, perms.scopes),
       }
     },
   )
@@ -543,22 +544,13 @@ async function createSessionUnder(
   // session in that state gets nothing at all: enrollment is for a person at
   // a sign-in screen, not a headless client.
   if (secondFactorPending) {
-    const accessToken = await signAccessToken(
-      {
-        userId,
-        orgId,
-        name: user?.name ?? "Unknown",
-        authVersion: user?.authVersion ?? 1,
-        permissionVersion: user?.permissionVersion ?? 1,
-        roles: [],
-        scopes: [],
-        dimensionGrants: {},
-        restricted: true,
-        ...(scopeCeiling === undefined ? { secondFactorRequired: true } : {}),
-        sid: sessionId,
-      },
-      env.JWT_SECRET,
-    )
+    const accessToken = await signSessionToken({ userId, orgId, sid: sessionId }, user, {
+      roles: [],
+      scopes: [],
+      dimensionGrants: {},
+      restricted: true,
+      ...(scopeCeiling === undefined ? { secondFactorRequired: true } : {}),
+    })
     return { accessToken, refreshToken, orgId, userId, admin }
   }
 
@@ -566,22 +558,13 @@ async function createSessionUnder(
   // whatever the user's own permissions are now.
   const effectiveScopes = applyScopeCeiling(permissions.scopes, scopeCeiling)
 
-  const accessToken = await signAccessToken(
-    {
-      userId,
-      orgId,
-      name: user?.name ?? "Unknown",
-      authVersion: user?.authVersion ?? 1,
-      permissionVersion: user?.permissionVersion ?? 1,
-      roles: permissions.roles,
-      scopes: effectiveScopes,
-      dimensionGrants: permissions.dimensionGrants,
-      // A restricted session mints no further credential (session-ceiling.ts).
-      ...(scopeCeiling !== undefined ? { restricted: true } : {}),
-      sid: sessionId,
-    },
-    env.JWT_SECRET,
-  )
+  const accessToken = await signSessionToken({ userId, orgId, sid: sessionId }, user, {
+    roles: permissions.roles,
+    scopes: effectiveScopes,
+    dimensionGrants: permissions.dimensionGrants,
+    // A restricted session mints no further credential (session-ceiling.ts).
+    ...(scopeCeiling !== undefined ? { restricted: true } : {}),
+  })
 
   // A full administrator session may open a brand-new workspace's setup
   // conversation (provisioning/setup-kickoff.ts). Not awaited and never
@@ -589,6 +572,34 @@ async function createSessionUnder(
   if (admin && scopeCeiling === undefined) startSetupKickoff({ orgId, userId, admin })
 
   return { accessToken, refreshToken, orgId, userId, admin }
+}
+
+/**
+ * The token of a session, chosen by the row's type as this transaction read it,
+ * never by a prior token: an external user's is a portal token, which carries no
+ * grants whatever the row holds. Each mint site below goes through here.
+ */
+function signSessionToken(
+  session: { userId: string; orgId: string; sid: string },
+  user:
+    | { name: string; authVersion: number; permissionVersion: number; userType: string }
+    | undefined,
+  grants: {
+    roles: string[]
+    scopes: string[]
+    dimensionGrants: Record<string, string[]>
+    restricted?: boolean
+    secondFactorRequired?: boolean
+  },
+): Promise<string> {
+  const identity = {
+    ...session,
+    name: user?.name ?? "Unknown",
+    authVersion: user?.authVersion ?? 1,
+    permissionVersion: user?.permissionVersion ?? 1,
+  }
+  if (user?.userType === "external") return signPortalToken(identity, env.JWT_SECRET)
+  return signAccessToken({ ...identity, ...grants, userType: user?.userType }, env.JWT_SECRET)
 }
 
 /**
@@ -1016,6 +1027,7 @@ export async function changePassword(
           name: users.name,
           authVersion: users.authVersion,
           permissionVersion: users.permissionVersion,
+          userType: users.userType,
         })
         .from(users)
         .where(eq(users.id, userId))
@@ -1031,31 +1043,24 @@ export async function changePassword(
   invalidateAuthCache(userId)
   revokeSessions(endedIds, "password-change")
 
-  const accessToken = await signAccessToken(
-    {
-      userId,
-      orgId: user.orgId,
-      name: updatedUser?.name ?? "Unknown",
-      authVersion: updatedUser?.authVersion ?? 1,
-      permissionVersion: updatedUser?.permissionVersion ?? 1,
-      sid: newSessionId,
-      // Same rule as createSession: an administrator still to enroll a second
-      // factor gets a session that can only enroll.
-      ...(secondFactorPending
-        ? {
-            roles: [],
-            scopes: [],
-            dimensionGrants: {},
-            restricted: true,
-            secondFactorRequired: true,
-          }
-        : {
-            roles: permissions.roles,
-            scopes: permissions.scopes,
-            dimensionGrants: permissions.dimensionGrants,
-          }),
-    },
-    env.JWT_SECRET,
+  const accessToken = await signSessionToken(
+    { userId, orgId: user.orgId, sid: newSessionId },
+    updatedUser,
+    // Same rule as createSession: an administrator still to enroll a second
+    // factor gets a session that can only enroll.
+    secondFactorPending
+      ? {
+          roles: [],
+          scopes: [],
+          dimensionGrants: {},
+          restricted: true,
+          secondFactorRequired: true,
+        }
+      : {
+          roles: permissions.roles,
+          scopes: permissions.scopes,
+          dimensionGrants: permissions.dimensionGrants,
+        },
   )
 
   return {
@@ -1063,7 +1068,7 @@ export async function changePassword(
     refreshToken: newRefreshToken,
     orgId: user.orgId,
     userId,
-    admin: holdsAdminScope(user.orgId, permissions.scopes),
+    admin: updatedUser?.userType !== "external" && holdsAdminScope(user.orgId, permissions.scopes),
   }
 }
 

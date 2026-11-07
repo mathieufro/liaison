@@ -20,7 +20,7 @@ The tools an agent can call. An agent sees a tool only when its role holds the t
 | `approval_policy_set` | Configure an org APPROVAL-TIGHTENING policy: escalate a non-gated action to gated, and/or require N distinct approvers (minApprovers:2 = a second person must approve). | yes | `kernel:policies:admin` |
 | `approval_update_payload` | Update the editable fields of a pending approval you can see as its requester or an approver. |  | `kernel:approvals:write` |
 | `approval_withdraw` | Retract a PENDING approval request that you raised. |  | `kernel:approvals:write` |
-| `approvals_list` | List the approvals waiting on this user to decide, oldest first, each tagged with its origin app, requester, summary and ageDays. |  | `kernel:approvals:read` |
+| `approvals_list` | List the approvals waiting on this user to decide, oldest first, with origin app, requester, summary and age, plus recentlyDecided (last 24 hours) to check whether a requested action happened. |  | `kernel:approvals:read` |
 | `apps_set_access` | Set who may use an app (admin): mode "everyone", or "restricted" to the listed roleIds and userIds (org admins always keep it). | yes | `kernel:apps:admin` |
 | `apps_set_enabled` | Turn an installed app On or Off (enable or disable it) for EVERYONE (admin). | yes | `kernel:apps:admin` |
 | `assign_role` | Assign an existing team member to a role. | yes | `kernel:users:admin` |
@@ -156,6 +156,7 @@ The tools an agent can call. An agent sees a tool only when its role holds the t
 | `routine_tool_scopes` | Look up which scopes a routine needs for the tools it will call. |  | `kernel:routines:write` |
 | `run_on_my_computer` | Hand this request to the person's own computer (one of their computers running Liaison), where it runs as a session with their own Claude sign-in, local files and tools, and no cloud token budget. |  | `kernel:threads:write` |
 | `run_routine_now` | Trigger one ad-hoc execution of a routine right now, outside its cron schedule. | yes | `kernel:routines:write` |
+| `set_away` | Record that a person is away (dates only, never a reason), end it, or name their standing next in line. |  | `kernel:threads:read` |
 | `setup_state` | What is set up in this workspace and what is left of the features the person chose (setup.features), with the other features as a menu with times; read from the workspace itself. |  | `kernel:threads:read` |
 | `share_folder_on_my_computer` | Share a folder of the person's own computer with Liaison, so kernel__run_on_my_computer can work in it. | yes | `kernel:threads:write` |
 | `shopify_app_toml` | Post this server's shopify.app.toml with the Shopify CLI steps. |  | `kernel:threads:write` |
@@ -167,8 +168,9 @@ The tools an agent can call. An agent sees a tool only when its role holds the t
 | `subagent_delete` | Delete a sub-agent role definition. |  | `kernel:agents:admin` |
 | `subagent_get` | Read the full definition for one sub-agent role — system prompt, scope ceiling, allow/deny lists, skills, MCP servers, defaults. |  | `kernel:agents:admin` |
 | `subagent_list` | List sub-agent role definitions registered in this org. |  | `kernel:agents:spawn` |
+| `suggest_next_steps` | Offer up to 4 one-click next steps under your reply: a chip sends its label as the person's message, or opens a tab (app, view, id). |  | `kernel:threads:read` |
 | `thread_mute_set` | Mute or unmute one conversation thread for the user: replies there stop notifying (an @mention still does). |  | `kernel:agent:memory` |
-| `threads_create` | Create a new thread with the given participants. |  | `kernel:threads:write` |
+| `threads_create` | Start a thread with participants, or message a teammate directly: participantIds [their user id from kernel__users_search], no title, the text as initialMessage. |  | `kernel:threads:write` |
 | `threads_list` | List recent threads the user participates in, with ids, handles, titles, participants, last message metadata, unreadCount and paging. |  | `kernel:threads:read` |
 | `threads_read` | Read a thread's messages in chronological order, with its title and handle. |  | `kernel:threads:read` |
 | `threads_reply` | Post a message into a thread (threadId) or into a Liaison contact's discussion (contactId). |  | `kernel:threads:write` |
@@ -181,7 +183,7 @@ The tools an agent can call. An agent sees a tool only when its role holds the t
 | `user_memory_get` | Retrieve a stored memory about this user by type (user, feedback, project or reference) and name, or enumerate every memory of one type by passing type alone. |  | `kernel:agent:memory` |
 | `user_memory_set` | Save or update a private memory entry about this user, keyed by (type, name): user (who they are), feedback (rules from corrections), project (current work context) or reference (pointers to external systems). |  | `kernel:agent:memory` |
 | `users_list` | List org team members (id, name, email, role memberships). |  | `kernel:users:admin` |
-| `users_search` | Search your organisation's TEAM members (colleagues) by name or email: up to 20 active users with id, name and email. |  | `kernel:users:read` |
+| `users_search` | Find colleagues (team members) by name or email: up to 20 active users with id, name and email, to resolve a teammate's user id. |  | `kernel:users:read` |
 | `watch_state` | Routine-only: get-or-set this routine's cross-tick state by key — a real per-routine watermark persisted in kernel.routine_state. |  | `kernel:agent:web` |
 | `web_fetch` | Fetch a web page and return its content. |  | `kernel:agent:web` |
 | `web_search` | Search the web and return titles, URLs, snippets and relevance scores. Available when a web search key is configured: `EXA_API_KEY` or `OPENROUTER_API_KEY` on the server, or the organization's own Exa or OpenRouter key. |  | `kernel:agent:web` |
@@ -598,6 +600,7 @@ Projects and tasks with owners, statuses, due dates and discussions.
 | Tool | Description | Approval-gated | Required scopes |
 | --- | --- | --- | --- |
 | `add_dependency` | Add a dependency between two tasks. |  | `projects:tasks:write` |
+| `approval_route_read` | Who a pending approval about a task is for: its assignee, as personId (null when nobody holds it). |  | `projects:tasks:read` |
 | `attentionItems` | YOUR own work that needs attention right now — the calling user's OVERDUE, DUE-THIS-WEEK, and BLOCKED non-terminal tasks across ALL projects, each carrying its project name + due date. |  | `projects:tasks:read` |
 | `checklist_add_items` | Append items to a task's checklist, in the order given (batch, up to 50 per call, 200 per task). |  | `projects:tasks:write` |
 | `checklist_get` | Read a task's checklist: the project's validation `levels` in order (id, name), the `items` (id, title, details, per-level `validations` keyed by level id, `checked` for a project without levels) and the `status` (per-level counts and the blocking items, the ones not yet complete). |  | `projects:tasks:read` |
@@ -750,6 +753,7 @@ Track customer requests, returns and warranty cases to resolution.
 | `apiKeys.create` | Create an API key | yes | `tickets:settings:admin` |
 | `apiKeys.list` | List the API keys that still work (a revoked key is left out) |  | `tickets:settings:admin` |
 | `apiKeys.revoke` | Revoke an API key |  | `tickets:settings:admin` |
+| `approval_route_read` | Who a pending approval about a ticket is for: its assignee, as personId (null when nobody holds it). |  | `tickets:tickets:read` |
 | `approveFromHome.get` | Read the org setting Approve ticket replies from Home (Settings &gt; Tickets &gt; Response times & email). |  | `tickets:settings:admin` |
 | `approveFromHome.set` | Turn the org setting Approve ticket replies from Home on or off. | yes | `tickets:settings:admin` |
 | `assign` | Assign a ticket to a user. |  | `tickets:tickets:write` |

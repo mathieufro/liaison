@@ -588,6 +588,18 @@ export function createTicketsMethods(ctx: BridgeContext): Record<string, any> {
           },
         })
       }
+      if (updated.length > 0) {
+        // A pending request about this ticket is now for its new owner. Its own transaction:
+        // a failure is logged and the assignment stands.
+        const { updateItemRoutePerson } = await import("~/modules/approvals/route-world")
+        await updateItemRoutePerson({
+          orgId,
+          app: "tickets",
+          entityType: "ticket",
+          entityId: ticketId,
+          personId: newAssignee,
+        })
+      }
       return JSON.stringify({ ticketId, assignedTo: resolvedAssignee })
     },
 

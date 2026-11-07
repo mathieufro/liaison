@@ -8,11 +8,38 @@
  * by the generator and intentionally absent here.
  */
 export const FR: Record<string, string> = {
+  "Routine {{name}} finished: 1 draft waits for a person":
+    "La routine {{name}} est terminée : 1 brouillon attend une personne",
+  "Routine {{name}} finished: {{count}} drafts wait for a person":
+    "La routine {{name}} est terminée : {{count}} brouillons attendent une personne",
   "Send a new code in {{seconds}} s": "Envoyer un nouveau code dans {{seconds}} s",
   "We sent a new 6-digit code to {{email}}. It expires in 10 minutes.":
     "Nous avons envoy\u00e9 un nouveau code \u00e0 6 chiffres \u00e0 {{email}}. Il expire dans 10 minutes.",
   "We can't send email right now. Try again later, or sign in with your password if you have one.":
     "Nous ne pouvons pas envoyer d'e-mails pour le moment. R\u00e9essayez plus tard, ou connectez-vous avec votre mot de passe si vous en avez un.",
+  "Nothing ran: the server could not be reached.":
+    "Rien n'a été exécuté : le serveur est injoignable.",
+  "It answered this time. Ask again to see the result here.":
+    "Cette fois, la réponse est arrivée. Redemandez pour voir le résultat ici.",
+  "{{app}} did not answer": "{{app}} n'a pas répondu",
+  "Could not run {{tool}}": "Impossible d'exécuter {{tool}}",
+  "How this number is worked out": "Comment ce chiffre est calculé",
+  "The tool gave no reason.": "L'outil n'a donné aucune raison.",
+  "Not saved: the server could not be reached. Your text is kept.":
+    "Non enregistré : le serveur est injoignable. Votre texte est conservé.",
+  "Read {{count}} apps": "{{count}} apps lues",
+  "Read 1 app": "1 app lue",
+  "Read {{count}} of {{total}} apps": "{{count}} apps lues sur {{total}}",
+  "Reading {{app}}": "Lecture de {{app}}",
+  "Source: {{source}}": "Source : {{source}}",
+  "Not sent: the server could not be reached.": "Rien n'est parti : le serveur est injoignable.",
+  "Suggested next steps": "Étapes suggérées",
+  "Replaced by a newer card": "Remplacée par une carte plus récente",
+  "Nothing ran: this card cannot reach the server here.":
+    "Rien n'a été exécuté : cette carte ne peut pas joindre le serveur ici.",
+  "Waiting for approval. Nothing ran yet.":
+    "En attente d'approbation. Rien n'a encore été exécuté.",
+  "Working…": "En cours…",
   "Send me occasional news about Liaison": "M'envoyer de temps en temps des nouvelles de Liaison",
   "We use your email to send your confirmation code. Unless you tick the box and confirm your email, your name and email are deleted when your demo ends, after 72 hours.":
     "Nous utilisons votre mail pour vous envoyer votre code de confirmation. Sauf si vous cochez la case et confirmez votre mail, votre nom et votre mail sont supprimés à la fin de votre démo, après 72 heures.",
@@ -1438,6 +1465,7 @@ export const FR: Record<string, string> = {
   "Full kernel access": "Accès complet à l'espace de travail",
   "Manage users, roles, and invitations": "Gérer les utilisateurs, les rôles et les invitations",
   "Read user list": "Lire la liste des utilisateurs",
+  "See and manage clients' portal accounts": "Voir et gérer les comptes de portail des clients",
   "Edit org settings": "Modifier les réglages de l'organisation",
   "Read threads": "Lire les discussions",
   "Write threads": "Écrire dans les discussions",
@@ -5344,6 +5372,25 @@ export const FR_BY_KEY: Record<string, string> = {
   "kernel.homeSidebar.sourceUnavailable": "{{source}} indisponible, nouvelle tentative",
   "kernel.homeSidebar.expiringSoon": "Expire bientôt",
   "kernel.homeSidebar.newMail": "Nouveaux mails",
+  "kernel.homeStatusOtherWork": "DANS VOS AUTRES TÂCHES",
+  "kernel.homeDecisions.notNow": "Plus tard",
+  "kernel.homeDecisions.setAside": "Mis de côté jusqu'à lundi. Il reviendra alors.",
+  "kernel.homeDecisions.setAsideFailed": "Impossible de mettre ceci de côté. Réessayez.",
+  "kernel.homeDecisions.askDraft": "Demander un brouillon à l'agent",
+  "kernel.homeDecisions.askDraftMessage": "Rédige ce qu'il faut pour ceci : {{summary}}",
+  "kernel.homeDecisions.askDraftFailed": "Impossible de joindre votre agent. Réessayez.",
+  "kernel.homeDecisions.dismiss": "Retirer",
+  "kernel.homeDecisions.guardClear":
+    "Ne partira pas si on vous répond d'abord, même après votre accord.",
+  "kernel.homeDecisions.sourceFailedTitle": "Impossible de charger ce que {{app}} a pour vous",
+  "kernel.homeDecisions.sourceFailedBody":
+    "{{app}} n'a pas répondu. Ce qui y attend est en sécurité et attend toujours.",
+  "kernel.homeDecisions.retry": "Réessayer",
+  "kernel.homeDecisions.briefTitle": "Le point du jour",
+  "kernel.homeDecisions.briefNone":
+    "Aucun point du matin. Demandez-en un à votre agent chaque matin, et dites ce que vous voulez y voir.",
+  "kernel.homeDecisions.briefSetUp": "Mettre en place un point du matin",
+  "kernel.homeDecisions.briefOpen": "Ouvrir",
   "kernel.homeReadAll.button": "Tout marquer comme lu",
   "kernel.homeReadAll.title":
     "Marquer comme lu tout ce que cette vue affiche. Les approbations et les demandes restent affichées.",
@@ -7603,4 +7650,91 @@ export const FR_BY_KEY: Record<string, string> = {
     "Laissez vide pour envoyer le texte par défaut, dans la langue du client.",
   "tickets.closeSilent.defaultNudge":
     "Bonjour,\n\nSans nouvelles de votre part, nous revenons vers vous : notre dernier message a-t-il répondu à votre question, ou pouvons-nous encore vous aider ?\n\nSans réponse de votre part d'ici {{days}} jours, nous clôturerons ce ticket. Vous pourrez toujours répondre à cet e-mail pour le rouvrir.\n\nMerci",
+  "kernel.approvalsUi.err.sendGuardNotHeld":
+    "Ce brouillon n'est plus retenu : une réponse est arrivée, ou la retenue a pris fin. Rien n'a été envoyé. La carte affiche maintenant le résultat du contrôle.",
+  "kernel.approvalsUi.sendGuard.theOtherSide": "L'autre partie",
+  "kernel.approvalsUi.sendGuard.held":
+    "Retenu : {{who}} a envoyé une réponse automatique. Le message attend jusqu'au {{until}}, puis revient tout seul sur l'accueil.",
+  "kernel.approvalsUi.sendGuard.replied":
+    "Non envoyé : {{who}} a répondu après la rédaction de ce brouillon.",
+  "kernel.approvalsUi.sendGuard.repliedElsewhere":
+    "Non envoyé : une réponse est arrivée dans une autre boîte mail.",
+  "kernel.approvalsUi.sendGuard.bounced":
+    "Non envoyé : un échec de livraison est revenu pour cette adresse.",
+  "kernel.approvalsUi.sendGuard.optedOut":
+    "Envoi impossible : {{who}} a refusé les e-mails commerciaux. Retirez cette personne des destinataires, ou laissez le message non envoyé.",
+  "kernel.approvalsUi.sendGuard.refStop":
+    "Non envoyé : la fiche concernée par ce message indique de ne pas l'envoyer.",
+  "kernel.approvalsUi.sendGuard.refStopLabel": "Non envoyé : {{label}}",
+  "kernel.approvalsUi.sendGuard.unavailable":
+    "Le contrôle avant envoi n'a pas pu s'exécuter. Réessayez dans un instant.",
+  "kernel.approvalsUi.sendGuard.sendNow": "Envoyer maintenant",
+  // The profile's Away section and the line a colleague's away mark leaves on Home.
+  "kernel.settings.profile.away.title": "Absence",
+  "kernel.settings.profile.away.hint":
+    "Indiquez quand vous êtes absent et qui prend le relais. Seules les dates sont gardées, jamais le motif.",
+  "kernel.settings.profile.away.from": "Premier jour",
+  "kernel.settings.profile.away.to": "Dernier jour",
+  "kernel.settings.profile.away.nextInLine": "Relais",
+  "kernel.settings.profile.away.nobody": "Personne",
+  "kernel.settings.profile.away.standing": "Relais par défaut",
+  "kernel.settings.profile.away.standingHint": "Utilisé quand une absence ne nomme personne.",
+  "kernel.settings.profile.away.save": "M'indiquer absent",
+  "kernel.settings.profile.away.question":
+    "Votre agenda contient un événement {{dates}} qui ressemble à une absence. Le compter comme absence ?",
+  "kernel.settings.profile.away.yes": "Oui",
+  "kernel.settings.profile.away.no": "Non",
+  "kernel.settings.profile.away.fromCalendar": "Depuis votre agenda",
+  "kernel.settings.profile.away.endEarly": "Terminer maintenant",
+  "kernel.settings.profile.away.undo": "Annuler",
+  "kernel.settings.profile.away.range": "Du {{from}} au {{to}}",
+  "kernel.settings.profile.away.weekly": "Chaque {{days}} à partir du {{from}}",
+  "kernel.settings.profile.away.setBy": "Indiqué par {{name}}",
+  "kernel.settings.profile.away.nextInLineIs": "Relais : {{name}}",
+  "kernel.settings.profile.away.awayToo": "{{name}} est aussi absent, jusqu'au {{until}}.",
+  "kernel.settings.profile.away.hasLeft": "{{name}} a quitté l'organisation, choisissez quelqu'un.",
+  "kernel.settings.profile.away.awayUntilOption": "{{name}} (absent jusqu'au {{until}})",
+  "kernel.settings.profile.away.none": "Aucune absence enregistrée.",
+  "kernel.settings.profile.away.failed": "Impossible d'enregistrer votre absence.",
+  "kernel.settings.profile.away.endFailed": "Impossible d'y mettre fin.",
+  "kernel.attentionTitle.awayNamed": "{{name}} vous a indiqué absent {{dates}}",
+  "kernel.attentionTitle.routedReminder":
+    "En attente d'une décision depuis plus de {{hours}} heures : {{title}}",
+  "kernel.attentionTitle.awayCalendar.set": "Votre agenda vous indique absent {{dates}}. {{next}}",
+  "kernel.attentionTitle.awayCalendar.moved": "Votre absence a changé : {{dates}}. {{next}}",
+  "kernel.attentionTitle.awayCalendar.asked":
+    "« {{title}} » est-il une absence, {{dates}} ? Rien n’est compté tant que vous n’avez pas répondu Oui.",
+  "kernel.attentionTitle.awayCalendar.askedNoTitle":
+    "Cet événement de l’agenda est-il une absence, {{dates}} ? Rien n’est compté tant que vous n’avez pas répondu Oui.",
+  "kernel.attentionTitle.awayCalendar.next": "Suivant : {{name}}.",
+  "kernel.attentionTitle.awayCalendar.nobody":
+    "Personne n’est désigné : vos éléments restent chez les approbateurs habituels.",
+  "kernel.entityDiscussion.empty": "Aucun message pour l'instant.",
+  "kernel.entityDiscussion.placeholder": "Écrivez à ce sujet, ou @ un agent",
+  "kernel.entityDiscussion.send": "Envoyer",
+  "kernel.entityDiscussion.unavailable": "La discussion n'a pas pu être ouverte.",
+  "kernel.entityDiscussion.retry": "Réessayer",
+  "kernel.entityDiscussion.loading": "Ouverture de la discussion…",
+  "kernel.homeRouting.othersGroup": "Pour d'autres, vous pouvez aussi approuver",
+  "kernel.homeRouting.someone": "un collègue",
+  "kernel.homeRouting.standingIn":
+    "Pour {{name}}, absent jusqu'au {{date}}. Vous êtes son remplaçant.",
+  "kernel.homeRouting.othersAsked": "Pour {{name}}, qui l'a demandé. Vous pouvez aussi approuver",
+  "kernel.homeRouting.othersOnItem":
+    "Pour {{name}}, à qui c'est attribué. Vous pouvez aussi approuver",
+  "kernel.homeRouting.othersManager":
+    "Pour {{name}}, qui gère ce compte. Vous pouvez aussi approuver",
+  "kernel.homeRouting.blocked":
+    "Pour vous : {{blocked}} ne peut pas approuver ceci pendant l'absence de {{name}}",
+  "kernel.homeRouting.mineAsked": "Vous l'avez demandé",
+  "kernel.homeRouting.mineOnItem": "Pour vous : attribué à vous",
+  "kernel.homeRouting.mineManager": "Pour vous : vous gérez ce compte",
+  "kernel.homeRouting.recapApproved": "{{title}} : approuvé par {{name}}",
+  "kernel.homeRouting.recapDenied": "{{title}} : refusé par {{name}}",
+  "kernel.homeRouting.recapMore": "et {{count}} de plus",
+  "kernel.homeRouting.dismissFailed": "Impossible de fermer ceci. Réessayez.",
+  "kernel.homeRouting.awayUntil": "absent jusqu'au {{date}}",
+  "kernel.homeRouting.awayToday": "absent aujourd'hui",
+  "kernel.homeRouting.awayTodayBack": "absent aujourd'hui, de retour {{day}}",
+  "kernel.homeRouting.recapTitle": "Pendant votre absence",
 }

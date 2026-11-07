@@ -1586,3 +1586,88 @@ describe("ApprovalCard exact payload behind Technical details", () => {
     expect(payload.querySelector("summary")?.textContent).toBe("Exact payload")
   })
 })
+
+describe("ApprovalCard: the send check on an agent's mail draft", () => {
+  const guarded = (sendGuard: Record<string, unknown>) =>
+    baseRow({ toolName: "mail:compose", payloadHash: "seen", sendGuard })
+
+  it("a stopped card has no Approve", async () => {
+    handleWsCreate(
+      guarded({
+        state: "replied",
+        who: "client@example.test",
+        at: "2026-11-06T10:00:00.000Z",
+        quote: "Thanks, we already ordered.",
+        record: { kind: "conversation", id: "c-1" },
+      }),
+      "u-approver",
+    )
+    render(() => <ApprovalCard requestId="ar-1" />)
+    const line = await screen.findByTestId("approval-card-send-guard")
+    expect(line).toHaveTextContent("Not sent: client@example.test replied after this was drafted.")
+    expect(screen.getByTestId("approval-card-send-guard-quote")).toHaveTextContent(
+      "Thanks, we already ordered.",
+    )
+    expect(screen.queryByTestId("approval-card-action-approve")).toBeNull()
+    expect(screen.queryByTestId("approval-card-action-send-now")).toBeNull()
+    // Reject stays, so the person can close it.
+    expect(screen.getByTestId("approval-card-action-deny")).toBeInTheDocument()
+  })
+
+  it("a reply in a mailbox the viewer cannot read says so, with no quote", async () => {
+    handleWsCreate(guarded({ state: "replied", who: "client@example.test" }), "u-approver")
+    render(() => <ApprovalCard requestId="ar-1" />)
+    expect(await screen.findByTestId("approval-card-send-guard")).toHaveTextContent(
+      "Not sent: a reply came in to another mailbox.",
+    )
+    expect(screen.queryByTestId("approval-card-send-guard-quote")).toBeNull()
+  })
+
+  it("Held: Send now replaces Approve", async () => {
+    apiMocks.post.mockResolvedValue({ id: "ar-1", status: "approved" })
+    handleWsCreate(
+      guarded({
+        state: "held",
+        who: "client@example.test",
+        at: "2026-11-06T10:00:00.000Z",
+        holdUntil: "2026-11-17T00:00:00.000Z",
+      }),
+      "u-approver",
+    )
+    render(() => <ApprovalCard requestId="ar-1" />)
+    expect(await screen.findByTestId("approval-card-send-guard")).toHaveTextContent(
+      "Held: client@example.test sent an automatic reply.",
+    )
+    expect(screen.queryByTestId("approval-card-action-approve")).toBeNull()
+    fireEvent.click(screen.getByTestId("approval-card-action-send-now"))
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalled())
+    expect(apiMocks.post.mock.calls[0]?.[1]).toMatchObject({
+      decision: "approve",
+      payloadHash: "seen",
+      sendGuardOverride: "auto_reply",
+    })
+  })
+
+  it("a clear draft keeps its Approve, and the approve carries no override", async () => {
+    apiMocks.post.mockResolvedValue({ id: "ar-1", status: "approved" })
+    handleWsCreate(guarded({ state: "clear" }), "u-approver")
+    render(() => <ApprovalCard requestId="ar-1" />)
+    fireEvent.click(await screen.findByTestId("approval-card-action-approve"))
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalled())
+    expect(apiMocks.post.mock.calls[0]?.[1]).not.toHaveProperty("sendGuardOverride")
+    expect(screen.queryByTestId("approval-card-send-guard")).toBeNull()
+  })
+
+  it("Send now that comes back not held reloads the card", async () => {
+    const { ApiError } = await import("~/lib/api-error")
+    apiMocks.post.mockRejectedValue(new ApiError("no longer held", 422, "send_guard_not_held"))
+    handleWsCreate(guarded({ state: "held", holdUntil: "2026-11-17T00:00:00.000Z" }), "u-approver")
+    render(() => <ApprovalCard requestId="ar-1" />)
+    apiMocks.get.mockClear()
+    fireEvent.click(await screen.findByTestId("approval-card-action-send-now"))
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalled())
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("no longer held") }),
+    )
+  })
+})

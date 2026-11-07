@@ -7,8 +7,8 @@
 // API calls.
 
 import type { HostServices } from "@liaison/host"
-import { createComponent, getOwner, runWithOwner } from "solid-js"
-import { render } from "solid-js/web"
+import { createComponent, createRoot, getOwner, runWithOwner } from "solid-js"
+import { insert, render } from "solid-js/web"
 import { getContributions } from "~/framework/app-registry"
 import { onEntityChange } from "~/framework/entity-changes"
 import {
@@ -26,6 +26,7 @@ import { currentLocale } from "~/modules/i18n/i18n-context"
 import { openConnectDialog } from "~/modules/settings/connect-dialog-host"
 import { connectWithOAuth } from "~/modules/settings/oauth-connect"
 import { trackOpenRecord } from "~/modules/shell/open-record"
+import { EntityDiscussionPanel } from "~/modules/threads/EntityDiscussionPanel"
 import { createStaleResource } from "~/primitives/createStaleResource"
 
 /** 3-part `<host>.<slot>.<kind>` → 2-part registry key `<host>.<slot>`
@@ -318,6 +319,35 @@ export function buildHostServices(opts: BuildHostServicesOptions): HostServices 
         mountNode,
       )
       return { resolved: true, dispose }
+    },
+
+    // A bundle's discussion of one of its records. Rendered under the caller's
+    // owner, so the kernel component finds the page's api, language and socket.
+    mountEntityDiscussion: (callerApp, anchor, descriptor) => {
+      const owner = getOwner()
+      if (!owner) return { resolved: false, dispose: () => {} }
+      const mountNode = anchor as unknown as Element
+      const dispose = createRoot((disposeRoot) => {
+        insert(mountNode, () =>
+          createComponent(EntityDiscussionPanel, {
+            app: descriptor.app ?? callerApp,
+            entityType: descriptor.entityType,
+            entityId: descriptor.entityId,
+            testId: descriptor.testId,
+            emptyText: descriptor.emptyText,
+            placeholder: descriptor.placeholder,
+            sendLabel: descriptor.sendLabel,
+          }),
+        )
+        return disposeRoot
+      }, owner)
+      return {
+        resolved: true,
+        dispose: () => {
+          dispose()
+          mountNode.textContent = ""
+        },
+      }
     },
   }
 }

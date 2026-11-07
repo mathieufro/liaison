@@ -3,6 +3,7 @@ import { z } from "zod"
 import { runsForErrors } from "~/infra/jobs/fanout-runs-for"
 import { pinnedOverlap } from "~/modules/apps/pinned-params"
 import { validateProviderContracts } from "~/modules/apps/provider-contracts/validate"
+import { resultCardErrors } from "~/modules/apps/result-card-schema"
 
 const SEMVER_REGEX = /^\d+\.\d+\.\d+(-[\w.]+)?(\+[\w.]+)?$/
 const NAME_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
@@ -249,6 +250,7 @@ const routineTemplateSchema = z.object({
   promptTemplate: z.string().min(1),
   scopes: z.array(z.string()),
   enabledByDefault: z.boolean(),
+  followUp: z.boolean().optional(),
 })
 
 const appPromptSchema = z.object({ content: z.string().min(1) })
@@ -926,6 +928,64 @@ export function appIconErrors(manifest: { iconSvg?: unknown; iconName?: unknown 
   return errors
 }
 
+/**
+ * Tool keys that narrow a scope-taint refusal (scope-taint.ts, rules 6d and 6f):
+ * `sinkReadersSelf` says the acting user alone reads what the tool writes, and
+ * `contentParams` names the only parameters through which a call carries the turn.
+ * Both are claims about what the handler does, so only an app the platform vouches
+ * for may make them: an in-tree app or the image's own catalog artifact
+ * (`hasPrivilegedBridge` in runtime.ts). A third-party manifest declaring either is
+ * refused at registration, signed by a trusted publisher or not.
+ */
+export const FIRST_PARTY_ONLY_TOOL_KEYS = ["sinkReadersSelf", "contentParams"] as const
+
+/** The registration errors for a manifest nobody vouched for that declares a key above. */
+export function firstPartyOnlyToolKeyErrors(manifest: any): string[] {
+  const errors: string[] = []
+  for (const [toolName, tool] of Object.entries((manifest?.tools ?? {}) as Record<string, any>)) {
+    for (const key of FIRST_PARTY_ONLY_TOOL_KEYS) {
+      if (tool?.[key] !== undefined) {
+        errors.push(
+          `tools.${toolName}.${key}: only a first-party app may declare it, because it narrows a scope-taint refusal; remove it from the manifest`,
+        )
+      }
+    }
+  }
+  return errors
+}
+
+/**
+ * A context provider names a tool of its own app that writes nothing, and a
+ * scope that tool requires: the scope is what a turn must hold for the tool to
+ * run, so it cannot be one the tool does not check. `loadTools` are the app's
+ * own tools.
+ */
+function contextProviderErrors(manifest: any): string[] {
+  const providers = manifest?.contextProviders
+  if (!Array.isArray(providers)) return []
+  const tools = (manifest.tools ?? {}) as Record<string, any>
+  const errors: string[] = []
+  providers.forEach((p: { tool: string; scope: string; loadTools?: string[] }, i: number) => {
+    const at = `contextProviders[${i}]`
+    const tool = tools[p.tool]
+    if (!tool) {
+      errors.push(`${at}.tool: '${p.tool}' is not a tool of this app`)
+      return
+    }
+    if (tool.readOnly !== true || typeof tool.writesToTable === "string" || tool.gated === true) {
+      errors.push(`${at}.tool: '${p.tool}' must be declared readOnly, ungated and write no table`)
+    }
+    const required: unknown[] = Array.isArray(tool.requiredScopes) ? tool.requiredScopes : []
+    if (!required.includes(p.scope)) {
+      errors.push(`${at}.scope: '${p.scope}' is not in the requiredScopes of '${p.tool}'`)
+    }
+    for (const name of p.loadTools ?? []) {
+      if (!tools[name]) errors.push(`${at}.loadTools: '${name}' is not a tool of this app`)
+    }
+  })
+  return errors
+}
+
 export function validateAppManifest(manifest: any): ValidationResult {
   const retired = retiredToolScopeErrors(manifest?.tools)
   if (retired.length > 0) return { success: false, error: retired.join("; ") }
@@ -955,6 +1015,8 @@ export function validateAppManifest(manifest: any): ValidationResult {
   errors.push(...oauthManifestKnobErrors(manifest))
   errors.push(...listingDeclarationErrors(manifest))
   errors.push(...appIconErrors(manifest))
+  errors.push(...resultCardErrors(manifest))
+  errors.push(...contextProviderErrors(manifest))
   errors.push(
     ...importDeclarationErrors(
       manifest.import,
@@ -979,6 +1041,18 @@ export function validateAppManifest(manifest: any): ValidationResult {
         errors.push(
           `tools.${toolName}.preflight: must be a string export name, not ${typeof tool.preflight}`,
         )
+      }
+      // A `contentParams` entry the tool does not take is never set by a call, so every call
+      // would pass as carrying none of the turn (scope-taint.ts, rule 6f): refused here.
+      if (Array.isArray(tool.contentParams)) {
+        const props = (tool.params?.properties ?? {}) as Record<string, unknown>
+        for (const p of tool.contentParams as unknown[]) {
+          if (typeof p !== "string" || !Object.hasOwn(props, p)) {
+            errors.push(
+              `tools.${toolName}.contentParams: "${String(p)}" is not in params.properties, so no call would carry it`,
+            )
+          }
+        }
       }
       // Every scope the tool requires must sit in the app's own namespace.
       errors.push(...toolScopeNamespaceErrors(toolName, tool.requiredScopes, String(manifest.name)))

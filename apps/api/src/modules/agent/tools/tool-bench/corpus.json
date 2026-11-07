@@ -11,7 +11,26 @@
       "end schedule",
       "recurring schedule"
     ],
-    "any": ["invoicing__drafts_discard"]
+    "any": ["invoicing__drafts_discard"],
+    "modelRun": true
+  },
+  {
+    "id": "C04",
+    "set": "seed",
+    "lang": "en",
+    "say": "Elodie is off next week",
+    "typed": ["away", "set away", "out of office", "holiday", "next in line"],
+    "any": ["kernel__set_away"],
+    "modelRun": true
+  },
+  {
+    "id": "C05",
+    "set": "seed",
+    "lang": "fr",
+    "say": "je suis en congés la semaine prochaine, Tom me remplace",
+    "typed": ["congés", "absent", "vacances", "remplaçant", "absence"],
+    "any": ["kernel__set_away"],
+    "modelRun": true
   },
   {
     "id": "C15",
@@ -19,7 +38,8 @@
     "lang": "fr",
     "say": "rembourse Élodie sur sa commande shopify",
     "typed": ["rembourser commande", "shopify refund", "refund order"],
-    "any": ["shopify__refunds_create"]
+    "any": ["shopify__refunds_create"],
+    "modelRun": true
   },
   {
     "id": "C16",
@@ -27,7 +47,8 @@
     "lang": "en",
     "say": "they have not paid",
     "typed": ["failed payment", "unpaid invoice", "overdue invoices", "past due"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "C17",
@@ -35,7 +56,8 @@
     "lang": "fr",
     "say": "qui ne m'a pas payé",
     "typed": ["impayé", "factures impayées", "relance paiement"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "C39",
@@ -43,7 +65,8 @@
     "lang": "en",
     "say": "reply to this ticket",
     "typed": ["reply ticket", "tickets reply", "answer customer"],
-    "any": ["tickets__reply"]
+    "any": ["tickets__reply"],
+    "modelRun": true
   },
   {
     "id": "C40",
@@ -51,7 +74,8 @@
     "lang": "fr",
     "say": "réponds au client sur ce ticket",
     "typed": ["répondre ticket", "répondre client"],
-    "any": ["tickets__reply"]
+    "any": ["tickets__reply"],
+    "modelRun": true
   },
   {
     "id": "C41",
@@ -59,7 +83,8 @@
     "lang": "en",
     "say": "make a task for Tom",
     "typed": ["create task", "new task", "projects create"],
-    "any": ["projects__create"]
+    "any": ["projects__create"],
+    "modelRun": true
   },
   {
     "id": "C42",
@@ -67,7 +92,8 @@
     "lang": "fr",
     "say": "crée une tâche pour Tom",
     "typed": ["créer tâche", "nouvelle tâche", "tâche"],
-    "any": ["projects__create"]
+    "any": ["projects__create"],
+    "modelRun": true
   },
   {
     "id": "C43",
@@ -75,7 +101,8 @@
     "lang": "en",
     "say": "email Sara the summary",
     "typed": ["send email", "compose mail", "mail compose"],
-    "any": ["mail__compose"]
+    "any": ["mail__compose"],
+    "modelRun": true
   },
   {
     "id": "C44",
@@ -83,7 +110,8 @@
     "lang": "fr",
     "say": "envoie un mail à Sara",
     "typed": ["envoyer mail", "envoyer email", "courriel"],
-    "any": ["mail__compose"]
+    "any": ["mail__compose"],
+    "modelRun": true
   },
   {
     "id": "C45",
@@ -91,7 +119,8 @@
     "lang": "en",
     "say": "find invoice F-2026-0640",
     "typed": ["find invoice", "search invoices", "invoice number"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "C46",
@@ -99,7 +128,8 @@
     "lang": "fr",
     "say": "retrouve la facture F-2026-0640",
     "typed": ["chercher facture", "facture", "rechercher facture"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "C47",
@@ -107,7 +137,8 @@
     "lang": "en",
     "say": "issue that invoice",
     "typed": ["issue invoice", "invoice issue"],
-    "any": ["invoicing__invoice_issue"]
+    "any": ["invoicing__invoice_issue"],
+    "modelRun": true
   },
   {
     "id": "C48",
@@ -115,7 +146,8 @@
     "lang": "fr",
     "say": "fais un avoir de 200 euros",
     "typed": ["avoir", "credit note", "note de crédit"],
-    "any": ["invoicing__credit_note_create_and_issue"]
+    "any": ["invoicing__credit_note_create_and_issue"],
+    "modelRun": true
   },
   {
     "id": "C49",
@@ -123,7 +155,8 @@
     "lang": "en",
     "say": "change the address on this contact",
     "typed": ["update contact", "edit contact", "contact write"],
-    "any": ["kernel__contacts_write", "kernel__contacts_address_upsert"]
+    "any": ["kernel__contacts_write", "kernel__contacts_address_upsert"],
+    "modelRun": true
   },
   {
     "id": "C50",
@@ -131,7 +164,8 @@
     "lang": "en",
     "say": "write this down as a policy",
     "typed": ["create document", "knowledge create", "new doc", "write policy"],
-    "any": ["knowledge__create", "kernel__capture_business_knowledge"]
+    "any": ["knowledge__create", "kernel__capture_business_knowledge"],
+    "modelRun": true
   },
   {
     "id": "C51",
@@ -139,7 +173,8 @@
     "lang": "fr",
     "say": "retrouve la politique de remboursement",
     "typed": ["politique remboursement", "knowledge search", "refund policy"],
-    "any": ["knowledge__search"]
+    "any": ["knowledge__search"],
+    "modelRun": true
   },
   {
     "id": "C52",
@@ -147,7 +182,8 @@
     "lang": "fr",
     "say": "mets un rdv avec Lumen mardi",
     "typed": ["rendez-vous", "create event", "calendar event", "réunion"],
-    "any": ["calendar__create_event"]
+    "any": ["calendar__create_event"],
+    "modelRun": true
   },
   {
     "id": "C53",
@@ -155,7 +191,8 @@
     "lang": "en",
     "say": "cancel that shopify order",
     "typed": ["cancel order", "order cancel"],
-    "any": ["shopify__order_cancel"]
+    "any": ["shopify__order_cancel"],
+    "modelRun": true
   },
   {
     "id": "C54",
@@ -163,7 +200,8 @@
     "lang": "en",
     "say": "ship it to Lyon",
     "typed": ["create shipment", "ship parcel", "expédier colis", "label"],
-    "any": ["boxtal__create_shipment", "boxtal__shipment_draft_create"]
+    "any": ["boxtal__create_shipment", "boxtal__shipment_draft_create"],
+    "modelRun": true
   },
   {
     "id": "C55",
@@ -171,7 +209,8 @@
     "lang": "fr",
     "say": "qu'est-ce qui attend ma validation",
     "typed": ["approvals", "pending approvals", "en attente validation", "a valider"],
-    "any": ["kernel__approvals_list"]
+    "any": ["kernel__approvals_list"],
+    "modelRun": true
   },
   {
     "id": "C56",
@@ -179,7 +218,8 @@
     "lang": "en",
     "say": "every monday send me the numbers",
     "typed": ["create routine", "schedule recurring task", "routine weekly"],
-    "any": ["kernel__create_routine"]
+    "any": ["kernel__create_routine"],
+    "modelRun": true
   },
   {
     "id": "C57",
@@ -187,7 +227,35 @@
     "lang": "en",
     "say": "typo: invocie Alpine",
     "typed": ["invocie", "invoce search"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
+  },
+  {
+    "id": "N01",
+    "set": "seed",
+    "lang": "en",
+    "say": "what should I do next here",
+    "typed": ["suggest next steps", "next steps", "what next", "propose follow-up actions"],
+    "any": ["kernel__suggest_next_steps"],
+    "modelRun": true
+  },
+  {
+    "id": "N02",
+    "set": "seed",
+    "lang": "en",
+    "say": "remember that Sara prefers calls in the morning",
+    "typed": ["remember", "memory insert", "save a note to memory", "remember that"],
+    "any": ["kernel__memory_insert"],
+    "modelRun": true
+  },
+  {
+    "id": "N03",
+    "set": "seed",
+    "lang": "fr",
+    "say": "souviens-toi que Sara préfère les appels le matin",
+    "typed": ["souviens-toi", "se souvenir", "mémoriser", "retenir", "ajouter à la mémoire"],
+    "any": ["kernel__memory_insert"],
+    "modelRun": true
   },
   {
     "id": "A001",
@@ -195,7 +263,8 @@
     "lang": "fr",
     "say": "fermer ticket",
     "typed": ["fermer ticket"],
-    "any": ["tickets__close"]
+    "any": ["tickets__close"],
+    "modelRun": true
   },
   {
     "id": "A002",
@@ -203,7 +272,8 @@
     "lang": "fr",
     "say": "attribuer ticket",
     "typed": ["attribuer ticket"],
-    "any": ["tickets__assign"]
+    "any": ["tickets__assign"],
+    "modelRun": true
   },
   {
     "id": "A003",
@@ -211,7 +281,8 @@
     "lang": "en",
     "say": "send email",
     "typed": ["send email"],
-    "any": ["mail__compose"]
+    "any": ["mail__compose"],
+    "modelRun": true
   },
   {
     "id": "A004",
@@ -219,7 +290,8 @@
     "lang": "fr",
     "say": "répondre mail",
     "typed": ["répondre mail"],
-    "any": ["mail__reply"]
+    "any": ["mail__reply"],
+    "modelRun": true
   },
   {
     "id": "A005",
@@ -227,7 +299,8 @@
     "lang": "en",
     "say": "find email",
     "typed": ["find email"],
-    "any": ["mail__search"]
+    "any": ["mail__search"],
+    "modelRun": true
   },
   {
     "id": "A006",
@@ -235,7 +308,8 @@
     "lang": "en",
     "say": "invoice list",
     "typed": ["invoice list"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A007",
@@ -243,7 +317,8 @@
     "lang": "en",
     "say": "find invoice",
     "typed": ["find invoice"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A008",
@@ -251,7 +326,8 @@
     "lang": "en",
     "say": "paid invoice",
     "typed": ["paid invoice"],
-    "any": ["invoicing__documents_mark_paid"]
+    "any": ["invoicing__documents_mark_paid"],
+    "modelRun": true
   },
   {
     "id": "A009",
@@ -259,7 +335,8 @@
     "lang": "en",
     "say": "download invoice",
     "typed": ["download invoice"],
-    "any": ["invoicing__documents_download_pdf"]
+    "any": ["invoicing__documents_download_pdf"],
+    "modelRun": true
   },
   {
     "id": "A010",
@@ -267,7 +344,8 @@
     "lang": "en",
     "say": "shipping label",
     "typed": ["shipping label"],
-    "any": ["boxtal__create_shipment", "boxtal__get_documents", "boxtal__print_pack"]
+    "any": ["boxtal__create_shipment", "boxtal__get_documents", "boxtal__print_pack"],
+    "modelRun": true
   },
   {
     "id": "A011",
@@ -275,7 +353,8 @@
     "lang": "en",
     "say": "update price",
     "typed": ["update price"],
-    "any": ["shopify__variants_update"]
+    "any": ["shopify__variants_update"],
+    "modelRun": true
   },
   {
     "id": "A012",
@@ -283,7 +362,8 @@
     "lang": "en",
     "say": "mark fulfilled",
     "typed": ["mark fulfilled"],
-    "any": ["shopify__fulfillments_create"]
+    "any": ["shopify__fulfillments_create"],
+    "modelRun": true
   },
   {
     "id": "A013",
@@ -291,7 +371,8 @@
     "lang": "en",
     "say": "add task",
     "typed": ["add task"],
-    "any": ["projects__create"]
+    "any": ["projects__create"],
+    "modelRun": true
   },
   {
     "id": "A014",
@@ -299,7 +380,8 @@
     "lang": "en",
     "say": "project status",
     "typed": ["project status"],
-    "any": ["projects__tasks_byProject"]
+    "any": ["projects__tasks_byProject"],
+    "modelRun": true
   },
   {
     "id": "A015",
@@ -307,7 +389,8 @@
     "lang": "en",
     "say": "grant role",
     "typed": ["grant role"],
-    "any": ["kernel__assign_role"]
+    "any": ["kernel__assign_role"],
+    "modelRun": true
   },
   {
     "id": "A016",
@@ -315,7 +398,8 @@
     "lang": "en",
     "say": "set priority",
     "typed": ["set priority"],
-    "any": ["tickets__setPriority"]
+    "any": ["tickets__setPriority"],
+    "modelRun": true
   },
   {
     "id": "A017",
@@ -323,7 +407,8 @@
     "lang": "en",
     "say": "schedule meeting",
     "typed": ["schedule meeting"],
-    "any": ["calendar__create_event"]
+    "any": ["calendar__create_event"],
+    "modelRun": true
   },
   {
     "id": "A018",
@@ -331,7 +416,8 @@
     "lang": "en",
     "say": "stop ad",
     "typed": ["stop ad"],
-    "any": ["ads__pause", "ads__google_pause"]
+    "any": ["ads__pause", "ads__google_pause"],
+    "modelRun": true
   },
   {
     "id": "A019",
@@ -339,7 +425,8 @@
     "lang": "en",
     "say": "customer satisfaction",
     "typed": ["customer satisfaction"],
-    "any": ["tickets__csat_summary", "tickets__csat_list"]
+    "any": ["tickets__csat_summary", "tickets__csat_list"],
+    "modelRun": true
   },
   {
     "id": "A020",
@@ -347,7 +434,8 @@
     "lang": "fr",
     "say": "colis bloqué",
     "typed": ["colis bloqué"],
-    "any": ["boxtal__stuck_list", "boxtal__exceptions_list"]
+    "any": ["boxtal__stuck_list", "boxtal__exceptions_list"],
+    "modelRun": true
   },
   {
     "id": "A021",
@@ -355,7 +443,8 @@
     "lang": "fr",
     "say": "réclamation transporteur",
     "typed": ["réclamation transporteur"],
-    "any": ["boxtal__claim_open"]
+    "any": ["boxtal__claim_open"],
+    "modelRun": true
   },
   {
     "id": "A022",
@@ -363,7 +452,8 @@
     "lang": "fr",
     "say": "avoir",
     "typed": ["avoir"],
-    "any": ["invoicing__credit_note_create_and_issue", "invoicing__credit_note_issue"]
+    "any": ["invoicing__credit_note_create_and_issue", "invoicing__credit_note_issue"],
+    "modelRun": true
   },
   {
     "id": "A023",
@@ -371,7 +461,8 @@
     "lang": "fr",
     "say": "devis en facture",
     "typed": ["devis en facture"],
-    "any": ["invoicing__documents_convert_to_invoice"]
+    "any": ["invoicing__documents_convert_to_invoice"],
+    "modelRun": true
   },
   {
     "id": "A024",
@@ -379,7 +470,8 @@
     "lang": "fr",
     "say": "factures fournisseurs",
     "typed": ["factures fournisseurs"],
-    "any": ["invoicing__received_einvoices_list", "pennylane__supplier_invoices_list"]
+    "any": ["invoicing__received_einvoices_list", "pennylane__supplier_invoices_list"],
+    "modelRun": true
   },
   {
     "id": "A025",
@@ -387,7 +479,8 @@
     "lang": "fr",
     "say": "facture du mois",
     "typed": ["facture du mois"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A026",
@@ -395,7 +488,8 @@
     "lang": "fr",
     "say": "la facture",
     "typed": ["la facture"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A027",
@@ -403,7 +497,8 @@
     "lang": "en",
     "say": "search invoices",
     "typed": ["search invoices"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A028",
@@ -411,7 +506,8 @@
     "lang": "en",
     "say": "where is the parcel",
     "typed": ["where is the parcel"],
-    "any": ["boxtal__track"]
+    "any": ["boxtal__track"],
+    "modelRun": true
   },
   {
     "id": "A029",
@@ -419,7 +515,8 @@
     "lang": "en",
     "say": "what's left to ship",
     "typed": ["what's left to ship"],
-    "any": ["boxtal__to_prepare_list", "boxtal__prep_list"]
+    "any": ["boxtal__to_prepare_list", "boxtal__prep_list"],
+    "modelRun": true
   },
   {
     "id": "A030",
@@ -431,7 +528,8 @@
       "shopify__refunds_create",
       "invoicing__documents_record_refund",
       "shopify__returns_refund"
-    ]
+    ],
+    "modelRun": true
   },
   {
     "id": "A031",
@@ -439,7 +537,8 @@
     "lang": "en",
     "say": "add a note on the order",
     "typed": ["add a note on the order"],
-    "any": ["shopify__order_note_set", "shopify__order_update"]
+    "any": ["shopify__order_note_set", "shopify__order_update"],
+    "modelRun": true
   },
   {
     "id": "A032",
@@ -447,7 +546,8 @@
     "lang": "en",
     "say": "require approval",
     "typed": ["require approval"],
-    "any": ["kernel__approval_policy_set"]
+    "any": ["kernel__approval_policy_set"],
+    "modelRun": true
   },
   {
     "id": "A033",
@@ -455,7 +555,8 @@
     "lang": "en",
     "say": "auto approve",
     "typed": ["auto approve"],
-    "any": ["kernel__policy_set"]
+    "any": ["kernel__policy_set"],
+    "modelRun": true
   },
   {
     "id": "A034",
@@ -463,7 +564,8 @@
     "lang": "fr",
     "say": "active l'application",
     "typed": ["active l'application"],
-    "any": ["kernel__enable_app", "kernel__apps_set_enabled"]
+    "any": ["kernel__enable_app", "kernel__apps_set_enabled"],
+    "modelRun": true
   },
   {
     "id": "A035",
@@ -471,7 +573,8 @@
     "lang": "fr",
     "say": "imprime étiquettes",
     "typed": ["imprime étiquettes"],
-    "any": ["boxtal__print_pack", "boxtal__print_pack_batch"]
+    "any": ["boxtal__print_pack", "boxtal__print_pack_batch"],
+    "modelRun": true
   },
   {
     "id": "L036",
@@ -2200,5 +2303,21 @@
     "say": "like post",
     "typed": ["like post"],
     "any": ["social__like_item"]
+  },
+  {
+    "id": "H177",
+    "set": "heldout",
+    "lang": "en",
+    "say": "suggest next steps",
+    "typed": ["suggest next steps"],
+    "any": ["kernel__suggest_next_steps"]
+  },
+  {
+    "id": "H178",
+    "set": "heldout",
+    "lang": "fr",
+    "say": "je suis en congés la semaine prochaine, Tom me remplace",
+    "typed": ["congés semaine prochaine", "absent remplaçant"],
+    "any": ["kernel__set_away"]
   }
 ]

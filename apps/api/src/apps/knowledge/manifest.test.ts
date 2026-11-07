@@ -27,6 +27,13 @@ const guideText = (m: { agentInstructions?: unknown }): string => {
 const handlersSource = readFileSync(new URL("./handlers.ts", import.meta.url), "utf8")
 
 describe("knowledge app manifest (T14)", () => {
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    expect(manifest.attention.groupLabel).toEqual({
+      label: "Knowledge",
+      labelKey: "kernel.homeGroupKnowledge",
+    })
+  })
+
   it("views.attentionItems handler resolves to an exported function (BC-2)", () => {
     const views = (manifest as unknown as { views: Record<string, { handler: string }> }).views
     const handlerName = views.attentionItems.handler

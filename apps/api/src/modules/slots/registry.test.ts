@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { slotRegistry } from "~/modules/apps/app-registries"
 import { forgetOrgApps, rememberOrgAppStates } from "~/modules/apps/org-apps"
-import { listSlotPanels } from "./registry"
+import { listSlotPanels, registerAppSlots } from "./registry"
 
 describe("slot registry — listSlotPanels (B9)", () => {
   const ORG = "org-slots-1"
@@ -46,6 +46,58 @@ describe("slot registry — listSlotPanels (B9)", () => {
       expect(listSlotPanels({ orgId: OTHER, scopes: ["*"], slot: "contact_detail" })).toHaveLength(
         1,
       )
+    } finally {
+      forgetOrgApps(ORG)
+    }
+  })
+
+  test("re-registering an app replaces its contributions: each panel once, a dropped one gone", () => {
+    registerAppSlots(ORG, "crm", undefined, {
+      "ticket:detail:panel": { label: "Customer", component: "CustomerCard" },
+      "mail:conversation:banner": { label: "Banner", component: "CrmBanner" },
+    })
+    // The next version keeps the card and drops the banner.
+    registerAppSlots(ORG, "crm", undefined, {
+      "ticket:detail:panel": { label: "Customer", component: "CustomerCard" },
+    })
+    const ticket = listSlotPanels({ orgId: ORG, scopes: ["*"], slot: "ticket:detail:panel" })
+    expect(ticket.map((p) => p.id)).toEqual(["CustomerCard"])
+    // A slot the app also declares in `slots` keeps those panels and gains the contribution once.
+    registerAppSlots(
+      ORG,
+      "crm",
+      { contact_detail: { panels: [{ id: "crm-own", label: "Own", component: "Own" }] } },
+      { contact_detail: { label: "Card", component: "CrmContact" } },
+    )
+    registerAppSlots(
+      ORG,
+      "crm",
+      { contact_detail: { panels: [{ id: "crm-own", label: "Own", component: "Own" }] } },
+      { contact_detail: { label: "Card", component: "CrmContact" } },
+    )
+    expect(
+      listSlotPanels({ orgId: ORG, scopes: ["*"], slot: "contact_detail" }).map((p) => p.id),
+    ).toEqual(["crm-own", "CrmContact"])
+  })
+
+  test("a person the app is restricted away from gets none of its panels; a person allowed does", () => {
+    slotRegistry.set([ORG, "crm", "ticket:detail:panel"], {
+      panels: [{ id: "CustomerCard", label: "Customer", component: "CustomerCard" }],
+    })
+    slotRegistry.set([ORG, "crm", "invoicing"], {
+      document_detail: { tabs: [{ id: "crm-tab", label: "CRM", component: "Tab" }] },
+    })
+    rememberOrgAppStates(ORG, [
+      { app: "crm", status: "active", accessMode: "restricted", allowedUserIds: new Set(["u-in"]) },
+    ])
+    try {
+      const of = (userId: string | null, slot: string) =>
+        listSlotPanels({ orgId: ORG, scopes: ["*"], slot, userId }).map((p) => p.id)
+      expect(of("u-out", "ticket:detail:panel")).toEqual([])
+      expect(of("u-out", "invoicing.document_detail.tabs")).toEqual([])
+      expect(of(null, "ticket:detail:panel")).toEqual([])
+      expect(of("u-in", "ticket:detail:panel")).toEqual(["CustomerCard"])
+      expect(of("u-in", "invoicing.document_detail.tabs")).toEqual(["crm-tab"])
     } finally {
       forgetOrgApps(ORG)
     }

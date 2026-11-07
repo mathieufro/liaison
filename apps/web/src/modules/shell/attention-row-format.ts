@@ -368,13 +368,15 @@ function secondsSince(iso: string): number {
  * anything else is shown as written.
  */
 export function kernelAttentionTitle(
-  item: { app: string; kind: string; summary: string },
+  item: { app: string; kind: string; summary: string; metadata?: Record<string, unknown> | null },
   t: Translate,
 ): string {
   const s = item.summary
   if (item.app !== "kernel") return s
   let m: RegExpExecArray | null
   switch (item.kind) {
+    case "kernel:away.recap":
+      return t("kernel.homeRouting.recapTitle")
     case "scope_request_decided":
       m = /^Scope request (approved|denied)$/.exec(s)
       return m ? t(`kernel.attentionTitle.scopeRequestDecided.${m[1]}`) : s
@@ -395,6 +397,32 @@ export function kernelAttentionTitle(
     case "thread_reply":
     case "thread_followup":
       return localizeAgentNotice(s, t)
+    case "agent_notification": {
+      // The person's own calendar made, moved or asks about an away range: dates, next in
+      // line, and for a question the event's title, read live by the feed and never stored.
+      const cal = item.metadata?.awayCalendar as
+        | { kind?: string; said?: string; nextInLine?: string | null; title?: string }
+        | undefined
+      if (cal?.said && (cal.kind === "set" || cal.kind === "moved" || cal.kind === "asked")) {
+        const next = cal.nextInLine
+          ? t("kernel.attentionTitle.awayCalendar.next", { name: cal.nextInLine })
+          : t("kernel.attentionTitle.awayCalendar.nobody")
+        if (cal.kind === "asked")
+          return cal.title
+            ? t("kernel.attentionTitle.awayCalendar.asked", { title: cal.title, dates: cal.said })
+            : t("kernel.attentionTitle.awayCalendar.askedNoTitle", { dates: cal.said })
+        return t(`kernel.attentionTitle.awayCalendar.${cal.kind}`, { dates: cal.said, next })
+      }
+      // A request waiting a day (approvals/routed-reminders.ts): the row carries `routedReminder`.
+      m = item.metadata?.routedReminder
+        ? /^Waiting more than (\d+) hours for a decision: (.+)$/s.exec(s)
+        : null
+      if (m)
+        return t("kernel.attentionTitle.routedReminder", { hours: m[1] ?? "", title: m[2] ?? "" })
+      // Someone marked this person away (modules/users/away.ts): the row carries `awayNamed`.
+      m = item.metadata?.awayNamed ? /^(.+) marked you away (.+)$/.exec(s) : null
+      return m ? t("kernel.attentionTitle.awayNamed", { name: m[1] ?? "", dates: m[2] ?? "" }) : s
+    }
     default:
       return s
   }

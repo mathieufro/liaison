@@ -189,6 +189,8 @@ export type RpcBridgeOptions = {
       editable_fields?: string[]
       /** The handler proceeds at once when an auto-approve policy approves the call. */
       auto_approvable?: boolean
+      /** The calling app's own scope that decides this request (see HandlerApprovalInput). */
+      approve_scope?: string
     },
     /**
      * FX13: what the calling turn had READ, captured at bridge construction

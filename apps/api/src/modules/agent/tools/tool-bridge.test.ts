@@ -724,7 +724,7 @@ describe("tool bridge: fail-closed catalog on declared required scopes", () => {
   })
 
   it("buildToolSet admits a kernel tool declaring a single required scope", () => {
-    const def = toolRegistry.get([SCOPE_ORG, "kernel", "user_memory_get"])
+    const def = toolRegistry.get([SCOPE_ORG, "kernel", "memory_view"])
     expect(def?.requiredScopes).toEqual(["kernel:agent:memory"])
 
     const granted = buildToolSet(
@@ -733,7 +733,7 @@ describe("tool bridge: fail-closed catalog on declared required scopes", () => {
       undefined,
       ALL_DEFERRED_TOOLS_UNLOCKED,
     )
-    expect(Object.keys(granted)).toContain("kernel__user_memory_get")
+    expect(Object.keys(granted)).toContain("kernel__memory_view")
 
     const denied = buildToolSet(
       SCOPE_ORG,
@@ -741,7 +741,7 @@ describe("tool bridge: fail-closed catalog on declared required scopes", () => {
       undefined,
       ALL_DEFERRED_TOOLS_UNLOCKED,
     )
-    expect(Object.keys(denied)).not.toContain("kernel__user_memory_get")
+    expect(Object.keys(denied)).not.toContain("kernel__memory_view")
   })
 })
 

@@ -702,6 +702,7 @@
       "kernel": "Accès complet à l'espace de travail",
       "kernel:users:admin": "Gérer les utilisateurs, les rôles et les invitations",
       "kernel:users:read": "Lire la liste des utilisateurs",
+      "kernel:portal:admin": "Voir et gérer les comptes de portail des clients",
       "kernel:org:admin": "Modifier les réglages de l'organisation",
       "kernel:threads:read": "Lire les discussions",
       "kernel:threads:write": "Écrire dans les discussions",
@@ -1317,8 +1318,6 @@
   "hiIMLiaison": "Bonjour, je suis Liaison",
   "home": "Accueil",
   "homeAlso": "aussi",
-  "homeApprovalsHidePeers": "Masquer les demandes des collègues qui peuvent approuver les leurs",
-  "homeApprovalsShowPeers": "Afficher {{count}} de plus, venant de collègues qui peuvent approuver leurs propres demandes",
   "homeCardActivity": "Activité",
   "homeCardAlertsMessages": "Alertes et messages",
   "homeCardApprovals": "Approbations",
@@ -1630,8 +1629,6 @@
     "needsYou": "À traiter",
     "nothingNeedsYou": "Rien à traiter",
     "minutesLeft": "{{count}} min",
-    "peersShow": "Afficher {{count}} de collègues",
-    "peersHide": "Masquer les demandes des collègues",
     "accessRequests": "Demandes d'accès",
     "yourQueues": "Vos files d'attente",
     "queuesChip": "Files d'attente",
@@ -2076,7 +2073,35 @@
       "localeEs": "Espagnol",
       "localePtBr": "Portugais (Brésil)",
       "localeJa": "Japonais",
-      "localeZhCn": "Chinois (simplifié)"
+      "localeZhCn": "Chinois (simplifié)",
+      "away": {
+        "title": "Absence",
+        "hint": "Indiquez quand vous êtes absent et qui prend le relais. Seules les dates sont gardées, jamais le motif.",
+        "from": "Premier jour",
+        "to": "Dernier jour",
+        "nextInLine": "Relais",
+        "nobody": "Personne",
+        "standing": "Relais par défaut",
+        "standingHint": "Utilisé quand une absence ne nomme personne.",
+        "save": "M'indiquer absent",
+        "question": "Votre agenda contient un événement {{dates}} qui ressemble à une absence. Le compter comme absence ?",
+        "yes": "Oui",
+        "no": "Non",
+        "fromCalendar": "Depuis votre agenda",
+        "endEarly": "Terminer maintenant",
+        "undo": "Annuler",
+        "range": "Du {{from}} au {{to}}",
+        "weekly": "Chaque {{days}} à partir du {{from}}",
+        "oneDay": "{{day}}",
+        "setBy": "Indiqué par {{name}}",
+        "nextInLineIs": "Relais : {{name}}",
+        "awayToo": "{{name}} est aussi absent, jusqu'au {{until}}.",
+        "hasLeft": "{{name}} a quitté l'organisation, choisissez quelqu'un.",
+        "awayUntilOption": "{{name}} (absent jusqu'au {{until}})",
+        "none": "Aucune absence enregistrée.",
+        "failed": "Impossible d'enregistrer votre absence.",
+        "endFailed": "Impossible d'y mettre fin."
+      }
     },
     "languageOrgDefault": "Langue de l'organisation ({{language}})",
     "sections": {
@@ -2398,7 +2423,8 @@
       "handlerError": "erreur du gestionnaire",
       "toolRunFailed": "L'exécution de l'outil a échoué : {{cause}}. La demande doit être revue par un opérateur.",
       "outcomeUnclear": "Le résultat de l'outil est incertain, actualisez avant de réessayer.",
-      "nobodyMayRun": "Ni le demandeur ni vous n'avez le droit d'exécuter cet outil."
+      "nobodyMayRun": "Ni le demandeur ni vous n'avez le droit d'exécuter cet outil.",
+      "sendGuardNotHeld": "Ce brouillon n'est plus retenu : une réponse est arrivée, ou la retenue a pris fin. Rien n'a été envoyé. La carte affiche maintenant le résultat du contrôle."
     },
     "copyIdHint": "Cliquez pour copier l'identifiant",
     "copiedId": "{{id}} copié",
@@ -2492,7 +2518,19 @@
     },
     "stepSequence": "Ce qui se passe, dans l'ordre",
     "agentInviteAdd": "Ajouter",
-    "agentInviteDecline": "Ne pas ajouter"
+    "agentInviteDecline": "Ne pas ajouter",
+    "sendGuard": {
+      "theOtherSide": "L'autre partie",
+      "held": "Retenu : {{who}} a envoyé une réponse automatique. Le message attend jusqu'au {{until}}, puis revient tout seul sur l'accueil.",
+      "replied": "Non envoyé : {{who}} a répondu après la rédaction de ce brouillon.",
+      "repliedElsewhere": "Non envoyé : une réponse est arrivée dans une autre boîte mail.",
+      "bounced": "Non envoyé : un échec de livraison est revenu pour cette adresse.",
+      "optedOut": "Envoi impossible : {{who}} a refusé les e-mails commerciaux. Retirez cette personne des destinataires, ou laissez le message non envoyé.",
+      "refStop": "Non envoyé : la fiche concernée par ce message indique de ne pas l'envoyer.",
+      "refStopLabel": "Non envoyé : {{label}}",
+      "unavailable": "Le contrôle avant envoi n'a pas pu s'exécuter. Réessayez dans un instant.",
+      "sendNow": "Envoyer maintenant"
+    }
   },
   "agentUi": {
     "knowledge": "Connaissances",
@@ -3119,6 +3157,8 @@
     "routineReportRunLink": "Voir l'exécution complète",
     "routineRunRunning": "La routine {{name}} est en cours",
     "routineRunSucceeded": "La routine {{name}} est terminée",
+    "routineRunSucceededDraftWaiting": "La routine {{name}} est terminée : 1 brouillon attend une personne",
+    "routineRunSucceededDraftsWaiting": "La routine {{name}} est terminée : {{count}} brouillons attendent une personne",
     "routineRunFailed": "La routine {{name}} n'a pas abouti",
     "routineRunWaitingApproval": "La routine {{name}} attend une approbation",
     "reactWith": "Réagir avec {{emoji}}",
@@ -3712,6 +3752,16 @@
     "approvalDecided": {
       "approved": "Demande {{handle}} approuvée",
       "rejected": "Demande {{handle}} refusée"
+    },
+    "awayNamed": "{{name}} vous a indiqué absent {{dates}}",
+    "routedReminder": "En attente d'une décision depuis plus de {{hours}} heures : {{title}}",
+    "awayCalendar": {
+      "set": "Votre agenda vous indique absent {{dates}}. {{next}}",
+      "moved": "Votre absence a changé : {{dates}}. {{next}}",
+      "asked": "« {{title}} » est-il une absence, {{dates}} ? Rien n’est compté tant que vous n’avez pas répondu Oui.",
+      "askedNoTitle": "Cet événement de l’agenda est-il une absence, {{dates}} ? Rien n’est compté tant que vous n’avez pas répondu Oui.",
+      "next": "Suivant : {{name}}.",
+      "nobody": "Personne n’est désigné : vos éléments restent chez les approbateurs habituels."
     }
   },
   "approvalDecisionLine": {
@@ -6393,5 +6443,74 @@
       }
     },
     "hiddenTitle": "Nouveau message dans une discussion"
+  },
+  "toolCard": {
+    "actionUnreachable": "Rien n'a été exécuté : le serveur est injoignable.",
+    "answeredOnRetry": "Cette fois, la réponse est arrivée. Redemandez pour voir le résultat ici.",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "didNotAnswer": "{{app}} n'a pas répondu",
+    "errorTitle": "Impossible d'exécuter {{tool}}",
+    "howWorkedOut": "Comment ce chiffre est calculé",
+    "noReason": "L'outil n'a donné aucune raison.",
+    "notSaved": "Non enregistré : le serveur est injoignable. Votre texte est conservé.",
+    "readApps": "{{count}} apps lues",
+    "readOneApp": "1 app lue",
+    "readSomeApps": "{{count}} apps lues sur {{total}}",
+    "reading": "Lecture de {{app}}",
+    "retry": "Réessayer",
+    "source": "Source : {{source}}",
+    "suggestionNotSent": "Rien n'est parti : le serveur est injoignable.",
+    "suggestions": "Étapes suggérées",
+    "superseded": "Remplacée par une carte plus récente",
+    "unreachable": "Rien n'a été exécuté : cette carte ne peut pas joindre le serveur ici.",
+    "waitingApproval": "En attente d'approbation. Rien n'a encore été exécuté.",
+    "working": "En cours…"
+  },
+  "entityDiscussion": {
+    "empty": "Aucun message pour l'instant.",
+    "placeholder": "Écrivez à ce sujet, ou @ un agent",
+    "send": "Envoyer",
+    "unavailable": "La discussion n'a pas pu être ouverte.",
+    "retry": "Réessayer",
+    "loading": "Ouverture de la discussion…"
+  },
+  "homeStatusOtherWork": "DANS VOS AUTRES TÂCHES",
+  "homeDecisions": {
+    "notNow": "Plus tard",
+    "setAside": "Mis de côté jusqu'à lundi. Il reviendra alors.",
+    "setAsideFailed": "Impossible de mettre ceci de côté. Réessayez.",
+    "askDraft": "Demander un brouillon à l'agent",
+    "askDraftMessage": "Rédige ce qu'il faut pour ceci : {{summary}}",
+    "askDraftFailed": "Impossible de joindre votre agent. Réessayez.",
+    "dismiss": "Retirer",
+    "guardClear": "Ne partira pas si on vous répond d'abord, même après votre accord.",
+    "sourceFailedTitle": "Impossible de charger ce que {{app}} a pour vous",
+    "sourceFailedBody": "{{app}} n'a pas répondu. Ce qui y attend est en sécurité et attend toujours.",
+    "retry": "Réessayer",
+    "briefTitle": "Le point du jour",
+    "briefNone": "Aucun point du matin. Demandez-en un à votre agent chaque matin, et dites ce que vous voulez y voir.",
+    "briefSetUp": "Mettre en place un point du matin",
+    "briefOpen": "Ouvrir"
+  },
+  "homeRouting": {
+    "othersGroup": "Pour d'autres, vous pouvez aussi approuver",
+    "someone": "un collègue",
+    "standingIn": "Pour {{name}}, absent jusqu'au {{date}}. Vous êtes son remplaçant.",
+    "othersAsked": "Pour {{name}}, qui l'a demandé. Vous pouvez aussi approuver",
+    "othersOnItem": "Pour {{name}}, à qui c'est attribué. Vous pouvez aussi approuver",
+    "othersManager": "Pour {{name}}, qui gère ce compte. Vous pouvez aussi approuver",
+    "blocked": "Pour vous : {{blocked}} ne peut pas approuver ceci pendant l'absence de {{name}}",
+    "mineAsked": "Vous l'avez demandé",
+    "mineOnItem": "Pour vous : attribué à vous",
+    "mineManager": "Pour vous : vous gérez ce compte",
+    "recapApproved": "{{title}} : approuvé par {{name}}",
+    "recapDenied": "{{title}} : refusé par {{name}}",
+    "recapMore": "et {{count}} de plus",
+    "dismissFailed": "Impossible de fermer ceci. Réessayez.",
+    "awayUntil": "absent jusqu'au {{date}}",
+    "awayToday": "absent aujourd'hui",
+    "awayTodayBack": "absent aujourd'hui, de retour {{day}}",
+    "recapTitle": "Pendant votre absence"
   }
 }

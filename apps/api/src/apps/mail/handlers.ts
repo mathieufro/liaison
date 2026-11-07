@@ -24,6 +24,10 @@ interface MailCtx {
   hasScope(scope: string): Promise<boolean>
   /** Write one sync page in one host transaction (modules/mail/page-write.ts). */
   mail_writePage(paramsJson: string): Promise<string>
+  /** The send check's value for a staged send (modules/mail/send-guard.ts). */
+  mail_buildSendGuard(paramsJson: string): Promise<string>
+  /** The send check on the payload as it stands, before anything leaves. */
+  mail_checkSendGuard(paramsJson: string): Promise<string>
   /** Clear `ingest_pending` on messages whose post-commit work is done. */
   mail_completeIngest(paramsJson: string): Promise<string>
   /** Delete a disconnected mailbox's imported content (modules/mail/purge-account.ts). */
@@ -5437,6 +5441,7 @@ interface ConversationRow {
   status?: string | null
   last_message_at?: string | null
   message_count?: number
+  last_inbound_at?: string | null
 }
 
 interface MailSearchItem {
@@ -5451,6 +5456,8 @@ interface MailSearchItem {
   assignedTo?: string | null
   status?: string | null
   lastMessageAt?: string | null
+  /** The newest inbound message's date: our own outbound never moves it. */
+  lastInboundAt?: string | null
   messageCount?: number
 }
 
@@ -5902,6 +5909,7 @@ async function agentMailSearch(
       assignedTo: row.assigned_to,
       status: row.status,
       lastMessageAt: row.last_message_at,
+      lastInboundAt: row.last_inbound_at ?? null,
       messageCount: row.message_count,
     }),
   )
@@ -6543,6 +6551,17 @@ async function agentMailReply(params: any, ctx: MailCtx): Promise<any> {
       )
       throw new Error("No inbound message to reply to")
     }
+    const guardCheck = await checkSendGuard(
+      "mail:reply",
+      params,
+      { ...params, to: replyRecipients(params.to, latest), conversationId: params.conversationId },
+      ctx,
+    )
+    if (guardCheck.stop) {
+      classified = true
+      if (guardCheck.refusal) return guardCheck.refusal
+      throw new Error(guardCheck.message)
+    }
     // Blueprint Task 9.8, the reply half. The `Re:` subject is derived from a
     // SEALED subject, which the server does not hold. A reply whose subject is a
     // bare "Re: " is the same silent data loss as an empty forward quote, so the
@@ -6649,8 +6668,8 @@ async function agentMailReply(params: any, ctx: MailCtx): Promise<any> {
         cc: params.cc ?? [],
         bcc: params.bcc ?? [],
         subject,
-        textBody: params.textBody,
-        htmlBody: params.htmlBody,
+        textBody: guardCheck.footer?.textBody ?? params.textBody,
+        htmlBody: guardCheck.footer?.htmlBody ?? params.htmlBody,
         externalThreadId: conversation.external_thread_id,
         inReplyTo: latest.external_message_id,
         references: latest.message_references ?? [],
@@ -6676,8 +6695,14 @@ async function agentMailReply(params: any, ctx: MailCtx): Promise<any> {
         ctx.log_warn("mail.reply attachment relink failed", JSON.stringify({ err: String(err) }))
       }
     }
-    await ctx.approval_recordSucceeded("mail:reply", JSON.stringify(sentRef))
-    return result
+    await ctx.approval_recordSucceeded(
+      "mail:reply",
+      JSON.stringify({ ...sentRef, ...(guardCheck.record ?? {}) }),
+    )
+    return {
+      ...result,
+      note: `Sent to ${sendParams.to.map(sentToLabel).join(", ")} from ${account.email_address}, in conversation ${params.conversationId}.`,
+    }
   } catch (err: any) {
     if (classified) throw err
     const errPayload = {
@@ -6692,6 +6717,119 @@ async function agentMailReply(params: any, ctx: MailCtx): Promise<any> {
       await ctx.approval_recordAmbiguous("mail:reply", JSON.stringify(errPayload))
     }
     throw err
+  }
+}
+
+type SendGuardCheck =
+  | {
+      stop: false
+      footer?: { textBody?: string; htmlBody?: string }
+      /** The check's result, kept with the recorded send. Absent when no check applies. */
+      record?: { guard: { state: string; mode: string; classification: string } }
+    }
+  | { stop: true; message: string; refusal?: unknown }
+
+/** A recipient as a result states it: the address alone. */
+function sentToLabel(recipient: unknown): string {
+  if (typeof recipient === "string") return recipient
+  return String((recipient as { email?: unknown } | null)?.email ?? recipient)
+}
+
+/** Who a reply goes to when the draft names nobody: the last inbound sender. */
+function replyRecipients(to: unknown, latest: { from_address?: unknown } | undefined): unknown[] {
+  if (Array.isArray(to) && to.length > 0) return to
+  return latest?.from_address ? [latest.from_address] : []
+}
+
+/**
+ * The send check, before anything leaves. An approved call records the stop and
+ * throws, and the kernel closes or re-pends the request by its `final`. With no
+ * approval behind the call (a policy approved it) the run gets a refusal instead.
+ * Only the check's own footer reaches the send: it is never in the staged payload.
+ */
+async function checkSendGuard(
+  toolName: string,
+  params: any,
+  payload: any,
+  ctx: MailCtx,
+): Promise<SendGuardCheck> {
+  const result = JSON.parse(
+    await ctx.mail_checkSendGuard(
+      JSON.stringify({
+        sendGuard: params.sendGuard,
+        to: payload.to,
+        cc: payload.cc,
+        bcc: payload.bcc,
+        conversationId: payload.conversationId,
+        textBody: params.textBody,
+        htmlBody: params.htmlBody,
+      }),
+    ),
+  )
+  if (!result.applies || result.state === "clear") {
+    return {
+      stop: false,
+      ...(result.footer ? { footer: result.footer } : {}),
+      ...(result.record ? { record: result.record } : {}),
+    }
+  }
+  if (result.approved) {
+    await ctx.approval_recordFailedNoEffect(
+      toolName,
+      JSON.stringify({
+        code: result.code,
+        message: result.message,
+        ...(result.final ? { final: true } : {}),
+        guard: result.guard,
+      }),
+    )
+    return { stop: true, message: result.message }
+  }
+  return {
+    stop: true,
+    message: result.message,
+    refusal: {
+      status: "error",
+      error: {
+        code: result.code,
+        message: result.message,
+        retryable: !result.final,
+        refusal: true,
+        body: { guard: result.guard },
+      },
+    },
+  }
+}
+
+/** The send check's pin on a staged call, the preflight's last step. */
+async function pinSendGuard(
+  toolName: string,
+  params: any,
+  payload: { to?: unknown; conversationId?: string },
+  ctx: MailCtx,
+): Promise<any> {
+  const built = JSON.parse(
+    await ctx.mail_buildSendGuard(
+      JSON.stringify({
+        toolName,
+        to: payload.to,
+        cc: params.cc,
+        bcc: params.bcc,
+        conversationId: payload.conversationId,
+        followUp: params.followUp,
+      }),
+    ),
+  )
+  if (built.refusal) {
+    return { status: "error", error: { ...built.refusal, refusal: true } }
+  }
+  if (!built.applies) return { ok: true }
+  return {
+    ok: true,
+    pinnedParams: {
+      sendGuard: built.sendGuard,
+      ...(built.guardKey ? { guardKey: built.guardKey } : {}),
+    },
   }
 }
 
@@ -6732,10 +6870,7 @@ function isProviderRejection(err: any): boolean {
   )
 }
 
-async function agentMailReplyPreflight(
-  params: { conversationId: string },
-  ctx: MailCtx,
-): Promise<any> {
+async function agentMailReplyPreflight(params: any, ctx: MailCtx): Promise<any> {
   const conversation = JSON.parse(await ctx.db_findOne("conversations", params.conversationId))
   if (!conversation?.id) {
     return { error: { code: "NOT_FOUND", message: "Conversation not found or inaccessible" } }
@@ -6762,10 +6897,11 @@ async function agentMailReplyPreflight(
       "messages",
       JSON.stringify({
         where: { conversationId: params.conversationId, direction: "inbound" },
+        orderBy: { sentAt: "desc" },
         limit: 1,
       }),
     ),
-  ) as unknown[]
+  ) as Array<{ from_address?: unknown }>
   if (inboundRows.length === 0) {
     return {
       error: {
@@ -6778,7 +6914,12 @@ async function agentMailReplyPreflight(
     }
   }
 
-  return { ok: true }
+  return pinSendGuard(
+    "mail:reply",
+    params,
+    { to: replyRecipients(params.to, inboundRows[0]), conversationId: params.conversationId },
+    ctx,
+  )
 }
 
 const COMPOSE_ACCOUNT_REQUIRED =
@@ -6842,6 +6983,19 @@ async function _doCompose(
       )
       throw new Error(params.accountId ? COMPOSE_ACCOUNT_NOT_FOUND : COMPOSE_ACCOUNT_REQUIRED)
     }
+    // Only the agent-facing tool. `composeForApp`'s caller gated at its own surface.
+    let guardFooter: { textBody?: string; htmlBody?: string } | undefined
+    let guardRecord: Record<string, unknown> | undefined
+    if (auditToolName === "mail:compose") {
+      const guardCheck = await checkSendGuard(auditToolName, params, params, ctx)
+      if (guardCheck.stop) {
+        classified = true
+        if (guardCheck.refusal) return guardCheck.refusal
+        throw new Error(guardCheck.message)
+      }
+      guardFooter = guardCheck.footer
+      guardRecord = guardCheck.record
+    }
     // Blueprint Task 9.8, the approval half. A GATED send from an encrypted
     // personal mailbox reaches this handler with its drafted body missing: Phase
     // 6 sealed `kernel.approval_requests.current_payload`, so the plaintext only
@@ -6902,8 +7056,8 @@ async function _doCompose(
         cc: params.cc ?? [],
         bcc: params.bcc ?? [],
         subject: params.subject,
-        textBody: params.textBody,
-        htmlBody: params.htmlBody,
+        textBody: guardFooter?.textBody ?? params.textBody,
+        htmlBody: guardFooter?.htmlBody ?? params.htmlBody,
         attachments: attachmentParts,
       },
       ctx,
@@ -6928,9 +7082,12 @@ async function _doCompose(
     }
     await ctx.approval_recordSucceeded(
       auditToolName,
-      JSON.stringify({ ...sentRef, ...(extraSuccessPayload ?? {}) }),
+      JSON.stringify({ ...sentRef, ...(guardRecord ?? {}), ...(extraSuccessPayload ?? {}) }),
     )
-    return result
+    return {
+      ...result,
+      note: `Sent to ${(Array.isArray(params.to) ? params.to : [params.to]).map(sentToLabel).join(", ")} from ${account.email_address}.`,
+    }
   } catch (err: any) {
     if (classified) throw err
     const errPayload = {
@@ -7210,10 +7367,7 @@ async function agentMailForwardPreflight(
   return { ok: true }
 }
 
-async function agentMailComposePreflight(
-  params: { accountId?: string },
-  ctx: MailCtx,
-): Promise<any> {
+async function agentMailComposePreflight(params: any, ctx: MailCtx): Promise<any> {
   // `accountId` is REQUIRED: there is no implicit send-from mailbox, because a silent fallback to the
   // org's shared box sends a user's personal mail from contact@. Refuse at staging with an envelope that
   // tells the agent how to recover (never throw: a bare throw surfaces as "Tool execution failed" and the
@@ -7231,7 +7385,7 @@ async function agentMailComposePreflight(
     return { error: { code: "NOT_FOUND", message: COMPOSE_ACCOUNT_NOT_FOUND } }
   }
 
-  return { ok: true }
+  return pinSendGuard("mail:compose", params, { to: params.to }, ctx)
 }
 
 async function verifyGmailPush(

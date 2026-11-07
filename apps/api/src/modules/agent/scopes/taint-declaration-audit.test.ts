@@ -79,7 +79,7 @@ const FIXED_HOST_READS = new Set([
   "boxtal:prep_list", // Boxtal quote API, read
   "ads:insights_query", // Meta insights on the fixed Graph host (large pulls: a transient report run)
   "ads:metrics_run", // the formula's inputs through the ads/shopify reads; writes nothing
-  "kernel:ai_models_get", // OpenRouter's public model list (GET /models, no query), filtered locally
+  "kernel:ai_models_get", // OpenRouter's whole model list, no query sent; searched locally
 ])
 
 const EXTERNAL_WRITES = new Set([

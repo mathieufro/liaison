@@ -51,3 +51,4 @@ contacts_write gated -> apps/api/src/modules/agent/tools/kernel-tools.ts:1580
 threads_reply with contactId posts in a contact's discussion, no approval -> apps/api/src/modules/agent/tools/kernel-tools.ts:989-1008
 Auto-approve policy turns either gate off -> apps/api/src/tests/integration/contacts-write-gate.test.ts:132
 Addresses section in the contact page -> apps/web/src/modules/contacts/ContactDetail.tsx:370
+threads_create createdFrom a contact posts in its one discussion -> apps/api/src/modules/threads/entity-discussion.ts:107-117 ; apps/api/src/modules/contacts/discussion.ts:51-63

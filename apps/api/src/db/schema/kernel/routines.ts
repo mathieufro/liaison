@@ -104,6 +104,8 @@ export const routines = kernel.table(
       .notNull()
       .default("default"),
     enabled: boolean("enabled").notNull().default(true),
+    // A routine that follows up on something sent, and ends when it is answered.
+    followUp: boolean("follow_up").notNull().default(false),
     status: text("status").notNull().default("active"),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     lastRunStatus: text("last_run_status"),

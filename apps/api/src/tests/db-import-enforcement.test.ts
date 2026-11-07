@@ -23,6 +23,7 @@ describe("db import enforcement", () => {
   const connectionAllowlist = new Set([
     "db/rls.ts",
     "db/privileged.ts",
+    "db/portal-rls.ts", // withPortalContext: the portal role on the request pool, as db/rls.ts does for liaison_rls
     "db/index.ts",
     "infra/events/outbox-worker.ts",
     "modules/health/routes.ts",
@@ -71,6 +72,8 @@ describe("db import enforcement", () => {
     "modules/auth/oauth-routes.ts",
     "modules/auth/device-flow-routes.ts",
     "modules/apps/runtime.ts",
+    // A stored tool card: a person's card action changes one field of an agent's row (whose write the RLS policy leaves to its author), after the caller's read was checked under their own context.
+    "modules/agent/runtime/tool-card-store.ts",
     // Package store: instance-wide apps_installed rows (no org), read and written by the
     // install, boot repair and peer materialise paths, which run outside any request.
     "modules/apps/package-store.ts",
@@ -129,6 +132,9 @@ describe("db import enforcement", () => {
     // instance `kernel.apps.config` rows, written after the route's
     // kernel:apps:admin check and the manifest configKeys allowlist.
     "modules/apps/app-config.ts",
+    // The one writer of kernel.org_app_features: a member has no write path on the
+    // table, so the row is written privileged after the feature's adminScope is checked.
+    "modules/apps/org-features.ts",
     // Declarative app settings (GET/PATCH /api/apps/:app/settings/org):
     // kernel.organizations is deny-all under RLS, so org-scope values are read
     // and written privileged after the route checks the section's adminScope;
@@ -167,6 +173,15 @@ describe("db import enforcement", () => {
     // lockedUpdateApproval, etc.) — extracted from the per-flow files (decide,
     // cascade, expiry) which were already on this allowlist.
     "modules/approvals/event-data.ts",
+    // Approval routing: reads away ranges and preferences of the people in one org, and moves
+    // the pending requests linked to an item that changed hands, all pinned to that org.
+    "modules/approvals/route-world.ts",
+    // Away days: the one writer of kernel.away_ranges (no member write path), its daily prune,
+    // and the next-in-line column a colleague's read needs, all pinned to one org but the prune.
+    "modules/users/away.ts",
+    // Away days from a person's own calendar: the daily refresh lists every personal primary
+    // calendar and reads each one's stored events in a system transaction of that org.
+    "apps/calendar/away-from-calendar.ts",
     "modules/approvals/expiry.ts",
     "modules/approvals/approving-reaper.ts",
     "modules/approvals/cancel.ts",
@@ -180,6 +195,10 @@ describe("db import enforcement", () => {
     // own across orgs (one bounded, paged scan), then reads one person's requests,
     // agent and permissions by org id before any request actor exists.
     "modules/approvals/reminders.ts",
+    // Routed reminders: the hourly sweep scans pending requests of every org (one bounded,
+    // paged read), then reads one org's routes, deciders and people by org id before any
+    // request actor exists.
+    "modules/approvals/routed-reminders.ts",
     // Phase 13 — compound/sequenced gated operations. The cascade engine, its
     // failure path, and the async-output poll job all run outside any
     // per-request RLS context (decide flow, BullMQ-driven poll/reinvoke).
@@ -602,11 +621,13 @@ describe("db import enforcement", () => {
     // upserts the caller as a participant under a privileged, org-scoped tx so a
     // non-creator caller is visible under threads_select before posting.
     "modules/threads/contact-primary.ts",
-    // A contact's discussion drops its enrolled people when the contact's
-    // sharing changes (they re-enrol by opening it, which proves visibility),
-    // and is deleted with the contact: removing other people's participant rows
-    // and messages needs the privileged, org-scoped tx.
-    "modules/contacts/discussion.ts",
+    // An entity's discussion (a contact's, or any app entity declaring one) is
+    // found or created and the caller seated only after their own RLS proved
+    // they see the entity; it drops its enrolled people when the entity's
+    // sharing changes (they re-enrol by opening it), and is deleted with the
+    // entity: removing other people's participant rows and messages needs the
+    // privileged, org-scoped tx.
+    "modules/threads/entity-discussion.ts",
     // Knowledge content-cache downgrade invalidates cache entries under a
     // privileged, org-scoped tx (the curator role lacks knowledge:cache:manage).
     "apps/knowledge/sources.ts",
@@ -1414,6 +1435,9 @@ describe("db import enforcement", () => {
     // Sender contacts resolved during mail sync (no actor), bound to the org
     // and the mailbox's audience.
     "modules/mail/sender-contacts.ts",
+    // The send check reads other mailboxes' envelopes on purpose: a reply in a
+    // colleague's mailbox still stops a send. Reads only, and it names no text.
+    "modules/mail/send-guard.ts",
     // The new-mail producer off the outbox (no actor): the account, the
     // recipient's locale (kernel.organizations) and the replay check.
     "modules/notifications/mail-producer.ts",

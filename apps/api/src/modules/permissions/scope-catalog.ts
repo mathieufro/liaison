@@ -20,6 +20,11 @@ export const KERNEL_SCOPES: ScopeCatalogEntry[] = [
     description: "Manage users, roles, and invitations",
   },
   { scope: "kernel:users:read", app: "kernel", description: "Read user list" },
+  {
+    scope: "kernel:portal:admin",
+    app: "kernel",
+    description: "See and manage clients' portal accounts",
+  },
   { scope: "kernel:org:admin", app: "kernel", description: "Edit org settings" },
   { scope: "kernel:threads:read", app: "kernel", description: "Read threads" },
   { scope: "kernel:threads:write", app: "kernel", description: "Write threads" },

@@ -37,7 +37,14 @@ async function findOwner(orgId: string) {
       .from(users)
       .innerJoin(userRoles, and(eq(userRoles.userId, users.id), eq(userRoles.orgId, users.orgId)))
       .innerJoin(roles, and(eq(roles.id, userRoles.roleId), eq(roles.orgId, users.orgId)))
-      .where(and(eq(users.orgId, orgId), eq(users.status, "active"), eq(roles.name, "admin")))
+      .where(
+        and(
+          eq(users.orgId, orgId),
+          eq(users.status, "active"),
+          eq(users.userType, "member"),
+          eq(roles.name, "admin"),
+        ),
+      )
       .orderBy(asc(users.createdAt), asc(users.id))
       .limit(1),
   )

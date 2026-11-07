@@ -105,6 +105,8 @@ const REVIEWED_NOT_REFUSED: Record<string, string> = {
   log_info: "read",
   log_warn: "read",
   mail_conversion_readConversation: "read",
+  mail_buildSendGuard: "read (computes the send check value; stores nothing)",
+  mail_checkSendGuard: "read (evaluates the send check at send; stores nothing)",
   mail_search: "read",
   mcp_checkConnectionWrite: "read",
   mcp_listConnections: "read",
@@ -400,6 +402,8 @@ const REVIEWED_UNGATED_OUTWARD: Record<string, string> = {
     "externalEffect: parks after outside text; team-only it only prepares a draft the reporter sends from their own card (bug-reports/tool.ts)",
   "kernel:run_on_my_computer":
     "requiresHumanTurn: parks unless a typed, unmarked turn (execute-tool.ts); replayed outside text keeps the mark (untrusted-text-across-turns.test.ts)",
+  "kernel:set_away":
+    "conditionalGate + requiresHumanTurn + noAutoApprove (kernel-tools.ts): runs at once only on the person's own untainted turn, or a holder of kernel:users:admin or projects:capacity:write for someone else; any other call parks to the requester alone (requesterAlways); it writes dates and person ids only (set-away.test.ts)",
   "kernel:threads_reply": "internal thread post; scope-taint judged on the room's readers",
   "kernel:web_fetch":
     "a read that never parks (outboundWebRead, scope-taint.ts rule 9): its URL is bounded inline by the web-read guardrails (length, query string, userinfo, opaque or personal data on a turn that read org data, per-turn and per-thread rate; web-read-guardrails.ts), plus the org allow/blocklist and the SSRF guard",

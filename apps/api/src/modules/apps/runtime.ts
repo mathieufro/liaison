@@ -82,7 +82,11 @@ import {
 } from "~/modules/apps/approval-summarizers"
 import { projectBulkToolSchemas } from "~/modules/apps/bulk-field-schemas"
 import { manifestFileParentOf } from "~/modules/apps/catalog-derivations"
-import { validateAppDescriptor, validateAppManifest } from "~/modules/apps/contract"
+import {
+  firstPartyOnlyToolKeyErrors,
+  validateAppDescriptor,
+  validateAppManifest,
+} from "~/modules/apps/contract"
 // --- DDL helpers ---
 import {
   computeSchemaHash,
@@ -166,6 +170,7 @@ import {
   tablesUnreachableByGrantableScopes,
 } from "~/modules/permissions/rls-generator"
 import { invalidateScopeCatalog } from "~/modules/permissions/scope-catalog"
+import { registerAppSlots } from "~/modules/slots/registry"
 import { declareWebhookHealth, forgetWebhookHealth } from "~/modules/webhooks/ingest-health"
 import {
   parseUpstreamProbeResult,
@@ -453,6 +458,13 @@ const sharedProjections = new WeakMap<object, SharedAppProjection>()
  */
 function buildManifestForBridge(desc: AppDescriptor, declaredCapabilities: string[]) {
   return {
+    ...((desc as any).sendGuardProviders
+      ? { sendGuardProviders: (desc as any).sendGuardProviders }
+      : {}),
+    ...((desc as any).approvalRoute ? { approvalRoute: (desc as any).approvalRoute } : {}),
+    ...(Array.isArray((desc as any).contextProviders)
+      ? { contextProviders: (desc as any).contextProviders }
+      : {}),
     name: desc.name,
     schema: (desc as any).schema ?? {},
     events: (desc as any).events ?? {},
@@ -605,6 +617,22 @@ async function validateForRegistration(
     if (typeof desc.name === "string" && desc.name.length > 0) {
       await persistAppErrorState(orgId, desc.name, String(desc.version ?? ""), problem)
     }
+    return { ok: false, problem }
+  }
+  // Tool keys that narrow a scope-taint refusal count only for an app the platform vouches
+  // for (contract.ts): any other app declaring one is not loaded, same errored state.
+  const firstPartyKeyErrors =
+    isManifest && !hasPrivilegedBridge(desc) ? firstPartyOnlyToolKeyErrors(manifestOnly) : []
+  if (firstPartyKeyErrors.length > 0) {
+    const problem: AppProblem = {
+      code: "manifest_invalid",
+      message: firstPartyKeyErrors.join("; "),
+    }
+    log.error(
+      { app: desc.name, version: desc.version, error: problem.message },
+      "Invalid app descriptor",
+    )
+    await persistAppErrorState(orgId, String(desc.name ?? ""), String(desc.version ?? ""), problem)
     return { ok: false, problem }
   }
   // An app that needs a host API this server does not provide is not loaded
@@ -3121,6 +3149,38 @@ async function registerSingleApp(
             if (tool.noAutoApprove === true) entry.noAutoApprove = true
             // Pinned params: dropped from a caller's call, set only by the preflight.
             if (Array.isArray(tool.pinnedParams)) entry.pinnedParams = tool.pinnedParams
+            // A call chaining `@ref` tokens to a tool with pinned params stages unpinned (read by
+            // execute-tool.ts); the pinned-drop above still applies.
+            if (tool.pinnedOptionalOnRefs === true) entry.pinnedOptionalOnRefs = true
+            if (tool.approvalCard !== null && typeof tool.approvalCard === "object") {
+              entry.approvalCard = tool.approvalCard
+            }
+            // Declarations the card, roll-up, feature gate, focus budget, taint and hidden-tool
+            // redirect readers take off the entry. Each one must be copied here or it reads
+            // undefined, whatever the manifest says (see the note above `decideInContext`).
+            if (tool.resultCard !== null && typeof tool.resultCard === "object") {
+              entry.resultCard = tool.resultCard
+            }
+            if (typeof tool.runningLabel === "string") entry.runningLabel = tool.runningLabel
+            if (typeof tool.runningLabelKey === "string") {
+              entry.runningLabelKey = tool.runningLabelKey
+            }
+            if (typeof tool.feature === "string") entry.feature = tool.feature
+            if (tool.focusCore === true || typeof tool.focusCore === "string") {
+              entry.focusCore = tool.focusCore
+            }
+            if (typeof tool.useInstead === "string") entry.useInstead = tool.useInstead
+            // The manifest's row condition. It lands beside, not on, the host-only
+            // `taintSourceWhen` function that taint.ts calls.
+            if (tool.taintSourceWhen !== null && typeof tool.taintSourceWhen === "object") {
+              entry.taintSourceWhenRow = tool.taintSourceWhen
+            }
+            // What a tool writes is read only by the person writing it: it narrows a scope-taint
+            // refusal, so it counts for a first-party app alone (registration refuses any other).
+            if (hasPrivilegedBridge(desc)) {
+              if (tool.sinkReadersSelf === true) entry.sinkReadersSelf = true
+              if (Array.isArray(tool.contentParams)) entry.contentParams = tool.contentParams
+            }
             // Outbound text params: a placeholder there is refused before any gate (execute-tool.ts).
             if (Array.isArray(tool.outboundTextParams)) {
               entry.outboundTextParams = tool.outboundTextParams
@@ -3425,6 +3485,7 @@ async function registerSingleApp(
             promptTemplate: t.promptTemplate,
             scopes: t.scopes,
             enabledByDefault: t.enabledByDefault,
+            ...(t.followUp ? { followUp: true } : {}),
           })
         }
       }
@@ -3534,6 +3595,8 @@ async function registerSingleApp(
       if (attDecl && isManifestFormat) {
         const handler = typeof attDecl === "string" ? attDecl : attDecl.handler
         const explicitScope = typeof attDecl === "object" ? attDecl.scope : undefined
+        // Undeclared: the provider never receives anyone else's items to pass on.
+        const passesOn = typeof attDecl === "object" && attDecl.passesOn === true
         const firstEntity = Object.keys((desc as any).schema ?? {})[0]
         const scope =
           explicitScope ?? (firstEntity ? `${desc.name}:${firstEntity}:read` : `${desc.name}:read`)
@@ -3542,6 +3605,7 @@ async function registerSingleApp(
           scope,
           bundlePath,
           trusted: desc.trusted !== false,
+          ...(passesOn ? { passesOn: true } : {}),
         })
       }
 
@@ -4020,14 +4084,8 @@ async function registerSingleApp(
         registerExternalSearchHandler(orgId, appNameLocal, handler, { timeoutMs })
       }
 
-      // Register slots
-      if (desc.slots) {
-        for (const [slotName, slotDef] of Object.entries(desc.slots as Record<string, any>)) {
-          slotRegistry.set([orgId, desc.name, slotName], slotDef)
-        }
-      }
-
-      // Register contributions
+      // Register slots and contributions: one list, read by `listSlotPanels`.
+      registerAppSlots(orgId, desc.name, desc.slots, desc.contributions)
       if (desc.contributions) {
         for (const [slotTarget, contribution] of Object.entries(
           desc.contributions as Record<string, any>,
@@ -4132,6 +4190,7 @@ async function registerSingleApp(
                   searchable: e.searchable,
                   cardComponent: e.cardComponent,
                   readScope: e.readScope,
+                  discussion: e.discussion,
                 },
               ]),
             )
@@ -4149,6 +4208,7 @@ async function registerSingleApp(
           bulk: (desc as any).bulk ?? undefined,
           roles: (desc as any).roles ?? undefined,
           savedViews: (desc as any).savedViews ?? undefined,
+          features: (desc as any).features ?? undefined,
           entities: safeEntities,
           tools: projectBulkToolSchemas((desc as any).bulk, desc.tools as any),
           configKeys: desc.configKeys ?? undefined,

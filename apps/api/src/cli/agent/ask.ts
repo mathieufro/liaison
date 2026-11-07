@@ -127,8 +127,9 @@ function toMessages(body: unknown): ThreadMessage[] {
 /**
  * A short-lived access token for the member, with no session behind it (see
  * the header): nothing to evict, nothing to refresh, gone when it expires.
+ * Null for an external user, who holds no agent and no access token.
  */
-async function shortLivedToken(member: CliMember, ttlSeconds: number): Promise<string> {
+async function shortLivedToken(member: CliMember, ttlSeconds: number): Promise<string | null> {
   const { user, permissions } = await withPrivilegedDb(
     member.orgId,
     "cli-agent-ask-token",
@@ -138,6 +139,7 @@ async function shortLivedToken(member: CliMember, ttlSeconds: number): Promise<s
           name: users.name,
           authVersion: users.authVersion,
           permissionVersion: users.permissionVersion,
+          userType: users.userType,
         })
         .from(users)
         .where(eq(users.id, member.userId))
@@ -147,13 +149,15 @@ async function shortLivedToken(member: CliMember, ttlSeconds: number): Promise<s
       }
     },
   )
+  if (user?.userType !== "member") return null
   return signAccessToken(
     {
       userId: member.userId,
       orgId: member.orgId,
-      name: user?.name ?? "Unknown",
-      authVersion: user?.authVersion ?? 1,
-      permissionVersion: user?.permissionVersion ?? 1,
+      name: user.name,
+      authVersion: user.authVersion,
+      permissionVersion: user.permissionVersion,
+      userType: user.userType,
       roles: permissions.roles,
       scopes: permissions.scopes,
       dimensionGrants: permissions.dimensionGrants,
@@ -247,6 +251,9 @@ export async function runAgentAsk(
   const agentId = agent?.id
 
   const accessToken = await shortLivedToken(member, opts.timeoutSeconds + 60)
+  if (accessToken === null) {
+    return fail(`'${opts.asEmail}' is a client's portal account, not a member`, 2)
+  }
   const headers = {
     authorization: `Bearer ${accessToken}`,
     "content-type": "application/json",

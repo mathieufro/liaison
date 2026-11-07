@@ -994,6 +994,14 @@ const MessageRow: Component<MessageRowProps> = (props) => {
     const text = (): string => {
       const run = props.message.metadata?.routineRun ?? routineRun
       const name = run.routineName
+      if (run.status === "succeeded" && run.draftsWaiting === 1)
+        return i18n.t("kernel.threadsUi.routineRunSucceededDraftWaiting", { name })
+      const draftsWaiting = run.draftsWaiting ?? 0
+      if (run.status === "succeeded" && draftsWaiting > 1)
+        return i18n.t("kernel.threadsUi.routineRunSucceededDraftsWaiting", {
+          name,
+          count: draftsWaiting,
+        })
       if (run.status === "succeeded")
         return i18n.t("kernel.threadsUi.routineRunSucceeded", { name })
       if (run.status === "failed") return i18n.t("kernel.threadsUi.routineRunFailed", { name })

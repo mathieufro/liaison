@@ -138,4 +138,42 @@ describe("resolveRecipients", () => {
     )
     expect(r.sort()).toEqual(["u-A", "u-B"])
   })
+
+  describe("kind=account_manager", () => {
+    const spec = { kind: "account_manager", path: "data.companyId" } as const
+    const event = { data: { companyId: "c-1" } } as any
+
+    it("the company's manager, and nobody else", async () => {
+      const loadScopeHolders = mock(async () => ["u-1", "u-2"])
+      const r = await resolveRecipients(spec, event, {
+        orgId: ORG,
+        loadScopeHolders,
+        loadAccountManager: async (_org, companyId) => (companyId === "c-1" ? "u-mgr" : null),
+      })
+      expect(r).toEqual(["u-mgr"])
+      expect(loadScopeHolders).not.toHaveBeenCalled()
+    })
+
+    it("no manager is nobody, never every scope holder", async () => {
+      const loadScopeHolders = mock(async () => ["u-1", "u-2"])
+      for (const loadAccountManager of [undefined, async () => null]) {
+        const r = await resolveRecipients(spec, event, {
+          orgId: ORG,
+          loadScopeHolders,
+          ...(loadAccountManager ? { loadAccountManager } : {}),
+        })
+        expect(r).toEqual([])
+      }
+      expect(loadScopeHolders).not.toHaveBeenCalled()
+    })
+
+    it("no manager with a fallback asks only the named fallback", async () => {
+      const r = await resolveRecipients(
+        { ...spec, fallback: { kind: "field", path: "data.senderId" } },
+        { data: { companyId: "c-1", senderId: "u-sender" } } as any,
+        { orgId: ORG, loadAccountManager: async () => null },
+      )
+      expect(r).toEqual(["u-sender"])
+    })
+  })
 })

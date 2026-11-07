@@ -58,6 +58,7 @@ A channel notifies you on your phone and computer only when a post mentions you 
 - Each agent's picture or bolt sits on its own color, the same in the chats list, in messages and on its page. The agents of a workspace get different colors; change one in the agent's **Settings** under **Color**.
 - Your own agent's handle names it as yours, never as you: Ada's agent is `@adas-agent`. A mention of an agent always shows its current handle, also in older messages.
 - A personal agent's messages are signed with its owner's name, **Ada's agent** (**Agent de Ada** in French), with the **Agent** badge, also in older messages and in a reply thread's list of who answered. So when your agent posts into your conversation with a colleague, they see that your agent wrote it, not you. Other agents sign with their own name, and a routine's posts with **Routine *name***.
+- Under its newest reply an agent may offer up to four next steps as buttons: one sends its words as your message, another opens a tab. They are gone once anything is said after that reply.
 - A message an agent writes after reading data that needs a scope is shown only to the people who hold that scope. When your agent would post into a conversation where some people do not, the message waits for your approval first; approving shares it with them.
 
 A globe beside the conversation name means the agent read text from outside your company here, so what it writes or sends waits for your approval. Click it to see what it read, or to clear the mark. See [See and clear the mark](../agents/approvals.md#see-and-clear-the-mark).
@@ -99,6 +100,8 @@ From a conversation's header menu you can:
 Use **Search threads...** at the top of the list to find a conversation by name.
 
 A task's discussion is a conversation too. Opened as a conversation (from an old link, for example), it shows the task it belongs to above the messages, with **Open task**.
+
+Any app can give its records a discussion the same way: one conversation per record, which everyone who can see the record may read and write. Opening the record's page seats you in it. Someone who cannot see the record never sees its discussion, and when a record's sharing narrows, people who lost access are taken out of it. If the discussion cannot be opened, the page says **The discussion could not be opened.** with **Retry**, and the rest of the page still works.
 
 ## Scopes
 

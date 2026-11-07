@@ -236,6 +236,7 @@ import {
   resolveApprovalResourceOwner,
   resolveRoutineOwnerApprover,
 } from "~/modules/approvals/resource-owner"
+import { resolveProposeRoute } from "~/modules/approvals/route-world"
 import {
   narrowPendingApprovalForTaint,
   rowTaintMustHold,
@@ -251,7 +252,15 @@ import {
 import { generateApprovalSummary } from "~/modules/apps/approval-summarizers"
 import { ingestionCallerApp } from "~/modules/apps/cross-app-ingestions"
 import { ensureAppsForOrg, getDefaultApps } from "~/modules/apps/init"
-import { APP_STATE_UNAVAILABLE_CODE, isAppActiveForOrgAsync } from "~/modules/apps/org-apps"
+import {
+  APP_STATE_UNAVAILABLE_CODE,
+  FEATURE_OFF_CODE,
+  isAppActiveForOrgAsync,
+  isFeatureOffForTool,
+  orgFeaturesUnreadable,
+  primeOrgApps,
+} from "~/modules/apps/org-apps"
+import { featureOffAnswer } from "~/modules/apps/org-features"
 import { sealMailApprovalPayload } from "~/modules/mailbox-crypto/approval-payload"
 import {
   bypassesDimensionConstraint,
@@ -1547,6 +1556,11 @@ async function createApprovalRequest(opts: CreateApprovalRequestOpts): Promise<s
     dimensionConstraint,
     mustHold: audienceMustHold,
   })
+  // Who the request is for, from the record it is about, asked of that record's app outside the
+  // transaction and within a short budget. An owner's own request is theirs alone and asks nothing.
+  const routeColumns = resourceOwnerId
+    ? {}
+    : await resolveProposeRoute({ orgId, toolName, summary, requestedBy })
 
   // When `bundleId` is set, we wrap the tx in a retry loop: concurrent inserts
   // into the same bundle (READ COMMITTED) can both read MAX(bundle_position) =
@@ -1708,6 +1722,7 @@ async function createApprovalRequest(opts: CreateApprovalRequestOpts): Promise<s
           approveScope,
           dimensionConstraint,
           proposingTurnScopes,
+          ...routeColumns,
           // A11: the agent whose turn PROPOSED this gated call, persisted at
           // request time. The approved re-entry happens in another request with
           // that turn's frame long gone, so the identity has to travel on the
@@ -2555,6 +2570,13 @@ export interface HandlerApprovalInput {
    * handler that does not set it always parks for a person.
    */
   auto_approvable?: boolean
+  /**
+   * The scope that decides this request, when the tool's own deciding scope is not the right
+   * audience (a handler that parks a call only some of the app's approvers should see). It must
+   * be the calling app's own scope: the app's name, or a scope under `<app>:`. It decides an
+   * agent's request only; a person's own call is still decided by the tool's own required scopes.
+   */
+  approve_scope?: string
 }
 
 export interface HandlerApprovalResult {
@@ -2643,6 +2665,23 @@ export async function createHandlerApprovalRequest(args: {
       `ctx.requestApproval: '${input.tool_name}' is not a tool of '${args.defaultAppName}'; a handler may only request approval for its own app's tools`,
     )
   }
+  // The deciding scope a handler names must be its own app's: an app cannot route its approvals
+  // to another app's deciders, and a bare wildcard or malformed scope decides nothing sensible.
+  if (input.approve_scope !== undefined) {
+    const scope = input.approve_scope
+    const own =
+      typeof scope === "string" &&
+      /^[a-z0-9_-]+(:[A-Za-z0-9_.-]+)*$/.test(scope) &&
+      (scope === appName || scope.startsWith(`${appName}:`))
+    if (!own) {
+      throw Object.assign(
+        new Error(
+          `approve_scope_not_own: approve_scope ${JSON.stringify(scope)} is not a scope of '${appName}'; it must be '${appName}' or start with '${appName}:'. No approval was created. Omit approve_scope to use the tool's own deciding scope.`,
+        ),
+        { code: "approve_scope_not_own", status: 422 },
+      )
+    }
+  }
   // A tool whose approval binds pinned params gets them from its preflight only
   // (executeTool's stage path). A handler-built payload would put the
   // handler's own values in their place, unchecked: refused.
@@ -2685,12 +2724,14 @@ export async function createHandlerApprovalRequest(args: {
   // This path previously hardcoded `<app>:approve` and passed no
   // approveScope/dimensionConstraint at all, so rows it created LOST their
   // custom deciding scope and fanned out to the wrong approvers.
-  const { approveScope, dimensionConstraint } = await resolveToolApprovalAuthority({
+  const resolvedAuthority = await resolveToolApprovalAuthority({
     orgId: args.orgId,
     appName,
     toolShortName,
     params: input.current_payload,
   })
+  const { dimensionConstraint } = resolvedAuthority
+  const approveScope = input.approve_scope ?? resolvedAuthority.approveScope
   const requesterCanApprove =
     hasScope(approveScope, args.actorScopes) &&
     (dimensionConstraint === null ||
@@ -3428,6 +3469,7 @@ export function statusForToolError(code: string): number {
     // The app is turned Off for the workspace (S19): a conflict with the
     // workspace's state, not a fault and not a missing permission.
     case APP_DISABLED_CODE:
+    case FEATURE_OFF_CODE:
       return 409
     case APP_STATE_UNAVAILABLE_CODE:
       return 503
@@ -4194,7 +4236,7 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
     return {
       error: {
         code: "forbidden",
-        message: `tool ${opts.toolName} not callable by agent`,
+        message: hiddenToolRefusal(opts.toolName, appName, tool.useInstead),
         retryable: false,
       },
     }
@@ -4260,6 +4302,15 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
         opts.toolName,
       ),
     }
+  }
+
+  // A FEATURE SWITCHED OFF INSIDE THE APP runs nothing, for an admin holding `*` as
+  // for anyone: its tool is gone from every catalog, so a call that still names it
+  // comes from an old schema or a stale list, and it is told what happened in the
+  // feature's own words. Before anything can park an approval for it.
+  if (isFeatureOffForTool(opts.orgId, tool)) {
+    const { code, message, feature, next, retryable } = featureOffAnswer(opts.orgId, tool)
+    return { error: { code, message, retryable, status: 409, body: { feature, next } } }
   }
 
   // A near-miss reference (`{{step1.record_id}}`, `@ref:<approval1>:id`, `$ref`, a token
@@ -4511,7 +4562,13 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
   const paramsCarryRefTokens = findRefTokens(validatedParams).length > 0
   // A token-bearing call skips the preflight (below), so a tool whose approval binds pinned
   // values would be staged with none: refused at stage time instead. Nothing is staged.
-  if ((tool.gated || tool.conditionalGate) && pinnedKeys.length > 0 && paramsCarryRefTokens) {
+  // A tool may build the value at execute instead (`pinnedOptionalOnRefs`): such a call stages unpinned.
+  if (
+    (tool.gated || tool.conditionalGate) &&
+    pinnedKeys.length > 0 &&
+    paramsCarryRefTokens &&
+    tool.pinnedOptionalOnRefs !== true
+  ) {
     return {
       error: {
         code: "ref_not_allowed",
@@ -5484,6 +5541,8 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
           opts.orgId,
           [opts.threadId, opts.alsoJudgeTaintOnThreadId],
           opts.toolName,
+          // The rows the caller is handed: a `taintSourceWhen` row condition reads them.
+          { result: envelope.data },
         )
       } catch (err) {
         // Fail closed: untrusted text that reaches the model without the turn being marked would
@@ -6105,6 +6164,26 @@ export async function executeApprovedToolHandlerInternal(args: {
    */
   threadId?: string
 }): Promise<unknown> {
+  // The feature went off while this waited for a person. Approving the same request
+  // again cannot pass, so the answer is final and closes it with the feature's words
+  // (`revertToPending`, approvals/decide.ts), rather than re-pending it forever.
+  await primeOrgApps(args.orgId)
+  if (isFeatureOffForTool(args.orgId, args.tool)) {
+    // The feature rows could not be read: the call does not run now, but nothing
+    // says the feature is off, so the request stays pending and can be approved again.
+    if (orgFeaturesUnreadable(args.orgId)) {
+      return {
+        error: {
+          code: APP_STATE_UNAVAILABLE_CODE,
+          message: `${args.tool.appName}__${args.tool.name} did not run and nothing changed: the workspace's feature settings could not be read. The request is still pending; approve it again in a moment.`,
+          retryable: true,
+        },
+      }
+    }
+    const { code, message, feature, next } = featureOffAnswer(args.orgId, args.tool)
+    // The closing notice carries the message alone, so the next step travels in it.
+    return { error: { code, message: `${message} ${next}`, feature, next, final: true } }
+  }
   const validated = validateParamsForTool(
     args.tool,
     args.orgId,
@@ -6250,4 +6329,19 @@ export async function widenSequencedStepHeads(args: {
     }
     return { ok: true }
   })
+}
+
+/**
+ * The refusal an agent gets for a tool hidden from it. A stored routine or approval policy can
+ * still name the tool, so the message says which visible tool does the job now: `useInstead` is
+ * a tool of the same app, or `app__tool` for another app's.
+ */
+export function hiddenToolRefusal(
+  toolName: string,
+  appName: string,
+  useInstead: string | undefined,
+): string {
+  if (!useInstead) return `tool ${toolName} not callable by agent`
+  const visible = useInstead.includes("__") ? useInstead : `${appName}__${useInstead}`
+  return `tool ${toolName} is not callable by an agent. Use ${visible} instead.`
 }

@@ -341,6 +341,63 @@ no tokens. Accents do not matter: `clôturer` also answers to `cloturer`.
 
 ---
 
+### More tool and app keys
+
+The manifest accepts these keys. Each is checked for its shape when the app registers. A few
+are read by nothing yet; declaring one is safe, and it takes effect where its reader lands.
+
+Keys on a tool:
+
+| Key | Value | What it says |
+|---|---|---|
+| `resultCard` | object | How the tool's result is drawn as a card in chat |
+| `runningLabel`, `runningLabelKey` | string | The line shown while the tool runs, and its catalog key |
+| `pinnedOptionalOnRefs` | boolean | A call that chains `@ref` tokens stages without the pinned value; needs `pinnedParams` |
+| `approvalCard.pill` | `{label, labelKey?}` | A short tag on the approval card |
+| `feature` | string | A feature the app declares under `features` |
+| `focusCore` | `true` or an entity type | The tool is loaded when the app has the focus, or when that entity is in focus |
+| `taintSourceWhen` | `{field, equals}` | Narrows `taintSource` to the rows whose field has that value: a result with one such row marks the turn, rows that all carry another value leave it clean, and a result with no row carrying the field marks it |
+| `useInstead` | string | On a hidden tool (`agentVisible: false`): the visible tool of the same app to use |
+| `sinkReadersSelf` | boolean | First-party apps only: what the tool writes (its `writesToTable`) is read only by the person writing it, so a turn that read other data may still write there when that person holds it. Any other app declaring it is not loaded |
+| `contentParams` | string list | First-party apps only: the only parameters through which a call carries what the turn read; a call with all of them blank is not held back by what the turn read. Each must be in `params.properties`. Any other app declaring it is not loaded |
+
+Keys on the app:
+
+| Key | Value | What it says |
+|---|---|---|
+| `contextProviders` | list of `{on, tool, scope, loadTools?}` | A tool that adds a few lines about a record to the agent's context, while that record is open or is what the conversation is about. `on` lists `<app>:<entityType>` kinds. The tool must be `readOnly`, and `scope` one of its `requiredScopes`. It gets `{subject: {app, entityType, entityId}}` and returns `{lines, source: {label, syncedAt?}}` or null. It runs as the person, only when the turn holds `scope` and the person can read the record, and it may not write. Every provider of a turn shares 1.5 seconds and 2 KB, and keeps at most 10 lines: read your own rows, never a remote API. `loadTools` are loaded for the turn. `CONTEXT_PROVIDERS_DISABLED=1` turns them all off |
+| `sendGuardProviders` | `{<kind>: {tool, serviceMessage?, pill?}}` | A read-only tool that can stop an outbound message of that kind |
+| `features` | `{<name>: {adminScope, labelKey, offMessageKey?, offNextKey?}}` | Features an org can switch off. A tool, tab type, slot panel or settings section names one with `feature`; while it is off they are absent, and a call that still names the tool reads `feature_off` with `message` and `next` |
+| `outsideTextFields` | string list | Fields a person outside the org can set. A read-only tool whose `returns` names one must declare `taintSource` or `taintSourceWhen` |
+| `approvalRoute` | `{<entityType>: <tool>}` | The read-only tool that says who an approval for that entity is for |
+| `entities.<type>.discussion` | boolean | One conversation per row, read and written by whoever can read the row; needs a `labelField` and a page (a `views.tabTypes` entry for the type). Open it with `POST /api/threads/entity-discussion`, draw it in a UI bundle with `host.mountEntityDiscussion(node, { entityType, entityId })`, and delete it with the row through the bridge's `threads_deleteEntityDiscussion` |
+| `attention.groupLabel` | `{label, labelKey?}` | The heading over the app's attention items |
+| `attention.translations[].label`, `labelKey` | string | The words for an item |
+| `attentionItems.passesOn` | boolean | The provider's items may be passed on |
+| `routines.<name>.followUp` | boolean | The routine is a follow-up routine |
+| `slots.<key>.panels`, `.actions` | list | What an app adds to a slot: each takes `id`, `label`, `component`, `visibility_scope`, `order`, `group`, `feature` |
+
+A slot key takes `position` (the host declaring the slot) or `panels` / `actions` (an app
+contributing to it); a key with none of them is refused.
+
+The slots a page offers today, each giving its panel `entityId` (the record on the page):
+
+| Slot | Where it shows |
+|---|---|
+| `project:task:tabs` | A tab strip on a task, above its discussion |
+| `project:task:actions` | The task's meta row |
+| `project:detail:panel` | The project page, under its header |
+| `contact_detail` | The contact page |
+| `ticket:detail:panel` | The ticket's details panel; on a phone, the Customer row under More |
+| `ticket:detail:actions` | The ticket's header; on a phone, under More |
+
+`GET /api/v1/slots/<key>` is the one list a page reads: a panel the viewer lacks the
+`visibility_scope` for, from an app the org turned off, or naming a feature that is off, is
+not in it. `contributions.<key>` (`label`, `component`, `visibility_scope`, `order`) goes
+through the same list, with its component name as its id. The list is sorted by `order`,
+then app name. A panel that throws shows "Panel unavailable" and the page stands; an app
+that runs in a sandboxed frame draws its panel inside its frame.
+
 ## 5. Writing a panel
 
 `Panel.tsx` is a SolidJS leaf component. Keep state in a small store
@@ -693,6 +750,8 @@ growth, and it is how your app should too.
 ## 12. Tell people about an event
 
 An app raises items in the attention feed from its own events, in `attention.translations` of the manifest. Each person's notification settings then decide the channels.
+
+An item raised this way is stored for each person, so on **Home** it offers **Not now** (`POST /api/attention-items/set-aside` with its `eventId`: it leaves the feed until next Monday at 00:00 in the person's time zone) and **Ask agent to draft**. A `sendGuardProviders` entry's `pill` (`{label, labelKey?}`) names Home's row for a mail about a record of that kind, over the tool's own `approvalCard.pill`.
 
 ```json
 {

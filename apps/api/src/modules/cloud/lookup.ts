@@ -23,6 +23,8 @@ export async function lookupOrgsByEmail(email: string): Promise<CloudLookupReply
         and(
           eq(users.email, email.trim().toLowerCase()),
           eq(users.status, "active"),
+          // A client's portal account is no workspace to sign in to.
+          eq(users.userType, "member"),
           isNull(organizations.deletingAt),
         ),
       )

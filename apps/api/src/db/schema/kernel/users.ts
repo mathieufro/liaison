@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-import { boolean, integer, jsonb, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core"
 import { kernel } from "./organizations"
 
 // "suspended" is reserved for future use (admin-initiated temporary suspension)
@@ -30,8 +40,19 @@ export const users = kernel.table(
     status: userStatusEnum("status").notNull().default("active"),
     settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
     invitedBy: uuid("invited_by"),
+    // `member` or `external` (someone from a client's company, who signs in to the
+    // portal). It never changes for a user (trigger users_type_immutable), and a
+    // restrictive policy hides external rows under liaison_rls (users_members_only).
+    userType: text("user_type").notNull().default("member"),
+    // The client company of an external user, set exactly when user_type is external.
+    companyId: uuid("company_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("users_org_email_idx").on(table.orgId, table.email)],
+  (table) => [
+    uniqueIndex("users_org_email_idx").on(table.orgId, table.email),
+    index("users_external_company_idx")
+      .on(table.orgId, table.companyId)
+      .where(sql`user_type = 'external'`),
+  ],
 )

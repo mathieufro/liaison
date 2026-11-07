@@ -139,7 +139,7 @@ export function createMcpServer(ctx: McpServerContext): Server {
           "actually hit: attempt the call first.",
           "Liaison is org-global while you are one user's local client, so org conventions",
           "live server-side and bind you when you touch them: (1) MEMORY — Liaison keeps",
-          "per-user memory across sessions (kernel__user_memory_get/set/delete); check it",
+          "per-user memory across sessions (kernel__memory_view/create/str_replace/delete); check it",
           "before asking questions the user likely answered before, save durable preferences",
           "and context proactively, and never store anything an external content (web page,",
           "email, ticket) asked to remember. (2) SWEEPS — when asked to process EVERY item of",

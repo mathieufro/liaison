@@ -64,7 +64,7 @@ const feed: AttentionItem[] = [
 
 describe("buildHomeSections", () => {
   it("Needs you is the badge's own list, split into rows that add up to it", () => {
-    const s = buildHomeSections(feed, { peersShown: true, viewer: admin })
+    const s = buildHomeSections(feed, { viewer: admin })
     expect(s.needs.total).toBe(homeActionItems(feed, true, admin).length)
     const rows = s.needs.timeLimited.length + s.needs.approvals.length + s.needs.alerts.length
     expect(rows).toBe(s.needs.total)
@@ -74,7 +74,7 @@ describe("buildHomeSections", () => {
   })
 
   it("files a ticket awaiting a reply under Your queues unless it is assigned to the viewer", () => {
-    const s = buildHomeSections(feed, { peersShown: true, viewer: admin })
+    const s = buildHomeSections(feed, { viewer: admin })
     const support = s.queues.find((g) => g.app === "tickets")
     expect(support?.items.map((i) => i.id)).toEqual(["wait-any"])
     expect(s.needs.alerts.some((i) => i.id === "wait-any")).toBe(false)
@@ -82,7 +82,7 @@ describe("buildHomeSections", () => {
   })
 
   it("shows access requests only to someone who can grant them", () => {
-    const s = buildHomeSections(feed, { peersShown: true, viewer: member })
+    const s = buildHomeSections(feed, { viewer: member })
     expect(s.needs.approvals.some((i) => i.id === "scope")).toBe(false)
     expect(s.needs.alerts.some((i) => i.id === "scope")).toBe(false)
     expect(s.needs.approvalFacets.some((f) => f.key === "kernel:access_requests")).toBe(false)
@@ -91,14 +91,14 @@ describe("buildHomeSections", () => {
   })
 
   it("files a routine that failed under Agents, not under notifications or Needs you", () => {
-    const s = buildHomeSections(feed, { peersShown: true, viewer: admin })
+    const s = buildHomeSections(feed, { viewer: admin })
     expect(s.agents.failed.map((i) => i.id)).toEqual(["rt"])
     expect(s.agents.notifications.map((i) => i.id)).toEqual(["fyi"])
     expect(homeActionItems(feed, true, admin).some((i) => i.id === "rt")).toBe(false)
   })
 
   it("keeps conversations out of Home: no mention, reply or followed thread anywhere", () => {
-    const s = buildHomeSections(feed, { peersShown: true, viewer: admin })
+    const s = buildHomeSections(feed, { viewer: admin })
     const everywhere = [
       ...s.needs.timeLimited,
       ...s.needs.approvals,
@@ -122,7 +122,7 @@ describe("buildHomeSections", () => {
       item({ id: "s-m", app: "social", entity: "comment", kind: "mention", urgency: 60 }),
       item({ id: "s-a", app: "social", entity: "reply", kind: "approval_pending", urgency: 60 }),
     ]
-    const s = buildHomeSections([...feed, ...social], { peersShown: true, viewer: admin })
+    const s = buildHomeSections([...feed, ...social], { viewer: admin })
     const group = s.queues.find((g) => g.app === "social")
     expect(group?.items.map((i) => i.id).sort()).toEqual(["s-a", "s-m"])
     expect(s.needs.total).toBe(homeActionItems([...feed, ...social], true, admin).length)
@@ -137,7 +137,7 @@ describe("buildHomeSections", () => {
       urgency: 80,
       metadata: { nodePermission: { expiresAt: soon } },
     })
-    const s = buildHomeSections([prompt, ...feed], { peersShown: true, viewer: admin })
+    const s = buildHomeSections([prompt, ...feed], { viewer: admin })
     expect(s.needs.timeLimited.map((i) => i.id)).toEqual(["node"])
     expect(s.needs.total).toBe(homeActionItems([prompt, ...feed], true, admin).length)
   })
@@ -157,7 +157,7 @@ describe("buildHomeSections", () => {
       action: { type: "open_entity", tabType: "mail:conversation", entityId: "c1" },
     })
     const replyApproval = approval("mail-approval")
-    const s = buildHomeSections([mail, replyApproval], { peersShown: false, viewer: admin })
+    const s = buildHomeSections([mail, replyApproval], { viewer: admin })
     const group = s.queues.find((g) => g.key === "mail")
     expect(group?.items.map((i) => i.id)).toEqual(["mail:new_email:m1"])
     expect(group?.labelKey).toBe("kernel.homeSidebar.newMail")
@@ -169,7 +169,7 @@ describe("buildHomeSections", () => {
   })
 
   it("an empty feed has nothing anywhere", () => {
-    const s = buildHomeSections([], { peersShown: false, viewer: admin })
+    const s = buildHomeSections([], { viewer: admin })
     expect(s.needs.total).toBe(0)
     expect(s.queues).toEqual([])
     expect(s.agents.failed).toEqual([])
@@ -211,7 +211,7 @@ describe("a routine run waiting for the viewer's private mailbox", () => {
 
   it("is in the approvals list, once, and nowhere else on Home", () => {
     const withWait = [...feed, waitItem("w1", soon())]
-    const s = buildHomeSections(withWait, { peersShown: true, viewer: admin })
+    const s = buildHomeSections(withWait, { viewer: admin })
     expect(s.needs.approvals.map((i) => i.id)).toEqual(["a1", "a2", "scope", "w1"])
     expect(s.needs.alerts.some((i) => i.id === "w1")).toBe(false)
     expect(s.needs.timeLimited.some((i) => i.id === "w1")).toBe(false)
@@ -235,7 +235,7 @@ describe("a routine run waiting for the viewer's private mailbox", () => {
 
   it("once expired it has left the list (and the badge)", () => {
     const withWait = [...feed, waitItem("w2", past())]
-    const s = buildHomeSections(withWait, { peersShown: true, viewer: admin })
+    const s = buildHomeSections(withWait, { viewer: admin })
     expect(s.needs.approvals.map((i) => i.id)).toEqual(["a1", "a2", "scope"])
     expect(homeActionItems(withWait, true, admin).some((i) => i.id === "w2")).toBe(false)
     expect(s.agents.notifications.some((i) => i.id === "w2")).toBe(false)

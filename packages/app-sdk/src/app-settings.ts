@@ -290,6 +290,8 @@ export const settingsSectionSchema = z
      * user section.
      */
     adminScope: z.string().min(1).optional(),
+    /** Names a feature the app declares under top-level `features`: off, the section is absent. */
+    feature: z.string().min(1).optional(),
     blocks: z.array(settingsBlockSchema).min(1),
   })
   .strict()

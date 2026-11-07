@@ -274,7 +274,7 @@
       }
     ]
   },
-  "version": "0.4.5",
+  "version": "0.4.8",
   "iconName": "shopping-cart",
   "description": "Shopify integration: orders, customers, products, markets, draft orders, refunds, fulfillments, returns",
   "listing": {
@@ -618,6 +618,7 @@
     "timeoutMs": 5000
   },
   "attention": {
+    "groupLabel": { "label": "Orders", "labelKey": "kernel.homeGroupOrders" },
     "filterableAxes": [
       "market",
       "currency",
@@ -1138,8 +1139,10 @@
       "schedule": "*/15 * * * *"
     }
   },
+  "outsideTextFields": ["customer", "email", "note", "shipping_address", "billing_address", "po_number", "reason", "value"],
   "tools": {
     "home_load": {
+      "taintSource": true,
       "description": "Load the Shopify Home tab dashboard: connection, attention items (low-stock product variants, unfulfilled-past-SLA count, pending returns), and a recent-orders preview. This is a STORE DASHBOARD overview, not the order query — to ENUMERATE which orders need shipping use orders_search with query='fulfillment_status:unfulfilled' (it returns each order's line-item SKUs), and never read attention.lowInventory (a low-stock PRODUCT list) as if it were the order list.",
       "searchKeywords": ["résumé", "aperçu", "overview", "business"],
       "requiredScopes": ["shopify:orders:read"],
@@ -1837,6 +1840,7 @@
       "readOnly": true
     },
     "metafields_list": {
+      "taintSource": true,
       "description": "List metafields for a Shopify resource (Product, Customer, Order, …)",
       "requiredScopes": ["shopify:metafields:read"],
       "handler": "metafields_list",

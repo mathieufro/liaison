@@ -798,7 +798,9 @@ describe("ProjectWorkspace label filter", () => {
     renderWorkspace()
     expect(screen.getByTestId("project-workspace.showing-count").textContent).toBe("Showing 2 of 2")
     expect(rowIds()).toEqual(["C", "P"])
-    expect(state.api.get).not.toHaveBeenCalled()
+    // No read for the filter: the only one is the project page's slot list.
+    const reads = state.api.get.mock.calls.map(([path]: [string]) => path)
+    expect(reads.filter((p: string) => !p.startsWith("/v1/slots/"))).toEqual([])
   })
 
   it("No label selects tasks with no effective value", () => {

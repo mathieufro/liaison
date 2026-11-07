@@ -1,6 +1,6 @@
 {
   "name": "social",
-  "version": "0.6.59",
+  "version": "0.6.62",
   "iconName": "message-square",
   "description": "Social 'Ground Control': monitors Facebook, Instagram and YouTube for brand-relevant activity, drafts human-approved replies, and manages DMs.",
   "listing": {
@@ -505,6 +505,7 @@
     "entities": ["finding"],
     "timeoutMs": 5000
   },
+  "outsideTextFields": ["text", "author", "messages", "title"],
   "tools": {
     "webhooks_setup": {
       "description": "Point Meta's Facebook Page webhooks at this instance, so new comments and Messenger DMs arrive in real time instead of on the next poll. Makes the Meta app's page subscription (fields feed and messages) target this instance's social webhook, provisioning the verify token it checks, then subscribes every managed Page of each connected Facebook account to the app. Needs the pages_manage_metadata permission on the Facebook connection: if a Page fails with '(#200) Requires pages_manage_metadata permission', reconnect Facebook and run it again. Idempotent: what already matches is left alone and reported unchanged. Gated: a person approves. Returns the callback URL, the app subscription status and one result per Page (subscribed, unchanged or failed with Meta's error).",
@@ -648,6 +649,7 @@
       "params": { "type": "object", "properties": { "conversation_id": { "type": "string" } }, "required": ["conversation_id"] }
     },
     "watched_list": {
+      "taintSource": true,
       "description": "List the posts/videos/threads ALREADY being watched (read-only). This only READS the current set — it does NOT start watching anything. To begin watching a post (e.g. when asked to 'keep a close eye on / monitor that post'), use watch_object; an empty list here just means nothing is watched yet, not that you can stop.",
       "readOnly": true,
       "requiredScopes": ["social:watched:read"],

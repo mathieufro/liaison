@@ -12,6 +12,7 @@ import {
   createResource,
   createSignal,
   ErrorBoundary,
+  For,
   on,
   Show,
   Suspense,
@@ -433,6 +434,8 @@ const ProfileSettings: Component = () => {
               </div>
             </form>
 
+            <AwaySection />
+
             <div class="mt-6 flex flex-col gap-1.5 border-t border-border pt-6">
               <label
                 for="magic-wand-instructions"
@@ -476,6 +479,372 @@ const ProfileSettings: Component = () => {
         </Suspense>
       </ErrorBoundary>
     </div>
+  )
+}
+
+interface AwayPerson {
+  id: string
+  name: string
+  active?: boolean
+}
+interface AwayRangeView {
+  id: string
+  from: string
+  to: string | null
+  everyWeekday: number[] | null
+  days: string[]
+  nextInLine: (AwayPerson & { active: boolean }) | null
+  nextInLineIsDefault: boolean
+  setBy: AwayPerson | null
+  source?: "said" | "lead" | "calendar"
+  runningToday: boolean
+}
+interface AwayState {
+  today: string
+  ranges: AwayRangeView[]
+  standingNextInLine: (AwayPerson & { active: boolean }) | null
+  people: Array<{ id: string; name: string; awayUntil: string | null }>
+  /** Calendar events that looked like leave, waiting for Yes or No: dates only. */
+  questions: Array<{ id: string; said: string }>
+}
+interface AwaySaved {
+  id: string
+  message: string
+  cannotDecide: Array<{ label: string; goesTo: string[] }>
+  staysWithYou: string[]
+}
+
+const AWAY_UNDO_MS = 8_000
+const SELECT_CLASS =
+  "w-full rounded-sm border border-border bg-bg px-3 py-[9px] text-[13.5px] text-text outline-none transition-colors duration-150 focus:border-accent-muted"
+
+/**
+ * The person's own away days and next in line, under the profile. The same writer as the
+ * agent's set_away; saving runs at once, with Undo for a few seconds and End early after.
+ */
+const AwaySection: Component = () => {
+  const api = useApi()
+  const { t } = useI18n()
+  // A failed read leaves the section out rather than the whole profile page.
+  const [state, { refetch }] = createResource(() =>
+    api
+      .get<Partial<AwayState> | null>("/user/preferences/away")
+      .then(
+        (r): AwayState => ({
+          today: r?.today ?? "",
+          ranges: Array.isArray(r?.ranges) ? r.ranges : [],
+          standingNextInLine: r?.standingNextInLine ?? null,
+          people: Array.isArray(r?.people) ? r.people : [],
+          questions: Array.isArray(r?.questions) ? r.questions : [],
+        }),
+      )
+      .catch(() => null),
+  )
+  const [from, setFrom] = createSignal("")
+  const [to, setTo] = createSignal("")
+  const [nextInLine, setNextInLine] = createSignal("")
+  const [saving, setSaving] = createSignal(false)
+  const [saved, setSaved] = createSignal<AwaySaved | null>(null)
+
+  const person = (id: string) => state()?.people.find((p) => p.id === id)
+  const chosenAwayToo = () => {
+    const p = nextInLine() ? person(nextInLine()) : undefined
+    return p?.awayUntil ? p : null
+  }
+  const label = (r: AwayRangeView) =>
+    r.everyWeekday
+      ? t("kernel.settings.profile.away.weekly", {
+          days: r.days.map((d) => d.split(" ")[0]).join(", "),
+          from: r.from,
+        })
+      : r.to === null || r.to === r.from
+        ? t("kernel.settings.profile.away.oneDay", { day: r.days[0] ?? r.from })
+        : t("kernel.settings.profile.away.range", {
+            from: r.days[0] ?? r.from,
+            to: r.to,
+          })
+
+  async function save(e: Event) {
+    e.preventDefault()
+    if (!from() || !to()) return
+    setSaving(true)
+    try {
+      const res = await api.post<AwaySaved>("/user/preferences/away", {
+        from: from(),
+        to: to(),
+        ...(nextInLine() ? { nextInLineId: nextInLine() } : {}),
+      })
+      setSaved(res)
+      setFrom("")
+      setTo("")
+      void refetch()
+      addToast({
+        message: res.message,
+        type: "success",
+        durationMs: AWAY_UNDO_MS,
+        action: {
+          label: t("kernel.settings.profile.away.undo"),
+          onClick: () => {
+            void api.delete(`/user/preferences/away/${res.id}`).then(() => {
+              setSaved(null)
+              void refetch()
+            })
+          },
+        },
+      })
+    } catch (err) {
+      addToast({
+        message:
+          err instanceof Error && err.message
+            ? err.message
+            : t("kernel.settings.profile.away.failed"),
+        type: "error",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function endEarly(id: string) {
+    try {
+      const res = await api.post<{ message: string }>(`/user/preferences/away/${id}/end`, {})
+      addToast({ message: res.message, type: "success" })
+      void refetch()
+    } catch {
+      addToast({ message: t("kernel.settings.profile.away.endFailed"), type: "error" })
+    }
+  }
+
+  async function answer(id: string, yes: boolean) {
+    try {
+      const res = await api.post<{ message: string }>(`/user/preferences/away/${id}/answer`, {
+        yes,
+      })
+      addToast({ message: res.message, type: "success" })
+      void refetch()
+    } catch {
+      addToast({ message: t("kernel.settings.profile.away.failed"), type: "error" })
+    }
+  }
+
+  async function setStanding(id: string) {
+    try {
+      const res = await api.put<{ message: string }>("/user/preferences/away/next-in-line", {
+        nextInLineId: id || null,
+      })
+      addToast({ message: res.message, type: "success" })
+      void refetch()
+    } catch (err) {
+      addToast({
+        message:
+          err instanceof Error && err.message
+            ? err.message
+            : t("kernel.settings.profile.away.failed"),
+        type: "error",
+      })
+    }
+  }
+
+  const optionLabel = (p: { name: string; awayUntil: string | null }) =>
+    p.awayUntil
+      ? t("kernel.settings.profile.away.awayUntilOption", { name: p.name, until: p.awayUntil })
+      : p.name
+
+  return (
+    <section
+      data-testid="settings-away"
+      class="mt-6 flex flex-col gap-3 border-t border-border pt-6"
+    >
+      <div class="flex flex-col gap-0.5">
+        <span class="text-[12.5px] font-medium text-text-secondary">
+          {t("kernel.settings.profile.away.title")}
+        </span>
+        <span class="text-[12px] text-text-tertiary">{t("kernel.settings.profile.away.hint")}</span>
+      </div>
+      <Show when={state()}>
+        {(s) => (
+          <>
+            <Show when={s().questions.length > 0}>
+              <ul class="flex flex-col gap-2">
+                <For each={s().questions}>
+                  {(q) => (
+                    <li
+                      data-testid="settings-away-question"
+                      class="flex items-start justify-between gap-3 text-[13px] text-text"
+                    >
+                      <span class="min-w-0">
+                        {t("kernel.settings.profile.away.question", { dates: q.said })}
+                      </span>
+                      <div class="flex shrink-0 gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-testid="settings-away-question-yes"
+                          onClick={() => void answer(q.id, true)}
+                        >
+                          {t("kernel.settings.profile.away.yes")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-testid="settings-away-question-no"
+                          onClick={() => void answer(q.id, false)}
+                        >
+                          {t("kernel.settings.profile.away.no")}
+                        </Button>
+                      </div>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+            <Show
+              when={s().ranges.length > 0}
+              fallback={
+                <p class="text-[12.5px] text-text-tertiary">
+                  {t("kernel.settings.profile.away.none")}
+                </p>
+              }
+            >
+              <ul class="flex flex-col gap-2">
+                <For each={s().ranges}>
+                  {(r) => (
+                    <li
+                      data-testid="settings-away-range"
+                      class="flex items-start justify-between gap-3 text-[13px] text-text"
+                    >
+                      <div class="flex min-w-0 flex-col gap-0.5">
+                        <span>{label(r)}</span>
+                        <Show when={r.nextInLine}>
+                          {(n) => (
+                            <span class="text-[12px] text-text-tertiary">
+                              {n().active
+                                ? t("kernel.settings.profile.away.nextInLineIs", { name: n().name })
+                                : t("kernel.settings.profile.away.hasLeft", { name: n().name })}
+                            </span>
+                          )}
+                        </Show>
+                        <Show when={r.source === "calendar"}>
+                          <span class="text-[12px] text-text-tertiary">
+                            {t("kernel.settings.profile.away.fromCalendar")}
+                          </span>
+                        </Show>
+                        <Show when={r.setBy}>
+                          {(b) => (
+                            <span class="text-[12px] text-text-tertiary">
+                              {t("kernel.settings.profile.away.setBy", { name: b().name })}
+                            </span>
+                          )}
+                        </Show>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        data-testid="settings-away-end"
+                        onClick={() => void endEarly(r.id)}
+                      >
+                        {t("kernel.settings.profile.away.endEarly")}
+                      </Button>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+            <form class="flex flex-col gap-3" onSubmit={save}>
+              <div class="grid grid-cols-2 gap-3">
+                <label class="flex flex-col gap-1.5 text-[12.5px] font-medium text-text-secondary">
+                  {t("kernel.settings.profile.away.from")}
+                  <input
+                    type="date"
+                    data-testid="settings-away-from"
+                    min={s().today}
+                    value={from()}
+                    onInput={(e) => setFrom(e.currentTarget.value)}
+                    class={SELECT_CLASS}
+                  />
+                </label>
+                <label class="flex flex-col gap-1.5 text-[12.5px] font-medium text-text-secondary">
+                  {t("kernel.settings.profile.away.to")}
+                  <input
+                    type="date"
+                    data-testid="settings-away-to"
+                    min={from() || s().today}
+                    value={to()}
+                    onInput={(e) => setTo(e.currentTarget.value)}
+                    class={SELECT_CLASS}
+                  />
+                </label>
+              </div>
+              <label class="flex flex-col gap-1.5 text-[12.5px] font-medium text-text-secondary">
+                {t("kernel.settings.profile.away.nextInLine")}
+                <select
+                  data-testid="settings-away-next"
+                  value={nextInLine()}
+                  onChange={(e) => setNextInLine(e.currentTarget.value)}
+                  class={SELECT_CLASS}
+                >
+                  <option value="">
+                    {s().standingNextInLine?.name ?? t("kernel.settings.profile.away.nobody")}
+                  </option>
+                  <For each={s().people}>
+                    {(p) => <option value={p.id}>{optionLabel(p)}</option>}
+                  </For>
+                </select>
+              </label>
+              <Show when={chosenAwayToo()}>
+                {(p) => (
+                  <p data-testid="settings-away-too" class="text-[12px] text-text-secondary">
+                    {t("kernel.settings.profile.away.awayToo", {
+                      name: p().name,
+                      until: p().awayUntil ?? "",
+                    })}
+                  </p>
+                )}
+              </Show>
+              <Show when={saved()}>
+                {(r) => (
+                  <p data-testid="settings-away-result" class="text-[12px] text-text-secondary">
+                    {r().message}
+                  </p>
+                )}
+              </Show>
+              <div>
+                <Button
+                  type="submit"
+                  data-testid="settings-away-save"
+                  loading={saving()}
+                  disabled={!from() || !to()}
+                >
+                  {t("kernel.settings.profile.away.save")}
+                </Button>
+              </div>
+            </form>
+            <label class="flex flex-col gap-1.5 text-[12.5px] font-medium text-text-secondary">
+              {t("kernel.settings.profile.away.standing")}
+              <select
+                data-testid="settings-away-standing"
+                value={s().standingNextInLine?.id ?? ""}
+                onChange={(e) => void setStanding(e.currentTarget.value)}
+                class={SELECT_CLASS}
+              >
+                <option value="">{t("kernel.settings.profile.away.nobody")}</option>
+                <For each={s().people}>{(p) => <option value={p.id}>{optionLabel(p)}</option>}</For>
+              </select>
+              <span class="text-[12px] font-normal text-text-tertiary">
+                {t("kernel.settings.profile.away.standingHint")}
+              </span>
+            </label>
+            <Show when={s().standingNextInLine && !s().standingNextInLine?.active}>
+              <p class="text-[12px] text-text-secondary">
+                {t("kernel.settings.profile.away.hasLeft", {
+                  name: s().standingNextInLine?.name ?? "",
+                })}
+              </p>
+            </Show>
+          </>
+        )}
+      </Show>
+    </section>
   )
 }
 

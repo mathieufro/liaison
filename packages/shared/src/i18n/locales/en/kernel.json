@@ -702,6 +702,7 @@
       "kernel": "Full kernel access",
       "kernel:users:admin": "Manage users, roles, and invitations",
       "kernel:users:read": "Read user list",
+      "kernel:portal:admin": "See and manage clients' portal accounts",
       "kernel:org:admin": "Edit org settings",
       "kernel:threads:read": "Read threads",
       "kernel:threads:write": "Write threads",
@@ -1320,8 +1321,6 @@
   "hiIMLiaison": "Hi, I'm Liaison",
   "home": "Home",
   "homeAlso": "also",
-  "homeApprovalsHidePeers": "Hide requests from colleagues who can approve their own",
-  "homeApprovalsShowPeers": "Show {{count}} more, from colleagues who can approve their own requests",
   "homeCardActivity": "Activity",
   "homeCardAlertsMessages": "Alerts & messages",
   "homeCardApprovals": "Approvals",
@@ -1633,8 +1632,6 @@
     "needsYou": "Needs you",
     "nothingNeedsYou": "Nothing needs you",
     "minutesLeft": "{{count}} min",
-    "peersShow": "Show {{count}} from peers",
-    "peersHide": "Hide peers' requests",
     "accessRequests": "Access requests",
     "yourQueues": "Your queues",
     "queuesChip": "Queues",
@@ -2079,7 +2076,35 @@
       "localeEs": "Spanish",
       "localePtBr": "Portuguese (Brazil)",
       "localeJa": "Japanese",
-      "localeZhCn": "Chinese (Simplified)"
+      "localeZhCn": "Chinese (Simplified)",
+      "away": {
+        "title": "Away",
+        "hint": "Say when you are away and who stands in. Only the dates are kept, never why.",
+        "from": "First day",
+        "to": "Last day",
+        "nextInLine": "Next in line",
+        "nobody": "Nobody",
+        "standing": "Standing next in line",
+        "standingHint": "Used whenever an away range names nobody.",
+        "save": "Mark me away",
+        "question": "Your calendar has an event {{dates}} that looks like time off. Count it as away?",
+        "yes": "Yes",
+        "no": "No",
+        "fromCalendar": "From your calendar",
+        "endEarly": "End early",
+        "undo": "Undo",
+        "range": "{{from}} to {{to}}",
+        "weekly": "Every {{days}} from {{from}}",
+        "oneDay": "{{day}}",
+        "setBy": "Set by {{name}}",
+        "nextInLineIs": "Next in line: {{name}}",
+        "awayToo": "{{name}} is away too, until {{until}}.",
+        "hasLeft": "{{name}} has left, choose someone.",
+        "awayUntilOption": "{{name}} (away until {{until}})",
+        "none": "You have no away dates.",
+        "failed": "Could not save your away dates.",
+        "endFailed": "Could not end it."
+      }
     },
     "languageOrgDefault": "Organization default ({{language}})",
     "sections": {
@@ -2401,7 +2426,8 @@
       "handlerError": "handler error",
       "toolRunFailed": "Tool run failed: {{cause}}. The request needs operator review.",
       "outcomeUnclear": "Tool outcome is unclear; refresh before retrying.",
-      "nobodyMayRun": "Neither the requester nor you have permission to run this tool."
+      "nobodyMayRun": "Neither the requester nor you have permission to run this tool.",
+      "sendGuardNotHeld": "This draft is no longer held: a reply came in, or the hold ended. Nothing was sent. The card now shows what the check says."
     },
     "copyIdHint": "Click to copy id",
     "copiedId": "Copied {{id}}",
@@ -2495,7 +2521,19 @@
     },
     "stepSequence": "What happens, in order",
     "agentInviteAdd": "Add",
-    "agentInviteDecline": "Don't add"
+    "agentInviteDecline": "Don't add",
+    "sendGuard": {
+      "theOtherSide": "The other side",
+      "held": "Held: {{who}} sent an automatic reply. It waits until {{until}}, then comes back to Home by itself.",
+      "replied": "Not sent: {{who}} replied after this was drafted.",
+      "repliedElsewhere": "Not sent: a reply came in to another mailbox.",
+      "bounced": "Not sent: a delivery failure came back for this address.",
+      "optedOut": "Cannot send: {{who}} opted out of commercial mail. Remove them from the recipients, or leave it unsent.",
+      "refStop": "Not sent: the record this mail is about says not to send it.",
+      "refStopLabel": "Not sent: {{label}}",
+      "unavailable": "The check before sending could not run. Try again shortly.",
+      "sendNow": "Send now"
+    }
   },
   "agentUi": {
     "knowledge": "Knowledge",
@@ -3122,6 +3160,8 @@
     "routineReportRunLink": "See the full run",
     "routineRunRunning": "Routine {{name}} is running",
     "routineRunSucceeded": "Routine {{name}} finished",
+    "routineRunSucceededDraftWaiting": "Routine {{name}} finished: 1 draft waits for a person",
+    "routineRunSucceededDraftsWaiting": "Routine {{name}} finished: {{count}} drafts wait for a person",
     "routineRunFailed": "Routine {{name}} did not finish",
     "routineRunWaitingApproval": "Routine {{name}} is waiting for an approval",
     "reactWith": "React with {{emoji}}",
@@ -3715,6 +3755,16 @@
     "approvalDecided": {
       "approved": "Approval {{handle}} approved",
       "rejected": "Approval {{handle}} rejected"
+    },
+    "awayNamed": "{{name}} marked you away {{dates}}",
+    "routedReminder": "Waiting more than {{hours}} hours for a decision: {{title}}",
+    "awayCalendar": {
+      "set": "Your calendar marks you away {{dates}}. {{next}}",
+      "moved": "Your away moved: {{dates}}. {{next}}",
+      "asked": "Is “{{title}}” time off, {{dates}}? It counts for nothing until you say Yes.",
+      "askedNoTitle": "Is this calendar event time off, {{dates}}? It counts for nothing until you say Yes.",
+      "next": "Next in line: {{name}}.",
+      "nobody": "Nobody is next in line, so items for you stay with the usual approvers."
     }
   },
   "approvalDecisionLine": {
@@ -6396,5 +6446,74 @@
       }
     },
     "hiddenTitle": "New message in a thread"
+  },
+  "toolCard": {
+    "actionUnreachable": "Nothing ran: the server could not be reached.",
+    "answeredOnRetry": "It answered this time. Ask again to see the result here.",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "didNotAnswer": "{{app}} did not answer",
+    "errorTitle": "Could not run {{tool}}",
+    "howWorkedOut": "How this number is worked out",
+    "noReason": "The tool gave no reason.",
+    "notSaved": "Not saved: the server could not be reached. Your text is kept.",
+    "readApps": "Read {{count}} apps",
+    "readOneApp": "Read 1 app",
+    "readSomeApps": "Read {{count}} of {{total}} apps",
+    "reading": "Reading {{app}}",
+    "retry": "Retry",
+    "source": "Source: {{source}}",
+    "suggestionNotSent": "Not sent: the server could not be reached.",
+    "suggestions": "Suggested next steps",
+    "superseded": "Replaced by a newer card",
+    "unreachable": "Nothing ran: this card cannot reach the server here.",
+    "waitingApproval": "Waiting for approval. Nothing ran yet.",
+    "working": "Working…"
+  },
+  "entityDiscussion": {
+    "empty": "No messages yet.",
+    "placeholder": "Write about this, or @ an agent",
+    "send": "Send",
+    "unavailable": "The discussion could not be opened.",
+    "retry": "Retry",
+    "loading": "Opening the discussion…"
+  },
+  "homeStatusOtherWork": "IN YOUR OTHER WORK",
+  "homeDecisions": {
+    "notNow": "Not now",
+    "setAside": "Set aside until Monday. It comes back then.",
+    "setAsideFailed": "Could not set this aside. Try again.",
+    "askDraft": "Ask agent to draft",
+    "askDraftMessage": "Draft what this needs: {{summary}}",
+    "askDraftFailed": "Could not reach your agent. Try again.",
+    "dismiss": "Dismiss",
+    "guardClear": "Will not go out if they reply first, even after you approve.",
+    "sourceFailedTitle": "Could not load what {{app}} has for you",
+    "sourceFailedBody": "{{app}} did not answer. Anything waiting there is safe and still waiting.",
+    "retry": "Retry",
+    "briefTitle": "Today's brief",
+    "briefNone": "No brief set up. Ask your agent for one each morning, and say what you want in it.",
+    "briefSetUp": "Set up a morning brief",
+    "briefOpen": "Open"
+  },
+  "homeRouting": {
+    "othersGroup": "For others, you can also approve",
+    "someone": "a colleague",
+    "standingIn": "For {{name}}, away until {{date}}. You are next in line.",
+    "othersAsked": "For {{name}}, who asked for this. You can also approve",
+    "othersOnItem": "For {{name}}, assigned to them. You can also approve",
+    "othersManager": "For {{name}}, who manages this account. You can also approve",
+    "blocked": "For you: {{blocked}} cannot approve this while {{name}} is away",
+    "mineAsked": "You asked for this",
+    "mineOnItem": "For you: assigned to you",
+    "mineManager": "For you: you manage this account",
+    "recapApproved": "{{title}}: approved by {{name}}",
+    "recapDenied": "{{title}}: rejected by {{name}}",
+    "recapMore": "and {{count}} more",
+    "dismissFailed": "Could not dismiss this. Try again.",
+    "awayUntil": "away until {{date}}",
+    "awayToday": "away today",
+    "awayTodayBack": "away today, back {{day}}",
+    "recapTitle": "While you were away"
   }
 }

@@ -27,6 +27,7 @@ import {
   Show,
 } from "solid-js"
 import { onEntityChange } from "~/framework/entity-changes"
+import { isFeatureOff } from "~/framework/org-features"
 import { registerUnsavedWork } from "~/lib/unsaved-work"
 import { canAccessScope } from "~/modules/auth/auth-store"
 import { useI18n } from "~/modules/i18n/i18n-context"
@@ -77,7 +78,12 @@ export const AppSettingsBody: Component<{
   const state = createAppPageState()
   const app = () => props.entry.appId
   const sections = createMemo(() =>
-    visibleSections(props.entry.manifest.settings?.sections, (s) => canAccessScope(s)),
+    visibleSections(
+      props.entry.manifest.settings?.sections?.filter(
+        (s) => !isFeatureOff(props.entry.manifest.name, s.feature),
+      ),
+      (s) => canAccessScope(s),
+    ),
   )
 
   // Values the page saved since the last load, shown over the loaded ones.

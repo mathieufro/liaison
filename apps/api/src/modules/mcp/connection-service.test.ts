@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { eq } from "drizzle-orm"
 import { sql } from "~/db"
-import { withSystemDb } from "~/db/privileged"
+import { withPrivilegedDb, withSystemDb } from "~/db/privileged"
 import { mcpConnections, users } from "~/db/schema/kernel"
 import { env } from "~/lib/env"
 import { createSession } from "~/modules/auth/auth"
@@ -27,11 +27,34 @@ import {
   sqlUpdateCeiling,
 } from "~/modules/mcp/test-helpers"
 import { KERNEL_EVERY_MEMBER_SCOPES } from "~/modules/permissions/every-member-scopes"
+import { createExternalUser } from "~/modules/users/external-user"
 
 describe("mcp connection service", () => {
   const orgs: string[] = []
   afterEach(async () => {
     for (const o of orgs.splice(0)) await cleanupSeededOrg(o)
+  })
+
+  it("an external row's connection mints no token, on first mint or on refresh", async () => {
+    const { orgId } = await seedOrgWithUser()
+    orgs.push(orgId)
+    const created = await withPrivilegedDb(orgId, "mcp-external-test", (tx) =>
+      createExternalUser(tx, {
+        orgId,
+        companyId: crypto.randomUUID(),
+        email: `client-${crypto.randomUUID().slice(0, 8)}@client.example`,
+        name: "Client",
+      }),
+    )
+    if (!created.ok) throw new Error(created.code)
+    const { connection, refreshToken } = await createMcpConnection({
+      orgId,
+      userId: created.userId,
+      clientId: "client-x",
+      label: "Claude Code",
+    })
+    await expect(mintAccessToken(connection.id)).rejects.toThrow("external user")
+    await expect(refreshAccessToken(refreshToken)).rejects.toThrow("external user")
   })
 
   it("TTL is 15 minutes", () => {

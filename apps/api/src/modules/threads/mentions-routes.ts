@@ -16,6 +16,7 @@ import {
   MEMBER_DIRECTORY_MAX_LIMIT,
   MEMBER_DIRECTORY_SCOPES,
 } from "~/modules/threads/member-directory"
+import { withAway } from "~/modules/users/away-today"
 
 export const mentions = new Hono<AppEnv>()
 
@@ -38,7 +39,11 @@ mentions.get("/", zValidator("query", mentionQuerySchema), async (c) => {
       limit,
       type,
     })
-    return success(c, result)
+    // A colleague away today says until when; who is listed does not change.
+    const withAwayRows = await withRequestRls(c, (tx) =>
+      withAway(tx, c.get("orgId"), result, (r) => r.type === "user"),
+    )
+    return success(c, withAwayRows)
   } catch (err) {
     if (err instanceof MeiliUnavailableError) return searchUnavailable(c)
     throw err
@@ -61,6 +66,9 @@ mentions.get("/members", zValidator("query", membersQuerySchema), async (c) => {
   }
   const { q, limit } = c.req.valid("query")
   const orgId = c.get("orgId")
-  const result = await withRequestRls(c, (tx) => listActiveMembers(tx, { orgId, q, limit }))
+  const result = await withRequestRls(c, async (tx) => {
+    const page = await listActiveMembers(tx, { orgId, q, limit })
+    return { ...page, items: await withAway(tx, orgId, page.items) }
+  })
   return c.json({ data: result.items, meta: { total: result.total, limit } })
 })

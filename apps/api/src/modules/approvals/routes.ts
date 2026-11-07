@@ -32,6 +32,8 @@ const decideBodySchema = z.discriminatedUnion("decision", [
     payloadHash: z.string().min(1).max(128).optional(),
     // For a bundle: the fingerprint of every later step the decider was shown, by step id.
     stepPayloadHashes: z.record(z.string().uuid(), z.string().min(1).max(128)).optional(),
+    // "Send now" on a mail draft held by an automatic reply (decide.ts, 422 when not held).
+    sendGuardOverride: z.literal("auto_reply").optional(),
   }),
   z.object({ decision: z.literal("deny"), reason: z.string().optional() }),
 ])
@@ -95,6 +97,7 @@ approvals.get("/", zValidator("query", listQuerySchema), async (c) => {
       ...("conversationId" in query ? { conversationId: query.conversationId } : {}),
       ...("requestedByMe" in query ? { requestedByMe: true } : {}),
       ...("app" in query && query.app ? { app: query.app } : {}),
+      sendGuards: true,
     }),
   )
   return success(c, data)
@@ -104,7 +107,7 @@ approvals.get("/:id", zValidator("param", idParam), async (c) => {
   const { id } = c.req.valid("param")
   const actor = extractRlsContext(c)
   const data = await withRequestRls(c, (tx) =>
-    getApproval(tx, { orgId: actor.orgId, userId: actor.userId, requestId: id }),
+    getApproval(tx, { orgId: actor.orgId, userId: actor.userId, requestId: id, sendGuards: true }),
   )
   if (!data) throw new HTTPException(404, { message: "Not found" })
   return success(c, data)
@@ -168,6 +171,9 @@ approvals.post(
       ...(body.decision === "approve" && body.payloadHash ? { payloadHash: body.payloadHash } : {}),
       ...(body.decision === "approve" && body.stepPayloadHashes
         ? { stepPayloadHashes: body.stepPayloadHashes }
+        : {}),
+      ...(body.decision === "approve" && body.sendGuardOverride
+        ? { sendGuardOverride: body.sendGuardOverride }
         : {}),
     })
     return success(c, result)

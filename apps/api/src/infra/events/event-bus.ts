@@ -743,6 +743,9 @@ export async function subscribeToEvent(
  * kind:'event' routines).
  */
 export const KERNEL_DECLARED_EMITS: ReadonlySet<string> = new Set([
+  // A feature inside an app switched on or off (modules/apps/org-features.ts): the
+  // catalog changed, so live MCP sessions are told (modules/mcp/catalog-notifier.ts).
+  "app:feature_update",
   "user:registered",
   "user:deactivate",
   "user:reactivate",

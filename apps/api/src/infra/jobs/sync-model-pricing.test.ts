@@ -282,7 +282,9 @@ describe("syncModelPricing under a schema prefix uses the prefixed kernel tables
 
   it("reports staleness from the prefixed model_pricing", async () => {
     mockFeeds(1.31)
-    const warnSpy = spyOn(Object.getPrototypeOf(jobsLogger), "warn")
+    // On the logger itself: a spy restored on it by another file leaves an own `warn` that a
+    // spy on its prototype would never see.
+    const warnSpy = spyOn(jobsLogger, "warn")
     try {
       await withPrefix(() => syncModelPricing())
       const staleModelIds = warnSpy.mock.calls

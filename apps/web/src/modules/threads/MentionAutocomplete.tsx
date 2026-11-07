@@ -23,6 +23,7 @@ import { ambiguousNameKeys, foldName } from "~/lib/name-collision"
 import { userFromToken } from "~/modules/auth/auth-store"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { useApi } from "~/modules/shell/ApiContext"
+import { awayLabel } from "~/modules/shell/route-line"
 import { personalAgentFor } from "~/modules/threads/agent-directory"
 import { getThread } from "~/modules/threads/thread-store"
 
@@ -329,6 +330,16 @@ const MentionAutocomplete: Component<MentionAutocompleteProps> = (props) => {
                                 class="truncate text-[11px] leading-snug text-text-tertiary"
                               >
                                 {secondary()}
+                              </span>
+                            )}
+                          </Show>
+                          <Show when={awayLabel(item.away, i18n.t, i18n.locale())}>
+                            {(away) => (
+                              <span
+                                data-testid="mention-result-away"
+                                class="truncate text-[11px] leading-snug text-text-tertiary"
+                              >
+                                {away()}
                               </span>
                             )}
                           </Show>

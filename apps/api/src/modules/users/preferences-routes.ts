@@ -17,6 +17,17 @@ import { success } from "~/lib/response"
 import { zValidator } from "~/lib/validate"
 import { broadcastReadState } from "~/modules/threads/read-state-broadcast"
 import {
+  AwayRefusal,
+  answerCalendarAway,
+  clearStandingNextInLine,
+  endAwayRange,
+  listAwayRanges,
+  listCalendarQuestions,
+  nextInLineChoices,
+  setAway,
+  undoAway,
+} from "./away"
+import {
   getOrCreatePreferences,
   PreferencesServiceError,
   updateAgentMailAccess,
@@ -169,3 +180,101 @@ preferencesRoutes.put("/", zValidator("json", userPreferencesSchema), async (c) 
     throw err
   }
 })
+
+// The profile's Away section: the person's own ranges and standing next in line. The same
+// writer as the agent's set_away (modules/users/away.ts), run at once: a person's own click.
+function awayRefused(err: AwayRefusal): Response {
+  return Response.json({ error: { message: err.message, code: err.code } }, { status: 400 })
+}
+
+const awayDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+
+preferencesRoutes.get("/away", async (c) => {
+  const userId = c.get("userId")
+  const orgId = c.get("orgId")
+  const [list, people, questions] = await Promise.all([
+    listAwayRanges(orgId, userId),
+    nextInLineChoices(orgId, userId),
+    listCalendarQuestions(orgId, userId),
+  ])
+  return success(c, { ...list, people, questions })
+})
+
+preferencesRoutes.post(
+  "/away",
+  zValidator(
+    "json",
+    z.object({ from: awayDay, to: awayDay, nextInLineId: z.string().uuid().optional() }),
+  ),
+  async (c) => {
+    const body = c.req.valid("json")
+    try {
+      const result = await setAway({
+        orgId: c.get("orgId"),
+        actorId: c.get("userId"),
+        actorScopes: [],
+        form: { from: body.from, to: body.to },
+        ...(body.nextInLineId ? { nextInLineId: body.nextInLineId } : {}),
+      })
+      return success(c, result)
+    } catch (err) {
+      if (err instanceof AwayRefusal) return awayRefused(err)
+      throw err
+    }
+  },
+)
+
+preferencesRoutes.put(
+  "/away/next-in-line",
+  zValidator("json", z.object({ nextInLineId: z.string().uuid().nullable() })),
+  async (c) => {
+    const { nextInLineId } = c.req.valid("json")
+    const orgId = c.get("orgId")
+    const userId = c.get("userId")
+    if (nextInLineId === null) {
+      await clearStandingNextInLine(orgId, userId)
+      return success(c, { ok: true, message: "Nobody is your standing next in line now." })
+    }
+    try {
+      return success(
+        c,
+        await setAway({ orgId, actorId: userId, actorScopes: [], form: {}, nextInLineId }),
+      )
+    } catch (err) {
+      if (err instanceof AwayRefusal) return awayRefused(err)
+      throw err
+    }
+  },
+)
+
+preferencesRoutes.post(
+  "/away/:id/end",
+  zValidator("param", z.object({ id: z.string().uuid() })),
+  async (c) => {
+    const { id } = c.req.valid("param")
+    return success(c, await endAwayRange(c.get("orgId"), c.get("userId"), id))
+  },
+)
+
+// Yes or No on a calendar event that looked like leave; No (or Undo on a row the calendar made
+// active) sets it aside for good.
+preferencesRoutes.post(
+  "/away/:id/answer",
+  zValidator("param", z.object({ id: z.string().uuid() })),
+  zValidator("json", z.object({ yes: z.boolean() })),
+  async (c) => {
+    const { id } = c.req.valid("param")
+    const { yes } = c.req.valid("json")
+    return success(c, await answerCalendarAway(c.get("orgId"), c.get("userId"), id, yes))
+  },
+)
+
+// Undo, inside the few seconds after saving: the range is taken back as if never said.
+preferencesRoutes.delete(
+  "/away/:id",
+  zValidator("param", z.object({ id: z.string().uuid() })),
+  async (c) => {
+    const { id } = c.req.valid("param")
+    return success(c, await undoAway(c.get("orgId"), c.get("userId"), id))
+  },
+)

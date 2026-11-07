@@ -83,6 +83,18 @@ async function get(
   return JSON.parse(await ctx.projects_get(JSON.stringify(params ?? {})))
 }
 
+/** Who a pending approval about a task is for: the task's assignee. */
+async function approvalRouteRead(
+  params: Record<string, unknown> | undefined,
+  ctx: ProjectsSandboxCtx,
+): Promise<unknown> {
+  if (params?.entityType !== "task" || typeof params.entityId !== "string")
+    return { personId: null }
+  const data = JSON.parse(await ctx.projects_get(JSON.stringify({ taskId: params.entityId })))
+  const assignee = data?.task?.assigneeId ?? data?.assigneeId
+  return { personId: typeof assignee === "string" ? assignee : null }
+}
+
 // task label taxonomy: pass-throughs to the projects_labels* bridge methods.
 async function labelsList(
   params: Record<string, unknown> | undefined,
@@ -598,10 +610,14 @@ async function checklistRemoveItem(
 }
 
 async function computeAttentionItems(
-  _params: Record<string, unknown> | undefined,
+  params: Record<string, unknown> | undefined,
   ctx: ProjectsSandboxCtx,
 ): Promise<unknown> {
-  return JSON.parse(await ctx.projects_attentionItems(JSON.stringify({ actor: ctx.actor ?? null })))
+  // Home passes on the people the caller stands in for; the bridge checks them again.
+  const forUserIds = Array.isArray(params?.forUserIds) ? params.forUserIds : []
+  return JSON.parse(
+    await ctx.projects_attentionItems(JSON.stringify({ actor: ctx.actor ?? null, forUserIds })),
+  )
 }
 
 // tasks_byAssignee — cross-project task list for one assignee (J1).
@@ -992,6 +1008,7 @@ async function webhookInfoHandler(
 void [
   search,
   get,
+  approvalRouteRead,
   createProject,
   createTask,
   updateTask,

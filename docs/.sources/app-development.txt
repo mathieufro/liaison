@@ -58,3 +58,15 @@ An external entity is named by the id the page reported -> apps/api/src/modules/
 A tab type declares the entity its id belongs to -> apps/api/src/modules/apps/manifest-schema.ts:1564
 A field named *_minor holds a whole number; readMinorAmount and minorAmountRefusal -> packages/app-sdk/src/minor-amount.ts:15
 The server refuses a decimal in a declared *_minor parameter -> apps/api/src/modules/apps/execute-tool-params.ts:298
+entities.<type>.discussion: needs labelField and a page; opened by POST /api/threads/entity-discussion; host.mountEntityDiscussion; threads_deleteEntityDiscussion -> apps/api/src/modules/threads/entity-discussion.ts:58-72 ; apps/api/src/modules/threads/entity-discussion-routes.ts:25-55 ; packages/host-sdk/src/index.ts ; apps/web/src/framework/host-services.ts:326 ; apps/api/src/modules/apps/sandbox/bridge/platform.ts:115
+contextProviders: on kinds, readOnly tool, scope in requiredScopes, subject param, {lines, source} result, runs as the person under its scope and the record's visibility, read-only run, 1.5 s and 2 KB shared, 10 lines, loadTools loaded, CONTEXT_PROVIDERS_DISABLED -> apps/api/src/modules/agent/context/context-providers.ts:39-41 ; apps/api/src/modules/agent/context/context-providers.ts:187 ; apps/api/src/modules/agent/context/context-providers.ts:264 ; apps/api/src/modules/apps/contract.ts:937
+sinkReadersSelf and contentParams are first-party only; any other app declaring either is not loaded -> apps/api/src/modules/apps/contract.ts:943 ; apps/api/src/modules/apps/runtime.ts:623,3179
+sinkReadersSelf: a tainted turn may write when the writer holds what it read -> apps/api/src/modules/apps/execute-tool.ts:3845
+contentParams: a call with them all blank is not judged; each must be in params.properties -> apps/api/src/modules/agent/scopes/scope-taint.ts:849 ; apps/api/src/modules/apps/contract.ts:1047
+Not now route on a stored attention item -> apps/api/src/modules/apps/attention-routes.ts:190
+A provider pill names Home's row for a mail about that kind of record -> apps/api/src/modules/mail/send-guard.ts:395
+slots a page offers and the entityId each passes -> apps/web/src/modules/projects/TaskDetail.tsx:605,653 ; apps/web/src/modules/projects/ProjectWorkspace.tsx:741 ; apps/web/src/modules/contacts/ContactDetail.tsx:455 ; apps/web/src/modules/tickets/TicketDetail.tsx:244,707,1079
+GET /api/v1/slots/<key> is the one list: visibility_scope, app off, feature off; contributions by component name; order then app name -> apps/api/src/modules/slots/registry.ts:60,82-93 ; apps/api/src/modules/slots/routes.ts:17-24
+a throwing panel shows Panel unavailable; a framed app draws in its frame -> apps/web/src/modules/shell/SlotPanels.tsx:124-140 ; apps/web/src/framework/isolated-app.tsx:740-765
+taintSourceWhen: one matching row marks the turn, other values leave it clean, no row carrying the field marks it -> apps/api/src/modules/agent/scopes/taint.ts:477-520 ; apps/api/src/modules/apps/execute-tool.ts:5536-5545
+outsideTextFields: a read whose returns names one declares a taint source -> apps/api/src/modules/apps/outside-fields.guard.test.ts:58-110

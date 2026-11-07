@@ -61,6 +61,11 @@ describe("Shopify app.manifest.json", () => {
     expect(loadManifest()).toBeTypeOf("object")
   })
 
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    const attention = (loadManifest() as { attention?: { groupLabel?: unknown } }).attention
+    expect(attention?.groupLabel).toEqual({ label: "Orders", labelKey: "kernel.homeGroupOrders" })
+  })
+
   it("validates against packageManifestSchema", () => {
     const result = packageManifestSchema.safeParse(loadManifest())
     if (!result.success) {
@@ -898,7 +903,8 @@ describe("Shopify app.manifest.json", () => {
     // (the shared package depends on it by workspace protocol); no change to what it does.
     // 0.4.4: above 0.4.3, so an instance on either line of work upgrades; no change of its own.
     // 0.4.5: above both lines of work, which each changed it under the number before; no change of its own.
-    expect(m.version).toBe("0.4.5")
+    // 0.4.6: its attention heading is declared here, not in the web shell.
+    expect(m.version).toBe("0.4.8")
   })
 
   it("read_all_orders is a protected scope behind the org's full-order-history toggle", () => {

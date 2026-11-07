@@ -14,6 +14,13 @@ const guideText = (m: { agentInstructions?: unknown }): string => {
 }
 
 describe("projects.manifest", () => {
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    expect(projectsManifest.attention.groupLabel).toEqual({
+      label: "Tasks",
+      labelKey: "kernel.homeGroupTasks",
+    })
+  })
+
   it("projects.manifest.validates", () => {
     const result = validateAppManifest(projectsManifest)
     if (!result.success) {
@@ -60,7 +67,9 @@ describe("projects.manifest", () => {
     // 1.7.7: createProject takes the project's tasks (one approval for the whole plan).
     // 1.7.9: task labels
     // 1.10.2: more French and English tool search words
-    expect(projectsManifest.version).toBe("1.10.2")
+    // 1.10.3: approval_route_read says who an approval about a task is for; Home passes on.
+    // 1.10.5: its attention heading is declared in the manifest.
+    expect(projectsManifest.version).toBe("1.10.5")
   })
 
   it("projects.manifest.task-labels", () => {

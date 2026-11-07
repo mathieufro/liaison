@@ -170,3 +170,8 @@ A turn names the record open on the page, and that record wins for "this" -> app
 A pane, drawer or expanded row reports its record -> apps/web/src/modules/shell/open-record.ts:42
 a call with wrong arguments answers what to fix, not a fault -> apps/api/src/modules/agent/tools/call-tool.ts:39
 A record is open once you opened it -> apps/web/src/modules/shell/open-record.ts:11
+Up to four next-step buttons under a reply -> apps/api/src/modules/agent/tools/suggest-steps-tool.ts:13
+A button sends its own words as your message -> apps/web/src/modules/agent/SuggestionChips.tsx:94
+A button opens the tab it names -> apps/web/src/modules/agent/SuggestionChips.tsx:76
+Buttons only under the newest message -> apps/web/src/modules/agent/SuggestionChips.tsx:67
+None in a conversation holding outside text -> apps/api/src/modules/agent/tools/suggest-steps-tool.ts:144

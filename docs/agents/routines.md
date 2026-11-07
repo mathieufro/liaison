@@ -169,7 +169,7 @@ The Routines list groups routines as **Running** and **Switched off** and filter
 
 ## Start from a template
 
-Apps and the platform ship routine templates. In the **Routines** list, **App templates** shows them, with **Built in** and **Enable**. The platform template `morning-brief` posts a short brief every weekday at 08:00 in your own timezone: overnight mail, drafts waiting for your approval and tasks due. It also sends you a one-line notification with the counts. An agent enables one with `enable_routine_template`, and puts a routine back to its template with `reset_routine_to_template`.
+Apps and the platform ship routine templates. In the **Routines** list, **App templates** shows them, with **Built in** and **Enable**. The platform template `morning-brief` posts a short brief every weekday at 08:00 in your own timezone: overnight mail, drafts waiting for your approval and tasks due. It also sends you a one-line notification with the counts. Its newest brief shows on **Home** under **Today's brief**, with the time it was written; your own brief only, never a colleague's. With none, **Home** says **No brief set up** and offers **Set up a morning brief**, which opens your routines. An agent enables one with `enable_routine_template`, and puts a routine back to its template with `reset_routine_to_template`.
 
 ## Read the sender's website in a mail-started run
 

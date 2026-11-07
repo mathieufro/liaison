@@ -44,7 +44,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 
 // Roles a request may switch DOWN to: anything else set through set_config,
 // including a target that is not a string literal, counts as an elevation.
-const DROP_ROLES = new Set(["liaison_rls"])
+const DROP_ROLES = new Set(["liaison_rls", "liaison_portal"])
 
 function elevates(code: string): boolean {
   if (/SET\s+(LOCAL\s+|SESSION\s+)?ROLE\s+"?liaison_(admin|schema_admin)\b/i.test(code)) return true
@@ -71,6 +71,7 @@ describe("role elevation sites", () => {
   test("the matcher tells a drop to liaison_rls from an elevation", () => {
     // Drops: the RLS entry point switches to the RLS role in the same round trip.
     expect(elevates("set_config('role', 'liaison_rls', true)")).toBe(false)
+    expect(elevates("set_config('role', 'liaison_portal', true)")).toBe(false)
     expect(elevates("SET LOCAL ROLE liaison_rls")).toBe(false)
     // Elevations, literal or not.
     expect(elevates("set_config('role', 'liaison_admin', true)")).toBe(true)

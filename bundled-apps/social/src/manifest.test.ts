@@ -33,8 +33,8 @@ describe("social manifest (B1)", () => {
     // (the shared package depends on it by workspace protocol); no change to what it does.
     // 0.6.57: the same number (0.6.56) carried different content on two lines of work; this one has both.
     // 0.6.58: above both lines of work, which each changed it under the number before; no change of its own.
-    // 0.6.59: above the 0.6.58 that main took meanwhile; no change of its own.
-    expect(manifest.version).toBe("0.6.59")
+    // 0.6.60: the shared host package gained the discussion panel hooks; no change of its own.
+    expect(manifest.version).toBe("0.6.62")
     expect(manifest.packageFormat).toBe(1)
   })
 
@@ -98,13 +98,15 @@ describe("social manifest (B1)", () => {
   test("inbound-content read tools declare taintSource (reading external posts/DMs taints the thread)", () => {
     // findings_*/dm_* return third-party posts/comments and inbound DMs — reading
     // them must mark the thread tainted so the containment story holds (hardened
-    // orgs can then block downstream escalation). The write/internal tools and
-    // metadata-only reads (watched/terms/counts) do NOT return external content.
+    // orgs can then block downstream escalation). watched_list hands back each
+    // watched post's title, which its author wrote, so it is one of them. The
+    // write/internal tools and metadata-only reads (terms/counts) do NOT return
+    // external content.
     const tools = manifest.tools as Record<string, { taintSource?: boolean }>
-    for (const id of ["findings_list", "findings_get", "dm_list", "dm_get"]) {
+    for (const id of ["findings_list", "findings_get", "dm_list", "dm_get", "watched_list"]) {
       expect(tools[id]?.taintSource, `${id} must declare taintSource`).toBe(true)
     }
-    for (const id of ["watched_list", "monitor_terms_list", "counts", "set_triage"]) {
+    for (const id of ["monitor_terms_list", "counts", "set_triage"]) {
       expect(tools[id]?.taintSource ?? false, `${id} must NOT declare taintSource`).toBe(false)
     }
   })

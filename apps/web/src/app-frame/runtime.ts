@@ -121,6 +121,8 @@ export function startFrameRuntime(win: Window & typeof globalThis = window): voi
     },
     createResource: <T>(fetcher: () => T | Promise<T>) => createResource(fetcher),
     mountSlot: () => ({ resolved: false, dispose: () => {} }),
+    // An isolated frame has no kernel tree to render the discussion in: the caller's fallback shows.
+    mountEntityDiscussion: () => ({ resolved: false, dispose: () => {} }),
     // A browser path, not the shell's: an isolated app opens no file natively.
     openFile: async () => false,
     onEntityChange: (

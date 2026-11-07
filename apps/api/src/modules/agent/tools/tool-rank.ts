@@ -29,6 +29,56 @@ function foldSearchTerm(term: string): string {
   return folded.length < 3 ? term.toLowerCase() : folded
 }
 
+/**
+ * The shortest query word matched as the start of a longer word: a name part
+ * ("sub" in `subagent_create`), an app's name or a description word. Never the
+ * middle of a word: "du" is not in "duplicates", "la" not in "pennylane",
+ * "done" not in "abandoned". A shorter word matches only a whole name part, a
+ * keyword or an app's name.
+ */
+const MIN_SUBSTRING_TERM = 3
+
+function substringOk(term: string): boolean {
+  return term.length >= MIN_SUBSTRING_TERM
+}
+
+/** What a word found only in a tool's description scores. */
+const DESCRIPTION_SCORE = 2
+
+interface ScoringWords {
+  nameParts: string[]
+  keywords: string[] | undefined
+  appLower: string
+  appParts: string[]
+  descWords: string[]
+}
+
+/**
+ * A tool's words, folded once per tool row rather than once per query word.
+ * Keyed by the row object: a catalog listing builds fresh rows, so a changed
+ * description never meets an old entry.
+ */
+const scoringWordsCache = new WeakMap<ScorableDeferredTool, ScoringWords>()
+
+function scoringWords(t: ScorableDeferredTool): ScoringWords {
+  const cached = scoringWordsCache.get(t)
+  if (cached) return cached
+  const appLower = t.appName.toLowerCase()
+  const words: ScoringWords = {
+    // camelCase splits too: `bulkDeactivateUsers` is bulk, deactivate, users.
+    nameParts: t.toolName
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/),
+    keywords: t.keywords?.map(foldSearchText),
+    appLower,
+    appParts: appLower.split(/[^a-z0-9]+/),
+    descWords: foldSearchText(t.description).split(/[^\p{L}\p{N}]+/u),
+  }
+  scoringWordsCache.set(t, words)
+  return words
+}
+
 /** The minimal shape the keyword scorer needs from a deferred-tool row. */
 export interface ScorableDeferredTool {
   toolName: string
@@ -56,20 +106,21 @@ export function scoreDeferredTools<T extends ScorableDeferredTool>(
   /** The org's app names, so a kernel tool is not held to match the app it acts on. */
   opts?: { appNames?: Iterable<string> },
 ): Array<{ tool: T; score: number; termsMatched: number; termCount: number }> {
-  const terms = query
+  let terms = query
     .toLowerCase()
-    .split(/[\s,:./_-]+/)
+    .split(/[\s,:./_'’-]+/)
     .filter(Boolean)
     .map(foldSearchTerm)
   const appTerms = new Set([...(opts?.appNames ?? [])].map((n) => n.toLowerCase()))
+  // Filler words ("an", "de") name nothing, so a tool is not held to match
+  // them, unless the query is nothing but filler.
+  const named = terms.filter((term) => !FILLER_WORDS.has(term))
+  if (named.length > 0) terms = named
   return tools.map((t) => {
     let score = 0
     let termsMatched = 0
     let termCount = 0
-    const nameLower = t.toolName.toLowerCase()
-    const nameParts = nameLower.split(/[^a-z0-9]+/)
-    const descLower = foldSearchText(t.description)
-    const keywords = t.keywords?.map(foldSearchText)
+    const { nameParts, keywords, appLower, appParts, descWords } = scoringWords(t)
     const isKernel = t.appName === "kernel"
 
     for (const term of terms) {
@@ -79,12 +130,15 @@ export function scoreDeferredTools<T extends ScorableDeferredTool>(
       if (nameParts.some((p) => p === term || p === `${term}s`)) score += 10
       // A keyword the tool declares for this org (singular or plural either way)
       else if (keywords?.some((k) => k === term || k === `${term}s` || `${k}s` === term)) score += 8
-      // Partial name match
-      else if (nameLower.includes(term)) score += 5
+      // Partial name match: the start of a name part ("invoice" in `invoices`),
+      // never the middle of one ("done" is not in `abandoned`).
+      else if (substringOk(term) && nameParts.some((p) => p.startsWith(term))) score += 5
       // App name match
-      else if (t.appName.toLowerCase().includes(term)) score += 6
-      // Description match (lower weight)
-      else if (descLower.includes(term)) score += 2
+      else if (appLower === term || (substringOk(term) && appParts.some((p) => p.startsWith(term))))
+        score += 6
+      // Description match (lower weight), at the start of a word
+      else if (substringOk(term) && descWords.some((w) => w.startsWith(term)))
+        score += DESCRIPTION_SCORE
       if (score > before) termsMatched++
       // Another app's name is the ARGUMENT of a kernel tool, which acts on
       // apps ("turn the social app off"), not a term the tool must match.
@@ -112,15 +166,26 @@ export function strongMatches<T extends { score: number; termsMatched: number; t
 ): T[] {
   if (wholeAppQuery) return [...scored]
   const top = scored.reduce((best, s) => Math.max(best, s.score), 0)
-  return scored.filter((s) => s.score === top && s.termsMatched === s.termCount)
+  // A tool whose every word was found only in its description is listed, not
+  // loaded: "signature" loaded a mail-inbox setter for the word in its prose.
+  return scored.filter(
+    (s) =>
+      s.score === top &&
+      s.termsMatched === s.termCount &&
+      s.score > DESCRIPTION_SCORE * s.termCount,
+  )
 }
 
 /** Words of a request that name no capability ("connect OUR crm"). */
-const FILLER_WORDS = new Set(
-  "a an the our my your their its it we us i you me to for of in on at with and or from please can could would some do does what how is are be this that".split(
+const FILLER_WORDS = new Set([
+  ..."a an the our my your their its it we us i you me to for of in on at with and or from please can could would some do does what how is are be this that".split(
     " ",
   ),
-)
+  // French. Words under 3 letters are compared as typed, so "à" and "où" keep their accent.
+  ..."le la les l d de du des un une et ou au aux en pour par sur dans avec sans mon ma mes ton ta tes son sa ses notre nos votre vos leur leurs ce cet cette ces qui que quoi est sont je tu il elle on nous vous ils elles me te se y à moi toi lui tout tous toute toutes stp svp peux pouvez".split(
+    " ",
+  ),
+])
 
 /** What a word must score alone to be kept: a tool's name part (10) or keyword (8). */
 const NAMED_TERM_SCORE = 8
@@ -193,13 +258,16 @@ export function rankDeferredTools<
   /** Every tool that scored, best first: `ranked` is its head. */
   all: Array<{ tool: T; score: number; termsMatched: number; termCount: number }>
   strongNames: Set<string>
+  /** The app a bare app-name query asked for, or null. */
+  wholeApp: string | null
 } {
+  // An apostrophe splits too: French elides "de" and "le" ("d'approbation").
   // Tokenized on the separators models actually type (`tickets:reply`,
   // `tickets.reply`, `mail/compose`): whitespace-only splitting scored those
   // queries 0 against everything and dumped the agent into the catalog fallback.
   const terms = query
     .toLowerCase()
-    .split(/[\s,:./]+/)
+    .split(/[\s,:./'’]+/)
     .filter(Boolean)
     .map(foldSearchTerm)
 
@@ -238,5 +306,5 @@ export function rankDeferredTools<
   const strongNames = new Set(
     namesNothing ? [] : strongMatches(ranked, wholeAppQuery).map((s) => s.tool.sdkName),
   )
-  return { ranked, all, strongNames }
+  return { ranked, all, strongNames, wholeApp: wholeAppQuery ? terms[0] : null }
 }

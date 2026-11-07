@@ -45,7 +45,6 @@ import {
 } from "~/modules/shell/attention-groups"
 import { rowLocaleFrom } from "~/modules/shell/attention-row-format"
 import { attentionStore } from "~/modules/shell/attention-store"
-import { setShowPeerRequests, showPeerRequests } from "~/modules/shell/home-action-count"
 import { followAttentionFeed, homeAgents, waitingOnOthers } from "~/modules/shell/home-agents-store"
 import { homeFilter, homeSections, setHomeFilter } from "~/modules/shell/home-filter"
 import type { HomeFilter } from "~/modules/shell/home-sections"
@@ -264,7 +263,7 @@ const HomeAttentionSidebar: Component = () => {
       />
       <Show when={open("homeNeeds")}>
         <Show
-          when={sections().needs.total > 0 || sections().needs.peerCount > 0}
+          when={sections().needs.total > 0 || sections().needs.others.length > 0}
           fallback={
             <p
               data-testid="home-side-needs-empty"
@@ -290,7 +289,7 @@ const HomeAttentionSidebar: Component = () => {
               />
             )}
           </For>
-          <Show when={sections().needs.approvals.length > 0 || sections().needs.peerCount > 0}>
+          <Show when={sections().needs.approvals.length > 0 || sections().needs.others.length > 0}>
             <Row
               testid="home-side-approvals"
               label={t("kernel.homeCardApprovals")}
@@ -315,17 +314,16 @@ const HomeAttentionSidebar: Component = () => {
                 )}
               </For>
             </Show>
-            <Show when={sections().needs.peerCount > 0 || showPeerRequests()}>
+            <Show when={sections().needs.others.length > 0}>
               <Row
                 sub
                 dim
-                testid="home-side-peers"
-                label={
-                  showPeerRequests()
-                    ? t("kernel.homeSidebar.peersHide")
-                    : t("kernel.homeSidebar.peersShow", { count: sections().needs.peerCount })
-                }
-                onClick={() => setShowPeerRequests(!showPeerRequests())}
+                testid="home-side-others"
+                label={t("kernel.homeRouting.othersGroup")}
+                count={sections().needs.others.length}
+                tone="muted"
+                active={filter() === "needs:others"}
+                onClick={() => pick("needs:others")}
               />
             </Show>
           </Show>

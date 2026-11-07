@@ -198,6 +198,8 @@ const READ_ONLY_REFUSED_BRIDGE_METHODS: ReadonlySet<string> = new Set([
   "files_attachToParent",
   "files_reparent",
   "connections_disconnect",
+  "threads_deleteEntityDiscussion",
+  "threads_pruneEntityDiscussion",
   "mcp_createConnection",
   "approval_recordStarted",
   "approval_recordSucceeded",

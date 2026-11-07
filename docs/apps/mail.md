@@ -132,6 +132,8 @@ From a conversation you can also **Convert to ticket**, which moves it into [Tic
 
 An agent's draft can attach files by their id, or a file an earlier step of the same approval request creates (a quote's PDF, for example), cited by that step's reference.
 
+On **Home**, a draft's row says what the check before sending says. A draft held by an automatic reply leaves **Home** until the hold ends; one the check stopped shows why and offers **Dismiss** only, and neither counts in the number on **Home** (see [Approve what agents do](../agents/approvals.md)). An app that declares a `pill` for the kind of record a mail is about names the row with it.
+
 There is one pending reply draft per conversation. A new agent draft replaces your own waiting draft. It is refused when a colleague's draft is already waiting.
 
 If the agent's turn is refused because the server restarts, the mail app sends it again once, after the wait the server asks for (a second, at most five).

@@ -38,6 +38,7 @@ const READ_ONLY: Record<string, string[]> = {
     "teams.list",
     "categories.list",
     "categories.tree", // the settings page's tree read (rows + version)
+    "approval_route_read", // the ticket's assignee, through get, for who an approval is for
     "templates.list",
     "csat.summary",
     "csat.list",
@@ -47,6 +48,7 @@ const READ_ONLY: Record<string, string[]> = {
     "approveFromHome.get",
   ],
   projects: [
+    "approval_route_read", // the task's assignee, through get, for who an approval is for
     "search",
     // Enrols the caller on the task's discussion thread, exactly as opening the task does.
     "get",
@@ -67,7 +69,7 @@ const READ_ONLY: Record<string, string[]> = {
   "mcp-manager": ["list_connections"],
   // items_list is one findMany; external_fetch is a fixed GET to the example API with no
   // caller data in it (2026-09-25).
-  example: ["items_list", "external_fetch"],
+  example: ["items_list", "external_fetch", "item_notes_count", "item_context"], // count: one findMany; item_context: two findMany
   gitlab: [
     "gitlab_list_projects",
     "gitlab_list_commits",

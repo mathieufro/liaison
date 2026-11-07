@@ -59,6 +59,10 @@ const REVIEWED: Record<string, string> = {
     "putTemplateObject checks the cap before this row",
   // A row written by the test harness's seed factory, with no object behind it.
   "seed/factories/files/file-row.ts#*": "test seed data, no org member reaches it",
+  // A client's portal account (user_type external): countSeats counts members only,
+  // so it takes no seat. modules/org/caps.test.ts proves it at a full cap.
+  "modules/users/external-user.ts#createExternalUser":
+    "a portal account, user_type external, counted as no seat",
   // Test seed factories: bare rows with a known id for a test, never a person's
   // or an agent's write (the product's paths are the ones under test).
   "seed/factories/org/rows.ts#seedUserRows": "test seed rows, not a product write",

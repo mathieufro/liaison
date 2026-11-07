@@ -98,7 +98,7 @@ describe("tool_search feeds the run's discovered set", () => {
     expect(frame.discoveredTools.has("sprockets__create")).toBe(false)
   })
 
-  it("catalog fallback (zero-score query) surfaces the catalog but unlocks NOTHING", async () => {
+  it("a zero-score query names the apps and unlocks NOTHING", async () => {
     const frame = freshFrame()
     const res = await runContextStore.run(frame, () =>
       handleToolSearch(
@@ -107,11 +107,9 @@ describe("tool_search feeds the run's discovered set", () => {
       ),
     )
     expect(res.fellBackToCatalog).toBe(true)
-    expect(res.matches.length).toBeGreaterThan(0)
-    // An arbitrary catalog sample is NOT a discovery — auto-loading it pollutes
-    // the run's set and injects unrelated apps' full instruction blocks.
+    expect(res.matches).toEqual([])
+    expect(res.apps?.some((a) => a.name === "sprockets")).toBe(true)
     expect(frame.discoveredTools.size).toBe(0)
-    expect(res.note).toContain("select:")
   })
 
   it("app:tool separator queries resolve — keyword and select forms", async () => {

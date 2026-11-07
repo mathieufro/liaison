@@ -72,9 +72,6 @@ const REVIEWED: Record<string, Disposition> = {
   "modules/assist/transcribe-service.ts": "meters", // dictation finalizeUsage
   "modules/search/message-indexer.ts": "meters", // managed embed batch finalizeUsage (self-hosted Google: no credits, S19)
   "modules/settings/ai-models-admin.ts": "meters", // add-model test call: finalizeUsage on the cell's key
-  "modules/settings/ai-models-routes.ts": {
-    none: "the custom model server test: the org's own server and key (SITE_EXEMPT below)",
-  },
   "modules/agent/credits/unreported-generations.ts": "meters", // GET /generation recovers a stopped step's cost into finalizeUsage
   "modules/agent/credits/model-test-call.ts": { via: ["modules/settings/ai-models-admin.ts"] },
   "modules/agent/media/media-analysis-client.ts": {
@@ -109,6 +106,9 @@ const REVIEWED: Record<string, Disposition> = {
   "modules/agent/providers/scripted-model-provider.ts": {
     none: "the e2e lane's scripted model (LIAISON_MODEL_PROVIDER=scripted): no provider, no spend",
   },
+  "modules/settings/ai-models-routes.ts": {
+    none: "only the custom model server test: the org's own server and key (its one site is marked)",
+  },
   "modules/agent/providers/model-server.ts": {
     none: "an org's own model server (its key, its bill); runs through provider.ts",
   },
@@ -142,7 +142,7 @@ const DELEGATED: Record<string, string> = {
   "modules/agent/runtime/agent-service.ts#runAgentStream":
     "the turn loop: runAgentChatTurn and runSubRun finalize each stream",
   "modules/agent/credits/model-test-call.ts#runModelTestCall":
-    "the test call: addOpenRouterModel finalizes it on the cell's key",
+    "the test call: adding an OpenRouter model finalizes it on the cell's key",
   "modules/agent/media/media-analysis-client.ts#analyzeWithOpenRouter": "returned by planModelCall",
   "modules/agent/media/media-analysis-client.ts#analyzeWithGemini": "returned by planModelCall",
   "modules/agent/media/media-analysis-tool.ts#planModelCall":

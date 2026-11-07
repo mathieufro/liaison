@@ -49,6 +49,8 @@ export { attentionSubscriptions } from "./attention-subscriptions"
 export { actorTypeEnum, auditLog } from "./audit-log"
 export type { AutoApprovePolicy, NewAutoApprovePolicy } from "./auto-approve-policies"
 export { autoApprovePolicies } from "./auto-approve-policies"
+export type { AwayRange, NewAwayRange } from "./away-ranges"
+export { awayRanges } from "./away-ranges"
 export type { CloudRequestOutcomeRow } from "./cloud-request-outcomes"
 export { cloudRequestOutcomes } from "./cloud-request-outcomes"
 export { type ConfigAppliedFieldRow, configAppliedFields } from "./config-applied-fields"
@@ -182,6 +184,8 @@ export {
   type ReceiptOutcome,
 } from "./notification-devices"
 export { oauthAccounts, oauthProviders } from "./oauth"
+export type { NewOrgAppFeature, OrgAppFeature } from "./org-app-features"
+export { orgAppFeatures } from "./org-app-features"
 export { type OrgBillingStateRow, orgBillingState, type StorageEstimate } from "./org-billing-state"
 export {
   type LegalArchiveRow,

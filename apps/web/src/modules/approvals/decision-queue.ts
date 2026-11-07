@@ -4,7 +4,7 @@
  *
  * Approve and Reject wait out an Undo window before they reach the server,
  * like an email client's send: the card hides at once, a decision toast names
- * what was decided ("Approving in 4s · ticket-10889") and offers Undo for five
+ * what was decided ("Approving in 4s · ticket-10889") and offers Undo for eight
  * seconds, and only then is the decision posted. The same toast then says it
  * is being carried out and that it was; the card stays hidden throughout and
  * comes back only when the decision fails. Undo restores the card and sends
@@ -40,7 +40,7 @@ import { postDecision } from "~/modules/approvals/decide-error"
 import { userFromToken } from "~/modules/auth/auth-store"
 import { tNow } from "~/modules/i18n/i18n-context"
 
-export const UNDO_WINDOW_MS = 5_000
+export const UNDO_WINDOW_MS = 8_000
 let undoWindowMs = UNDO_WINDOW_MS
 
 const STORAGE_KEY = "liaison:pendingDecisions.v1"

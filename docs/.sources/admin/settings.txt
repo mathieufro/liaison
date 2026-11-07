@@ -172,3 +172,5 @@ Muted conversations, Unmute, Channels that notify you of every message, Mentions
 On call edited by admins, admins by default -> apps/web/src/modules/settings/notification-settings/OnCallSection.tsx:70 ; apps/api/src/modules/notifications/on-call.ts:25
 Channel on System -> apps/web/src/modules/settings/SystemSettings.tsx:78
 Managed Everything stored (estimate): nightly, warns once per crossing, never blocks, not on self-hosted -> apps/api/src/modules/cloud/storage-estimate.ts ; apps/web/src/modules/settings/OrgUsageSection.tsx
+Profile Away section: dates, next in line, Mark me away, Undo, End early, standing next in line -> apps/web/src/modules/settings/ProfileSettings.tsx:522 ; apps/api/src/modules/users/away.ts:749
+Profile Away: From your calendar, Yes and No questions -> apps/web/src/modules/settings/ProfileSettings.tsx ; apps/api/src/modules/users/away.ts

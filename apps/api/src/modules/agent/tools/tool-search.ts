@@ -78,6 +78,10 @@ interface ToolSearchResult {
   // invisible behind an imperfect query. The agent should enumerate these, not declare the
   // capability absent. (tool-ergonomics — marco-bulk-import-carrier-rate-sheet.)
   fellBackToCatalog?: boolean
+  // With fellBackToCatalog: the apps whose tools this search reads, by name, with
+  // how many tools each has. Nothing is listed as a tool and nothing is loaded,
+  // so a weak model cannot take an unrelated sample tool for an answer.
+  apps?: Array<{ name: string; tools: number }>
   // Present when usable matches were just LOADED into the run's tool set — tells the model
   // (weak ones especially) it can now call them directly instead of re-searching or refusing.
   note?: string
@@ -482,13 +486,31 @@ export async function handleToolSearch(
     // underscore between app and tool missed, and the model searched again.
     const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "")
     const names = query.slice("select:".length).split(",").map(key).filter(Boolean)
+    // A bare tool name two apps both use (`refunds_create`: two shop and
+    // payment apps) loads neither: each moves money in a different system, and a
+    // guess parks an approval against the wrong one. Both are listed, so the
+    // next call names the one meant.
+    const ambiguousNames = names.filter((n) => {
+      if (allDeferred.some((t) => key(t.sdkName) === n)) return false
+      return (
+        new Set(allDeferred.filter((t) => key(t.toolName) === n).map((t) => t.appName)).size > 1
+      )
+    })
+    const ambiguous = allDeferred
+      .filter((t) => ambiguousNames.includes(key(t.toolName)))
+      .map(toMatch)
     const matches = allDeferred.filter((t) =>
-      names.some((n) => key(t.toolName) === n || key(t.sdkName) === n),
+      names.some(
+        (n) => !ambiguousNames.includes(n) && (key(t.toolName) === n || key(t.sdkName) === n),
+      ),
     )
     const selected = matches.map(toMatch)
     // A name that is no deferred tool may be one the turn already has (a core
     // kernel tool such as memory_view): say so, so it is called, not searched.
-    const matchedKeys = new Set(matches.flatMap((t) => [key(t.toolName), key(t.sdkName)]))
+    const matchedKeys = new Set([
+      ...matches.flatMap((t) => [key(t.toolName), key(t.sdkName)]),
+      ...ambiguousNames,
+    ])
     const deferredSdkNames = new Set(allDeferred.map((t) => t.sdkName))
     const hotLoaded: string[] = []
     let unresolved = 0
@@ -500,6 +522,7 @@ export async function handleToolSearch(
     }
     // Every name it asks for is held already: nothing to load, nothing counted.
     const nothingNew =
+      ambiguous.length === 0 &&
       unresolved === 0 &&
       selected.length + hotLoaded.length > 0 &&
       selected.every((m) => !m.locked && !m.routineOnly) &&
@@ -516,9 +539,13 @@ export async function handleToolSearch(
     countSearch()
     const unlockNote = unlockMatches(selected)
     const loadedNote = hotLoaded.length > 0 ? alreadyLoadedNote(hotLoaded) : undefined
-    const note = [unlockNote, loadedNote].filter(Boolean).join(" ")
+    const ambiguousNote =
+      ambiguous.length > 0
+        ? `Not loaded: ${ambiguousNames.map((n) => `"${n}"`).join(", ")} names a tool in more than one app (${ambiguous.map((m) => m.name).join(", ")}). Load the one you mean by its full name, for example "select:${ambiguous[0]?.name}".`
+        : undefined
+    const note = [unlockNote, loadedNote, ambiguousNote].filter(Boolean).join(" ")
     return {
-      matches: selected,
+      matches: [...selected, ...ambiguous],
       query,
       totalDeferredTools: allDeferred.length,
       ...(note ? { note } : {}),
@@ -526,7 +553,12 @@ export async function handleToolSearch(
   }
 
   // Keyword search: score by name, keywords and description (tool-rank.ts).
-  const { ranked, strongNames: strong } = rankDeferredTools(allDeferred, query, {
+  const {
+    ranked,
+    all,
+    strongNames: strong,
+    wholeApp,
+  } = rankDeferredTools(allDeferred, query, {
     cap,
     appNames: orgAppNames(ctx.orgId),
   })
@@ -545,37 +577,41 @@ export async function handleToolSearch(
   if (overLimit) return overLimitAnswer()
   countSearch()
 
-  // NO-EMPTY-WHEN-TOOLS-EXIST fallback (tool-ergonomics — marco-bulk-import-carrier-rate-sheet).
-  // A keyword query that scores 0 against every deferred tool would return `matches:[]` while
-  // `totalDeferredTools>0` — an INVISIBLE catalog: the agent reasonably concludes "the capability
-  // doesn't exist" and refuses, even though a usable tool is sitting right there (e.g. it searched
-  // "packaging"/"template"/"shipment" — none a `pack_upsert` name-part — and never saw the one
-  // deferred Boxtal tool). When the scored search finds nothing but deferred tools DO exist, surface
-  // the deferred catalog itself (available tools first, capped) so a present tool is never hidden
-  // behind an imperfect query. The agent still sees totalDeferredTools, and `fellBackToCatalog` flags
-  // that these are the available tools rather than keyword hits, so it enumerates instead of refusing.
+  // A query nothing scores on answers with the apps, by name, never with tools.
+  // It used to list an arbitrary sample of five deferred tools so the catalog was
+  // never invisible, and a weak model then called one of them as if it were the
+  // answer. The apps' names keep the catalog visible: searching one lists its
+  // tools.
   if (matches.length === 0 && allDeferred.length > 0) {
-    const fallback = [...allDeferred]
-      .sort((a, b) => (a.locked ? 1 : 0) - (b.locked ? 1 : 0))
-      .slice(0, cap)
-      .map(toMatch)
-    // Deliberately NOT unlocked: these are an arbitrary catalog sample, not
-    // keyword hits — auto-loading them pollutes the run's discovered set (and
-    // injects unrelated apps' full instruction blocks). The agent picks the
-    // right one and loads it explicitly.
+    const counts = new Map<string, number>()
+    for (const t of allDeferred) counts.set(t.appName, (counts.get(t.appName) ?? 0) + 1)
+    const apps = [...counts]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, tools]) => ({ name, tools }))
     return {
-      matches: fallback,
+      matches: [],
       query,
       totalDeferredTools: allDeferred.length,
       fellBackToCatalog: true,
-      note: `No tool matched "${query}". The matches shown are a sample of the deferred catalog (NOT loaded). Search again with different keywords, or load a specific tool with query "select:<name>".`,
+      apps,
+      note: `No tool matched "${query}", so nothing was loaded. Apps you can search: ${apps.map((a) => `${a.name} (${a.tools})`).join(", ")}. Search again with other words for what you want to do, or with an app's name to list its tools.`,
     }
   }
 
-  const note = unlockMatches(
-    strongHits,
-    matches.filter((m) => !strong.has(m.name) && !m.locked && !m.routineOnly),
-  )
+  const ofApp = (list: typeof all) =>
+    list.filter((s) => s.tool.appName.toLowerCase() === wholeApp).length
+  const leftOut = wholeApp ? ofApp(all) - ofApp(ranked) : 0
+  const note = [
+    unlockMatches(
+      strongHits,
+      matches.filter((m) => !strong.has(m.name) && !m.locked && !m.routineOnly),
+    ),
+    leftOut > 0
+      ? `${leftOut} more ${wholeApp} tools were left out of this list. Search with ${wholeApp} and a word for what you want to do to reach them.`
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ")
   return {
     matches,
     query,

@@ -183,3 +183,5 @@ Transparent mailbox read server-side, routines never wait -> apps/api/src/module
 Waiting run row: Private mailbox pill, name waits for you, Details facts -> apps/web/src/modules/agent/RoutineMailboxWaitRow.tsx:335
 Run now: the row leaves the list, a toast says it is running or starts after the current run -> apps/web/src/modules/agent/RoutineMailboxWaitRow.tsx:235
 A task a routine run creates says Created by Routine <name> -> apps/api/src/modules/agent/routines/routine-report.ts:86 ; apps/api/src/modules/apps/sandbox/bridge/projects.ts:76
+Today's brief reads the caller's own morning-brief routine -> apps/api/src/modules/home/brief-route.ts:28-38
+No brief set up offers Set up -> packages/shared/src/i18n/locales/en/kernel.json:6486

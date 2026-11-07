@@ -82,7 +82,7 @@
       }
     ]
   },
-  "version": "1.10.2",
+  "version": "1.10.5",
   "description": "Projects + tasks (Phase 8)",
   "license": "FSL-1.1-ALv2",
   "listing": {
@@ -402,7 +402,25 @@
       }
     }
   },
+  "approvalRoute": { "task": "approval_route_read" },
   "tools": {
+    "approval_route_read": {
+      "description": "Who a pending approval about a task is for: its assignee, as personId (null when nobody holds it). Read by the kernel when an approval is proposed.",
+      "readOnly": true,
+      "agentVisible": false,
+      "requiredScopes": ["projects:tasks:read"],
+      "readsFromTable": "app_projects.tasks",
+      "trustBoundary": "user",
+      "handler": "approvalRouteRead",
+      "params": {
+        "type": "object",
+        "properties": {
+          "entityType": { "type": "string", "description": "The linked record's type." },
+          "entityId": { "type": "string", "description": "The linked record's id." }
+        },
+        "required": ["entityType", "entityId"]
+      }
+    },
     "search": {
       "description": "Search projects and tasks by text. Returns matching projects (with their ids) and tasks. A sales/dealer PIPELINE, a DEALS board, a roadmap, or any named tracking BOARD is modeled here as a project (e.g. a 'dealer-deals pipeline' is a projects board with one task per deal/stage) — so when asked for the state of a pipeline / deal board / named deals, search HERE for that project by name and read its tasks via tasks_byProject; this is the dealer-deals pipeline, NOT Shopify draft orders. Task hits carry `labels`: the task's effective value per label group (own, or inherited from the nearest parent, with `inherited` and `inheritedFromKey`).",
       "searchKeywords": ["tâche", "tâches", "task", "tasks", "chercher", "rechercher", "trouver", "retrouver", "find"],
@@ -420,6 +438,7 @@
           },
           "limit": {
             "type": "number",
+            "maximum": 200,
             "description": "Maximum number of results (default server-side; with involvedWithinDays default 50, max 200)."
           },
           "involvedWithinDays": {
@@ -2308,7 +2327,8 @@
   "views": {
     "attentionItems": {
       "handler": "computeAttentionItems",
-      "scope": "projects:tasks:read"
+      "scope": "projects:tasks:read",
+      "passesOn": true
     },
     "tabTypes": {
       "home": {
@@ -2343,7 +2363,7 @@
       "icon": "ProjectsIcon",
       "label": "Projects",
       "labelKey": "kernel.nav.projects",
-      "order": 12,
+      "order": 14,
       "tabAction": {
         "type": "home",
         "entityId": "projects-home",
@@ -2496,5 +2516,9 @@
       "kind": "playbook",
       "enabledByDefault": false
     }
+  },
+  "attention": {
+    "groupLabel": { "label": "Tasks", "labelKey": "kernel.homeGroupTasks" },
+    "translations": []
   }
 }

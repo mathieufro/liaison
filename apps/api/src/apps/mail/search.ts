@@ -130,6 +130,8 @@ export interface MailConversationSearchRow {
   is_starred: boolean
   last_message_at: string | null
   message_count: number | null
+  /** The newest message the other side sent: our own outbound never moves it. */
+  last_inbound_at: string | null
 }
 
 export interface MailConversationSearchResult {
@@ -323,7 +325,7 @@ async function runPageAndCount(
                p.account_id, ${A}.email_address AS account_email,
                p.contact_id, p.assigned_to, p.status,
                p.is_read, p.is_starred, p.last_message_at, p.message_count,
-               p.__total
+               li.last_inbound_at, p.__total
         FROM (
           SELECT ${C}.*, COUNT(*) OVER()::int AS __total
           FROM ${C}
@@ -338,6 +340,10 @@ async function runPageAndCount(
           ORDER BY ${M}.sent_at DESC NULLS LAST
           LIMIT 1
         ) lm ON true
+        LEFT JOIN LATERAL (
+          SELECT max(${M}.sent_at) AS last_inbound_at FROM ${M}
+          WHERE ${M}.conversation_id = p.id AND ${M}.direction = 'inbound'
+        ) li ON true
         ORDER BY p.last_message_at DESC NULLS LAST, p.id DESC
       `,
     )

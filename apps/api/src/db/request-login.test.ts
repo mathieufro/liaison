@@ -47,7 +47,7 @@ const ELEVATED_ROLES = [
 ]
 
 describe("the request login", () => {
-  test("is liaison_request, a member of liaison_rls and of nothing else", async () => {
+  test("liaison_request's memberships are exactly liaison_rls and liaison_portal", async () => {
     const [who] = await inRequestTx(async (tx) =>
       extractRows<{ login: string; role: string; memberships: string[] }>(
         await tx.execute(drizzleSql`
@@ -61,8 +61,22 @@ describe("the request login", () => {
     expect(who).toEqual({
       login: "liaison_request",
       role: "liaison_rls",
-      memberships: ["liaison_rls"],
+      // liaison_portal holds less than liaison_rls, and withPortalContext steps
+      // into it on this login. Nothing else may ever join this list.
+      memberships: ["liaison_portal", "liaison_rls"],
     })
+  })
+
+  test("liaison_portal is a member of nothing", async () => {
+    const rows = await inRequestTx(async (tx) =>
+      extractRows<{ rolname: string }>(
+        await tx.execute(drizzleSql`
+          SELECT r.rolname::text AS rolname FROM pg_roles r
+           WHERE r.rolname <> 'liaison_portal'
+             AND pg_has_role('liaison_portal', r.oid, 'MEMBER')`),
+      ),
+    )
+    expect(rows).toEqual([])
   })
 
   test("reaches no superuser, BYPASSRLS or server-file role", async () => {

@@ -17,10 +17,12 @@
 // sync_log MUST set `calaccess` explicitly to the owning account's id **as a string** (not
 // omitted, not passed as uuid) — it is the sole access-control column those tables rely on.
 
+import { applyAwayFromCalendar } from "~/apps/calendar/away-from-calendar"
 import { conferenceLinkOf } from "~/apps/calendar/tools"
 import type { RlsClient } from "~/db"
 import { schemaRef } from "~/db/schema-ref"
 import { appsLogger as log } from "~/lib/logger"
+import { deleteCalendarAwayRanges } from "~/modules/users/away"
 
 const CALENDAR_SCHEMA = () => schemaRef("app_calendar")
 const KERNEL_SCHEMA = () => schemaRef("kernel")
@@ -270,6 +272,13 @@ async function purgeCalendarAccount(
 ): Promise<void> {
   const { sql } = await import("drizzle-orm")
   const schema = sql.raw(CALENDAR_SCHEMA())
+  // Read before the delete: the away days these calendars made go once the account is purged.
+  const calendarRows = (await db.execute(sql`
+    SELECT id FROM ${schema}.calendars WHERE org_id = ${orgId}::uuid AND account_id = ${accountId}::uuid
+  `)) as unknown as { rows?: Array<{ id: string }> } | Array<{ id: string }>
+  const ids = (Array.isArray(calendarRows) ? calendarRows : (calendarRows.rows ?? [])).map(
+    (r) => r.id,
+  )
   await db.transaction(async (tx) => {
     const ofAccount = sql`calendar_id IN (
       SELECT id FROM ${schema}.calendars WHERE org_id = ${orgId}::uuid AND account_id = ${accountId}::uuid
@@ -300,6 +309,8 @@ async function purgeCalendarAccount(
       SET sync_status = 'disconnected', disconnected_at = COALESCE(disconnected_at, now())
       WHERE org_id = ${orgId}::uuid AND id = ${accountId}::uuid
     `)
+    // The away days its calendars made go with it, on this transaction; what the person said stays.
+    await deleteCalendarAwayRanges(tx, orgId, ids)
   })
 }
 
@@ -977,6 +988,9 @@ export interface GoogleEventItem {
   attendees?: Array<{ email: string; [field: string]: unknown }>
   recurrence?: string[]
   organizer?: { email?: string; self?: boolean }
+  creator?: { email?: string; self?: boolean }
+  /** Google's event type: default, outOfOffice, focusTime, workingLocation, birthday, fromGmail. */
+  eventType?: string
   guestsCanModify?: boolean
   recurringEventId?: string
   originalStartTime?: { date?: string; dateTime?: string; timeZone?: string }
@@ -1065,6 +1079,7 @@ function mapGoogleItemToRow(item: GoogleEventItem): {
   googleUpdatedAt: string | null
   organizerSelf: boolean | null
   guestsCanModify: boolean | null
+  eventType: string | null
 } {
   const allDay = Boolean(item.start?.date && !item.start?.dateTime)
   return {
@@ -1086,10 +1101,11 @@ function mapGoogleItemToRow(item: GoogleEventItem): {
     // default), so an absent field means false. No organizer at all: unknown (null).
     organizerSelf: item.organizer ? item.organizer.self === true : null,
     guestsCanModify: item.guestsCanModify === true,
+    eventType: typeof item.eventType === "string" ? item.eventType : null,
   }
 }
 
-/** Rows per upsert statement: 21 bound parameters each, far under the 65535 ceiling. */
+/** Rows per upsert statement: 22 bound parameters each, far under the 65535 ceiling. */
 const EVENT_UPSERT_CHUNK = 500
 
 /**
@@ -1129,14 +1145,14 @@ async function upsertEventsFromGoogle(
        ${JSON.stringify(mapped.originalStartTime)}::jsonb, ${JSON.stringify(mapped.extendedProps)}::jsonb,
        ${mapped.hangoutLink}, ${mapped.googleUpdatedAt}::timestamptz,
        COALESCE(${mapped.googleUpdatedAt}::timestamptz, now()), ${calaccess},
-       ${mapped.organizerSelf}::boolean, ${mapped.guestsCanModify}::boolean)`
+       ${mapped.organizerSelf}::boolean, ${mapped.guestsCanModify}::boolean, ${mapped.eventType})`
     })
     await db.execute(sql`
       INSERT INTO ${sql.raw(schema)}.events
         (id, org_id, calendar_id, google_event_id, etag, title, description, location, start, "end",
          all_day, status, attendees, recurrence, recurring_event_id, original_start_time,
          extended_props, hangout_link, google_updated_at, updated_at, calaccess,
-         organizer_self, guests_can_modify)
+         organizer_self, guests_can_modify, event_type)
       VALUES ${sql.join(tuples, sql.raw(", "))}
       ON CONFLICT (org_id, calendar_id, google_event_id) WHERE google_event_id IS NOT NULL DO UPDATE SET
         etag = EXCLUDED.etag, title = EXCLUDED.title, description = EXCLUDED.description,
@@ -1148,6 +1164,7 @@ async function upsertEventsFromGoogle(
         google_updated_at = EXCLUDED.google_updated_at,
         updated_at = COALESCE(EXCLUDED.google_updated_at, now()), pending_push = 'none',
         organizer_self = EXCLUDED.organizer_self, guests_can_modify = EXCLUDED.guests_can_modify,
+        event_type = EXCLUDED.event_type,
         attendees_base = NULL, push_error = NULL, push_notice = NULL, conference_request = NULL
       -- A local delete waiting to reach Google is not undone by the import.
       WHERE ${sql.raw(schema)}.events.deleted_at IS NULL
@@ -1315,6 +1332,8 @@ export async function applyInitialSyncPages(
       calendarId,
       await gateInboundItems(db, orgId, calendarId, page.items ?? [], calaccess),
     )
+    // What the person's own calendar says about their away days (only their own primary).
+    await applyAwayFromCalendar(db, orgId, calendarId, page.items ?? [])
     if (page.nextSyncToken) syncToken = page.nextSyncToken
   }
   // The sandbox streams pages one call at a time (accumulating a large calendar's pages in
@@ -1407,6 +1426,11 @@ export async function applyIncrementalSyncPages(
     const live = items.filter((item) => item.status !== "cancelled")
     const upserts = await gateInboundItems(db, orgId, calendarId, live, calendarCalaccess)
     await upsertEventsFromGoogle(db, orgId, calendarId, upserts)
+    // Cancelled and changed events alike: a cancelled one deletes its away row.
+    await applyAwayFromCalendar(db, orgId, calendarId, [
+      ...items.filter((item) => item.status === "cancelled"),
+      ...upserts.map((u) => u.item),
+    ])
     if (page.nextSyncToken) syncToken = page.nextSyncToken
   }
   // Same streaming rule as applyInitialSyncPages: pages arrive per call, only the final one

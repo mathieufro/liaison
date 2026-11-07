@@ -89,6 +89,7 @@ See the [scope reference](../reference/scopes.md).
 | `contacts_read` | Read a contact with recent mail and timeline | No |
 | `contacts_write` | Create or update a contact | Yes, unless an auto-approve policy covers it |
 | `threads_reply` with `contactId` | Post in a contact's discussion, as the agent | No |
+| `threads_create` with `createdFrom` naming the contact | Post in the contact's discussion, as the agent: the same conversation, never a second one | No |
 | `contacts_export` | Export the contacts you can see to a CSV file | Yes |
 | `contacts_find_duplicates` | Find likely duplicates across the whole list | No |
 | `contacts_merge` | Merge two duplicate contacts | Yes |

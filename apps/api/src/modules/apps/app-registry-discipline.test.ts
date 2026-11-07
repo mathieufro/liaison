@@ -230,6 +230,15 @@ const KNOWN_LITERAL_USES: LiteralPin[] = [
     file: "modules/agent/tools/setup-state-tool.ts",
     branch: '|| app === "google-drive") {',
   }, // Drive's client is a Google client too
+  // Entity discussions: a task's discussion is the task's own comment thread, kept by the
+  // projects app, so it is never a second thread (a contact's is the kernel's).
+  {
+    file: "modules/threads/entity-discussion.ts",
+    branch: 'ref.app === "projects" && ref.entityType === "task"',
+  },
+  // The tool bench reads the instruction text of real apps; the example app is the
+  // template every new app copies, not a catalog the model is served.
+  { file: "modules/agent/tools/tool-bench/bench.ts", branch: 'if (app === "example") continue' },
   // connect_link_send: a mail connection asks the person which mailbox kind they want.
   { file: "modules/agent/tools/connection-tools.ts", branch: '${params.app === "mail" ?' },
   // open-cards: the Google Calendar app's cards open under the calendar card kind.

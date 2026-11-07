@@ -1,7 +1,7 @@
 {
   "name": "ads",
   "displayName": "Ads",
-  "version": "0.1.56",
+  "version": "0.1.58",
   "iconName": "bar-chart",
   "packageFormat": 1,
   "license": "FSL-1.1-ALv2",
@@ -739,8 +739,9 @@
       }
     },
     "counts": {
-      "description": "Return active/paused/total campaign counts for the dashboard sidebar. Tallied from effective_status over campaigns_list. Cached ~30s per ad account to avoid rate-limit pressure on sidebar mounts.",
       "agentVisible": false,
+      "useInstead": "campaigns_list",
+      "description": "Return active/paused/total campaign counts for the dashboard sidebar. Tallied from effective_status over campaigns_list. Cached ~30s per ad account to avoid rate-limit pressure on sidebar mounts.",
       "readOnly": true,
       "requiredScopes": ["ads:campaigns:read"],
       "handler": "counts",
@@ -750,6 +751,8 @@
       }
     },
     "pending_approvals_list": {
+      "agentVisible": false,
+      "useInstead": "kernel__approvals_list",
       "description": "List the caller's pending approvals raised by ads-app tools (pause, google_pause, budget changes, audience uploads), each with its summary, requester, and creation time, plus a count. READ-ONLY: you CANNOT approve, edit, or deny on the user's behalf, deciding is a human action taken in the approvals UI. When you present them, summarize each and tell the user they must approve or deny each one themselves. For a full cross-app queue, use the kernel approvals_list instead.",
       "readOnly": true,
       "requiredScopes": ["ads:campaigns:read"],

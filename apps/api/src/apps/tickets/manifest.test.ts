@@ -17,6 +17,13 @@ const guideText = (m: { agentInstructions?: unknown }): string => {
 }
 
 describe("tickets manifest", () => {
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    expect(ticketsManifest.attention.groupLabel).toEqual({
+      label: "Support",
+      labelKey: "kernel.homeGroupSupport",
+    })
+  })
+
   it("gives the email sending tools a send sized budget, not the 5 s production default", () => {
     // A reply with a PDF (fetch from storage, MIME build, SMTP round trip)
     // routinely passes 5 s. Under the default the sandbox reported "App
@@ -64,7 +71,7 @@ describe("tickets manifest", () => {
     }
     expect(result.success).toBe(true)
     expect(ticketsManifest.views.activityBar).toMatchObject({
-      order: 11,
+      order: 12,
       tabAction: { type: "inbox" },
     })
     expect(ticketsManifest.views.tabTypes.inbox).toMatchObject({
@@ -163,12 +170,16 @@ describe("tickets manifest", () => {
     const tools = ticketsManifest.tools as Record<string, { taintSource?: boolean }>
     expect(tools.search.taintSource).toBe(true)
     expect(tools.get.taintSource).toBe(true)
+    // The aggregates and per-contact list name their tickets by subject, which
+    // the customer wrote, so they mark the thread as the search does.
+    for (const id of ["backlogHealth", "slaReport", "listForContact", "csat.list"]) {
+      expect(tools[id]?.taintSource, `${id} must declare taintSource`).toBe(true)
+    }
     for (const id of [
       "reply",
       "create",
       "addNote",
       "setStatus",
-      "backlogHealth",
       // teams.list returns operator-authored routing labels and counts, never
       // customer-authored content — tainting a thread for reading it would
       // contain the agent for no gain.

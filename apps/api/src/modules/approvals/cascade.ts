@@ -2,7 +2,7 @@
 
 import { findRefTokens, resolveRefTokens } from "@liaison/shared"
 import { sql as drizzleSql } from "drizzle-orm"
-import { extractRows } from "~/db"
+import { extractRows, type PrivilegedDb } from "~/db"
 import { withPrivilegedDb } from "~/db/privileged"
 import type { UserContext } from "~/db/rls"
 import { schemaRef } from "~/db/schema-ref"
@@ -50,12 +50,86 @@ import {
   runApprovedToolHandler,
   softErrorOf,
 } from "~/modules/apps/run-approved-handler"
+import { writeAuditLog } from "~/modules/audit/service"
+import {
+  evaluateSendGuard,
+  isPinnedSendGuard,
+  personZone,
+  recipientsOf,
+} from "~/modules/mail/send-guard"
 import {
   isManagedApprovalPayload,
   openManagedApprovalPayload,
 } from "~/modules/mailbox-crypto/managed-approval"
 
 const K = drizzleSql.raw(schemaRef("kernel"))
+
+/** The one override a person has over the send check: send although the other side is away. */
+export type SendGuardOverride = "auto_reply"
+
+const GUARDED_SENDS = new Set(["mail:compose", "mail:reply"])
+
+/**
+ * "Send now" on a held mail, under the claim's row lock and after the payload hash was judged.
+ * The state is read again here, so a reply that came in since the card was drawn wins over the
+ * click. Only a hold can be overridden; the mark is written into the payload the handler runs
+ * and the audit row names who chose it.
+ */
+async function lockedSendGuardOverride(
+  tx: PrivilegedDb,
+  args: {
+    orgId: string
+    requestId: string
+    toolName: string
+    payload: unknown
+    requestedBy: string
+    deciderId: string
+    override: SendGuardOverride
+  },
+): Promise<{ held: true } | { held: false; state: string }> {
+  const payload = normalizeApprovalPayload(args.payload) as Record<string, unknown>
+  const guard = payload.sendGuard
+  if (!GUARDED_SENDS.has(args.toolName) || !isPinnedSendGuard(guard)) {
+    return { held: false, state: "not_guarded" }
+  }
+  // Every read runs on the claim's own transaction: a second privileged slot taken while this
+  // one holds the row lock is the shape that deadlocks a full pool.
+  const verdict = await evaluateSendGuard({
+    ...(await personZone(args.orgId, args.requestedBy, tx)),
+    orgId: args.orgId,
+    db: tx,
+    guard,
+    recipients: recipientsOf(payload.to, payload.cc, payload.bcc),
+    at: "card",
+  })
+  if (verdict.state !== "held") return { held: false, state: verdict.state }
+  const mark = { by: args.deciderId, at: new Date().toISOString() }
+  await tx.execute(drizzleSql`
+    UPDATE ${K}.approval_requests
+       SET current_payload = jsonb_set(current_payload, '{sendGuard,ignoreAutoReply}', ${JSON.stringify(mark)}::jsonb, true)
+     WHERE id = ${args.requestId}`)
+  await writeAuditLog(
+    tx,
+    {
+      orgId: args.orgId,
+      actorId: args.deciderId,
+      actorType: "user",
+      app: "mail",
+      entityType: "approval_request",
+      entityId: args.requestId,
+      action: "send_guard.override",
+      metadata: {
+        override: args.override,
+        toolName: args.toolName,
+        heldBy: verdict.who ?? null,
+        holdUntil: verdict.holdUntil ?? null,
+        at: mark.at,
+      },
+    },
+    { required: true },
+  )
+  return { held: true }
+}
 
 export type StepOutcome =
   | { kind: "succeeded" }
@@ -66,6 +140,8 @@ export type StepOutcome =
   | { kind: "draining" }
   /** The payload changed after the decider's card was rendered: nothing was claimed or run. */
   | { kind: "payload_changed" }
+  /** "Send now" on a mail that is no longer held (a reply came in, the hold ended): nothing ran. */
+  | { kind: "send_guard_not_held"; state: string }
 
 /** Locks `row` from `sourceStatus` → approving, runs its handler, then
  *  terminalizes → approved (or reports awaiting_output / failed). Does NOT
@@ -84,6 +160,12 @@ export async function executeApprovedStep(args: {
    *  succeeds only if the stored payload still hashes to it, judged under the row lock the claim
    *  itself takes, so an edit cannot slip in between the check and the claim. */
   expectedPayloadHash?: string
+  /** Whose decision this was when the decider is not the person the row is for: read by the
+   *  claim itself on the row it has locked and stored by the same update, so it names whose the
+   *  row was when this claim won. */
+  decidedFor?: ((tx: PrivilegedDb) => Promise<Record<string, unknown> | null>) | undefined
+  /** "Send now" on a held mail: judged and written under the claim's row lock, after the hash. */
+  sendGuardOverride?: SendGuardOverride
 }): Promise<StepOutcome> {
   // Step 0: REFUSE BEFORE CLAIMING while the process is shutting down.
   //
@@ -100,20 +182,50 @@ export async function executeApprovedStep(args: {
 
   // Step 1: optimistic lock sourceStatus → approving.
   let payloadChanged = false
+  let notHeld: string | null = null
   const claimed = await withPrivilegedDb(args.orgId, "cascade-claim", async (tx) => {
-    if (args.expectedPayloadHash !== undefined) {
-      const [locked] = extractRows<{ tool_name: string; current_payload: unknown; status: string }>(
+    let decidedFor: Record<string, unknown> | null = null
+    if (
+      args.expectedPayloadHash !== undefined ||
+      args.sendGuardOverride !== undefined ||
+      args.decidedFor !== undefined
+    ) {
+      const [locked] = extractRows<{
+        tool_name: string
+        current_payload: unknown
+        status: string
+        requested_by: string
+      }>(
         await tx.execute(
-          drizzleSql`SELECT tool_name, current_payload, status FROM ${K}.approval_requests WHERE id = ${args.approvalId} FOR UPDATE`,
+          drizzleSql`SELECT tool_name, current_payload, status, requested_by FROM ${K}.approval_requests WHERE id = ${args.approvalId} FOR UPDATE`,
         ),
       )
-      if (
-        locked &&
-        locked.status === args.sourceStatus &&
-        approvalPayloadHash(locked.tool_name, locked.current_payload) !== args.expectedPayloadHash
-      ) {
-        payloadChanged = true
-        return undefined
+      if (locked && locked.status === args.sourceStatus) {
+        // The hash is judged on the payload the decider saw, so it comes first: the override's
+        // own patch below changes the payload, and judged after it every real card would refuse.
+        if (
+          args.expectedPayloadHash !== undefined &&
+          approvalPayloadHash(locked.tool_name, locked.current_payload) !== args.expectedPayloadHash
+        ) {
+          payloadChanged = true
+          return undefined
+        }
+        if (args.sendGuardOverride !== undefined) {
+          const override = await lockedSendGuardOverride(tx, {
+            orgId: args.orgId,
+            requestId: args.approvalId,
+            toolName: locked.tool_name,
+            payload: locked.current_payload,
+            requestedBy: locked.requested_by,
+            deciderId: args.deciderId,
+            override: args.sendGuardOverride,
+          })
+          if (!override.held) {
+            notHeld = override.state
+            return undefined
+          }
+        }
+        if (args.decidedFor) decidedFor = await args.decidedFor(tx)
       }
     }
     return lockedUpdateApproval<{
@@ -133,11 +245,17 @@ export async function executeApprovedStep(args: {
     }>(tx, {
       requestId: args.approvalId,
       from: args.sourceStatus,
-      set: drizzleSql`status = 'approving', decided_by = ${args.deciderId}, decided_at = now(), approving_started_at = now(), metadata = COALESCE(metadata, '{}'::jsonb) - 'reaperFlaggedAt'`,
+      // Any earlier claim's decided-for goes with it: only this decider's is kept.
+      set: drizzleSql`status = 'approving', decided_by = ${args.deciderId}, decided_at = now(), approving_started_at = now(), metadata = (COALESCE(metadata, '{}'::jsonb) - 'reaperFlaggedAt' - 'decidedFor')${
+        decidedFor
+          ? drizzleSql` || jsonb_build_object('decidedFor', ${JSON.stringify(decidedFor)}::jsonb)`
+          : drizzleSql``
+      }`,
       returning: drizzleSql`id, current_payload, originating_thread_id, thread_id, tool_name, requested_by, metadata, proposing_turn_scopes, agent_id`,
     })
   })
   if (payloadChanged) return { kind: "payload_changed" }
+  if (notHeld !== null) return { kind: "send_guard_not_held", state: notHeld }
   if (!claimed) {
     // Lost the optimistic claim to a concurrent caller — read the current status
     // so the caller can decide (head: AlreadyDecidedError; cascade: no-op).
@@ -545,6 +663,10 @@ export async function cascadeDeferredDependents(args: {
     } else if (outcome.kind === "payload_changed") {
       // Unreachable: a dependent is claimed without an expected hash. Fail closed if it ever is.
       await failBundle(args.orgId, dep.id, "step payload changed — sequence cannot continue")
+      return
+    } else if (outcome.kind === "send_guard_not_held") {
+      // Unreachable: a dependent is claimed without the send-now override. Fail closed if it ever is.
+      await failBundle(args.orgId, dep.id, "send check no longer holds — sequence cannot continue")
       return
     } else {
       log.error({ depId: dep.id, err: outcome.error }, "Bundle step failed — cancelling remainder")

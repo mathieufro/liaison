@@ -175,3 +175,5 @@ locked mailbox refused plainly -> apps/web/src/modules/mailbox/agent-plaintext-r
 25 MB cap -> apps/api/src/modules/agent/mailbox-plaintext/answer-limits.ts:8
 org IMAP mailbox polled on schedule with nobody online; a personal one waits -> apps/api/src/apps/mail/handlers.ts:4886
 mailbox address matches its row in any case; another address is another mailbox -> apps/api/src/modules/apps/connections/service.ts:1394
+A held draft leaves Home and a stopped one is uncounted -> apps/api/src/modules/approvals/attention.ts:635
+Provider pill on a mail row -> apps/api/src/modules/mail/send-guard.ts:395

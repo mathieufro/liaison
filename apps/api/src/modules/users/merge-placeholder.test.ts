@@ -312,6 +312,53 @@ describe("merging a placeholder into the real person", () => {
   })
 })
 
+describe("merging a placeholder named on approvals, away records and feature changes", () => {
+  it("merging a placeholder repoints route person, setter, changer and both next in line", async () => {
+    const ph = await placeholder("away")
+    const room = await thread(admin.userId)
+    const [req] = await sql<Array<{ id: string }>>`
+      INSERT INTO kernel.approval_requests (org_id, handle, thread_id, originating_thread_id,
+                                            tool_name, tool_params, current_payload,
+                                            requested_by, route_person_id, status, expires_at)
+      VALUES (${orgId}, ${`ap-${crypto.randomUUID().slice(0, 8)}`}, ${room}, ${room},
+              'kernel:x', '{}'::jsonb, '{}'::jsonb, ${admin.userId}, ${ph}, 'denied',
+              now() + interval '1 day')
+      RETURNING id`
+    // Someone else's away record names the placeholder twice; its own is its own.
+    const [theirs] = await sql<Array<{ id: string }>>`
+      INSERT INTO kernel.away_ranges (org_id, user_id, starts_on, ends_on, next_in_line_id, source, set_by)
+      VALUES (${orgId}, ${admin.userId}, '2026-12-01', '2026-12-05', ${ph}, 'said', ${ph})
+      RETURNING id`
+    await sql`INSERT INTO kernel.away_ranges (org_id, user_id, starts_on, ends_on, source)
+              VALUES (${orgId}, ${ph}, '2026-12-01', '2026-12-05', 'said')`
+    await sql`INSERT INTO kernel.user_preferences (user_id, next_in_line_id)
+              VALUES (${admin.userId}, ${ph})
+              ON CONFLICT (user_id) DO UPDATE SET next_in_line_id = ${ph}`
+    const feature = `feature-${crypto.randomUUID().slice(0, 8)}`
+    await sql`INSERT INTO kernel.org_app_features (org_id, app_name, feature, enabled, changed_by, changed_at)
+              VALUES (${orgId}, 'projects', ${feature}, true, ${ph}, now())`
+
+    const res = await post(admin.bearer, ph, { targetUserId: realId })
+    expect(res.status).toBe(200)
+
+    const [route] =
+      await sql`SELECT route_person_id FROM kernel.approval_requests WHERE id = ${req!.id}`
+    expect(route?.route_person_id).toBe(realId)
+    const [away] =
+      await sql`SELECT user_id, next_in_line_id, set_by FROM kernel.away_ranges WHERE id = ${theirs!.id}`
+    expect(away).toEqual({ user_id: admin.userId, next_in_line_id: realId, set_by: realId })
+    const [prefs] =
+      await sql`SELECT next_in_line_id FROM kernel.user_preferences WHERE user_id = ${admin.userId}`
+    expect(prefs?.next_in_line_id).toBe(realId)
+    const [changed] = await sql`SELECT changed_by FROM kernel.org_app_features
+                                 WHERE org_id = ${orgId} AND feature = ${feature}`
+    expect(changed?.changed_by).toBe(realId)
+    // The placeholder's own away record does not become the person's.
+    const own = await sql`SELECT 1 FROM kernel.away_ranges WHERE user_id IN (${ph}, ${realId})`
+    expect(own.length).toBe(0)
+  })
+})
+
 describe("merging a placeholder that owns contacts", () => {
   it("its private contacts, grants and ACL places move to the person; the placeholder can go", async () => {
     const ph2 = await placeholder("contact-owner")

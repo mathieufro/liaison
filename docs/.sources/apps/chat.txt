@@ -90,3 +90,5 @@ Open task -> packages/shared/src/i18n/locales/en/kernel.json:6280
 AI service stops answering mid-turn: the step is tried again, then the reply says it stopped responding, say "continue" -> apps/api/src/modules/agent/runtime/agent-service.ts:3748 ; packages/shared/src/threads/agent-notice.ts:64
 Notify me of every message switch in the channel menu -> apps/web/src/modules/threads/ThreadHeader.tsx:600
 Notify me of every message label -> packages/shared/src/i18n/locales/en/kernel.json:2124
+Next-step buttons under the newest reply, gone once anything follows -> apps/web/src/modules/threads/message-store.ts:817 ; apps/web/src/modules/agent/SuggestionChips.tsx:67
+Any app record can hold a discussion; seen by who can see the record; opening seats you; prune on narrowed sharing; Retry on failure -> apps/api/src/modules/threads/entity-discussion.ts:89-122 ; apps/api/src/modules/threads/entity-discussion.ts:239 ; apps/web/src/modules/threads/EntityDiscussionPanel.tsx:70-95 ; packages/shared/src/i18n/locales/en/kernel.json (entityDiscussion)

@@ -1,10 +1,21 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-export type RecipientSpec =
+import { rootLogger } from "~/lib/logger"
+
+/** A recipient kind that names people directly, never a whole audience by scope. */
+export type NamedRecipientSpec =
   | { kind: "field"; path: string }
   | { kind: "participants"; path: string }
   | { kind: "mentions"; path: string }
   | { kind: "actor" }
+
+export type RecipientSpec =
+  | NamedRecipientSpec
   | { kind: "scope_holders"; scope: string; dimensionFilter?: Record<string, unknown> }
+  /**
+   * The account manager of the company at `path`. No manager (or no reader of one) is nobody,
+   * logged: then only `fallback` is asked, and it names people, never every scope holder.
+   */
+  | { kind: "account_manager"; path: string; fallback?: NamedRecipientSpec }
 
 export interface RecipientContext {
   orgId: string
@@ -20,6 +31,8 @@ export interface RecipientContext {
    * translator builds this closure from the event's `(source, kind, axes)`.
    */
   applySubscriptionFilter?: (userId: string) => Promise<boolean>
+  /** The company's account manager, or null when it has none. Absent: no company carries one. */
+  loadAccountManager?: (orgId: string, companyId: string) => Promise<string | null>
 }
 
 interface EventLike {
@@ -98,6 +111,25 @@ export async function resolveRecipients(
       const ids = await ctx.loadScopeHolders(ctx.orgId, spec.scope, spec.dimensionFilter)
       initial = dedupe(ids)
       break
+    }
+    case "account_manager": {
+      const companyId = readPath(event, spec.path)
+      const manager =
+        typeof companyId === "string" && ctx.loadAccountManager
+          ? await ctx.loadAccountManager(ctx.orgId, companyId)
+          : null
+      if (manager) {
+        initial = [manager]
+        break
+      }
+      rootLogger.info(
+        { orgId: ctx.orgId, companyId: typeof companyId === "string" ? companyId : null },
+        spec.fallback
+          ? "no account manager for this company; notifying the fallback recipients"
+          : "no account manager for this company; nobody notified",
+      )
+      if (!spec.fallback) return []
+      return resolveRecipients(spec.fallback, event, ctx)
     }
     default:
       return []

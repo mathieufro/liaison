@@ -4,6 +4,7 @@ import { sql as drizzleSql } from "drizzle-orm"
 import { kernelRel, projectsRel } from "~/apps/projects/schema-refs"
 import { extractRows, type RlsClient } from "~/db"
 import type { UserContext } from "~/db/rls"
+import { updateItemRoutePerson } from "~/modules/approvals/route-world"
 import { appendChecklistOnMerge, readItems, readProjectLevels } from "./checklist"
 import { type ChecklistStatus, checklistStatus } from "./checklist-status"
 import { dueBucketSql } from "./due-status"
@@ -665,7 +666,9 @@ export interface UpdateTaskArgs {
 
 export async function updateTask(args: UpdateTaskArgs): Promise<TaskDetail> {
   const { tx, orgId, actor, projectId, taskId, input } = args
-  return tx.transaction(async (innerTx) => {
+  const { detail: updated, assigned } = await tx.transaction(async (innerTx) => {
+    // The assignee this update set, if it set one: pending requests about the task follow it.
+    let assigned: { personId: string | null } | null = null
     const projectClause = projectId ? drizzleSql`AND project_id = ${projectId}::uuid` : drizzleSql``
     const taskRows = extractRows<{
       project_id: string
@@ -718,6 +721,7 @@ export async function updateTask(args: UpdateTaskArgs): Promise<TaskDetail> {
           ? drizzleSql`assignee_id = NULL`
           : drizzleSql`assignee_id = ${assigneeId}::uuid`,
       )
+      assigned = { personId: assigneeId }
     }
     if (input.priority !== undefined) {
       assertTaskPriority(input.priority)
@@ -761,8 +765,19 @@ export async function updateTask(args: UpdateTaskArgs): Promise<TaskDetail> {
       orgId,
     })
 
-    return detail
+    return { detail, assigned }
   })
+  if (assigned) {
+    // Its own transaction, after the write: a failure is logged and the assignment stands.
+    await updateItemRoutePerson({
+      orgId,
+      app: "projects",
+      entityType: "task",
+      entityId: taskId,
+      personId: assigned.personId,
+    })
+  }
+  return updated
 }
 
 // ---------------------------------------------------------------------------
