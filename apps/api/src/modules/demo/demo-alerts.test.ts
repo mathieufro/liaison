@@ -51,6 +51,11 @@ describe("the demo owner alert", () => {
 
   beforeAll(async () => {
     await acquireTestLock()
+    // The spend ledger and the demo Redis keys are shared by every demo test
+    // in the database: start from none of another file's leftovers, since the
+    // 80% mark is computed from the day's whole ledger.
+    await sql`DELETE FROM kernel.demo_spend`
+    await clearRedisPatterns(["demo:*"])
     reservedOrg = (await ensureOrg({ slug: "alerts-reserved", name: "Reserved" })).orgId
     await markOrgAsDemo(reservedOrg, reservedMarker())
     await sql`
