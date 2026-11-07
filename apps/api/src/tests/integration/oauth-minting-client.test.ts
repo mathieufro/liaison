@@ -10,7 +10,7 @@
 //   - when the minting client is gone (the instance stopped providing it), the
 //     account is marked for reconnect, never left failing silently.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test"
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto"
+import { createHmac, randomUUID } from "node:crypto"
 import { and, sql as drizzleSql, eq } from "drizzle-orm"
 import { extractRows } from "~/db"
 import { __privileged_db__ as db } from "~/db/connection"
@@ -29,6 +29,7 @@ import {
   getTokenFromAccount,
   handleOAuthCallback,
 } from "~/modules/apps/connections/service"
+import { buildVerifyBridge } from "~/modules/webhooks/verify-bridge"
 import { shopifyWebhookVerifier } from "../../../../../bundled-apps/shopify/src/lib/hmac"
 
 type InstanceVars = Partial<
@@ -227,16 +228,11 @@ async function verifySignedWith(secret: string, verifierSecret: string) {
       method: "POST",
       query: {},
     },
-    {
-      config_get: async () => verifierSecret,
-      crypto_hmacSha256Base64: async (s, b) =>
-        createHmac("sha256", s).update(b, "utf8").digest("base64"),
-      crypto_timingSafeEqual: async (a, b) => {
-        const left = Buffer.from(a)
-        const right = Buffer.from(b)
-        return left.length === right.length && timingSafeEqual(left, right)
-      },
-    },
+    // The webhook route's verify bridge, its config reader answering `verifierSecret`.
+    buildVerifyBridge({
+      readConfig: async () => verifierSecret,
+      secretConfigKeys: ["shopifyWebhookSecret"],
+    }) as never,
   )
 }
 

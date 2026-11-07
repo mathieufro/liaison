@@ -23,11 +23,9 @@ function makeCtx(opts: {
 }) {
   const db = createMockDb({ seed: { shipment: opts.shipments } })
   const calls: string[] = []
-  const fetch = async (url: string) => {
-    if (url.includes("/iam/account-app/token")) {
-      if (opts.tokenFails) return { status: 503, headers: {}, body: "unavailable" }
-      return { status: 200, headers: {}, body: JSON.stringify({ accessToken: "tok", expiresIn: 3600 }) }
-    }
+  // The host runs the bearer exchange; a failed one answers the call with its status.
+  const fetch = async (url: string, o?: { auth?: { exchange?: unknown } }) => {
+    if (o?.auth?.exchange && opts.tokenFails) return { status: 503, headers: {}, body: "unavailable" }
     calls.push(url)
     const id = (url.split("/shipping-order/")[1] ?? "").split("/")[0] ?? ""
     const live = opts.live?.[id]
@@ -44,8 +42,8 @@ function makeCtx(opts: {
     db,
     fetch,
     connections:
-      opts.connected === false ? {} : { boxtal: { getCredentials: async () => CREDS, getAccounts: async () => [] } },
-    config: { get: async () => "whsecret" },
+      opts.connected === false ? {} : { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getAccounts: async () => [] } },
+    config: { get: async () => "whsecret", has: async () => true },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   } as any
   return { ctx, calls }
@@ -155,7 +153,7 @@ describe("probeWebhookUpstream", () => {
     ctx.connections = {
       boxtal: {
         getAccounts: async () => [{ id: "ca1", ownerType: "org", ownerId: null, identifier: "boxtal", displayName: null }],
-        getCredentials: async () => {
+        getSettings: async () => {
           throw new Error("decrypt failed")
         },
       },
@@ -169,7 +167,7 @@ describe("probeWebhookUpstream", () => {
     const { ctx } = makeCtx({ shipments: [ship("1", "o1")] })
     ctx.connections = {
       getAccounts: async () => "[]",
-      getCredentials: async () => {
+      getSettings: async () => {
         throw new Error('No connected account for connection "boxtal"')
       },
     }

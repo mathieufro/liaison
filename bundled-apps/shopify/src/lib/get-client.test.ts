@@ -159,3 +159,40 @@ describe("read path: a missing install_metadata row is derived in memory, never 
     expect(spy.inserts[0]!.data).toMatchObject({ shopDomain: SHOP, connectionId: ACCOUNT_ID })
   })
 })
+
+describe("throttle watermark: one org's back-pressure never reaches another", () => {
+  const LOW_BUCKET = JSON.stringify({
+    data: { ok: true },
+    extensions: { cost: { throttleStatus: { currentlyAvailable: 1, restoreRate: 50 } } },
+  })
+  const OK_BUCKET = JSON.stringify({ data: { ok: true } })
+
+  function ctxFor(orgId: string | undefined, body: string): AppContext {
+    const { ctx } = makeCtx({ seedMetadata: { shop_domain: "shared-shop.myshopify.com", connection_status: "connected" }, accounts: [{ id: ACCOUNT_ID, identifier: "shared-shop.myshopify.com" }] })
+    return Object.assign(ctx, { orgId, fetch: async () => ({ status: 200, headers: {}, body }) })
+  }
+
+  it("org A's low bucket throttles org A only, for the same shop domain", async () => {
+    const orgA = "00000000-0000-0000-0000-0000000000aa"
+    const orgB = "00000000-0000-0000-0000-0000000000bb"
+    // Org A drains its bucket: the watermark is now set for (A, shop).
+    await (await getShopifyClient(ctxFor(orgA, LOW_BUCKET))).query("query { ok }")
+    // A fail-fast client (timeoutMs set) refuses at once when its watermark says wait.
+    await expect(
+      (await getShopifyClient(ctxFor(orgA, OK_BUCKET), { timeoutMs: 1_000 })).query("query { ok }"),
+    ).rejects.toMatchObject({ code: "RATE_LIMIT" })
+    // Org B, same shop domain, starts with no watermark.
+    const r = await (await getShopifyClient(ctxFor(orgB, OK_BUCKET), { timeoutMs: 1_000 })).query<{ ok: boolean }>(
+      "query { ok }",
+    )
+    expect(r.ok).toBe(true)
+  })
+
+  it("a run without an org id neither writes nor reads a watermark", async () => {
+    await (await getShopifyClient(ctxFor(undefined, LOW_BUCKET))).query("query { ok }")
+    const r = await (await getShopifyClient(ctxFor(undefined, OK_BUCKET), { timeoutMs: 1_000 })).query<{ ok: boolean }>(
+      "query { ok }",
+    )
+    expect(r.ok).toBe(true)
+  })
+})

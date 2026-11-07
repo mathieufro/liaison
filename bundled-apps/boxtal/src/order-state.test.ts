@@ -39,7 +39,7 @@ function makeCtx(
       db,
       fetch: (async () => ({ status: 200, headers: {}, body: "{}" })) as never,
       connections: {},
-      config: { get: async () => null },
+      config: { get: async () => null, has: async () => false },
       executeTool,
     } as unknown as BoxtalToolCtx,
     db,

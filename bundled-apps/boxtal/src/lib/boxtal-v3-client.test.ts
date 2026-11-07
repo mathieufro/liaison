@@ -4,6 +4,7 @@ import {
   BoxtalApiError,
   BoxtalV3Client,
   type BoxtalFetch,
+  webhookSecretPlaceholder,
 } from "./boxtal-v3-client"
 
 interface RecordedCall {
@@ -38,232 +39,80 @@ function makeFetch(
   return { fetch, calls }
 }
 
-const TOKEN_OK = JSON.stringify({ accessToken: "tok-1", expiresIn: 3600 })
-const TOKEN_OK_2 = JSON.stringify({ accessToken: "tok-2", expiresIn: 3600 })
-
-function isTokenCall(c: RecordedCall): boolean {
-  return c.url.includes("/iam/account-app/token")
-}
 function isBizCall(c: RecordedCall): boolean {
   return c.url.includes("/shipping/")
 }
 
-describe("BoxtalV3Client — token exchange + cache + refresh", () => {
-  it("exchanges the token then sends Bearer on the business call (sandbox base)", async () => {
-    const { fetch, calls } = makeFetch([
-      { match: isTokenCall, status: 200, body: TOKEN_OK },
-      { match: isBizCall, status: 200, body: JSON.stringify({ status: 200, timestamp: "t", content: { id: "x", status: "PENDING" } }) },
-    ])
-    const client = new BoxtalV3Client({
-      fetch,
-      v3Key: "key",
-      v3Secret: "secret",
-      environment: "sandbox",
-    })
-    await client.getShippingOrder("x")
-    const tokenCall = calls.find(isTokenCall)!
-    expect(tokenCall.url).toBe("https://api.boxtal.build/iam/account-app/token")
-    expect(tokenCall.method).toBe("POST")
-    expect(tokenCall.headers.Authorization).toBe(
-      `Basic ${btoa("key:secret")}`,
-    )
-    const bizCall = calls.find(isBizCall)!
-    expect(bizCall.headers.Authorization).toBe("Bearer tok-1")
+describe("BoxtalV3Client — the host authenticates (bearer exchange) and a 401 is retried once", () => {
+  const EXCHANGE = (base: string) => ({
+    connection: "boxtal",
+    scheme: "bearer",
+    exchange: { url: `${base}/iam/account-app/token`, fields: ["v3Key", "v3Secret"] },
   })
 
-  it("production base resolves to api.boxtal.com", async () => {
-    const { fetch, calls } = makeFetch([
-      { match: isTokenCall, status: 200, body: TOKEN_OK },
-      { match: isBizCall, status: 200, body: JSON.stringify({ status: 200, timestamp: "t", content: { id: "x", status: "PENDING" } }) },
-    ])
-    const client = new BoxtalV3Client({
-      fetch,
-      v3Key: "key",
-      v3Secret: "secret",
-      environment: "production",
-    })
-    await client.getShippingOrder("x")
-    expect(calls.find(isTokenCall)!.url).toBe(
-      "https://api.boxtal.com/iam/account-app/token",
-    )
-  })
-
-  it("reuses the cached token within expiry (only one token POST across two calls)", async () => {
-    let nowMs = 1_000_000
-    const { fetch, calls } = makeFetch([
-      { match: isTokenCall, status: 200, body: TOKEN_OK },
-      { match: isBizCall, status: 200, body: JSON.stringify({ status: 200, timestamp: "t", content: { id: "x", status: "PENDING" } }) },
-    ])
-    const client = new BoxtalV3Client({
-      fetch,
-      v3Key: "key",
-      v3Secret: "secret",
-      environment: "sandbox",
-      now: () => nowMs,
-    })
-    await client.getShippingOrder("x")
-    nowMs += 1000 * 60 // +1 min, still well within 3600-60s
-    await client.getShippingOrder("x")
-    expect(calls.filter(isTokenCall)).toHaveLength(1)
-  })
-
-  it("re-exchanges after the cached token's skew-adjusted expiry", async () => {
-    let nowMs = 1_000_000
-    const { fetch, calls } = makeFetch([
-      { match: isTokenCall, status: 200, body: TOKEN_OK },
-      { match: isBizCall, status: 200, body: JSON.stringify({ status: 200, timestamp: "t", content: { id: "x", status: "PENDING" } }) },
-    ])
-    const client = new BoxtalV3Client({
-      fetch,
-      v3Key: "key",
-      v3Secret: "secret",
-      environment: "sandbox",
-      now: () => nowMs,
-    })
-    await client.getShippingOrder("x")
-    nowMs += (3600 - 60) * 1000 // exactly at expiry boundary → re-exchange (>=)
-    await client.getShippingOrder("x")
-    expect(calls.filter(isTokenCall)).toHaveLength(2)
-  })
-
-  it("on 401 re-exchanges once then retries; second consecutive 401 throws", async () => {
-    let tokenN = 0
-    const { fetch, calls } = makeFetch([
-      {
-        match: isTokenCall,
-        status: 200,
-        body: "", // replaced below
-      },
-      { match: isBizCall, status: 401, body: "unauthorized" },
-    ])
-    // override token to alternate token values, biz always 401
-    const calls2: RecordedCall[] = []
-    const fetch2: BoxtalFetch = async (url, opts) => {
-      const c: RecordedCall = {
-        url,
-        method: opts?.method ?? "GET",
-        headers: opts?.headers ?? {},
-        body: opts?.body,
-      }
-      calls2.push(c)
-      if (isTokenCall(c)) {
-        tokenN++
-        return {
-          status: 200,
-          headers: {},
-          body: tokenN === 1 ? TOKEN_OK : TOKEN_OK_2,
-        }
-      }
-      return { status: 401, headers: {}, body: "unauthorized" }
+  function recordingFetch(statuses: number[]): { fetch: BoxtalFetch; seen: Array<Record<string, unknown>> } {
+    const seen: Array<Record<string, unknown>> = []
+    const fetch: BoxtalFetch = async (url, opts) => {
+      seen.push({ url, ...opts })
+      const status = statuses[Math.min(seen.length - 1, statuses.length - 1)]!
+      return { status, headers: {}, body: wrap([]) }
     }
-    void fetch
-    void calls
-    const client = new BoxtalV3Client({
-      fetch: fetch2,
-      v3Key: "key",
-      v3Secret: "secret",
-      environment: "sandbox",
-    })
+    return { fetch, seen }
+  }
+
+  it("names the v3 key pair's exchange (sandbox base) and sets no credential itself", async () => {
+    const { fetch, seen } = recordingFetch([200])
+    await new BoxtalV3Client({ fetch, environment: "sandbox" }).listContentCategories()
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.auth).toEqual(EXCHANGE("https://api.boxtal.build"))
+    expect(seen[0]!.headers).toEqual({})
+  })
+
+  it("uses the production token URL in production", async () => {
+    const { fetch, seen } = recordingFetch([200])
+    await new BoxtalV3Client({ fetch, environment: "production" }).listContentCategories()
+    expect(seen[0]!.auth).toEqual(EXCHANGE("https://api.boxtal.com"))
+  })
+
+  it("retries once on a 401 (the host re-exchanges), then gives up", async () => {
+    const { fetch, seen } = recordingFetch([401, 200])
+    await new BoxtalV3Client({ fetch, environment: "sandbox" }).listContentCategories()
+    expect(seen).toHaveLength(2)
+
+    const failing = recordingFetch([401, 401])
     let err: unknown
     try {
-      await client.getShippingOrder("x")
-    } catch (e) {
-      err = e
-    }
-    expect(err).toBeInstanceOf(BoxtalApiError)
-    expect((err as BoxtalApiError).message).toContain(
-      "session could not be established",
-    )
-    // token exchanged twice (initial + one refresh), biz tried twice
-    expect(calls2.filter(isTokenCall)).toHaveLength(2)
-    expect(calls2.filter(isBizCall)).toHaveLength(2)
-  })
-
-  it("malformed token JSON throws BoxtalApiError", async () => {
-    const { fetch } = makeFetch([
-      { match: isTokenCall, status: 200, body: "<<not json>>" },
-    ])
-    const client = new BoxtalV3Client({
-      fetch,
-      v3Key: "key",
-      v3Secret: "secret",
-      environment: "sandbox",
-    })
-    await expect(client.getShippingOrder("x")).rejects.toBeInstanceOf(
-      BoxtalApiError,
-    )
-  })
-
-  it("token 401 (bad creds) throws BoxtalApiError{status:401}", async () => {
-    const { fetch } = makeFetch([
-      { match: isTokenCall, status: 401, body: "bad creds" },
-    ])
-    const client = new BoxtalV3Client({
-      fetch,
-      v3Key: "key",
-      v3Secret: "secret",
-      environment: "sandbox",
-    })
-    let err: unknown
-    try {
-      await client.getShippingOrder("x")
+      await new BoxtalV3Client({ fetch: failing.fetch, environment: "sandbox" }).listContentCategories()
     } catch (e) {
       err = e
     }
     expect(err).toBeInstanceOf(BoxtalApiError)
     expect((err as BoxtalApiError).status).toBe(401)
-  })
-
-  it("memoizes an in-flight token so a burst does not double-exchange", async () => {
-    const calls: RecordedCall[] = []
-    let resolveToken: ((v: { status: number; headers: Record<string, string>; body: string }) => void) | null = null
-    const fetch: BoxtalFetch = async (url, opts) => {
-      const c: RecordedCall = {
-        url,
-        method: opts?.method ?? "GET",
-        headers: opts?.headers ?? {},
-        body: opts?.body,
-      }
-      calls.push(c)
-      if (isTokenCall(c)) {
-        return new Promise((resolve) => {
-          resolveToken = resolve
-        })
-      }
-      return { status: 200, headers: {}, body: JSON.stringify({ status: 200, timestamp: "t", content: { id: "x", status: "PENDING" } }) }
-    }
-    const client = new BoxtalV3Client({
-      fetch,
-      v3Key: "key",
-      v3Secret: "secret",
-      environment: "sandbox",
-    })
-    const p1 = client.getShippingOrder("a")
-    const p2 = client.getShippingOrder("b")
-    // let both reach the token() await
-    await Promise.resolve()
-    await Promise.resolve()
-    resolveToken!({ status: 200, headers: {}, body: TOKEN_OK })
-    await Promise.all([p1, p2])
-    expect(calls.filter(isTokenCall)).toHaveLength(1)
+    expect((err as BoxtalApiError).message).toContain("401 after refresh")
+    expect(failing.seen).toHaveLength(2)
   })
 })
 
 // — Task 3: business methods —
 
-/** Token, then a single biz response (by status+body). */
-function clientWithBiz(status: number, body: string): {
+/** A single biz response (by status+body); the host does the token exchange. */
+function clientWithBiz(
+  status: number,
+  body: string,
+  seenOpts?: Array<Record<string, unknown> | undefined>,
+): {
   client: BoxtalV3Client
   calls: RecordedCall[]
 } {
-  const { fetch, calls } = makeFetch([
-    { match: isTokenCall, status: 200, body: TOKEN_OK },
+  const { fetch: inner, calls } = makeFetch([
     { match: isBizCall, status, body },
   ])
+  const fetch: BoxtalFetch = async (url, opts) => {
+    seenOpts?.push(opts as Record<string, unknown> | undefined)
+    return inner(url, opts)
+  }
   const client = new BoxtalV3Client({
     fetch,
-    v3Key: "key",
-    v3Secret: "secret",
     environment: "sandbox",
   })
   return { client, calls }
@@ -492,18 +341,22 @@ describe("BoxtalV3Client business methods", () => {
   })
 
   it("createSubscription POSTs and returns the id; deleteSubscription DELETEs", async () => {
-    const { client, calls } = clientWithBiz(200, wrap({ id: "sub-1" }))
+    const seenOpts: Array<Record<string, unknown> | undefined> = []
+    const { client, calls } = clientWithBiz(200, wrap({ id: "sub-1" }), seenOpts)
     const sub = await client.createSubscription({
       eventType: "TRACKING_CHANGED",
       callbackUrl: "https://host/webhooks/org/boxtal/tracking-changed",
-      webhookSecret: "secret123",
+      webhookSecretConfigKey: "boxtalWebhookSecret",
     })
     const post = calls.find(isBizCall)!
     expect(post.method).toBe("POST")
     expect(post.url).toBe("https://api.boxtal.build/shipping/v3.1/subscription")
     const body = JSON.parse(post.body!)
     expect(body.eventType).toBe("TRACKING_CHANGED")
-    expect(body.webhookSecret).toBe("secret123")
+    // The secret is written in by the host: the body carries its placeholder only.
+    const placeholder = webhookSecretPlaceholder("boxtalWebhookSecret")
+    expect(body.webhookSecret).toBe(placeholder)
+    expect(seenOpts[0]!.configSecrets).toEqual({ [placeholder]: "boxtalWebhookSecret" })
     expect(sub.id).toBe("sub-1")
 
     const { client: c2, calls: calls2 } = clientWithBiz(200, "")
@@ -523,7 +376,7 @@ describe("BoxtalV3Client business methods", () => {
     const sub = await client.createSubscription({
       eventType: "DOCUMENT_CREATED",
       callbackUrl: "https://host/webhooks/org/boxtal/document-created",
-      webhookSecret: "secret123",
+      webhookSecretConfigKey: "boxtalWebhookSecret",
     })
     expect(sub.id).toBe("1234567")
     expect(typeof sub.id).toBe("string")
@@ -584,8 +437,6 @@ describe("BoxtalV3Client - request timeout and call budget", () => {
     }
     const client = new BoxtalV3Client({
       fetch,
-      v3Key: "key",
-      v3Secret: "secret",
       environment: "sandbox",
       requestTimeoutMs: 25,
     })
@@ -604,23 +455,18 @@ describe("BoxtalV3Client - request timeout and call budget", () => {
   })
 
   it("refuses to start a request once the logical call budget is spent (504, nothing sent)", async () => {
-    // Fake clock: every round trip costs 6s, so token exchange (6s) plus the
-    // first request (6s) exhausts a 10s call budget and the 401 refresh round
-    // must NOT be started.
+    // Fake clock: the first round trip (the host's exchange inside it) costs
+    // 11s, which exhausts a 10s call budget, so the 401 refresh round must NOT
+    // be started.
     let clock = 0
     const calls: string[] = []
     const fetch: BoxtalFetch = async (url) => {
       calls.push(url)
-      clock += 6_000
-      if (url.includes("/iam/account-app/token")) {
-        return { status: 200, headers: {}, body: TOKEN_OK }
-      }
+      clock += 11_000
       return { status: 401, headers: {}, body: "expired" }
     }
     const client = new BoxtalV3Client({
       fetch,
-      v3Key: "key",
-      v3Secret: "secret",
       environment: "sandbox",
       now: () => clock,
       requestTimeoutMs: 5_000,
@@ -634,8 +480,8 @@ describe("BoxtalV3Client - request timeout and call budget", () => {
     }
     expect(caught).toBeInstanceOf(BoxtalApiError)
     expect((caught as BoxtalApiError).status).toBe(504)
-    // Token + one business call only: the refresh round never left the client.
-    expect(calls).toHaveLength(2)
-    expect(clock).toBeLessThanOrEqual(12_000)
+    // One business call only: the refresh round never left the client.
+    expect(calls).toHaveLength(1)
+    expect(clock).toBeLessThanOrEqual(11_000)
   })
 })

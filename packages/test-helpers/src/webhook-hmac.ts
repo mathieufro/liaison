@@ -26,6 +26,14 @@ export function utf8TimingSafeEqual(a: string, b: string): boolean {
 
 export interface HmacTestBridge {
   config_get: (key: string) => Promise<unknown>
+  config_has: (key: string) => Promise<boolean>
+  crypto_hmacSha256Base64ForConfig: (key: string, data: string) => Promise<string | null>
+  crypto_verifyHmacForConfig: (
+    key: string,
+    data: string,
+    signature: string,
+    encoding: "base64" | "hex",
+  ) => Promise<boolean>
   crypto_hmacSha256Base64: (s: string, b: string) => Promise<string>
   crypto_hmacSha256Hex?: (s: string, b: string) => Promise<string>
   crypto_timingSafeEqual: (a: string, b: string) => Promise<boolean>
@@ -33,9 +41,12 @@ export interface HmacTestBridge {
 
 /**
  * A bridge stub mirroring the host surface. `config_get(secretKey)` returns
- * `secret`, any other key reads `extraConfig` (null when absent). `withHex`
- * adds `crypto_hmacSha256Hex`; leave it off to model a host bridge that
- * predates the hex variant.
+ * `secret`, any other key reads `extraConfig` (null when absent). The by-key
+ * methods (`config_has`, `crypto_hmacSha256Base64ForConfig`,
+ * `crypto_verifyHmacForConfig`) behave as the host's (secret-free.ts): only
+ * `secretKey` may be named, an unset secret signs to null and verifies false.
+ * `withHex` adds `crypto_hmacSha256Hex`; leave it off to model a host bridge
+ * that predates the hex variant.
  */
 export function makeHmacTestBridge(opts: {
   secretKey: string
@@ -44,9 +55,27 @@ export function makeHmacTestBridge(opts: {
   withHex?: boolean
 }): HmacTestBridge {
   const extraConfig = opts.extraConfig ?? {}
+  const secretOf = (key: string): string | null => {
+    if (key !== opts.secretKey) throw new Error(`config key "${key}" is not a declared secret`)
+    return opts.secret || null
+  }
   return {
     config_get: async (key: string) =>
       key === opts.secretKey ? opts.secret : (extraConfig[key] ?? null),
+    config_has: async (key: string) => {
+      const v = key === opts.secretKey ? opts.secret : extraConfig[key]
+      return v !== undefined && v !== null && v !== ""
+    },
+    crypto_hmacSha256Base64ForConfig: async (key: string, data: string) => {
+      const secret = secretOf(key)
+      return secret === null ? null : hmacBase64(secret, data)
+    },
+    crypto_verifyHmacForConfig: async (key, data, signature, encoding) => {
+      const secret = secretOf(key)
+      if (secret === null || !signature) return false
+      const expected = encoding === "hex" ? hmacHex(secret, data) : hmacBase64(secret, data)
+      return utf8TimingSafeEqual(signature, expected)
+    },
     crypto_hmacSha256Base64: async (s: string, b: string) => hmacBase64(s, b),
     ...(opts.withHex
       ? { crypto_hmacSha256Hex: async (s: string, b: string) => hmacHex(s, b) }

@@ -4,11 +4,11 @@
 //
 // Shopify signs every webhook body with HMAC-SHA256 (base64) using the
 // app's webhook signing secret, and sends the digest in the
-// `X-Shopify-Hmac-Sha256` header. The bundle runs inside QuickJS, which
-// has no `node:crypto` — so production code computes the digest via the
-// host-side `crypto_hmacSha256Base64` bridge (defined in
-// apps/api/src/modules/webhooks/routes.ts) and compares via
-// `crypto_timingSafeEqual` from the same bridge.
+// `X-Shopify-Hmac-Sha256` header. The secret never enters the bundle: the
+// host-side `crypto_verifyHmacForConfig` bridge (apps/api
+// modules/webhooks/verify-bridge.ts) reads it by config key, computes the
+// digest and compares in constant time; `config_has` tells an unset secret
+// apart. The same call works on every executor.
 //
 // IMPORTANT: This file MUST NOT import from `node:crypto` (the bundle is
 // loaded into QuickJS which can't resolve it). The pure-node helper for
@@ -26,35 +26,19 @@ export interface VerifyResult {
 
 const HEADER_HMAC = "x-shopify-hmac-sha256"
 const HEADER_WEBHOOK_ID = "x-shopify-webhook-id"
+/** The app's signing secret in `apps.config` (the connection's `clientSecretConfigKey`). */
+export const SHOPIFY_WEBHOOK_SECRET_KEY = "shopifyWebhookSecret"
 
-/**
- * HMAC-SHA256 base64 verifier — uses the host bridge for the digest +
- * timing-safe compare so it runs in the QuickJS sandbox.
- *
- * @param body raw request body (string — must be the exact bytes Shopify
- *             signed; not the JSON-parsed object).
- * @param headers request headers (lowercased keys).
- * @param secret the Shopify webhook signing secret for this org.
- * @param bridge host bridge with `crypto_hmacSha256Base64` and `crypto_timingSafeEqual`.
- */
-export async function hmacSha256VerifierViaBridge(
-  body: string,
-  headers: Record<string, string>,
-  secret: string,
-  bridge: {
-    crypto_hmacSha256Base64: (secret: string, body: string) => Promise<string>
-    crypto_timingSafeEqual: (a: string, b: string) => Promise<boolean>
-  },
-): Promise<boolean> {
-  const sig = headers[HEADER_HMAC]
-  if (!sig || typeof sig !== "string") return false
-  const expected = await bridge.crypto_hmacSha256Base64(secret, body)
-  // Do NOT short-circuit on `sig.length !== expected.length` here: that leaks a
-  // signature-length oracle (an early return that's observably faster for a
-  // wrong-length input). The host `crypto_timingSafeEqual` bridge already
-  // handles unequal lengths internally (length check then constant-time
-  // compare), so defer the entire comparison to it.
-  return bridge.crypto_timingSafeEqual(sig, expected)
+export interface ShopifyVerifyBridge {
+  config_has: (key: string) => Promise<boolean>
+  crypto_verifyHmacForConfig: (
+    key: string,
+    data: string,
+    signature: string,
+    encoding: "base64" | "hex",
+  ) => Promise<boolean>
+  /** Only ever called with the public "shopify-delivery" label (the replay key). */
+  crypto_hmacSha256Base64: (secret: string, body: string) => Promise<string>
 }
 
 /**
@@ -64,15 +48,12 @@ export async function hmacSha256VerifierViaBridge(
  * `{ ok: true, replayKey, replayTtlSeconds }` — see
  * `liaison/apps/api/src/modules/webhooks/verification.ts`.
  *
- * The replay key is `x-shopify-webhook-id` — the unique delivery id
- * Shopify mints per webhook envelope. We pin replay TTL to 7 days to
- * cover Shopify's documented 19-attempt / 48-hour retry window with
- * head-room.
+ * The replay key is the digest of the signed body (see below). We pin
+ * replay TTL to 7 days to cover Shopify's documented 19-attempt / 48-hour
+ * retry window with head-room.
  *
- * The signing secret is read from the app's persisted config under
- * `shopifyWebhookSecret`. The verifier accepts the secret via the
- * sandbox `config_get` bridge so it can run inside the QuickJS sandbox
- * with no host-side imports.
+ * The comparison is the host's (timing safe, unequal lengths included): the
+ * bundle never short-circuits on the signature's length.
  */
 export async function shopifyWebhookVerifier(
   params: {
@@ -81,18 +62,18 @@ export async function shopifyWebhookVerifier(
     method: string
     query: Record<string, string>
   },
-  bridge: {
-    config_get: (key: string) => Promise<unknown>
-    crypto_hmacSha256Base64: (secret: string, body: string) => Promise<string>
-    crypto_timingSafeEqual: (a: string, b: string) => Promise<boolean>
-  },
+  bridge: ShopifyVerifyBridge,
 ): Promise<VerifyResult> {
   const headers = lowercaseHeaderKeys(params.headers)
-  const secret = (await bridge.config_get("shopifyWebhookSecret")) as string | null
-  if (!secret) return { ok: false, reason: "missing_secret" }
-  if (!(await hmacSha256VerifierViaBridge(params.body, headers, secret, bridge))) {
-    return { ok: false, reason: "signature_mismatch" }
+  if (!(await bridge.config_has(SHOPIFY_WEBHOOK_SECRET_KEY))) {
+    return { ok: false, reason: "missing_secret" }
   }
+  const sig = headers[HEADER_HMAC]
+  const valid =
+    typeof sig === "string" &&
+    sig.length > 0 &&
+    (await bridge.crypto_verifyHmacForConfig(SHOPIFY_WEBHOOK_SECRET_KEY, params.body, sig, "base64"))
+  if (!valid) return { ok: false, reason: "signature_mismatch" }
   const webhookId = headers[HEADER_WEBHOOK_ID]
   if (!webhookId) return { ok: false, reason: "missing_webhook_id" }
   return {

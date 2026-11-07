@@ -75,3 +75,54 @@ export async function readConnectionCredentials<K extends string>(
   if (missing.length > 0) return { ok: false, reason: "incomplete", missing }
   return { ok: true, credentials: map }
 }
+
+export type ConnectionSettingsResult<K extends string> =
+  | { ok: true; values: Record<string, string> }
+  | {
+      ok: false
+      /** As `readConnectionCredentials`: the secrets are checked for presence only. */
+      reason: "not_connected" | "unreadable" | "empty" | "incomplete"
+      missing: K[]
+    }
+
+/**
+ * Read the NON-SECRET settings of credentials connection `name`
+ * (`getSettings`: readable values plus the names of the empty fields) and
+ * check that every one of `requiredKeys` holds a value, without the secrets
+ * entering the app. Both `ctx.connections` shapes; never throws for a
+ * connection problem. The secrets go to the provider through `ctx.fetch` auth.
+ */
+export async function readConnectionSettings<K extends string>(
+  connections: unknown,
+  name: string,
+  requiredKeys: readonly K[],
+): Promise<ConnectionSettingsResult<K>> {
+  let call: (() => Promise<unknown>) | null = null
+  const flat = connections as {
+    getSettings?: (name: string, identifier?: string) => Promise<unknown>
+  }
+  if (typeof flat?.getSettings === "function") {
+    call = () => flat.getSettings!(name)
+  } else {
+    const entry = (
+      connections as Record<string, { getSettings?: () => Promise<unknown> } | undefined>
+    )?.[name]
+    if (entry && typeof entry.getSettings === "function") call = () => entry.getSettings!()
+  }
+  if (!call) return { ok: false, reason: "not_connected", missing: [] }
+  let settings: { values?: Record<string, string>; missing?: string[] }
+  try {
+    const raw = await call()
+    settings = (typeof raw === "string" ? JSON.parse(raw) : (raw ?? {})) as typeof settings
+  } catch {
+    return { ok: false, reason: "unreadable", missing: [] }
+  }
+  const values = settings.values ?? {}
+  const empty = new Set(settings.missing ?? [])
+  const missing = requiredKeys.filter((k) => empty.has(k))
+  if (missing.length === requiredKeys.length && requiredKeys.length > 0) {
+    return { ok: false, reason: "empty", missing: [] }
+  }
+  if (missing.length > 0) return { ok: false, reason: "incomplete", missing }
+  return { ok: true, values }
+}

@@ -582,7 +582,8 @@ describe("Boxtal app.manifest.json", () => {
     // 0.23.13: above the 0.23.12 that main took meanwhile; no change of its own.
     // 0.23.14: shipment_draft_create's description starts a new draft rather than opening one.
     // 0.23.15: shipment_draft_create is declared a write (it stores the draft), still ungated.
-    expect(m.version).toBe("0.23.15")
+    // 0.23.16: API keys and the webhook secret stay host-side (ctx.fetch auth, configSecrets, by-key HMAC).
+    expect(m.version).toBe("0.23.16")
     expect(m.packageFormat).toBe(1)
   })
 

@@ -166,7 +166,7 @@ function sourcingCtx(opts: {
     db,
     fetch: async () => ({ status: 200, headers: {}, body: buildLabelPdf(opts.labelLines) }),
     connections: {},
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     executeTool: async (target: string) => {
       contactReads.push(target)
       return (

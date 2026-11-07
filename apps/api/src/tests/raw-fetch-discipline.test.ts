@@ -22,7 +22,13 @@ const srcDir = path.resolve(__dirname, "..")
 // Directory segments that hold test scaffolding / fixtures (Bun.serve handlers,
 // mock servers). Their `fetch(` occurrences are server handler methods or test
 // stubs, not production outbound calls.
-const EXCLUDED_SEGMENTS = ["/tests/", "/__test-helpers__/", "/fixtures/", "/test-helpers/"]
+const EXCLUDED_SEGMENTS = [
+  "/tests/",
+  "/__test-helpers__/",
+  "/fixtures/",
+  "/__fixtures__/",
+  "/test-helpers/",
+]
 
 function findProductionTsFiles(dir: string): string[] {
   const results: string[] = []
@@ -112,6 +118,10 @@ describe("raw fetch discipline", () => {
     // exists to refuse exactly that, so routing this through it would refuse
     // the probe and every process would read itself as not-leader.
     "infra/leadership.ts",
+    // The Workers app executor posts each signed run to the operator's app loader
+    // (LIAISON_APP_LOADER_URL + "/run"), a fixed deployment endpoint that may sit on
+    // a private address beside the server; no app, org or user input reaches the URL.
+    "modules/apps/workers/executor.ts",
     // APNs and FCM. `fetch` under Bun speaks HTTP/2, which APNs REQUIRES; the
     // pinned-host helper dials undici's fetch by resolved IP, which drops to
     // HTTP/1.1 and would break push outright. Fixed provider hosts, URLs built

@@ -18,17 +18,26 @@ function makeCtx(opts: {
 }) {
   const db = createMockDb()
   const calls: FetchCall[] = []
-  const fetch = async (url: string, o?: { method?: string; body?: string }) => {
+  // Emulates the host's ctx.fetch: the bearer exchange (whose failure answers the
+  // call with the token endpoint's status) and the configSecrets write-in.
+  const fetch = async (
+    url: string,
+    o?: {
+      method?: string
+      body?: string
+      auth?: { exchange?: unknown }
+      configSecrets?: Record<string, string>
+    },
+  ) => {
     const method = o?.method ?? "GET"
-    calls.push({ url, method, body: o?.body })
-    if (url.includes("/iam/account-app/token")) {
-      const status = opts.tokenStatus ?? 200
-      return {
-        status,
-        headers: {},
-        body: status === 200 ? JSON.stringify({ accessToken: "tok", expiresIn: 3600 }) : "bad",
-      }
+    if (o?.auth?.exchange && (opts.tokenStatus ?? 200) !== 200) {
+      return { status: opts.tokenStatus!, headers: {}, body: "bad" }
     }
+    let body = o?.body
+    for (const placeholder of Object.keys(o?.configSecrets ?? {})) {
+      body = body?.split(placeholder).join(String(opts.configSecret === undefined ? "whsecret" : opts.configSecret))
+    }
+    calls.push({ url, method, body })
     if (url.includes("/subscription")) {
       const status = opts.subStatus ?? 200
       return {
@@ -43,8 +52,8 @@ function makeCtx(opts: {
     orgId: "org-1",
     db,
     fetch,
-    connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-    config: { get: async (_k: string) => (opts.configSecret === undefined ? "whsecret" : opts.configSecret) },
+    connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+    config: { get: async (_k: string) => (opts.configSecret === undefined ? "whsecret" : opts.configSecret), has: async (_k: string) => Boolean(opts.configSecret === undefined ? "whsecret" : opts.configSecret) },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   } as any
   return { ctx, db, calls }

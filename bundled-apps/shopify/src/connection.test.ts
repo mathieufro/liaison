@@ -739,11 +739,23 @@ describe("webhook subscription cleanup (beforeDisconnect hook + connect)", () =>
     token?: "ok" | "missing"
   }) {
     const { ctx } = makeMockCtx()
-    const store = { subs: [...opts.subs], deleteCalls: [] as string[], listCalls: 0, creates: 0 }
+    const store = {
+      subs: [...opts.subs],
+      deleteCalls: [] as string[],
+      listCalls: 0,
+      creates: 0,
+      auths: [] as unknown[],
+    }
     const pageSize = opts.pageSize ?? 250
     let nextId = 1000
     const json = (data: unknown) => ({ status: 200, headers: {}, body: JSON.stringify({ data }) })
-    ;(ctx as { fetch: unknown }).fetch = async (_url: string, init?: { body?: string }) => {
+    ;(ctx as { fetch: unknown }).fetch = async (
+      _url: string,
+      init?: { body?: string; auth?: { connection: string; identifier?: string; scheme: string } },
+    ) => {
+      // The host adds the token named by `auth`; with none stored it refuses the call.
+      store.auths.push(init?.auth ?? null)
+      if (opts.token === "missing") throw new Error("No access token stored")
       const req = JSON.parse(init?.body ?? "{}") as { query?: string; variables?: Record<string, unknown> }
       const q = req.query ?? ""
       if (q.includes("WebhookSubscriptionList")) {
@@ -788,10 +800,6 @@ describe("webhook subscription cleanup (beforeDisconnect hook + connect)", () =>
     }
     const accounts = [{ id: ACCOUNT_ID, ownerType: "org", ownerId: null, identifier: SHOP, displayName: SHOP }]
     ;(ctx as { connections: unknown }).connections = {
-      getToken: async () => {
-        if (opts.token === "missing") throw new Error("No access token stored")
-        return "shpat_TEST"
-      },
       getAccounts: async () => accounts,
     }
     const warns: Array<{ msg: string; data: unknown }> = []
@@ -857,14 +865,23 @@ describe("webhook subscription cleanup (beforeDisconnect hook + connect)", () =>
     expect(summary?.data).toMatchObject({ shopDomain: SHOP, found: 2, deleted: 1, failed: 1 })
   })
 
-  it("logs loudly and returns when the store cannot be reached (no token)", async () => {
+  it("logs loudly and returns when the host has no token for the store", async () => {
     const { ctx, store, warns } = makeStore({
       subs: [{ id: "a1", topic: "ORDERS_CREATE", callbackUrl: ours("orders-create") }],
       token: "missing",
     })
     expect(await onBeforeDisconnect(hookEvent(), ctx)).toEqual({ deleted: 0, failed: 0 })
     expect(store.subs).toHaveLength(1)
-    expect(warns.some((w) => w.msg.includes("store unreachable"))).toBe(true)
+    expect(warns.some((w) => w.msg.includes("cleanup failed"))).toBe(true)
+  })
+
+  it("names the shop account in ctx.fetch auth and never handles the token", async () => {
+    const { ctx, store } = makeStore({ subs: [] })
+    await onBeforeDisconnect(hookEvent(), ctx)
+    expect(store.auths.length).toBeGreaterThan(0)
+    for (const auth of store.auths) {
+      expect(auth).toEqual({ connection: "shop", identifier: SHOP, scheme: "header:X-Shopify-Access-Token" })
+    }
   })
 
   it("a failing list call is logged, not thrown", async () => {

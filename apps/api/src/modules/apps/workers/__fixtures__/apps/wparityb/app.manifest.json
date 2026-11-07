@@ -1,0 +1,18 @@
+{
+  "name": "wparityb",
+  "version": "1.0.0",
+  "packageFormat": 1,
+  "license": "MIT",
+  "displayName": "Workers parity fixture B",
+  "description": "Test fixture: the target of a nested cross-app call.",
+  "scopes": ["wparityb:items"],
+  "network": { "allowedDomains": [] },
+  "tools": {
+    "echo": {
+      "description": "Echo",
+      "handler": "echo",
+      "requiredScopes": ["wparityb:items:read"],
+      "readOnly": true
+    }
+  }
+}

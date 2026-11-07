@@ -116,8 +116,8 @@ function makeCtx(invoices: Array<ReturnType<typeof usInvoice>>) {
     db,
     fetch,
     executeTool,
-    connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-    config: { get: async () => "whsecret" },
+    connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+    config: { get: async () => "whsecret", has: async () => true },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   } as never
 }
@@ -314,8 +314,8 @@ describe("quoteBatch (end-to-end fan-out)", () => {
       db,
       fetch,
       executeTool,
-      connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-      config: { get: async () => "whsecret" },
+      connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+      config: { get: async () => "whsecret", has: async () => true },
       logger: { info() {}, warn() {}, error() {}, debug() {} },
     } as never
 

@@ -274,7 +274,7 @@
       }
     ]
   },
-  "version": "0.4.5",
+  "version": "0.4.7",
   "iconName": "shopping-cart",
   "description": "Shopify integration: orders, customers, products, markets, draft orders, refunds, fulfillments, returns",
   "listing": {
@@ -1112,10 +1112,12 @@
   "webhookHealth": { "probe": "probe-webhook-upstream" },
   "jobs": {
     "backfill-customers": {
-      "handler": "backfillCustomersJob"
+      "handler": "backfillCustomersJob",
+      "onDemand": true
     },
     "scope-seed": {
-      "handler": "scopeSeedJob"
+      "handler": "scopeSeedJob",
+      "onDemand": true
     },
     "reconcile-customers": {
       "handler": "reconcileCustomersJob",

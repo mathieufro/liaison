@@ -326,7 +326,7 @@ function failingOrderRead(c: GoldenCase) {
     },
     connections: {
       boxtal: {
-        getCredentials: async () => ({ v1Key: "k", v1Secret: "s", v3Key: "k", v3Secret: "s", environment: "sandbox" }),
+        getSettings: async () => ({ values: { environment: "sandbox" }, missing: [] }),
         getToken: async () => {
           throw new Error("no token")
         },

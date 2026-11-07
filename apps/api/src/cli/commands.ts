@@ -188,6 +188,35 @@ export const COMMANDS = [
     flags: [{ name: "<name>", summary: "The app to roll back.", required: true }],
   },
   {
+    name: "app run-job",
+    usage:
+      "liaison app run-job <app> <job> [--org <slug|id>] [--params-json <json>] [--wait] [--timeout <seconds>]",
+    summary:
+      "Runs one job of an installed app for one org now, the way an on-demand job runs: the org's apps are set up in the CLI process (an unknown job is refused), the job is queued with `{ ...params, orgId }` and one attempt, and the server's job worker runs it (the CLI never hosts a job). Refused when the app is Off for the org. Prints `{ jobId }`; with --wait, polls until the job finishes and prints `{ jobId, ok, ms, error? }` (`ms`: the run itself), exit 1 when it failed or did not finish in time.",
+    flags: [
+      { name: "<app>", summary: "The app.", required: true },
+      { name: "<job>", summary: "The job, as the app's manifest names it.", required: true },
+      {
+        name: "--org",
+        arg: "<slug|id>",
+        summary: "The org to run it for; needed when the instance has several orgs.",
+      },
+      {
+        name: "--params-json",
+        arg: "<json>",
+        summary:
+          "The job's params, a JSON object. It may not set `orgId` or a key starting with `_`.",
+      },
+      { name: "--wait", summary: "Wait for the job to finish and print its outcome." },
+      {
+        name: "--timeout",
+        arg: "<seconds>",
+        summary:
+          "With --wait: how long to wait (default 600). The job keeps its place on the queue after it.",
+      },
+    ],
+  },
+  {
     name: "app verify",
     usage: "liaison app verify <file|dir>",
     summary:
@@ -204,9 +233,9 @@ export const COMMANDS = [
   {
     name: "connect",
     usage:
-      "liaison connect <app>/<connection> [--config <path>] [--email <address>] [--for <member email> [--send]]",
+      "liaison connect <app>/<connection> [--config <path>] [--org <slug|id>] [--email <address>] [--for <member email> [--send]] [--token-env <VAR> [--account <id>] [--client-secret-env <VAR>] [--scopes <a,b>]]",
     summary:
-      "The one interactive command, for OAuth connections (`mail/gmail`, `tickets/gmail`, `social/google`, `social/meta`, `shopify/shop`). Saves the per-org Google OAuth client from `--config` when present, prints an authorize URL to STDERR and waits for a new connection to land.",
+      "The one interactive command, for OAuth connections (`mail/gmail`, `tickets/gmail`, `social/google`, `social/meta`, `shopify/shop`). Saves the per-org Google OAuth client from `--config` when present, prints an authorize URL to STDERR and waits for a new connection to land. With `--token-env` it is not interactive: an OAuth connection whose provider issues an access token without a consent screen (a Shopify custom app's Admin API token) is connected from that token, stored as an OAuth callback stores one (encrypted, the same account's earlier connection replaced, the app told the connection exists), as the org's connection.",
     flags: [
       {
         name: "<app>/<connection>",
@@ -231,6 +260,35 @@ export const COMMANDS = [
           "Connect that member's OWN account (a personal connection): prints a one-time link instead of an authorize URL. It works once, for 30 minutes, only when that member is signed in as themselves (it never signs anyone in), and waits for a connection they own. A mailbox's standard or private choice is theirs, on that page.",
       },
       { name: "--send", summary: "With --for: also email the member their link." },
+      {
+        name: "--org",
+        arg: "<slug|id>",
+        summary: "The org to act on; else the config's `org.slug`, else the single org.",
+      },
+      {
+        name: "--token-env",
+        arg: "<VAR>",
+        summary:
+          "Connect from the access token held in this environment variable, no browser. The token is read from the environment only, never from the command line, and never printed. Refused for a connection that is not OAuth.",
+      },
+      {
+        name: "--account",
+        arg: "<id>",
+        summary:
+          "With --token-env: the account the token is for. Required when the connection is identified by a value such as the shop domain (`acme.myshopify.com` for `shopify/shop`).",
+      },
+      {
+        name: "--client-secret-env",
+        arg: "<VAR>",
+        summary:
+          "With --token-env: the environment variable holding the app's client secret, saved encrypted where the app checks webhook signatures (Shopify signs its webhooks with it).",
+      },
+      {
+        name: "--scopes",
+        arg: "<a,b>",
+        summary:
+          "With --token-env: the scopes the token holds, comma-separated, recorded as its granted scopes.",
+      },
     ],
   },
   {

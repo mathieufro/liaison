@@ -34,6 +34,13 @@
  *       the matching `tickets.inboxes[]` entry (name, fromDisplayName,
  *       defaultTeam, notifyNewTicket, default) are applied.
  *
+ * `--token-env <VAR>` is the one non-interactive form: a provider that issues
+ * an access token without a consent screen (a Shopify custom app's Admin API
+ * token) is connected from that token, read from the named environment
+ * variable only (never argv, never logged), through the OAuth callback's own
+ * storage (`connectWithAccessToken`): encrypted token, replaced row, mirrored
+ * client secret (`--client-secret-env`), `connected_account:create` event.
+ *
  * Container-friendly: the redirect targets the SERVER's public
  * `/api/connections/callback`, so the CLI needs no inbound port.
  */
@@ -52,6 +59,7 @@ import {
 import { extractRows } from "~/db"
 import { withPrivilegedDb } from "~/db/privileged"
 import { rootLogger } from "~/lib/logger"
+import { connectionConfigRegistry } from "~/modules/apps/app-registries"
 import {
   ConnectLinkError,
   type ConnectLinkRefusal,
@@ -60,7 +68,7 @@ import {
   readConnectLinkRefusal,
   readConnectLinkStatus,
 } from "~/modules/apps/connections/connect-links"
-import { startOAuthFlow } from "~/modules/apps/connections/service"
+import { connectWithAccessToken, startOAuthFlow } from "~/modules/apps/connections/service"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import type { MxResolver } from "~/modules/connection-guides/account-type"
 import {
@@ -79,7 +87,9 @@ const GOOGLE_CONNECTIONS = new Set(["mail/gmail", "tickets/gmail", "social/googl
 
 /** One line each, printed with the usage string. */
 export const CONNECT_USAGE =
-  "usage: liaison connect <app>/<connection> [--config <path>] [--email <address>] [--for <member email> [--send]]\n" +
+  "usage: liaison connect <app>/<connection> [--config <path>] [--org <slug|id>] [--email <address>] [--for <member email> [--send]]\n" +
+  "       liaison connect <app>/<connection> --token-env <VAR> [--account <id>] [--client-secret-env <VAR>] [--scopes <a,b>] [--org <slug|id>]\n" +
+  "  --token-env <VAR>  connect from a static access token held in that environment variable (no browser)\n" +
   "  --for <email>  a one-time link for that member to connect their OWN account (personal)\n" +
   "  mail/gmail     connect a Mail app mailbox (read and send in Mail; creates no ticket inbox)\n" +
   "  tickets/gmail  connect a ticket inbox (its mail becomes tickets)"
@@ -99,6 +109,19 @@ export interface RunConnectArgs {
   forEmail?: string
   /** With `forEmail`: also email them the link. */
   send?: boolean
+  /** The org (slug or id); else the config's `org.slug`, else the single org. */
+  org?: string
+  /**
+   * Connect from a static access token held in this environment variable (no
+   * browser). The token is read from the environment only, never argv.
+   */
+  tokenEnv?: string
+  /** With `tokenEnv`: the account (the shop domain for Shopify). */
+  account?: string
+  /** With `tokenEnv`: the environment variable holding the app's client secret. */
+  clientSecretEnv?: string
+  /** With `tokenEnv`: the scopes the token holds, comma-separated. */
+  scopes?: string
 }
 
 export interface RunConnectResult {
@@ -142,6 +165,10 @@ export interface ConnectDeps {
   readConnectLinkRefusal?: typeof readConnectLinkRefusal
   /** Whether the link is still open, redeemed or expired (server side); default connect-links.ts. */
   readConnectLinkStatus?: typeof readConnectLinkStatus
+  /** Stores a static access token as the connection; default service.ts. */
+  connectWithAccessToken?: typeof connectWithAccessToken
+  /** Reads an environment variable (`--token-env`); default process.env. */
+  readEnv?: (name: string) => string | undefined
   /** The guide printed before the flow (tests inject one); default: connectGuide. */
   guide?: (orgId: string, refKey: string, email: string | undefined) => Promise<ConnectGuide>
 }
@@ -391,6 +418,81 @@ export function createConnect(deps: ConnectDeps = defaultDeps) {
   }
 
   /**
+   * `--token-env <VAR>`: connect from a static access token, no browser. The
+   * token and the client secret come from the environment only and are never
+   * printed.
+   */
+  async function connectWithToken(
+    orgId: string,
+    userId: string,
+    app: string,
+    connection: string,
+    args: RunConnectArgs,
+  ): Promise<RunConnectResult> {
+    const refKey = `${app}/${connection}`
+    const readEnv = deps.readEnv ?? ((name: string) => process.env[name])
+    const token = readEnv(args.tokenEnv ?? "")?.trim()
+    if (!token) {
+      deps.log(`connect: the environment variable ${args.tokenEnv} is empty or unset`)
+      return { exitCode: 2 }
+    }
+    let clientSecret: string | undefined
+    if (args.clientSecretEnv !== undefined) {
+      clientSecret = readEnv(args.clientSecretEnv)?.trim()
+      if (!clientSecret) {
+        deps.log(`connect: the environment variable ${args.clientSecretEnv} is empty or unset`)
+        return { exitCode: 2 }
+      }
+    }
+    await deps.ensureAppsForOrg(orgId)
+    const declared = connectionConfigRegistry.get([orgId, app, connection])
+    if (!declared) {
+      deps.log(`connect: ${refKey} is not declared by an app installed for this org`)
+      return { exitCode: 2 }
+    }
+    if (declared.type !== "oauth2") {
+      deps.log(
+        `connect: ${refKey} is not an OAuth connection; --token-env is for OAuth connections only ` +
+          "(credentials go in the config, apps[].connection.credentials, and config apply)",
+      )
+      return { exitCode: 2 }
+    }
+    if (declared.identifierVar && !args.account) {
+      deps.log(`connect: ${refKey} needs --account <${declared.identifierVar}>`)
+      return { exitCode: 2 }
+    }
+    const grantedScopes = args.scopes
+      ?.split(",")
+      .map((x) => x.trim())
+      .filter((x) => x.length > 0)
+    let connected: { accountId: string; identifier: string }
+    try {
+      connected = await (deps.connectWithAccessToken ?? connectWithAccessToken)({
+        orgId,
+        userId,
+        appName: app,
+        connectionName: connection,
+        accessToken: token,
+        ...(args.account !== undefined ? { account: args.account } : {}),
+        ...(clientSecret !== undefined ? { clientSecret } : {}),
+        ...(grantedScopes !== undefined ? { grantedScopes } : {}),
+      })
+    } catch (err) {
+      // The service's messages name the connection, never the token.
+      deps.log(`connect: ${err instanceof Error ? err.message : String(err)}`)
+      return { exitCode: 1 }
+    }
+    deps.log(`${refKey} connected (${connected.identifier}) from a static access token.`)
+    if (declared.clientSecretConfigKey && clientSecret === undefined) {
+      deps.log(
+        `connect: no --client-secret-env given: ${refKey}'s webhook signatures are checked with ` +
+          "the client secret saved before, if any; pass the app's client secret to set it",
+      )
+    }
+    return { exitCode: 0 }
+  }
+
+  /**
    * `--for <email>`: a one-time link for that member to connect their own
    * account. The operator never consents for them: the link works only once
    * they are signed in as themselves, and the connection is theirs.
@@ -513,8 +615,8 @@ export function createConnect(deps: ConnectDeps = defaultDeps) {
     const config = loaded.config
 
     const resolved = await resolveOrgId(
-      config?.org.slug,
-      "multiple orgs exist — pass a --config with org.slug to disambiguate",
+      args.org ?? config?.org.slug,
+      "multiple orgs exist — pass --org <slug>, or a --config with org.slug, to disambiguate",
     )
     if (!resolved.ok) {
       deps.log(`connect: ${resolved.message}`)
@@ -530,6 +632,10 @@ export function createConnect(deps: ConnectDeps = defaultDeps) {
     if (!userId) {
       deps.log(`connect: org ${orgId} has no active user to act as the OAuth initiator`)
       return { exitCode: 2 }
+    }
+
+    if (args.tokenEnv !== undefined) {
+      return connectWithToken(orgId, userId, app, connection, args)
     }
 
     // Warm the registry so startOAuthFlow can resolve the manifest connection.

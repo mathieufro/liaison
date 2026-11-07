@@ -112,7 +112,7 @@ export async function importShipments(
       continue
     }
 
-    let tracking = EMPTY_TRACKING
+    let tracking: NormalizedTracking = { ...EMPTY_TRACKING, events: [] }
     try {
       tracking = await client.v3.getTracking(id)
     } catch (err) {

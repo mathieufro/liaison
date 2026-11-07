@@ -41,6 +41,49 @@ export interface ConnectionClient {
    * caller's RLS actor context. A non-credentials connection returns `{}`.
    */
   getCredentials(identifier?: string): Promise<Record<string, string>>
+  /**
+   * The NON-SECRET part of a credentials connection: `values` holds the fields
+   * the manifest marks `readable: true` (never a `password` field), `missing`
+   * names every declared field with no value stored. Works on every executor;
+   * send the secrets with `ctx.fetch(url, { auth })` instead of reading them.
+   */
+  getSettings(identifier?: string): Promise<ConnectionSettings>
+}
+
+export interface ConnectionSettings {
+  values: Record<string, string>
+  missing: string[]
+}
+
+/**
+ * A credential the host adds to a `ctx.fetch` request, so app code never holds
+ * it. Only sent to a host of that connection's own `allowedDomains`; every
+ * injected value is redacted from the answer.
+ *
+ * - `"header:<Name>"`: the header carries the oauth2 connection's token, or for a
+ *   credentials connection the one field in `fields`.
+ * - `"bearer"`: `Authorization: Bearer <token or field>`; with `exchange`, a
+ *   client-credentials token the host obtains (Basic of `exchange.fields` POSTed
+ *   to `exchange.url`), caches until shortly before it expires, and drops on a
+ *   401 answer so a retry exchanges again.
+ * - `"basic"`: `Authorization: Basic base64(fields[0]:fields[1])` of a credentials
+ *   connection.
+ */
+export interface FetchAuth {
+  connection: string
+  /** Which account, as for `getToken(identifier)`. */
+  identifier?: string
+  scheme: `header:${string}` | "bearer" | "basic"
+  fields?: string[]
+  exchange?: {
+    url: string
+    method?: "POST" | "GET"
+    fields: [string, string]
+    /** Default `accessToken`. */
+    tokenField?: string
+    /** Seconds; default `expiresIn`. */
+    expiresInField?: string
+  }
 }
 
 export interface Logger {
@@ -128,6 +171,14 @@ export interface AppContext {
       headers?: Record<string, string>
       body?: string | { multipart: FetchMultipartPart[] }
       timeoutMs?: number
+      /** A connection credential the host adds (see `FetchAuth`). */
+      auth?: FetchAuth
+      /**
+       * `{ "<placeholder>": "<config key>" }`: the host writes each declared config
+       * secret into the string body where its placeholder (12 to 128 characters)
+       * stands, verbatim. Only to a host of the connection that declares the key.
+       */
+      configSecrets?: Record<string, string>
     },
   ): Promise<{
     status: number
@@ -148,6 +199,8 @@ export interface AppContext {
    */
   config: {
     get(key: string): Promise<unknown>
+    /** Whether `key` holds a value; for a secret, without reading it. */
+    has(key: string): Promise<boolean>
     /**
      * Store a secret the PROVIDER minted (returned once by its API) under a key the manifest
      * declares in `connections.<c>.appSecretConfigKeys`. Encrypted by the kernel; read back only

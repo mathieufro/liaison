@@ -19,7 +19,7 @@ function makeCtx(
     db,
     fetch: (async () => ({ status: 200, headers: {}, body: "{}" })) as never,
     connections: {},
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     executeTool: async (target: string, rawArgs: string | Record<string, unknown>) => {
       const args = typeof rawArgs === "string" ? {} : rawArgs
       calls.push({ target, args })

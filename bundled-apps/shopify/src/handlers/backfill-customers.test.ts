@@ -13,6 +13,7 @@
 import { describe, expect, it } from "bun:test"
 import type { AppContext } from "@liaison/app-sdk"
 import { createEnforcingEmit } from "../lib/emit.testutil"
+import { withTimer } from "../lib/timers.testutil"
 import { validateFields } from "../lib/validate-fields.testutil"
 import { backfillCustomersJob } from "./backfill-customers"
 
@@ -323,5 +324,36 @@ describe("backfillCustomersJob", () => {
     expect(resolveContact.calls.length).toBe(1)
     expect(resolveContact.calls[0]!.externalId).toBe("c1")
     expect(fetchCount.current).toBe(3)
+  })
+})
+
+describe("backfillCustomersJob poll pacing", () => {
+  const running = (id = "bo1"): FetchResponse => ({
+    body: { data: { currentBulkOperation: { id, status: "RUNNING", url: null, errorCode: null } } },
+  })
+  const url = "https://cdn/jsonl/bo1.jsonl"
+  const rows = [{ id: "gid://shopify/Customer/c1", email: "a@b.com" }]
+
+  it("backs off 250, 500, 1000 ms between polls where the runtime has a timer", async () => {
+    const { ctx, resolveContact } = makeCtx({
+      shopifyFetch: [bulkRunQueryOk(), running(), running(), running(), currentBulkCompleted("bo1", url)],
+      blobs: { [url]: rows },
+    })
+    const delays = await withTimer("recording", async (d) => {
+      await backfillCustomersJob({}, ctx)
+      return d
+    })
+    expect(delays).toEqual([250, 500, 1000])
+    expect(resolveContact.calls.length).toBe(1)
+  })
+
+  it("polls without waiting where the runtime has no timer", async () => {
+    const { ctx, resolveContact, fetchCount } = makeCtx({
+      shopifyFetch: [bulkRunQueryOk(), running(), running(), currentBulkCompleted("bo1", url)],
+      blobs: { [url]: rows },
+    })
+    await withTimer("absent", () => backfillCustomersJob({}, ctx))
+    expect(fetchCount.current).toBe(4)
+    expect(resolveContact.calls.length).toBe(1)
   })
 })

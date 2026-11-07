@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { describe, expect, it } from "bun:test"
 import { ShopifyClient, type ShopifyFetchResponse } from "./shopify-client"
+import { createPollPacer, pollBackoffMs, sleep } from "./timers"
+import { withTimer } from "./timers.testutil"
 
 const COST_OK = { cost: { throttleStatus: { currentlyAvailable: 1000, restoreRate: 50 } } }
 const COST_LOW = { cost: { throttleStatus: { currentlyAvailable: 50, restoreRate: 50 } } }
@@ -13,7 +15,6 @@ describe("ShopifyClient", () => {
   it("query returns data on a 200 response", async () => {
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => okResponse({ data: { ok: true }, extensions: COST_OK }),
     })
     const r = await client.query<{ ok: boolean }>("query { ok }", {})
@@ -25,7 +26,6 @@ describe("ShopifyClient", () => {
     let n = 0
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async (req) => {
         bodies.push(typeof req.body === "string" ? req.body : "")
         n++
@@ -49,7 +49,6 @@ describe("ShopifyClient", () => {
     let n = 0
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => {
         n++
         return okResponse({ errors: [{ message: "Malformed cursor" }], extensions: COST_OK })
@@ -63,7 +62,6 @@ describe("ShopifyClient", () => {
     let n = 0
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => {
         n++
         return okResponse({ errors: [{ message: "Field 'foo' doesn't exist" }], extensions: COST_OK })
@@ -79,7 +77,6 @@ describe("ShopifyClient", () => {
     const calls: number[] = []
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => {
         calls.push(Date.now())
         return okResponse({ data: { ok: true }, extensions: COST_LOW })
@@ -97,7 +94,6 @@ describe("ShopifyClient", () => {
     let n = 0
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => {
         n++
         return { status: 429, headers: { "retry-after": "0" }, body: "" }
@@ -112,7 +108,6 @@ describe("ShopifyClient", () => {
     let n = 0
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => {
         n++
         return { status: 401, headers: {}, body: "" }
@@ -125,7 +120,6 @@ describe("ShopifyClient", () => {
   it("propagates 403 as SCOPE_DENIED (no retry)", async () => {
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => ({ status: 403, headers: {}, body: "" }),
     })
     await expect(client.query("query{}", {})).rejects.toMatchObject({ code: "SCOPE_DENIED" })
@@ -149,7 +143,6 @@ describe("ShopifyClient", () => {
     let i = 0
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => okResponse(pages[i++]!),
     })
     const ids: string[] = []
@@ -163,7 +156,6 @@ describe("ShopifyClient", () => {
     const urls: string[] = []
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       baseUrlOverride: "http://127.0.0.1:40001",
       fetch: async (req) => {
         urls.push(req.url)
@@ -178,7 +170,6 @@ describe("ShopifyClient", () => {
     const urls: string[] = []
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       baseUrlOverride: "http://127.0.0.1:40001/",
       fetch: async (req) => {
         urls.push(req.url)
@@ -193,7 +184,6 @@ describe("ShopifyClient", () => {
     const urls: string[] = []
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async (req) => {
         urls.push(req.url)
         return okResponse({ data: { ok: true }, extensions: COST_OK })
@@ -207,7 +197,6 @@ describe("ShopifyClient", () => {
     const calls: number[] = []
     const client = new ShopifyClient({
       shop: "demo",
-      token: "t",
       fetch: async () => {
         calls.push(Date.now())
         return okResponse({ data: { ok: true } })
@@ -217,5 +206,81 @@ describe("ShopifyClient", () => {
     await client.query("query {}", {})
     await client.query("query {}", {})
     expect(calls[1]! - calls[0]!).toBeLessThan(100)
+  })
+})
+
+describe("ShopifyClient on a runtime without timers", () => {
+  it("a throttle wait is a no-op instead of a ReferenceError", async () => {
+    let n = 0
+    const client = new ShopifyClient({
+      shop: "demo",
+      fetch: async () => {
+        n++
+        return okResponse({ data: { ok: true }, extensions: COST_LOW })
+      },
+      throttlePauseMs: 60_000,
+      throttleLowWatermark: 100,
+    })
+    await withTimer("absent", async () => {
+      await client.query("query {}", {})
+      // The bucket is low, so this call must wait first: with no timer it proceeds at once.
+      await client.query("query {}", {})
+    })
+    expect(n).toBe(2)
+  })
+
+  it("a 429 retry proceeds without a timer", async () => {
+    let n = 0
+    const client = new ShopifyClient({
+      shop: "demo",
+      fetch: async () => {
+        n++
+        if (n === 1) return { status: 429, headers: { "retry-after": "2" }, body: "" }
+        return okResponse({ data: { ok: true }, extensions: COST_OK })
+      },
+    })
+    const r = await withTimer("absent", () => client.query<{ ok: boolean }>("query {}", {}))
+    expect(r.ok).toBe(true)
+    expect(n).toBe(2)
+  })
+})
+
+describe("sleep", () => {
+  it("resolves at once and touches no timer when the runtime has none", async () => {
+    await withTimer("absent", async () => {
+      await expect(sleep(1_000)).resolves.toBeUndefined()
+    })
+  })
+
+  it("waits through setTimeout when the runtime has one", async () => {
+    const delays = await withTimer("recording", async (d) => {
+      await sleep(750)
+      return d
+    })
+    expect(delays).toEqual([750])
+  })
+
+  it("never schedules a zero or negative wait", async () => {
+    const delays = await withTimer("recording", async (d) => {
+      await sleep(0)
+      await sleep(-5)
+      return d
+    })
+    expect(delays).toEqual([])
+  })
+})
+
+describe("createPollPacer", () => {
+  it("backs off 250 ms doubling to a 2 s cap", () => {
+    expect([0, 1, 2, 3, 4, 9].map(pollBackoffMs)).toEqual([250, 500, 1000, 2000, 2000, 2000])
+  })
+
+  it("clips the waits to the budget, then stops waiting", async () => {
+    const waits: number[] = []
+    const pace = createPollPacer(2_500, async (ms) => {
+      waits.push(ms)
+    })
+    for (let i = 0; i < 6; i++) await pace(i)
+    expect(waits).toEqual([250, 500, 1000, 750])
   })
 })

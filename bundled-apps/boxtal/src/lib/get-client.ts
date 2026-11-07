@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //
-// Boxtal client facade. Reads the org's credentials-connection map via the
-// `getCredentials` accessor (Task K-CREDS), validates the five expected keys,
-// and constructs a `BoxtalV1Client` + `BoxtalV3Client` wired to `ctx.fetch`.
+// Boxtal client facade. Reads the NON-SECRET settings of the org's
+// credentials connection (`getSettings`: the readable `environment`, and which
+// fields are empty), checks the five expected keys are set, and constructs a
+// `BoxtalV1Client` + `BoxtalV3Client` wired to `ctx.fetch`. The key pairs
+// never enter the bundle: each request names the connection in `ctx.fetch`
+// auth and the host adds them (one path on every executor).
 //
 // `ctx.connections` has two runtime shapes (same as Shopify's
 // `resolveShopConnection`):
-//   - FLAT  `{ getCredentials(name, id?) }` — the sandbox bridge group.
-//   - RECORD `{ boxtal: { getCredentials(id?) } }` — the SDK type / unit-test mock.
-// We normalize to one accessor so the facade is correct under both.
+//   - FLAT  `{ getSettings(name, id?) }` — the sandbox bridge group.
+//   - RECORD `{ boxtal: { getSettings(id?) } }` — the SDK type / unit-test mock.
+// `readConnectionSettings` normalizes both.
 
-import { readConnectionCredentials } from "@liaison/app-sdk/connection-credentials"
+import { readConnectionSettings } from "@liaison/app-sdk/connection-credentials"
 import { BoxtalV1Client } from "./boxtal-v1-client"
 import {
   type BoxtalEnvironment,
@@ -46,7 +49,7 @@ class BoxtalConnectionError extends Error {
 
 /** Build the Boxtal v1/v3 client facade from the live credentials connection. */
 export async function getClient(ctx: BoxtalCtx): Promise<BoxtalFacade> {
-  const read = await readConnectionCredentials(ctx.connections, CONNECTION, REQUIRED_KEYS)
+  const read = await readConnectionSettings(ctx.connections, CONNECTION, REQUIRED_KEYS)
   if (!read.ok) {
     if (read.reason === "incomplete") {
       throw new BoxtalConnectionError(
@@ -55,25 +58,14 @@ export async function getClient(ctx: BoxtalCtx): Promise<BoxtalFacade> {
     }
     throw new BoxtalConnectionError("Boxtal not connected")
   }
-  const map = read.credentials
-  const environment = map.environment
+  const environment = read.values.environment
   if (environment !== "sandbox" && environment !== "production") {
     throw new BoxtalConnectionError(
       `Boxtal environment must be 'sandbox' or 'production', got '${environment}'`,
     )
   }
-  const v1 = new BoxtalV1Client({
-    fetch: ctx.fetch,
-    v1Key: map.v1Key!,
-    v1Secret: map.v1Secret!,
-    environment,
-  })
-  const v3 = new BoxtalV3Client({
-    fetch: ctx.fetch,
-    v3Key: map.v3Key!,
-    v3Secret: map.v3Secret!,
-    environment,
-  })
+  const v1 = new BoxtalV1Client({ fetch: ctx.fetch, environment, connection: CONNECTION })
+  const v3 = new BoxtalV3Client({ fetch: ctx.fetch, environment, connection: CONNECTION })
   return { v1, v3, environment }
 }
 

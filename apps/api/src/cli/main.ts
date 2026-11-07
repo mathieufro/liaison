@@ -524,11 +524,36 @@ async function connect(argv: string[]): Promise<number> {
     err(CONNECT_USAGE)
     return 2
   }
+  const org = arg("--org", argv)
+  const tokenEnv = arg("--token-env", argv)
+  const account = arg("--account", argv)
+  const clientSecretEnv = arg("--client-secret-env", argv)
+  const scopes = arg("--scopes", argv)
+  // Variable NAMES only: a value that looks like a flag, or a token pasted in
+  // its place, is refused before anything runs.
+  const envName = /^[A-Za-z_][A-Za-z0-9_]*$/
+  const tokenFlagsWithoutToken =
+    tokenEnv === undefined &&
+    (account !== undefined || clientSecretEnv !== undefined || scopes !== undefined)
+  if (
+    (argv.includes("--token-env") && tokenEnv === undefined) ||
+    (tokenEnv !== undefined && (!envName.test(tokenEnv) || forEmail !== undefined)) ||
+    (clientSecretEnv !== undefined && !envName.test(clientSecretEnv)) ||
+    tokenFlagsWithoutToken
+  ) {
+    err(CONNECT_USAGE)
+    return 2
+  }
   const res = await runConnect({
     ref,
     ...(configPath !== undefined ? { configPath } : {}),
     ...(email !== undefined ? { email } : {}),
     ...(forEmail !== undefined ? { forEmail, send: argv.includes("--send") } : {}),
+    ...(org !== undefined ? { org } : {}),
+    ...(tokenEnv !== undefined ? { tokenEnv } : {}),
+    ...(account !== undefined ? { account } : {}),
+    ...(clientSecretEnv !== undefined ? { clientSecretEnv } : {}),
+    ...(scopes !== undefined ? { scopes } : {}),
   })
   return res.exitCode
 }
@@ -868,7 +893,7 @@ async function keysRotate(argv: string[]): Promise<number> {
   return res.exitCode
 }
 
-// `app status` / `app rollback` (`app verify` runs offline in cli/index.ts; this
+// `app status` / `app rollback` / `app run-job` (`app verify` runs offline in cli/index.ts; this
 // handler only answers when that entry is bypassed).
 async function appCmd(argv: string[]): Promise<number> {
   const manage = await import("~/cli/app/manage")
@@ -878,6 +903,9 @@ async function appCmd(argv: string[]): Promise<number> {
     res = await manage.runAppStatus(argv.slice(2), await manage.defaultAppManageDeps())
   } else if (sub === "rollback") {
     res = await manage.runAppRollback(argv.slice(2), await manage.defaultAppManageDeps())
+  } else if (sub === "run-job") {
+    const runJob = await import("~/cli/app/run-job")
+    res = await runJob.runAppRunJob(argv.slice(2), await runJob.defaultAppRunJobDeps())
   } else {
     const { runAppOffline } = await import("~/cli/app/verify")
     res = await runAppOffline(argv.slice(1))
@@ -923,6 +951,7 @@ export const HANDLERS: Record<CommandName, Handler> = {
   "api-connector test": apiConnectorTest,
   "app status": appCmd,
   "app rollback": appCmd,
+  "app run-job": appCmd,
   "app verify": appCmd,
   connect,
   disconnect,

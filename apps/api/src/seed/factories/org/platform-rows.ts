@@ -12,6 +12,7 @@
 import { sql } from "drizzle-orm"
 import { withSystemDb } from "~/db/privileged"
 import {
+  apps,
   appsActiveVersion,
   appsInstalled,
   connectedAccounts,
@@ -97,6 +98,18 @@ export async function seedControlPlaneMessage(row: {
   await withSystemDb("seed-control-plane-message", (db) =>
     db.insert(controlPlaneOutbox).values(row),
   )
+}
+
+/**
+ * An app's registration row for an org (`kernel.apps`), as registration writes
+ * it; its id. For a test that needs the app known to the org without loading a
+ * bundle.
+ */
+export async function seedAppRow(row: typeof apps.$inferInsert): Promise<string> {
+  const [created] = await withSystemDb("seed-app-row", (db) =>
+    db.insert(apps).values(row).returning({ id: apps.id }),
+  )
+  return created?.id as string
 }
 
 /** A custom app's install record for an org (an upload's row). */

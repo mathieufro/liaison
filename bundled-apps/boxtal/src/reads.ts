@@ -115,7 +115,7 @@ export async function track(ctx: ReadsCtx, input: { id: string }): Promise<Track
   assertNotRefToken(input.id)
   const client = await getClientOrError(ctx)
   if ("error" in client) {
-    return { ...EMPTY_TRACKING, recipient_summary: null, external_id: null, error: client.error }
+    return { ...EMPTY_TRACKING, events: [], recipient_summary: null, external_id: null, error: client.error }
   }
   // Resolve the row + Boxtal order id ONCE up front, so a caller passing the local
   // shipment row id (as ready_list/search surface) still reaches Boxtal with the
@@ -130,6 +130,7 @@ export async function track(ctx: ReadsCtx, input: { id: string }): Promise<Track
     if (isBoxtalNotReady(err, "tracking")) {
       return {
         ...EMPTY_TRACKING,
+        events: [],
         recipient_summary: (row?.recipient_summary as string | null) ?? null,
         external_id: (row?.external_id as string | null) ?? null,
       }
@@ -250,7 +251,7 @@ export async function getShipment(ctx: ReadsCtx, input: { id: string }): Promise
   } catch (err) {
     // Tracking not ready yet → still return the order view with empty tracking.
     if (!isBoxtalNotReady(err, "tracking")) throw err
-    tracking = EMPTY_TRACKING
+    tracking = { ...EMPTY_TRACKING, events: [] }
   }
   // A tracking read with nothing in it (not scanned yet) never wipes what the row already knows:
   // a stored tracking number or status stays until Boxtal reports a real one.

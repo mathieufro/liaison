@@ -3151,9 +3151,7 @@ async function registerSingleApp(
                 pollCtx: { orgId: string; userId: string; tx: unknown },
                 externalRef: unknown,
               ): Promise<{ ready: boolean; result?: Record<string, unknown> }> => {
-                const { getWorkerPool, initWorkerPool } = await import(
-                  "~/modules/apps/sandbox/worker-pool"
-                )
+                const { runApp } = await import("~/modules/apps/sandbox/run-app")
                 const { createSandboxRpcBridge } = await import("~/modules/apps/sandbox/rpc-bridge")
                 const source = await loadBundle(pollBundlePath)
                 const runPoll = async (tx: unknown) => {
@@ -3164,15 +3162,21 @@ async function registerSingleApp(
                     tx as never,
                     pollManifest as never,
                   )
-                  await initWorkerPool()
-                  return getWorkerPool().execute({
+                  // Always the worker pool; the bridge holds the poll's transaction.
+                  return runApp({
+                    trusted: false,
+                    appName: pollAppName,
+                    orgId: pollCtx.orgId,
+                    bundlePath: pollBundlePath,
                     bundleSource: source,
                     exportName: pollExport,
+                    entry: `poll:${pollExport}`,
                     params: { external_ref: externalRef },
                     bridge,
                     timeoutMs: 60_000,
                     priority: "background",
                     appId: pollAppName,
+                    holdsTx: true,
                   })
                 }
                 // The poll job hands over a privileged transaction. An app the
@@ -3602,9 +3606,7 @@ async function registerSingleApp(
             // regardless of the original actor (user who connected the account).
             const isCrossAppKernel = sourceApp !== appName
             const handler = async (event: any) => {
-              const { getWorkerPool, initWorkerPool } = await import(
-                "~/modules/apps/sandbox/worker-pool"
-              )
+              const { runApp } = await import("~/modules/apps/sandbox/run-app")
               const { createEventHandlerBridge } = await import(
                 "~/modules/apps/sandbox/event-handler-bridge"
               )
@@ -3632,15 +3634,21 @@ async function registerSingleApp(
                 // privileged wrappers behave exactly as before. Background priority:
                 // events must not starve interactive tool calls (same rule as
                 // manifest webhooks).
-                await initWorkerPool()
-                await getWorkerPool().execute({
+                await runApp({
+                  trusted: false,
+                  appName,
+                  orgId: eventOrgId,
+                  bundlePath,
                   bundleSource: source,
                   exportName,
+                  entry: `event:${exportName}`,
                   params: event,
                   bridge,
                   timeoutMs: 30_000,
                   priority: "background",
                   appId: appName,
+                  // The bridge runs on the handler's ambient transaction (txDb).
+                  holdsTx: true,
                 })
               }
 
@@ -3757,9 +3765,7 @@ async function registerSingleApp(
               const appName = desc.name
               const bridgeManifest = manifestForBridge!
               const sandboxHandler = async (payload: any) => {
-                const { getWorkerPool, initWorkerPool } = await import(
-                  "~/modules/apps/sandbox/worker-pool"
-                )
+                const { runApp } = await import("~/modules/apps/sandbox/run-app")
                 const source = await loadBundle(bundlePath)
                 const jobOrgId: string = payload.orgId ?? orgId
                 // SECURITY (defense-in-depth, cross-tenant escalation): the
@@ -3800,10 +3806,14 @@ async function registerSingleApp(
                 // handles — the bridge closes over them; never ship them in the
                 // worker's params.
                 const { _tx, _session, ...sandboxPayload } = payload
-                await initWorkerPool()
-                const result = await getWorkerPool().execute({
+                const result = await runApp({
+                  trusted: false,
+                  appName,
+                  orgId: jobOrgId,
+                  bundlePath,
                   bundleSource: source,
                   exportName,
+                  entry: `job:${jobName}`,
                   params: sandboxPayload,
                   bridge,
                   timeoutMs: jobDef.timeoutMs ?? 60_000,
@@ -3811,6 +3821,8 @@ async function registerSingleApp(
                   // One app's jobs hold at most half the background workers.
                   backgroundGroup: `job:${appName}`,
                   appId: appName,
+                  // An ambient job (`atomic: true`) runs on the worker's `_tx`.
+                  holdsTx: !_session,
                 })
                 if (desc.webhookHealth?.probe === jobName) {
                   await recordUpstreamProbeResult(appName, jobOrgId, jobName, result)
@@ -3826,9 +3838,7 @@ async function registerSingleApp(
               const appName = desc.name
               const bridgeManifest = manifestForBridge!
               const sandboxHandler = async (payload: any) => {
-                const { getWorkerPool, initWorkerPool } = await import(
-                  "~/modules/apps/sandbox/worker-pool"
-                )
+                const { runApp } = await import("~/modules/apps/sandbox/run-app")
                 const source = await loadBundle(bundlePath)
                 const jobOrgId: string = payload.orgId ?? orgId
                 // SECURITY (defense-in-depth, cross-tenant escalation) — see the
@@ -3853,10 +3863,14 @@ async function registerSingleApp(
                 // `_tx` / `_session` are host-only handles the bridge closes over;
                 // strip them from the params that cross the IPC boundary.
                 const { _tx, _session, ...sandboxPayload } = payload
-                await initWorkerPool()
-                await getWorkerPool().execute({
+                await runApp({
+                  trusted: false,
+                  appName,
+                  orgId: jobOrgId,
+                  bundlePath,
                   bundleSource: source,
                   exportName,
+                  entry: `job:${jobName}`,
                   params: sandboxPayload,
                   bridge,
                   timeoutMs: jobDef.timeoutMs ?? 60_000,
@@ -3864,6 +3878,8 @@ async function registerSingleApp(
                   // One app's jobs hold at most half the background workers.
                   backgroundGroup: `job:${appName}`,
                   appId: appName,
+                  // An ambient job (`atomic: true`) runs on the worker's `_tx`.
+                  holdsTx: !_session,
                 })
               }
               registerJobWorker(desc.name, jobName, sandboxHandler, { txMode: jobTxMode(jobDef) })
@@ -3956,8 +3972,7 @@ async function registerSingleApp(
           handlerName: searchDef.handler,
           timeoutMs,
           dispatch: async (handlerName, payload, tenant) => {
-            const { executeInSandbox } = await import("~/modules/apps/sandbox/executor")
-            const { getSandboxPool } = await import("~/modules/apps/sandbox/pool")
+            const { runApp } = await import("~/modules/apps/sandbox/run-app")
             const { createSessionRpcBridge } = await import("~/modules/apps/sandbox/rpc-bridge")
             const { withPrivilegedDb } = await import("~/db/privileged")
             const { createRlsSession } = await import("~/db/rls")
@@ -3993,27 +4008,20 @@ async function registerSingleApp(
               bridgeManifest,
               [`${appNameLocal}:*`],
             )
-            if (!vouched) {
-              const { getWorkerPool, initWorkerPool } = await import(
-                "~/modules/apps/sandbox/worker-pool"
-              )
-              await initWorkerPool()
-              return (await getWorkerPool().execute({
-                bundleSource: source,
-                exportName: handlerName,
-                params: payload,
-                bridge,
-                timeoutMs,
-                appId: appNameLocal,
-              })) as unknown
-            }
-            return (await executeInSandbox({
-              pool: getSandboxPool(),
+            // A vouched app's search runs in-process; any other in the worker pool.
+            return (await runApp({
+              trusted: vouched,
+              appName: appNameLocal,
+              orgId: searchOrgId,
+              bundlePath,
               bundleSource: source,
               exportName: handlerName,
+              entry: `search:${handlerName}`,
               params: payload,
               bridge,
               timeoutMs,
+              appId: appNameLocal,
+              holdsTx: false,
             })) as unknown
           },
         })

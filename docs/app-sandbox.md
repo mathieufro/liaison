@@ -94,10 +94,12 @@ The bridge surface is large and grows as apps need new host capabilities. Core c
 | Events | `emit(event)` — declared emits only |
 | Jobs | `enqueueJob(name, payload)` |
 | Contacts | `resolveContact(params)` (not the mail app: its host page write `mail_writePage` resolves senders under the mailbox's ownership, see `modules/mail/page-write.ts` and `sender-contacts.ts`) |
-| Network | `fetch(url, opts)` — domain allowlist enforced |
-| Connections | `connections_getToken(connName, identifier?)`, `connections_getAccounts(connName)`, `connections_describe(connName)` (owner, connected by, health, token expiry, whether a refresh token is stored; no secrets), `connections_getCredentials`, `connections_disconnect` |
+| Network | `fetch(url, opts)` — domain allowlist enforced. `opts.auth` (`{connection, identifier?, scheme: "header:<Name>" \| "bearer" \| "basic", fields?, exchange?}`) has the host add the connection's credential, only to that connection's own hosts, and redact it from the answer; `opts.configSecrets` (`{placeholder: configKey}`) has the host write a declared config secret into the body |
+| Connections | `connections_getToken(connName, identifier?)`, `connections_getAccounts(connName)`, `connections_describe(connName)` (owner, connected by, health, token expiry, whether a refresh token is stored; no secrets), `connections_getCredentials`, `connections_getSettings(connName, identifier?)` (the fields marked `readable`, and which fields are empty; no secrets), `connections_disconnect` |
 | Logging | `log_info`, `log_warn`, `log_error`, `log_debug` |
-| Config | `config_get(key)` |
+| Config | `config_get(key)`, `config_has(key)`, `crypto_hmacSha256Base64ForConfig(key, data)`, `crypto_verifyHmacForConfig(key, data, signature, "base64" \| "hex")` (sign or verify with a declared config secret, which stays on the host) |
+
+An app that runs on the Workers executor never receives a secret: there `connections_getToken`, `connections_getCredentials` and `config_get` of a declared secret key fail with `secret_not_available_on_workers`. Use `fetch` auth, `configSecrets` and the by-key crypto calls, which work on every executor.
 | Files | `files_importAttachment`, `files_listAttachments`, `files_getAttachmentBytes`, `files_attachToParent`, `files_reparent`, `files_analyzeDocument` (capability `files.analyzeDocument`: reads one of the app's own PDFs or images with the workspace's media analysis model, answering the app's prompt; credits apply, and an admin can turn the `apps` media surface off) |
 | Bulk data | `bulk_fetchToBlob`, `bulk_iterateJsonl_next`, `bulk_deleteBlob` — streaming helpers for large payloads |
 | Approvals | `approval_recordStarted`, `approval_recordEffectLanded`, `approval_recordSucceeded`, `approval_recordFailedNoEffect`, `approval_recordAmbiguous` |

@@ -7,7 +7,6 @@
 // runs in QuickJS), sorted ascending by tax-exclusive price, and DEV-mode rows
 // are filtered out.
 
-import { base64Encode } from "./base64"
 import {
   type BoxtalEnvironment,
   type BoxtalFetch,
@@ -143,9 +142,9 @@ export interface Offer {
 
 export interface BoxtalV1ClientOptions {
   fetch: BoxtalFetch
-  v1Key: string
-  v1Secret: string
   environment: BoxtalEnvironment
+  /** The credentials connection whose v1 key pair the host sends. Default "boxtal". */
+  connection?: string
   /** Cap for the single cotation round trip. Default BOXTAL_HTTP_TIMEOUT_MS. */
   requestTimeoutMs?: number
 }
@@ -355,8 +354,7 @@ export function parseCotationXml(xml: string): Offer[] {
 
 export class BoxtalV1Client {
   readonly fetchImpl: BoxtalFetch
-  private readonly v1Key: string
-  private readonly v1Secret: string
+  private readonly connection: string
   private readonly environment: BoxtalEnvironment
   /** Cap for this client's single HTTP round trip (http-budget.ts). A cotation
    *  is one GET, so the per-request cap IS the whole call budget here. */
@@ -364,8 +362,7 @@ export class BoxtalV1Client {
 
   constructor(opts: BoxtalV1ClientOptions) {
     this.fetchImpl = opts.fetch
-    this.v1Key = opts.v1Key
-    this.v1Secret = opts.v1Secret
+    this.connection = opts.connection ?? "boxtal"
     this.environment = opts.environment
     this.requestTimeoutMs = opts.requestTimeoutMs ?? BOXTAL_HTTP_TIMEOUT_MS
   }
@@ -380,9 +377,8 @@ export class BoxtalV1Client {
     const url = `${this.base}/api/v1/cotation?${qs}`
     const res = await this.fetchImpl(url, {
       method: "GET",
-      headers: {
-        Authorization: `Basic ${base64Encode(`${this.v1Key}:${this.v1Secret}`)}`,
-      },
+      // HTTP Basic of the v1 key pair, added host-side: the keys never enter the bundle.
+      auth: { connection: this.connection, scheme: "basic", fields: ["v1Key", "v1Secret"] },
       ...timeoutHints(this.requestTimeoutMs),
     })
     if (res.status >= 400) {

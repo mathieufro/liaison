@@ -97,6 +97,14 @@ export type RpcBridgeApprovalContext = {
 export type RpcBridgeOptions = {
   callChain?: string[]
   /**
+   * The run's isolate lives off this server (the Workers executor): every
+   * method that would return a secret (connections_getToken,
+   * connections_getCredentials, config_get of a declared secret key) rejects
+   * with `secret_not_available_on_workers` (bridge/secret-free.ts). Whoever
+   * builds the bridge for a Workers run sets it; QuickJS runs leave it unset.
+   */
+  workersRun?: boolean
+  /**
    * A job this bridge enqueues runs as the app (system), never as `userId`.
    * Set for event handler bridges, whose `userId` is merely whoever caused the
    * event (see event-handler-bridge.ts).

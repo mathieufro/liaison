@@ -79,13 +79,13 @@ import {
 } from "~/modules/apps/ref-messages"
 import { withAppDimensionAliases } from "~/modules/apps/runtime-helpers"
 import { loadBundle } from "~/modules/apps/sandbox/bundle-loader"
-import { executeInSandbox, resolveToolTimeoutMs } from "~/modules/apps/sandbox/executor"
-import { getSandboxPool } from "~/modules/apps/sandbox/pool"
+import { resolveToolTimeoutMs } from "~/modules/apps/sandbox/executor"
 import {
   createSandboxRpcBridge,
   createSessionRpcBridge,
   inlinePgCauseOnBridge,
 } from "~/modules/apps/sandbox/rpc-bridge"
+import { runApp } from "~/modules/apps/sandbox/run-app"
 import {
   attachUpstreamTrace,
   type UpstreamTrace,
@@ -94,8 +94,6 @@ import {
 } from "~/modules/apps/sandbox/upstream-trace"
 import {
   type ExecPriority,
-  getWorkerPool,
-  initWorkerPool,
   SANDBOX_TENANT_BUSY_CODE,
   SANDBOX_TENANT_RETRY_AFTER_SECONDS,
   SandboxTenantBusyError,
@@ -3071,59 +3069,53 @@ export async function executeToolHandler(
     // from the stored payload and may predate the fill, and because a fill is idempotent:
     // a value that is present is never replaced.
     const handlerParams = withManifestDefaults(tool, validatedParams)
-    const runManifest = (bridge: Record<string, any>): Promise<unknown> =>
-      runManifestOnce(bridge).catch((err: unknown) => {
+    const runManifest = (bridge: Record<string, any>, holdsTx: boolean): Promise<unknown> =>
+      runManifestOnce(bridge, holdsTx).catch((err: unknown) => {
         attachUpstreamTrace(err, upstreamTrace)
         throw err
       })
-    const runManifestOnce = (bridge: Record<string, any>): Promise<unknown> => {
-      if (handlerRef.trusted) {
-        return executeInSandbox({
-          pool: getSandboxPool(),
-          bundleSource,
-          exportName: handlerRef.exportName,
-          params: handlerParams,
-          bridge,
-          timeoutMs: toolTimeoutMs,
-          signal: bridgeOptions?.signal,
-        })
-      }
-      return initWorkerPool().then(() =>
-        getWorkerPool().execute({
-          bundleSource,
-          exportName: handlerRef.exportName,
-          params: handlerParams,
-          bridge,
-          timeoutMs: toolTimeoutMs,
-          // K6 — thread the post-approval re-entry signal to the worker so the shim
-          // can bake `ctx.approval` as a synchronous literal (the async
-          // `_approvalContext_get` bridge can't satisfy the sync `if (ctx.approval)`
-          // branch untrusted handlers use to gate on first-entry vs re-entry).
-          syncContext: { approval: approvalContext ?? null },
-          priority: bridgeOptions?.priority ?? "interactive",
-          // Reentrancy admission: a dispatch whose call chain already holds
-          // another tool is running INSIDE a sandbox execution (a cross-app
-          // ctx.executeTool hop), and the caller is blocked on a worker of this
-          // same pool until it answers. The pool must not park it behind that
-          // caller: it admits it above maxSize instead of queueing it into a
-          // deadlock. `bridgeOptions.nested` is the flag executeToolCore plumbs
-          // in from the INCOMING chain; the callChain derivation is the same
-          // fact read at this site (the current tool is already pushed here),
-          // and is kept so a caller that does not plumb the flag is still
-          // admitted rather than deadlocked.
-          nested: bridgeOptions?.nested === true || (bridgeOptions?.callChain?.length ?? 0) > 1,
-          // Every hop of one handler's `Promise.all` fan-out carries the same
-          // PARENT EXECUTION token, so this keys them together and the pool can
-          // bound that fan-out's breadth instead of letting it jump the queue
-          // without limit. A hop opened by another execution of the same chain
-          // carries a different token and gets its own breadth.
-          nestedParentKey: bridgeOptions?.parentExecutionToken,
-          signal: bridgeOptions?.signal,
-          appId: tool.appName,
-          toolName: tool.name,
-        }),
-      )
-    }
+    const runManifestOnce = (bridge: Record<string, any>, holdsTx: boolean): Promise<unknown> =>
+      runApp({
+        trusted: handlerRef.trusted === true,
+        appName: tool.appName,
+        orgId,
+        bundlePath: handlerRef.bundlePath,
+        bundleSource,
+        exportName: handlerRef.exportName,
+        params: handlerParams,
+        bridge,
+        executionToken,
+        timeoutMs: toolTimeoutMs,
+        signal: bridgeOptions?.signal,
+        holdsTx,
+        // The fields below reach the worker pool only (the in-process executor
+        // takes none of them).
+        // K6 — thread the post-approval re-entry signal to the worker so the shim
+        // can bake `ctx.approval` as a synchronous literal (the async
+        // `_approvalContext_get` bridge can't satisfy the sync `if (ctx.approval)`
+        // branch untrusted handlers use to gate on first-entry vs re-entry).
+        syncContext: { approval: approvalContext ?? null },
+        priority: bridgeOptions?.priority ?? "interactive",
+        // Reentrancy admission: a dispatch whose call chain already holds
+        // another tool is running INSIDE a sandbox execution (a cross-app
+        // ctx.executeTool hop), and the caller is blocked on a worker of this
+        // same pool until it answers. The pool must not park it behind that
+        // caller: it admits it above maxSize instead of queueing it into a
+        // deadlock. `bridgeOptions.nested` is the flag executeToolCore plumbs
+        // in from the INCOMING chain; the callChain derivation is the same
+        // fact read at this site (the current tool is already pushed here),
+        // and is kept so a caller that does not plumb the flag is still
+        // admitted rather than deadlocked.
+        nested: bridgeOptions?.nested === true || (bridgeOptions?.callChain?.length ?? 0) > 1,
+        // Every hop of one handler's `Promise.all` fan-out carries the same
+        // PARENT EXECUTION token, so this keys them together and the pool can
+        // bound that fan-out's breadth instead of letting it jump the queue
+        // without limit. A hop opened by another execution of the same chain
+        // carries a different token and gets its own breadth.
+        nestedParentKey: bridgeOptions?.parentExecutionToken,
+        appId: tool.appName,
+        toolName: tool.name,
+      })
 
     if (session && (tool as any).atomic !== true) {
       // Bridge-owned transactions: NO ambient transaction is open while the
@@ -3140,6 +3132,7 @@ export async function executeToolHandler(
           approvalContext,
           handlerBridgeOptions,
         ),
+        false,
       )
     }
     if (session) {
@@ -3160,6 +3153,7 @@ export async function executeToolHandler(
               handlerBridgeOptions,
             ),
           ),
+          true,
         ),
       )
     }
@@ -3177,6 +3171,7 @@ export async function executeToolHandler(
           handlerBridgeOptions,
         ),
       ),
+      true,
     )
   }
 

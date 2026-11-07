@@ -220,6 +220,8 @@ async function deliverOrdersCreate(orgId: string, payload: unknown, webhookId: s
       )
       return executeManifestWebhook({
         appName: "shopify",
+        orgId,
+        holdsTx: true,
         handlerRef,
         bundleSource: await loadBundle(handlerRef.bundlePath),
         params: payload,

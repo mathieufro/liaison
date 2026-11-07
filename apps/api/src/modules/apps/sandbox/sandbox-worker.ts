@@ -24,6 +24,7 @@ import { newQuickJSAsyncWASMModule } from "quickjs-emscripten"
 // in cannot drag `~/lib/env`/logger (which would fatally fail to parse) along.
 import { exitWhenOrphaned } from "../../../lib/orphan-exit"
 import { applyTypedFailure, newBridgeRejection, type TypedBridgeFailure } from "./bridge-rejection"
+import { buildCtxShimSource } from "./ctx-shim"
 
 // A sandbox worker whose host API server is gone can never be handed another
 // execution over IPC, so an orphan here is always garbage: unconditional, no env
@@ -285,138 +286,15 @@ async function handleExecute(req: ExecuteRequest): Promise<void> {
       handles.push(handle)
     }
 
-    // 2. Build __ctx shim — exposes each bridge method as BOTH a flat
-    //    property (`ctx.db_findMany`) AND a nested property (`ctx.db.findMany`,
-    //    when the name is `<group>_<member>`). All callsites go through
-    //    `__wrap`, which auto-detects two patterns by inspecting the args:
-    //
-    //      RAW shape (mail/tickets pattern): every arg is a primitive
-    //        (string/number/boolean). The caller already serialized its
-    //        structured data — pass args + return value through unchanged.
-    //
-    //      SDK shape (shopify / `@liaison/app-sdk` pattern): some arg is
-    //        a non-primitive (object/array). Marshal: stringify
-    //        non-primitive args to JSON, then best-effort JSON.parse a
-    //        string return value back to structured data.
-    //
-    //    This lets both call shapes coexist on the same flat-name bridge
-    //    (e.g. `ctx.emit("json-string")` from mail and `ctx.emit({...})`
-    //    from shopify both work). The wrap is a no-op for the raw path,
-    //    so existing apps see no behavior change.
-    //
-    //    JSON.parse failures on the return fall back to the original
-    //    string — handles `crypto_*` bridges that return non-JSON
-    //    primitive strings like base64 digests.
-    // `approval` is NOT a method group — it is the K6 data field (`ctx.approval`,
-    // baked below from `syncContext`). The bridge's `approval_record*` idempotency
-    // methods (consumed flat as `ctx.approval_recordStarted(...)`, never
-    // `ctx.approval.recordStarted(...)`) would otherwise be collected into a
-    // nested `approval: { recordStarted, ... }` object that shadows the data
-    // field with a truthy method container — making `if (!ctx.approval)` always
-    // false and breaking every threshold/precondition gate. Reserve it.
-    const RESERVED_GROUPS = new Set(["approval"])
-    // Structured-return groups: the generic kernel read/CRUD affordances
-    // (`ctx.kernel.*`, `ctx.db.*`) are the SDK-convention surface — their
-    // documented contract is that the shim returns *already-parsed* structured
-    // data (see ReadsKernel / ReadsDb in `@liaison/app-sdk`). Unlike the
-    // host-app RAW groups (`tickets`/`mail`/`projects`/`knowledge`/…), whose
-    // handlers pre-serialize args AND parse string returns themselves, SDK
-    // apps expect `ctx.kernel.listApprovals("invoicing:", 50)` to hand back an
-    // array — not the raw JSON string the bridge IPC layer emits.
-    //
-    // The plain `__wrap` decides whether to JSON.parse the string return based
-    // on whether any *argument* was non-primitive. That heuristic is unsound
-    // for these reads: `ctx.kernel.listApprovals(prefix, limit)` and
-    // `ctx.db.findOne(entity, id)` pass all-primitive args, so `__wrap` skips
-    // the parse and leaks an unparsed JSON string — `rows.map(...)` then throws
-    // "not a function". Route the nested members of these groups through
-    // `__wrapStructured`, which always best-effort JSON.parses a string return
-    // (falling back to the string on parse failure) regardless of arg shape,
-    // while keeping the arg-marshalling (object → JSON) so `ctx.db.findMany`
-    // with an opts object still works.
-    const STRUCTURED_RETURN_GROUPS = new Set(["kernel", "db"])
-    const nested = new Map<string, string[]>()
-    for (const m of req.bridgeMethods) {
-      const splitAt = m.indexOf("_")
-      if (splitAt > 0 && splitAt < m.length - 1) {
-        const group = m.slice(0, splitAt)
-        if (RESERVED_GROUPS.has(group)) continue
-        const member = m.slice(splitAt + 1)
-        if (!nested.has(group)) nested.set(group, [])
-        const wrapper = STRUCTURED_RETURN_GROUPS.has(group) ? "__wrapStructured" : "__wrap"
-        nested.get(group)!.push(`${member}: ${wrapper}(__bridge_${m})`)
-      }
-    }
-    // SDK-contract alias: bridge exposes `log_*` → grouped as `ctx.log.*`, but
-    // the documented accessor (and every bundled app) is `ctx.logger.*`. Without
-    // this `ctx.logger` is undefined → optional calls silently no-op, non-optional
-    // calls throw in-sandbox. Mirror `log` as `logger`. (Matches executor.ts.)
-    if (nested.has("log") && !nested.has("logger")) {
-      nested.set("logger", nested.get("log")!.slice())
-    }
-    const WRAP_HELPER = `function __wrap(fn) {
-      return async function() {
-        var args = Array.prototype.slice.call(arguments);
-        var sdkShape = false;
-        for (var i = 0; i < args.length; i++) {
-          var a = args[i];
-          if (a === null || a === undefined) continue;
-          var t = typeof a;
-          if (t !== "string" && t !== "number" && t !== "boolean") { sdkShape = true; break; }
-        }
-        if (!sdkShape) {
-          return await fn.apply(null, args);
-        }
-        var marshalled = args.map(function(a) {
-          if (a === null || a === undefined) return a;
-          var t = typeof a;
-          if (t === "string" || t === "number" || t === "boolean") return a;
-          return JSON.stringify(a);
-        });
-        var result = await fn.apply(null, marshalled);
-        if (typeof result === "string") {
-          try { return JSON.parse(result); } catch (e) { return result; }
-        }
-        return result;
-      };
-    }
-    function __wrapStructured(fn) {
-      return async function() {
-        var args = Array.prototype.slice.call(arguments);
-        var marshalled = args.map(function(a) {
-          if (a === null || a === undefined) return a;
-          var t = typeof a;
-          if (t === "string" || t === "number" || t === "boolean") return a;
-          return JSON.stringify(a);
-        });
-        var result = await fn.apply(null, marshalled);
-        if (typeof result === "string") {
-          try { return JSON.parse(result); } catch (e) { return result; }
-        }
-        return result;
-      };
-    }`
-    // Out-of-process worker: `getUserId` / `getOrgId` are resolved through
-    // the normal async IPC bridge roundtrip (no pre-baking). The in-process
-    // executor.ts SYNC_GETTER_NAMES pre-bake is an optimisation for in-process
-    // execution only; out-of-process handlers already await every bridge call.
-    // K6 pre-bake — embed `ctx.approval` as a synchronous JS literal so the
-    // `if (ctx.approval)` first-entry/re-entry branch resolves without the async
-    // `_approvalContext_get` bridge roundtrip. `null` on first entry. The async
-    // bridge method is hidden from the flat surface (the synchronous field is the
-    // SDK contract); see the executor's matching C5 pre-bake.
-    const approvalLiteral = JSON.stringify(req.syncContext?.approval ?? null)
-    const HIDDEN_NAMES = new Set(["_approvalContext_get"])
-    const methods = [
-      `approval: ${approvalLiteral}`,
-      ...req.bridgeMethods
-        .filter((m) => !HIDDEN_NAMES.has(m))
-        .map((m) => `${m}: __wrap(__bridge_${m})`),
-      ...Array.from(nested.entries()).map(
-        ([group, entries]) => `${group}: { ${entries.join(", ")} }`,
-      ),
-    ].join(",\n    ")
-    const shimCode = `${WRAP_HELPER}\nvar __ctx = {\n    ${methods}\n  };`
+    // 2. Build __ctx from the shared rule table (ctx-shim.ts): flat names,
+    //    `<group>_<member>` groups, structured-return groups, the reserved
+    //    `approval` literal (K6, from syncContext), hidden names, the
+    //    `logger` alias and `ctx.bulk.iterateJsonl`. Every method, the "sync"
+    //    getters included, is an async IPC round trip here (no pre-baking).
+    const shimCode = buildCtxShimSource({
+      bridgeMethods: req.bridgeMethods,
+      approval: req.syncContext?.approval ?? null,
+    })
     const shimResult = ctx.evalCode(shimCode, "ctx-shim.js")
     if (shimResult.error) {
       const err = ctx.dump(shimResult.error)

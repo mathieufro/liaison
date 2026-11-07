@@ -31,6 +31,13 @@ import { createKnowledgeCurationMethods } from "~/modules/apps/sandbox/bridge/kn
 import { createMailMethods } from "~/modules/apps/sandbox/bridge/mail"
 import { createPlatformMethods } from "~/modules/apps/sandbox/bridge/platform"
 import { createProjectsMethods } from "~/modules/apps/sandbox/bridge/projects"
+import {
+  forWorkersRun,
+  markSecretConfigKeys,
+  type SecretConfigKeyResolver,
+  secretConfigKeysOf,
+  WORKERS_RUN_BRIDGE,
+} from "~/modules/apps/sandbox/bridge/secret-free"
 import { type AppManifestForBridge, withPgCause } from "~/modules/apps/sandbox/bridge/shared"
 import { createTicketsMethods } from "~/modules/apps/sandbox/bridge/tickets"
 import { buildBridgeExtensions } from "~/modules/apps/sandbox/bridge-extensions"
@@ -127,7 +134,34 @@ export function createRpcBridge(
     }
   }
 
+  // The keys this bridge's config_get decrypts, from the same call it decrypts
+  // with (bridge/identity.ts readAppConfigValue), so a Workers run refuses
+  // exactly those, wherever it is marked (here, or later in runApp).
+  markSecretConfigKeys(rpcBridge, secretConfigKeyResolver(orgId, appName, manifest))
+
+  // A Workers run: no method hands a secret back (applied last, so an app's
+  // extension cannot reintroduce one).
+  if (bridgeOptions?.workersRun) {
+    forWorkersRun(rpcBridge, { secretConfigKeys: secretConfigKeysOf(rpcBridge) })
+  }
+
   return rpcBridge
+}
+
+/**
+ * The config keys `config_get` decrypts for this app (bridge/identity.ts
+ * readAppConfigValue -> decryptConnectionConfigValue): the manifest's declared
+ * secrets, the same call with the same arguments, read at each use.
+ */
+function secretConfigKeyResolver(
+  orgId: string,
+  appName: string,
+  manifest: AppManifestForBridge,
+): SecretConfigKeyResolver {
+  return async () => {
+    const { resolveConnectionSecretConfigKeys } = await import("~/modules/apps/connections/service")
+    return resolveConnectionSecretConfigKeys(orgId, appName, manifest.connections)
+  }
 }
 
 // -- Session bridge (bridge-owned transactions) -------------------------------
@@ -406,6 +440,8 @@ function inlinePgCause(err: unknown, methodName: string): unknown {
  */
 export function inlinePgCauseOnBridge(bridge: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {}
+  const secretKeys = secretConfigKeysOf(bridge)
+  if (secretKeys) markSecretConfigKeys(out, secretKeys)
   for (const [name, member] of Object.entries(bridge)) {
     if (typeof member !== "function" || member.constructor.name !== "AsyncFunction") {
       out[name] = member
@@ -587,6 +623,10 @@ export function createSessionRpcBridge(
     value: sharedOptions.withShortTx,
     enumerable: false,
   })
+  markSecretConfigKeys(sessionBridge, secretConfigKeyResolver(orgId, appName, manifest))
+  if (sharedOptions.workersRun) {
+    Object.defineProperty(sessionBridge, WORKERS_RUN_BRIDGE, { value: true, enumerable: false })
+  }
   return sessionBridge
 }
 

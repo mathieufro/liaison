@@ -6,7 +6,7 @@
 // webhooks (Shopify signs them with the app's secret) with that same secret. A
 // workspace with its own client keeps using its own.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test"
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto"
+import { createHmac, randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { and, sql as drizzleSql, eq } from "drizzle-orm"
@@ -26,6 +26,7 @@ import { connectionClientSecretForConfigKey } from "~/modules/apps/connections/o
 import { upsertConnectionOAuthClient } from "~/modules/apps/connections/oauth-client-provisioning"
 import { handleOAuthCallback, startOAuthFlow } from "~/modules/apps/connections/service"
 import { initSandboxPool, shutdownSandboxPool } from "~/modules/apps/sandbox/pool"
+import { buildVerifyBridge } from "~/modules/webhooks/verify-bridge"
 import { shopifyWebhookVerifier } from "../../../../../bundled-apps/shopify/src/lib/hmac"
 
 type ShopifyInstanceVars = { SHOPIFY_APP_CLIENT_ID?: string; SHOPIFY_APP_CLIENT_SECRET?: string }
@@ -153,18 +154,13 @@ async function verifyDelivery(secret: string) {
       method: "POST",
       query: {},
     },
-    {
-      // What the webhook route's config_get answers for the signing key.
-      config_get: (key) =>
+    // The webhook route's verify bridge; its config reader answers what the
+    // route's does for the signing key.
+    buildVerifyBridge({
+      readConfig: (key) =>
         connectionClientSecretForConfigKey(orgId, "shopify", key, SHOPIFY_CONNECTIONS),
-      crypto_hmacSha256Base64: async (s, b) =>
-        createHmac("sha256", s).update(b, "utf8").digest("base64"),
-      crypto_timingSafeEqual: async (a, b) => {
-        const left = Buffer.from(a)
-        const right = Buffer.from(b)
-        return left.length === right.length && timingSafeEqual(left, right)
-      },
-    },
+      secretConfigKeys: ["shopifyWebhookSecret"],
+    }) as never,
   )
 }
 

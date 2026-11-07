@@ -3081,6 +3081,95 @@ async function storeOAuthGrant(
         )
       : null
 
+  const card = connectCardRefOf(record.card)
+  await persistOAuthGrant({
+    orgId,
+    userId,
+    appName,
+    connectionName,
+    ownerType: resolvedOwnerType,
+    ownerId: resolvedOwnerId,
+    connConfig,
+    tokens,
+    grantedOAuthScopes,
+    tokenExpiry,
+    presetIdentifier: templatedIdentifier,
+    accountChoice: accountChoice ?? null,
+    mintingClient: {
+      source: provider.source === "deployment" ? "instance" : "org",
+      clientId: provider.clientId,
+    },
+    clientSecret: provider.clientSecret,
+    cardRequestId: card?.requestId ?? null,
+  })
+
+  return card
+    ? connectCardReturnUrl(orgId, card)
+    : getFrontendRedirectUrl(orgId, appSettingsPath(orgId, appName))
+}
+
+/** A connection's declaration, as its app's manifest registered it. */
+type DeclaredConnection = NonNullable<ReturnType<typeof connectionConfigRegistry.get>>
+
+/** The token response fields a stored grant reads. */
+interface GrantTokens {
+  access_token: string
+  refresh_token?: string
+  expires_in?: number
+  id_token?: string
+  [key: string]: unknown
+}
+
+/** One provider grant to store as the connection's active account. */
+interface GrantToStore {
+  orgId: string
+  userId: string
+  appName: string
+  connectionName: string
+  ownerType: "user" | "org"
+  ownerId: string | null
+  connConfig: DeclaredConnection | undefined
+  tokens: GrantTokens
+  grantedOAuthScopes: string[]
+  tokenExpiry: ProviderTokenExpiry | null
+  /** The identifier known before the token (the `identifierVar` value); null resolves it from the token. */
+  presetIdentifier: string | null
+  accountChoice: string | null
+  /** The client that minted the tokens (a refresh uses it); null when no client did. */
+  mintingClient: { source: "instance" | "org"; clientId: string } | null
+  /** Mirrored into the connection's `clientSecretConfigKey`; null mirrors nothing. */
+  clientSecret: string | null
+  cardRequestId: string | null
+}
+
+/**
+ * Store a grant as the connection's active account: its identifier, the row it
+ * replaces, the encrypted tokens, the mirrored client secret and the
+ * `connected_account:create` event (the app's `onConnectionEstablished`), then
+ * the connect cards waiting for it. Shared by the OAuth callback and
+ * `connectWithAccessToken`.
+ */
+async function persistOAuthGrant(
+  grant: GrantToStore,
+): Promise<{ accountId: string; identifier: string }> {
+  const {
+    orgId,
+    userId,
+    appName,
+    connectionName,
+    ownerType: resolvedOwnerType,
+    ownerId: resolvedOwnerId,
+    connConfig,
+    tokens,
+    grantedOAuthScopes,
+    tokenExpiry,
+    presetIdentifier,
+    accountChoice,
+    mintingClient,
+    clientSecret,
+    cardRequestId,
+  } = grant
+
   // Resolve the stored connection identifier.
   //
   // Priority:
@@ -3088,8 +3177,8 @@ async function storeOAuthGrant(
   //   2. OIDC id_token email claim.
   //   3. Userinfo endpoint email claim.
   //   4. Fallback: the acting userId.
-  let identifier: string = templatedIdentifier ?? userId
-  const hasCustomIdentifier = identifierVar !== undefined
+  let identifier: string = presetIdentifier ?? userId
+  const hasCustomIdentifier = presetIdentifier !== null
 
   // Identifier straight from a TOKEN-response field (e.g. Instagram `user_id`) --
   // for providers with no id_token/userinfo. Takes precedence over the email paths.
@@ -3109,7 +3198,7 @@ async function storeOAuthGrant(
       connConfig,
       identifierPath,
       tokens.access_token,
-      accountChoice ?? null,
+      accountChoice,
       { orgId, appName, connectionName },
     )
     identifier = account.id
@@ -3340,8 +3429,8 @@ async function storeOAuthGrant(
         createdBy: userId,
         // The client that minted these tokens: refresh and webhook checks keep
         // using it after the workspace saves another (oauth-client.ts).
-        oauthClientSource: provider.source === "deployment" ? "instance" : "org",
-        oauthClientId: provider.clientId,
+        oauthClientSource: mintingClient?.source ?? null,
+        oauthClientId: mintingClient?.clientId ?? null,
         // Persist the granted scopes kernel-side too (not only on the connect
         // event) so the generic connection-health attention provider can flag
         // scope DRIFT — a healthy connection whose grant now lacks scopes the
@@ -3357,7 +3446,7 @@ async function storeOAuthGrant(
     // once the connection is established — keeping app-specific names out of the
     // kernel. We merge into the existing config jsonb (never clobber other keys)
     // and never log the secret.
-    if (connConfig?.clientSecretConfigKey && provider.clientSecret) {
+    if (connConfig?.clientSecretConfigKey && clientSecret) {
       // The app row already exists (OAuth can only run after the app is
       // installed/registered), so merge the secret into the existing config
       // jsonb. We update rather than upsert to avoid the NOT NULL `version`
@@ -3377,7 +3466,7 @@ async function storeOAuthGrant(
       const configEncKey = process.env.ENCRYPTION_KEY ?? ENCRYPTION_KEY
       const overlayJson = JSON.stringify({
         [connConfig.clientSecretConfigKey]: encryptSecret(
-          provider.clientSecret,
+          clientSecret,
           configEncKey,
           CryptoContext.appConfigConnectionSecret,
         ),
@@ -3444,7 +3533,6 @@ async function storeOAuthGrant(
   // just stored (secret-requests/connect-settle.ts); so is one a connect made
   // in Settings answers. Loaded lazily: the secret requests import this module.
   const { settleConnectRequests } = await import("~/modules/secret-requests/connect-settle")
-  const card = connectCardRefOf(record.card)
   await settleConnectRequests({
     orgId,
     userId,
@@ -3452,12 +3540,106 @@ async function storeOAuthGrant(
     connectionName,
     ownerType: resolvedOwnerType,
     accountId,
-    cardRequestId: card?.requestId ?? null,
+    cardRequestId,
   })
 
-  return card
-    ? connectCardReturnUrl(orgId, card)
-    : getFrontendRedirectUrl(orgId, appSettingsPath(orgId, appName))
+  return { accountId, identifier }
+}
+
+/**
+ * Connect an OAuth connection with an access token the provider issued without
+ * a consent screen (a Shopify custom app's Admin API token), for an operator
+ * with shell access (`liaison connect --token-env`). Everything after the code
+ * exchange is the OAuth callback's own (`persistOAuthGrant`): the replaced row,
+ * the encrypted token, the mirrored client secret, the `connected_account:create`
+ * event. The connection is the org's. No client minted the token, so none is
+ * recorded and nothing refreshes it.
+ */
+export async function connectWithAccessToken(args: {
+  orgId: string
+  /** The member the connection is attributed to (`created_by`, the event's actor). */
+  userId: string
+  appName: string
+  connectionName: string
+  accessToken: string
+  /** The account: the `identifierVar` value (a shop domain) when the connection declares one. */
+  account?: string
+  /** Mirrored into the connection's `clientSecretConfigKey` (webhook signatures). */
+  clientSecret?: string
+  /** The scopes the token holds, when the provider has no lookup for them. */
+  grantedScopes?: string[]
+}): Promise<{ accountId: string; identifier: string }> {
+  const { orgId, userId, appName, connectionName } = args
+  await assertDemoEgressAllowed(orgId, "connector_credentials")
+  if (!connectionConfigRegistry.get([orgId, appName, connectionName])) {
+    const { awaitOrgApps } = await import("~/modules/apps/init")
+    await awaitOrgApps(orgId)
+  }
+  const connConfig = connectionConfigRegistry.get([orgId, appName, connectionName])
+  if (!connConfig) {
+    throw new Error(`Connection "${connectionName}" not declared in app "${appName}" manifest`)
+  }
+  if (connConfig.type !== "oauth2") {
+    throw new Error(`Connection "${connectionName}" is not an OAuth2 connection`)
+  }
+  if (!(await isAppActiveForOrgAsync(orgId, appName))) {
+    throw new OAuthAppDisabledError(appName, appSettingsPath(orgId, appName))
+  }
+  if (args.accessToken.trim() === "") throw new Error("The access token is empty")
+
+  let presetIdentifier: string | null = args.account?.trim() || null
+  const identifierVar = connConfig.identifierVar
+  if (identifierVar) {
+    const rule = connConfig.templateVars?.[identifierVar]
+    if (!rule) {
+      throw new Error(
+        `Connection "${appName}:${connectionName}" declares identifierVar "${identifierVar}" ` +
+          "but no templateVars rule for it",
+      )
+    }
+    presetIdentifier = presetIdentifier ? applyTemplateVarRule(presetIdentifier, rule) : null
+    if (!presetIdentifier) {
+      throw new Error(
+        `Connection "${appName}:${connectionName}" needs a valid "${identifierVar}" as its account`,
+      )
+    }
+  }
+
+  let grantedOAuthScopes = args.grantedScopes ?? []
+  if (connConfig.grantedScopesUrl) {
+    const looked = await fetchGrantedScopes(connConfig.grantedScopesUrl, args.accessToken, {
+      orgId,
+      appName,
+      connectionName,
+    })
+    if (looked.length > 0) grantedOAuthScopes = looked
+  }
+
+  const { assertOrgAcceptsWrites } = await import("~/modules/org/transfer-state/gate")
+  const { beginOrgActivity } = await import("~/modules/org/transfer-state/state")
+  const end = beginOrgActivity(orgId, "writes")
+  try {
+    await assertOrgAcceptsWrites(orgId)
+    return await persistOAuthGrant({
+      orgId,
+      userId,
+      appName,
+      connectionName,
+      ownerType: "org",
+      ownerId: null,
+      connConfig,
+      tokens: { access_token: args.accessToken },
+      grantedOAuthScopes,
+      tokenExpiry: null,
+      presetIdentifier,
+      accountChoice: null,
+      mintingClient: null,
+      clientSecret: args.clientSecret ?? null,
+      cardRequestId: null,
+    })
+  } finally {
+    end()
+  }
 }
 
 export { getFrontendRedirectUrl }

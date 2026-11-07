@@ -43,6 +43,8 @@ Return shapes:
 
 A verifier reads its signing secret with `config_get(<key>)`. When the key is a connection's `clientSecretConfigKey` (a provider that signs webhooks with the app's OAuth client secret, such as Shopify), the kernel answers with the connection's current client secret: the workspace's own client, else the client the instance provides for every workspace (`modules/apps/connections/oauth-client.ts`). With no client at all, it answers with the copy stored in the app's config when the account connected. Every other key is read from the app's config.
 
+A verifier should not read the secret itself: `config_has(<key>)` says whether it is set, and `crypto_verifyHmacForConfig(<key>, body, signature, "base64" | "hex")` checks a signature with it on the host, in constant time (`modules/webhooks/verify-bridge.ts`). On the Workers executor, `config_get` of a declared secret key is refused.
+
 ## Runtime sequence
 
 The kernel runs, in strict order:

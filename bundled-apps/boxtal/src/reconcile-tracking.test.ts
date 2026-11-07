@@ -106,8 +106,8 @@ function makeCtx(opts: {
     connections:
       opts.connected === false
         ? {}
-        : { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-    config: { get: async () => "whsecret" },
+        : { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+    config: { get: async () => "whsecret", has: async () => true },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   } as any
   return { ctx, db, calls }

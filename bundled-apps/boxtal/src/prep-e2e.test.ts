@@ -288,8 +288,8 @@ function makeChainCtx(
       db,
       fetch,
       executeTool,
-      connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-      config: { get: async () => null },
+      connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+      config: { get: async () => null, has: async () => false },
       logger: { info() {}, warn() {}, error() {}, debug() {} },
     } as never as BoxtalToolCtx
   chainIssuedProformas.set(ctx as object, proformaLinesByDoc)

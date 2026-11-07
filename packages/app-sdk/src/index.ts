@@ -81,8 +81,10 @@ export {
 export type {
   AppContext,
   ConnectionClient,
+  ConnectionSettings,
   CrossAppEnvelope,
   DbClient,
+  FetchAuth,
   FetchMultipartPart,
   Logger,
   UpstreamProbeResult,

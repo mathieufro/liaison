@@ -10,6 +10,7 @@
   "scripts": {
     "pr:land": "bun run scripts/pr-land.ts",
     "slots": "bun run scripts/slots.ts",
+    "apps:build-worker-bundle": "bun run scripts/apps-build-worker-bundle.ts",
     "prepare": "git config core.hooksPath scripts/git-hooks || true",
     "bootstrap:test-env": "bun run scripts/bootstrap-test-env.ts",
     "pretest": "bun run bootstrap:test-env",

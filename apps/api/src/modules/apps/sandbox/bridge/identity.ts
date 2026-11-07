@@ -3,6 +3,10 @@
 import { sql as drizzleSql } from "drizzle-orm"
 import { extractRows } from "~/db"
 import type { BridgeContext } from "~/modules/apps/sandbox/bridge/context"
+import {
+  createConfigSecretMethods,
+  manifestSecretConfigKeys,
+} from "~/modules/apps/sandbox/bridge/secret-free"
 import { setUserScopes as setUserScopesService } from "~/modules/permissions/app-grants"
 import { hasScope } from "~/modules/permissions/permissions"
 
@@ -136,46 +140,14 @@ export function createIdentityMethods(ctx: BridgeContext): Record<string, any> {
         manifestConnections: manifest.connections,
       })
     },
-    config_get: async (key: string) => {
-      const rows = await txDb.execute(
-        drizzleSql`SELECT config FROM ${appTable(kernelSchema, "apps")} WHERE org_id = ${orgId} AND name = ${appName} LIMIT 1`,
-      )
-      const row = extractRows(rows)[0] as { config?: unknown } | undefined
-      const rawConfig = row?.config
-      const config =
-        typeof rawConfig === "string"
-          ? (JSON.parse(rawConfig) as Record<string, unknown>)
-          : (rawConfig as Record<string, unknown> | null | undefined)
-      const value = config?.[key]
-      // A key the managed cell owns answers the cell's value (cell-locked-config.ts).
-      const { cellConfigOverride } = await import("~/modules/apps/cell-locked-config")
-      const cell = await cellConfigOverride(orgId, appName, String(key), value)
-      if (cell !== undefined) return cell
-      if (value === undefined || value === null) {
-        // The instance may answer for every workspace (Mail's shared Gmail push topic).
-        const { instanceConfigDefault } = await import("~/modules/apps/instance-config-defaults")
-        return instanceConfigDefault(appName, key)
-      }
-      // Connection secrets (OAuth client secret / kernel-minted webhook secret)
-      // are stored encrypted in apps.config. Decrypt ONLY those keys here, so a
-      // connect handler / verifier reads the same plaintext secret it always did;
-      // every other config key (e.g. gmailPushAudience) is returned verbatim. The
-      // decrypt runs host-side — the ENCRYPTION_KEY is NEVER handed into the
-      // sandbox; only the resulting plaintext secret string crosses the boundary,
-      // exactly as the plaintext value did before encryption-at-rest.
-      const { decryptConnectionConfigValue } = await import("~/modules/apps/connections/service")
-      // Derive which keys are secret from THIS bridge's manifest connections —
-      // the stable source always present here — so a registry-population gap can
-      // never leak ciphertext to the consumer. Default encKey resolves live env.
-      return decryptConnectionConfigValue(
-        orgId,
-        appName,
-        key,
-        value,
-        undefined,
-        manifest.connections,
-      )
-    },
+    config_get: async (key: string) => readAppConfigValue(ctx, key),
+
+    // Secret-by-key (secret-free.ts): sign or verify with a declared config secret, or ask
+    // whether one is set, without the secret entering the app's memory.
+    ...createConfigSecretMethods({
+      readConfig: (key) => readAppConfigValue(ctx, key),
+      secretConfigKeys: manifestSecretConfigKeys(manifest.connections),
+    }),
 
     hasOnlineUsers: async (accountId: string) => {
       const account = (await findEntityById("accounts", accountId)) as {
@@ -239,4 +211,53 @@ export function createIdentityMethods(ctx: BridgeContext): Record<string, any> {
       return JSON.stringify(value)
     },
   }
+}
+
+/**
+ * The app's `kernel.apps.config` value for `key`, as `ctx.config.get` answers
+ * it: the cell's value for a key the cell owns, else the stored value (a
+ * declared connection secret decrypted host-side), else the instance default.
+ * Shared by `config_get`, `config_has`, the *ForConfig crypto methods and the
+ * `configSecrets` of `ctx.fetch`; a Workers run refuses only the first for a
+ * secret key.
+ */
+export async function readAppConfigValue(
+  ctx: BridgeContext,
+  key: string,
+  db: BridgeContext["txDb"] = ctx.txDb,
+): Promise<unknown> {
+  const { appName, appTable, kernelSchema, manifest, orgId } = ctx
+  const txDb = db
+
+  const rows = await txDb.execute(
+    drizzleSql`SELECT config FROM ${appTable(kernelSchema, "apps")} WHERE org_id = ${orgId} AND name = ${appName} LIMIT 1`,
+  )
+  const row = extractRows(rows)[0] as { config?: unknown } | undefined
+  const rawConfig = row?.config
+  const config =
+    typeof rawConfig === "string"
+      ? (JSON.parse(rawConfig) as Record<string, unknown>)
+      : (rawConfig as Record<string, unknown> | null | undefined)
+  const value = config?.[key]
+  // A key the managed cell owns answers the cell's value (cell-locked-config.ts).
+  const { cellConfigOverride } = await import("~/modules/apps/cell-locked-config")
+  const cell = await cellConfigOverride(orgId, appName, String(key), value)
+  if (cell !== undefined) return cell
+  if (value === undefined || value === null) {
+    // The instance may answer for every workspace (Mail's shared Gmail push topic).
+    const { instanceConfigDefault } = await import("~/modules/apps/instance-config-defaults")
+    return instanceConfigDefault(appName, key)
+  }
+  // Connection secrets (OAuth client secret / kernel-minted webhook secret)
+  // are stored encrypted in apps.config. Decrypt ONLY those keys here, so a
+  // connect handler / verifier reads the same plaintext secret it always did;
+  // every other config key (e.g. gmailPushAudience) is returned verbatim. The
+  // decrypt runs host-side — the ENCRYPTION_KEY is NEVER handed into the
+  // sandbox; only the resulting plaintext secret string crosses the boundary,
+  // exactly as the plaintext value did before encryption-at-rest.
+  const { decryptConnectionConfigValue } = await import("~/modules/apps/connections/service")
+  // Derive which keys are secret from THIS bridge's manifest connections —
+  // the stable source always present here — so a registry-population gap can
+  // never leak ciphertext to the consumer. Default encKey resolves live env.
+  return decryptConnectionConfigValue(orgId, appName, key, value, undefined, manifest.connections)
 }

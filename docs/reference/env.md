@@ -158,6 +158,13 @@ Every variable the server reads at boot is a key of its environment schema. A mi
 | `LIAISON_TEAM_OUTBOX_INTERVAL_MS` | `number` |  | no | Test only (honoured only under NODE_ENV=test): drain the Liaison team outbox every this many ms instead of every minute, for process-level e2e. |
 | `SINGLETON_LEADER_URL` | `string (URL)` |  | no | Patroni leader gate (HA active/standby). URL of the LOCAL node's Patroni REST /leader (e.g. http://host.docker.internal:8008/leader). When set, the jobs (BullMQ workers) of this node run ONLY while this node is the Patroni leader, so a warm standby that comes up during a failover doesn't double-fire customer emails/webhooks. Singletons (outbox drain and other once-per-cluster loops) run only in the process that holds the Redis leader lease AND sits on the Patroni leader. UNSET (default) = gate off, this node counts as the Patroni leader. See infra/leadership.ts. Empty strings (compose ${VAR:-} defaults) = unset. |
 | `LIAISON_ROLE` | `"all" \| "api" \| "worker"` | `"all"` | no | What this process serves. `all` (default) = one container does everything: HTTP + WebSocket API, BullMQ job workers and the singletons (outbox drain), as a single-container self-host runs. `api` = HTTP + WebSocket only, no job workers, never the singleton leader. `worker` = BullMQ job workers and the singletons (behind the leader lease), with a health-only HTTP server. Any other value refuses boot. The CLI ignores it. |
+| `LIAISON_WORKERS_APPS` | `string` |  | no | Running listed apps on a remote V8 isolate loader instead of the local QuickJS sandbox (modules/apps/workers/config.ts). Used only when every one of LIAISON_WORKERS_APPS, LIAISON_APP_LOADER_URL, LIAISON_APP_LOADER_CELL_ID, LIAISON_APP_LOADER_KEY and LIAISON_WORKERS_BUNDLES is set and LIAISON_ROLE is `all`; otherwise every app runs on QuickJS and /api/app-bridge answers 404. Unset by default. The app names to run there, comma separated. |
+| `LIAISON_APP_LOADER_URL` | `string (URL)` |  | no | The loader's base URL (it is called at `<url>/run`). |
+| `LIAISON_APP_LOADER_CELL_ID` | `string` |  | no | This instance's id at the loader; it picks the signing key and the bridge origin the loader accepts. |
+| `LIAISON_APP_LOADER_KEY` | `string` |  | no | The shared key that signs this instance's requests to the loader. |
+| `LIAISON_APP_BRIDGE_BASE_URL` | `string (URL)` |  | no | The public base URL the loader's isolates call back on (`<url>/api/app-bridge/<runId>`). Unset, BASE_URL. |
+| `LIAISON_WORKERS_BUNDLES` | `string` |  | no | The bundle each app version runs there, as JSON `{"<app>@<version>":"<sha256>"}`. A listed app whose installed version has no entry runs on QuickJS. |
+| `LIAISON_APP_BRIDGE_TIMINGS_FILE` | `string` |  | no | A JSONL file that receives one timing line per /api/app-bridge call (run, app, method, duration, status). Unset, the timings stay in memory only. |
 | `LIAISON_READY_WARM_MS` | `number` | `30000` | no | How long a serving process may spend, before /readyz answers 200, registering the apps of the orgs with a live socket in the cell (the orgs a deploy's reconnecting sockets bring it first). Past it the process turns ready and the rest register on demand. 0 skips it. |
 | `LIAISON_ORG_RUNTIME_IDLE_MINUTES` | `number` | `60` | no | Minutes after which an org nothing has touched in this process (no request, job or event) has its in-memory setup released; its next touch sets it up again (in memory only: its rows are set up already). Default 60, so a process's memory follows the orgs used in the last hour, not every org it ever served; 0 keeps every org set up for the process's life. |
 | `LIAISON_ORG_RUNTIME_MAX_ORGS` | `number` | `2000` | no | At most this many orgs set up in memory in one process. Past it, the least recently touched org with no live work in the process (no request, socket, job, event or agent turn, and not moving) is released as an idle one is, and set up again at its next touch. Default 2000 (about 0.35 MB per org, so about 700 MB at the cap); 0 sets no cap. |
@@ -254,8 +261,8 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `APP_REGISTRATION_CONCURRENCY` | `apps/api/src/modules/apps/init.ts:781` |
 | `APP_WORKER_MAX_EXECS` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:69` |
 | `APP_WORKER_MAX_RSS_MB` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:68` |
-| `APP_WORKER_POOL_MAX` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:28` |
-| `APP_WORKER_POOL_RESERVED_INTERACTIVE` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:58` |
+| `APP_WORKER_POOL_MAX` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:28`, `apps/api/src/modules/apps/workers/admission.ts:33` |
+| `APP_WORKER_POOL_RESERVED_INTERACTIVE` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:58`, `apps/api/src/modules/apps/workers/admission.ts:34` |
 | `BULK_BLOB_DIR` | `apps/api/src/modules/apps/sandbox/bulk-blob.ts:169` |
 | `BULK_BLOB_QUOTA_BYTES` | `apps/api/src/modules/apps/sandbox/bulk-blob.ts:162` |
 | `BUN_INSTALL` | `apps/desktop/sidecar/build.ts:193` |
@@ -273,7 +280,7 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `LIAISON_ALLOW_PRIVATE_API_CONNECTOR_HOSTS` | `apps/api/src/apps/api-connector/adapter-policy.ts:25` |
 | `LIAISON_ALLOW_PRIVATE_MODEL_SERVERS` | `apps/api/src/modules/agent/providers/model-server.ts:33` |
 | `LIAISON_APP_CATALOG_DIR` | `apps/api/src/modules/apps/catalog.ts:75`, `apps/api/src/modules/permissions/scope-registry.ts:81` |
-| `LIAISON_APP_PRIVATE_HOSTS` | `apps/api/src/modules/apps/sandbox/bridge/shared.ts:195` |
+| `LIAISON_APP_PRIVATE_HOSTS` | `apps/api/src/modules/apps/sandbox/bridge/shared.ts:197` |
 | `LIAISON_BUNDLED_APPS_FROM_SOURCE` | `apps/api/src/modules/apps/sandbox/bundle-loader.ts:51` |
 | `LIAISON_CLI_OPERATOR` | `apps/api/src/cli/agent/ask.ts:168` |
 | `LIAISON_DATABASE_ADAPTER` | `apps/api/src/apps/database/bridge.ts:1198` |
@@ -283,10 +290,10 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `LIAISON_DB_ALLOW_PLAINTEXT_LOCAL` | `apps/api/src/apps/database/bridge.ts:374`, `apps/api/src/apps/database/bridge.ts:394` |
 | `LIAISON_DB_ALLOW_PRIVILEGED_SESSION` | `apps/api/src/apps/database/bridge.ts:383` |
 | `LIAISON_DEBUG_GEMINI_REQ` | `apps/api/src/modules/agent/providers/provider.ts:154` |
-| `LIAISON_OFFLINE_SIDE_CALLS` | `apps/api/src/lib/env.ts:1587` |
+| `LIAISON_OFFLINE_SIDE_CALLS` | `apps/api/src/lib/env.ts:1611` |
 | `LIAISON_ONESHOT` | `apps/api/src/db/process-pool-plan.ts:17` |
 | `LIAISON_PUBLIC_DIR` | `apps/api/src/lib/server.ts:504`, `apps/api/src/modules/apps/app-frame.ts:35` |
-| `LIAISON_SANDBOX_FETCH_TIMEOUT_MS` | `apps/api/src/modules/apps/sandbox/bridge/egress.ts:49` |
+| `LIAISON_SANDBOX_FETCH_TIMEOUT_MS` | `apps/api/src/modules/apps/sandbox/bridge/egress.ts:61` |
 | `LIAISON_TRUSTED_SUMMARIZER_APPS` | `apps/api/src/modules/apps/runtime.ts:1281` |
 | `LIAISON_WEB_TOOLS_ALLOW_PRIVATE` | `apps/api/src/modules/agent/tools/web-tools.ts:160`, `apps/api/src/modules/agent/tools/web-tools.ts:253` |
 | `MAIL_INGEST_STALE_SEC` | `apps/api/src/modules/monitor/index.ts:306` |
@@ -310,7 +317,7 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `ORG_MAINTENANCE_FLAG_PATH` | `apps/api/src/middleware/org-maintenance.ts:25` |
 | `QA_DRIVE_REFRESH_TOKEN` | `apps/api/src/seed/tiers/standard/knowledge.ts:79` |
 | `QA_GMAIL_REFRESH_TOKEN` | `apps/api/src/seed/tiers/standard/rows.ts:462` |
-| `RATE_LIMIT_FORCE_ENABLED` | `apps/api/src/app.ts:545`, `apps/api/src/middleware/public-surface-limits.ts:116`, `apps/api/src/middleware/rate-limiter.ts:261` |
+| `RATE_LIMIT_FORCE_ENABLED` | `apps/api/src/app.ts:555`, `apps/api/src/middleware/public-surface-limits.ts:116`, `apps/api/src/middleware/rate-limiter.ts:261` |
 | `RECHECK_SYNC_BACKEND` | `apps/api/src/lib/manifest-regex.ts:33` |
 | `ROUTINE_EVENT_RECONCILE_LOOKBACK_DAYS` | `apps/api/src/modules/agent/routines/routine-event-reconciler.ts:62` |
 | `ROUTINE_EVENT_RECONCILE_MAX_RETRIES` | `apps/api/src/modules/agent/routines/routine-event-reconciler.ts:65` |
@@ -320,8 +327,8 @@ Variables the code under `apps/` and `bundled-apps/` reads directly (`process.en
 | `SANDBOX_POOL_REPORT_INTERVAL_MS` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:92` |
 | `SANDBOX_QUEUE_WAIT_WARN_MS` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:89` |
 | `SANDBOX_WORKER_HOLD_WARN_MS` | `apps/api/src/modules/apps/sandbox/worker-pool.ts:90` |
-| `TICKETS_GMAIL_PUSH_ISSUER` | `apps/api/src/modules/apps/sandbox/bridge/tickets.ts:1296`, `apps/api/src/modules/webhooks/routes.ts:181`, `apps/api/src/modules/webhooks/routes.ts:416` |
-| `TICKETS_GMAIL_PUSH_JWKS_URL` | `apps/api/src/modules/apps/sandbox/bridge/tickets.ts:1297`, `apps/api/src/modules/webhooks/routes.ts:182`, `apps/api/src/modules/webhooks/routes.ts:415` |
+| `TICKETS_GMAIL_PUSH_ISSUER` | `apps/api/src/modules/apps/sandbox/bridge/tickets.ts:1296`, `apps/api/src/modules/webhooks/routes.ts:180`, `apps/api/src/modules/webhooks/verify-bridge.ts:147` |
+| `TICKETS_GMAIL_PUSH_JWKS_URL` | `apps/api/src/modules/apps/sandbox/bridge/tickets.ts:1297`, `apps/api/src/modules/webhooks/routes.ts:181`, `apps/api/src/modules/webhooks/verify-bridge.ts:146` |
 | `TICKETS_GMAIL_SYNC_SINCE` | `apps/api/src/apps/tickets/sync.ts:310` |
 | `VITE_API_BASE` | `apps/web/src/lib/env.ts:10` |
 | `VITE_API_TARGET` | `apps/web/src/lib/env.ts:68` |

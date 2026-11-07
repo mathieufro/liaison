@@ -1,0 +1,130 @@
+{
+  "name": "wparity",
+  "version": "1.0.0",
+  "packageFormat": 1,
+  "license": "MIT",
+  "displayName": "Workers parity fixture",
+  "description": "Test fixture: one tool per bridge surface the Workers executor must match QuickJS on.",
+  "scopes": ["wparity:items"],
+  "capabilities": ["bulk.fetch"],
+  "network": {
+    "allowedDomains": ["api.carrier.test", "127.0.0.1"],
+    "allowPrivateHostsInTest": true
+  },
+  "connections": {
+    "carrier": {
+      "type": "credentials",
+      "description": "Test carrier",
+      "allowedDomains": ["api.carrier.test"],
+      "appSecretConfigKeys": ["carrierAppSecret"],
+      "credentialFields": [
+        {
+          "name": "key",
+          "label": "API key",
+          "type": "password"
+        }
+      ]
+    }
+  },
+  "schema": {
+    "items": {
+      "fields": {
+        "title": "string"
+      }
+    }
+  },
+  "events": {
+    "emits": ["items:stamped"]
+  },
+  "cross_app_calls": [
+    {
+      "target": "wparityb:echo",
+      "reason": "parity of a nested cross-app call"
+    }
+  ],
+  "tools": {
+    "create": {
+      "description": "Insert an item",
+      "handler": "create",
+      "requiredScopes": ["wparity:items:write"]
+    },
+    "list": {
+      "description": "List items",
+      "handler": "list",
+      "requiredScopes": ["wparity:items:read"],
+      "readOnly": true
+    },
+    "atomicFail": {
+      "description": "Insert, then throw",
+      "handler": "atomicFail",
+      "requiredScopes": ["wparity:items:write"],
+      "atomic": true
+    },
+    "hop": {
+      "description": "Call wparityb:echo",
+      "handler": "hop",
+      "requiredScopes": ["wparity:items:read"]
+    },
+    "fetchOutside": {
+      "description": "Fetch a host outside allowedDomains",
+      "handler": "fetchOutside",
+      "requiredScopes": ["wparity:items:read"]
+    },
+    "fetchAuth": {
+      "description": "Fetch with a host-side credential",
+      "handler": "fetchAuth",
+      "requiredScopes": ["wparity:items:read"]
+    },
+    "stamp": {
+      "description": "Emit and log",
+      "handler": "stamp",
+      "requiredScopes": ["wparity:items:write"]
+    },
+    "bulk": {
+      "description": "Download and iterate a JSONL blob",
+      "handler": "bulk",
+      "requiredScopes": ["wparity:items:read"]
+    },
+    "approvalEcho": {
+      "description": "Return ctx.approval",
+      "handler": "approvalEcho",
+      "requiredScopes": ["wparity:items:read"]
+    },
+    "fail": {
+      "description": "Throw a typed error",
+      "handler": "fail",
+      "requiredScopes": ["wparity:items:read"]
+    },
+    "toolFail": {
+      "description": "Throw a ToolError",
+      "handler": "toolFail",
+      "requiredScopes": ["wparity:items:read"]
+    },
+    "slow": {
+      "description": "Wait past the budget",
+      "handler": "slow",
+      "requiredScopes": ["wparity:items:read"],
+      "timeoutMs": 1500
+    },
+    "configSecret": {
+      "description": "Store an app-held secret, then read it back with ctx.config.get",
+      "handler": "configSecret",
+      "requiredScopes": ["wparity:items:read"]
+    },
+    "slowCreate": {
+      "description": "Wait, then insert",
+      "handler": "slowCreate",
+      "requiredScopes": ["wparity:items:write"]
+    }
+  },
+  "webhooks": {
+    "ping": {
+      "handler": "onPing",
+      "verify": "verifyPing"
+    }
+  },
+  "webhookHealth": {
+    "probe": null,
+    "reason": "test fixture"
+  }
+}

@@ -11,6 +11,8 @@ describe("a manifest webhook's budget", () => {
     spyOn(workerPool, "getWorkerPool").mockReturnValue({ execute } as never)
     await executeManifestWebhook({
       appName: "x",
+      orgId: "00000000-0000-0000-0000-000000000001",
+      holdsTx: false,
       handlerRef: { bundlePath: "b", exportName: "h", trusted: false } as never,
       bundleSource: "",
       params: {},

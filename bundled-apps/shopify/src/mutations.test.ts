@@ -12,6 +12,7 @@ import { describe, expect, it } from "bun:test"
 import type { AppContext } from "@liaison/app-sdk"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { withTimer } from "./lib/timers.testutil"
 import {
   channelName,
   createEnforcingEmit,
@@ -4337,6 +4338,35 @@ describe("discounts_bulk_create — N unique single-use codes on one code discou
     expect(out.requestedCount).toBe(25)
     expect(out.createdCount).toBe(23) // ground truth, NOT the request
     expect(out.codes.length).toBe(23)
+  })
+
+  // Two not-yet-done status polls before the done one: the poll waits between iterations.
+  const respondsAfterTwoPendingPolls = (persistedCodes: string[]) => {
+    const r = responses(persistedCodes)
+    const pending = { data: { discountRedeemCodeBulkCreation: { id: "gid://shopify/DiscountRedeemCodeBulkCreation/1", done: false, codesCount: null, importedCount: null, failedCount: null } } }
+    return [r[0]!, r[1]!, pending, pending, r[2]!, r[3]!]
+  }
+
+  it("waits 250 ms then 500 ms between status polls where the runtime has a timer", async () => {
+    const persisted = ["P-1", "P-2", "P-3"]
+    const { ctx, calls } = makeCtx({ fetchResponses: respondsAfterTwoPendingPolls(persisted) })
+    const delays = await withTimer("recording", async (d) => {
+      const out = (await discounts_bulk_create({ count: 3, codePrefix: "P", basicCodeDiscount: { percentage: 50 } }, ctx)) as { createdCount: number }
+      expect(out.createdCount).toBe(3)
+      return d
+    })
+    expect(calls.length).toBe(6)
+    expect(delays).toEqual([250, 500])
+  })
+
+  it("polls without waiting, and still completes, where the runtime has no timer", async () => {
+    const persisted = ["P-1", "P-2", "P-3"]
+    const { ctx, calls } = makeCtx({ fetchResponses: respondsAfterTwoPendingPolls(persisted) })
+    const out = (await withTimer("absent", () =>
+      discounts_bulk_create({ count: 3, codePrefix: "P", basicCodeDiscount: { percentage: 50 } }, ctx),
+    )) as { createdCount: number }
+    expect(out.createdCount).toBe(3)
+    expect(calls.length).toBe(6)
   })
 
   it("THROWS LOUD when the async bulk job reports failures (never silently returns a partial batch)", async () => {

@@ -10,9 +10,8 @@ import { isAppOffForOrg, isAppUnavailableFor, primeOrgApps } from "~/modules/app
 import { withAppDimensionAliases } from "~/modules/apps/runtime-helpers"
 import { isBundleLoadError, loadBundle } from "~/modules/apps/sandbox/bundle-loader"
 import { exportOnlyBundle, useFullBundle } from "~/modules/apps/sandbox/bundle-shake"
-import { executeInSandbox } from "~/modules/apps/sandbox/executor"
-import { getSandboxPool } from "~/modules/apps/sandbox/pool"
 import { createSessionRpcBridge } from "~/modules/apps/sandbox/rpc-bridge"
+import { runApp } from "~/modules/apps/sandbox/run-app"
 import { attentionSourceApp } from "~/modules/attention/attention-source-app"
 import { hasScope } from "~/modules/permissions/permissions"
 
@@ -151,33 +150,31 @@ async function invokeManifestProvider(
   )
   // A sandboxed (untrusted) app's provider runs in the isolated worker pool,
   // like its tools; only trusted code runs on the host's in-process pool.
-  if (!reg.trusted) {
-    const { getWorkerPool, initWorkerPool } = await import("~/modules/apps/sandbox/worker-pool")
-    await initWorkerPool()
-    return getWorkerPool().execute({
-      bundleSource: source,
-      exportName: reg.handler,
-      params: { actor: aliasedActor },
-      bridge,
-      appId: appName,
-    }) as Promise<AttentionItem[]>
-  }
   // A trusted provider runs the part of its bundle the provider needs (the
   // whole bundle until that is built): QuickJS compiles all of a bundle on
   // every evaluation, and the feed calls each provider on every poll. Still a
   // fresh context per call; see bundle-shake.ts.
-  const bundleSource = exportOnlyBundle(source, reg.handler)
+  const trusted = reg.trusted === true
+  const bundleSource = trusted ? exportOnlyBundle(source, reg.handler) : source
   try {
-    return (await executeInSandbox({
-      pool: getSandboxPool(),
+    return (await runApp({
+      trusted,
+      appName,
+      orgId,
+      bundlePath: reg.bundlePath,
       bundleSource,
       exportName: reg.handler,
+      entry: `attention:${reg.handler}`,
       params: { actor: aliasedActor },
       bridge,
+      holdsTx: false,
+      appId: appName,
     })) as AttentionItem[]
   } catch (err) {
     // The export-only bundle failed to load: the next poll runs the full one.
-    if (bundleSource !== source && isBundleLoadError(err)) useFullBundle(source, reg.handler)
+    if (trusted && bundleSource !== source && isBundleLoadError(err)) {
+      useFullBundle(source, reg.handler)
+    }
     throw err
   }
 }

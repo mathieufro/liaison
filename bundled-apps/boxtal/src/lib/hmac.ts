@@ -33,11 +33,11 @@
 // of this bug class readable straight from the prod log line instead of needing
 // a packet capture, which is what diagnosing this one required.
 //
-// The bundle runs inside QuickJS, which has no `node:crypto` — production code
-// computes the digest via the host `crypto_hmacSha256Base64` /
-// `crypto_hmacSha256Hex` bridges and compares via `crypto_timingSafeEqual`.
-// This file MUST NOT import `node:*`; the pure-node helper for unit tests lives
-// in @liaison/test-helpers/webhook-hmac.
+// The secret never enters the bundle: the host `crypto_verifyHmacForConfig`
+// bridge reads it by config key, computes the digest in the encoding asked for
+// and compares in constant time; `config_has` tells an unset secret apart (one
+// path on every executor). This file MUST NOT import `node:*`; the pure-node
+// helper for unit tests lives in @liaison/test-helpers/webhook-hmac.
 
 import { bodyDeliveryId, lowercaseHeaderKeys } from "@liaison/app-sdk/webhook-verify"
 
@@ -60,15 +60,19 @@ const HEADER_SIGNATURE = "x-bxt-signature"
 /** Tolerated `<scheme>=<digest>` prefixes some providers prepend. */
 const SIGNATURE_PREFIXES = ["sha256=", "hmac-sha256="]
 
+/** The kernel-minted signing secret in `apps.config` (`webhookSecretConfigKey`). */
+export const BOXTAL_WEBHOOK_SECRET_KEY = "boxtalWebhookSecret"
+
 export interface WebhookBridge {
-  config_get: (key: string) => Promise<unknown>
+  config_has: (key: string) => Promise<boolean>
+  crypto_verifyHmacForConfig: (
+    key: string,
+    data: string,
+    signature: string,
+    encoding: "base64" | "hex",
+  ) => Promise<boolean>
+  /** For the replay key only (`bodyDeliveryId`, a public label as the key). */
   crypto_hmacSha256Base64: (secret: string, body: string) => Promise<string>
-  /**
-   * Optional at runtime: a host bridge predating the hex variant simply gets
-   * base64-only verification rather than a crash.
-   */
-  crypto_hmacSha256Hex?: (secret: string, body: string) => Promise<string>
-  crypto_timingSafeEqual: (a: string, b: string) => Promise<boolean>
 }
 
 /**
@@ -102,7 +106,7 @@ function describeSignatureShape(sig: string): string {
  * Manifest-format webhook verifier. The kernel router calls this with a
  * serialized request descriptor and expects `{ ok, replayKey, replayTtlSeconds }`.
  * The signing secret is the kernel-minted `boxtalWebhookSecret` in apps.config,
- * read via the sandbox `config_get` bridge.
+ * used host-side by key (the bundle never reads it).
  */
 export async function boxtalWebhookVerifier(
   params: {
@@ -114,25 +118,24 @@ export async function boxtalWebhookVerifier(
   bridge: WebhookBridge,
 ): Promise<VerifyResult> {
   const headers = lowercaseHeaderKeys(params.headers)
-  const secret = (await bridge.config_get("boxtalWebhookSecret")) as string | null
-  if (!secret) return { ok: false, reason: "missing_secret" }
+  if (!(await bridge.config_has(BOXTAL_WEBHOOK_SECRET_KEY))) {
+    return { ok: false, reason: "missing_secret" }
+  }
 
   const rawSig = headers[HEADER_SIGNATURE]
   if (!rawSig || typeof rawSig !== "string") return { ok: false, reason: "missing_signature" }
   const sig = normalizeSignature(rawSig)
 
   // Same HMAC, same raw body, same secret — only the transport encoding differs,
-  // so try each accepted encoding. Every comparison is deferred to the host
-  // bridge, which handles unequal lengths in constant time (no early
-  // length-oracle return here). Both are evaluated rather than short-circuited
-  // so a rejection costs the same work whichever encoding arrived.
-  const candidates = [await bridge.crypto_hmacSha256Base64(secret, params.body)]
-  if (bridge.crypto_hmacSha256Hex) {
-    candidates.push(await bridge.crypto_hmacSha256Hex(secret, params.body))
-  }
+  // so try each accepted encoding. Every comparison is the host's, which
+  // handles unequal lengths in constant time (no early length-oracle return
+  // here). Both are evaluated rather than short-circuited so a rejection costs
+  // the same work whichever encoding arrived.
   let valid = false
-  for (const expected of candidates) {
-    if (await bridge.crypto_timingSafeEqual(sig, expected)) valid = true
+  for (const encoding of ["base64", "hex"] as const) {
+    if (await bridge.crypto_verifyHmacForConfig(BOXTAL_WEBHOOK_SECRET_KEY, params.body, sig, encoding)) {
+      valid = true
+    }
   }
   if (!valid) {
     return { ok: false, reason: "signature_mismatch", sigShape: describeSignatureShape(sig) }

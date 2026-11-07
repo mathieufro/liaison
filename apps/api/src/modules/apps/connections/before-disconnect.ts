@@ -90,9 +90,8 @@ const defaultExecutor: HookExecutor = async ({
   orgId,
   appName,
 }) => {
-  const { loadBundle } = await import("~/modules/apps/sandbox/bundle-loader")
   const { createSessionRpcBridge } = await import("~/modules/apps/sandbox/rpc-bridge")
-  const { getWorkerPool, initWorkerPool } = await import("~/modules/apps/sandbox/worker-pool")
+  const { runApp } = await import("~/modules/apps/sandbox/run-app")
   const manifest = appBridgeManifestRegistry.get([orgId, appName]) ?? { name: appName }
   // The app acting as itself, like its jobs: under its own scopes, one short
   // transaction per bridge call (the provider calls hold no pool connection).
@@ -107,15 +106,20 @@ const defaultExecutor: HookExecutor = async ({
     session,
     manifest as Parameters<typeof createSessionRpcBridge>[4],
   )
-  await initWorkerPool()
-  await getWorkerPool().execute({
-    bundleSource: await loadBundle(bundlePath),
+  // Always the isolated worker pool, whatever the app's trust.
+  await runApp({
+    trusted: false,
+    appName,
+    orgId,
+    bundlePath,
     exportName,
+    entry: `disconnect:${exportName}`,
     params,
     bridge,
     timeoutMs: HOOK_TIMEOUT_MS,
     priority: "background",
     appId: appName,
+    holdsTx: false,
   })
 }
 

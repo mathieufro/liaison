@@ -17,6 +17,7 @@ interface RecordedCall {
   url: string
   method: string
   headers: Record<string, string>
+  auth?: unknown
 }
 
 function makeFetch(status: number, body: string): {
@@ -26,9 +27,9 @@ function makeFetch(status: number, body: string): {
   const calls: RecordedCall[] = []
   const fetch = async (
     url: string,
-    opts?: { method?: string; headers?: Record<string, string>; body?: string },
+    opts?: { method?: string; headers?: Record<string, string>; body?: string; auth?: unknown },
   ) => {
-    calls.push({ url, method: opts?.method ?? "GET", headers: opts?.headers ?? {} })
+    calls.push({ url, method: opts?.method ?? "GET", headers: opts?.headers ?? {}, auth: opts?.auth })
     return { status, headers: {}, body }
   }
   return { fetch, calls }
@@ -182,18 +183,18 @@ describe("parseCotationXml", () => {
 })
 
 describe("BoxtalV1Client.quote", () => {
-  it("GETs cotation with Basic auth and returns the sorted, DEV-filtered offers", async () => {
+  it("GETs cotation with host-side Basic auth and returns the sorted, DEV-filtered offers", async () => {
     const { fetch, calls } = makeFetch(200, fixture("cotation-multi"))
     const client = new BoxtalV1Client({
       fetch,
-      v1Key: "user",
-      v1Secret: "pass",
       environment: "sandbox",
     })
     const offers = await client.quote(singleParcelInput)
     const call = calls[0]!
     expect(call.url.startsWith("https://test.envoimoinscher.com/api/v1/cotation?")).toBe(true)
-    expect(call.headers.Authorization).toBe(`Basic ${btoa("user:pass")}`)
+    // The host sends Basic(v1Key:v1Secret); the client sets no credential itself.
+    expect(call.auth).toEqual({ connection: "boxtal", scheme: "basic", fields: ["v1Key", "v1Secret"] })
+    expect(call.headers.Authorization).toBeUndefined()
     expect(offers.map((o) => o.price_ht)).toEqual([5.5, 7.8, 9.2])
   })
 
@@ -201,8 +202,6 @@ describe("BoxtalV1Client.quote", () => {
     const { fetch, calls } = makeFetch(200, fixture("cotation-empty"))
     const client = new BoxtalV1Client({
       fetch,
-      v1Key: "user",
-      v1Secret: "pass",
       environment: "production",
     })
     await client.quote(singleParcelInput)
@@ -213,8 +212,6 @@ describe("BoxtalV1Client.quote", () => {
     const { fetch } = makeFetch(200, fixture("cotation-empty"))
     const client = new BoxtalV1Client({
       fetch,
-      v1Key: "user",
-      v1Secret: "pass",
       environment: "sandbox",
     })
     expect(await client.quote(singleParcelInput)).toEqual([])
@@ -231,8 +228,6 @@ describe("BoxtalV1Client.quote", () => {
     )
     const client = new BoxtalV1Client({
       fetch,
-      v1Key: "user",
-      v1Secret: "pass",
       environment: "sandbox",
     })
     await expect(client.quote(singleParcelInput)).rejects.toThrow(
@@ -244,8 +239,6 @@ describe("BoxtalV1Client.quote", () => {
     const { fetch } = makeFetch(200, fixture("cotation-error"))
     const client = new BoxtalV1Client({
       fetch,
-      v1Key: "user",
-      v1Secret: "pass",
       environment: "sandbox",
     })
     await expect(client.quote(singleParcelInput)).rejects.toThrow(
@@ -263,8 +256,6 @@ describe("BoxtalV1Client - request timeout", () => {
         seen.push({ timeoutMs: o?.timeoutMs, hasSignal: Boolean(o?.signal) })
         return { status: 200, headers: {}, body: "<cotation><shipment></shipment></cotation>" }
       },
-      v1Key: "k",
-      v1Secret: "s",
       environment: "sandbox",
       requestTimeoutMs: 1234,
     })

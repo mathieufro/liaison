@@ -79,7 +79,7 @@ export const REVIEWED_DISPATCH: Record<string, string> = {
   _bridgeExtension:
     "a manifest's bridge extension factory, carried into the RPC bridge (runtime.ts:2098), which calls it with the run's bridge context (the org the kernel runs the app for)",
   exportName:
-    "a string (the sandbox export to run, sandbox-worker.ts), never a function: a property-name collision in the alias graph",
+    "a string (the sandbox export to run, sandbox-worker.ts; the Worker export to run, workers/worker-core.ts), never a function: a property-name collision in the alias graph",
   handlerName:
     "a string (the search handler's export name, runtime.ts:3088), never a function: a property-name collision",
 }

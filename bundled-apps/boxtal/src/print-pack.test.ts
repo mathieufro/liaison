@@ -132,14 +132,14 @@ function makeCtx(opts: MakeOpts = {}) {
     },
     connections: {
       boxtal: {
-        getCredentials: async () => CREDS,
+        getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }),
         getToken: async () => {
           throw new Error("no")
         },
         getAccounts: async () => [],
       },
     },
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   } as never as BoxtalToolCtx
   return { ctx, crossCalls, importCalls, db }

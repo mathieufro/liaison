@@ -158,6 +158,9 @@ async function runInTransaction(
         // reject the retry and the side effect is lost permanently.
         await manifestExecutor({
           appName,
+          orgId,
+          // Inside the retry's withRlsContext transaction.
+          holdsTx: true,
           handlerRef,
           bundleSource: source,
           params: data.payload,

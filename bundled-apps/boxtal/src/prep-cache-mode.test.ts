@@ -76,7 +76,7 @@ function makeCacheOnlyCtx(opts: {
       executeTool,
       connections: {
         boxtal: {
-          getCredentials: async () => {
+          getSettings: async () => {
             throw new Error("no boxtal credentials expected on the cache-only list read")
           },
           getToken: async () => {
@@ -85,7 +85,7 @@ function makeCacheOnlyCtx(opts: {
           getAccounts: async () => [],
         },
       },
-      config: { get: async () => null },
+      config: { get: async () => null, has: async () => false },
       logger: { info() {}, warn() {}, error() {}, debug() {} },
     } as never,
     calls,
@@ -205,14 +205,14 @@ function makeLiveCtx(scan: OrderScanStubOptions = {}) {
     executeTool,
     connections: {
       boxtal: {
-        getCredentials: async () => ({ v1Key: "k1", v1Secret: "s1", v3Key: "k3", v3Secret: "s3", environment: "sandbox" }),
+        getSettings: async () => ({ values: { environment: "sandbox" }, missing: [] }),
         getToken: async () => {
           throw new Error("no")
         },
         getAccounts: async () => [],
       },
     },
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   } as never as BoxtalToolCtx
   return { ctx, calls, keys: [...orderKeysFor(invoices as never, scan).values()] }

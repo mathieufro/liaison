@@ -36,8 +36,8 @@ function makeCtx(opts?: { documents?: Array<{ url: string; type: string; format:
     orgId: "org-1",
     db,
     fetch,
-    connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-    config: { get: async () => "whsecret" },
+    connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+    config: { get: async () => "whsecret", has: async () => true },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   } as any
   return { ctx, db }
@@ -223,8 +223,8 @@ function makeAutoFulfillCtx(opts?: {
     db,
     fetch,
     executeTool,
-    connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-    config: { get: async () => "whsecret" },
+    connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+    config: { get: async () => "whsecret", has: async () => true },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   } as any
   return { ctx, db }

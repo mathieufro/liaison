@@ -12,6 +12,7 @@ const has = (callerScopes: string[] | undefined, scope: string, appName = "invoi
     createIdentityMethods({
       appName,
       callerScopes,
+      manifest: { name: appName },
       orgId: "org",
       userId: "u",
     } as unknown as BridgeContext) as { callerHasScope: (s: string) => boolean }

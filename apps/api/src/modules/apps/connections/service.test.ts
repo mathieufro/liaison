@@ -616,9 +616,10 @@ describe("connection secret config-key resolution + apps.config decrypt-at-bridg
     // signed with the ORIGINAL secret still verifies after encryption-at-rest:
     // the bridge decrypt restores the exact plaintext secret the HMAC uses.
     const { createHmac } = await import("node:crypto")
-    const { hmacSha256VerifierViaBridge } = await import(
+    const { shopifyWebhookVerifier } = await import(
       "../../../../../../bundled-apps/shopify/src/lib/hmac"
     )
+    const { buildVerifyBridge } = await import("~/modules/webhooks/verify-bridge")
 
     connectionConfigRegistry.set(["org-1", "shopify", "shopify"], {
       type: "oauth2",
@@ -647,18 +648,21 @@ describe("connection secret config-key resolution + apps.config decrypt-at-bridg
       ENCRYPTION_KEY,
     ) as string
 
-    const bridge = {
-      crypto_hmacSha256Base64: async (secret: string, b: string) =>
-        createHmac("sha256", secret).update(b, "utf8").digest("base64"),
-      crypto_timingSafeEqual: async (a: string, b: string) => a === b,
-    }
-
-    const verified = await hmacSha256VerifierViaBridge(
-      body,
-      { "x-shopify-hmac-sha256": signature },
-      decryptedAtBridge,
-      bridge,
+    // The verify bridge signs with the decrypted secret host-side.
+    const bridge = buildVerifyBridge({
+      readConfig: async () => decryptedAtBridge,
+      secretConfigKeys: ["shopifyWebhookSecret"],
+    })
+    const outcome = await shopifyWebhookVerifier(
+      {
+        body,
+        method: "POST",
+        query: {},
+        headers: { "x-shopify-hmac-sha256": signature, "x-shopify-webhook-id": "wh-1" },
+      },
+      bridge as never,
     )
+    const verified = outcome.ok
     expect(verified).toBe(true)
   })
 })

@@ -5,6 +5,18 @@ import { UPSTREAM_CONNECTION_CLOSED } from "~/lib/failure-severity"
 import { rootLogger } from "~/lib/logger"
 import { fetchWithPinnedHost, UnsafeOutboundUrlError } from "~/lib/outbound-fetch"
 import type { BridgeContext } from "~/modules/apps/sandbox/bridge/context"
+import {
+  dropBearer,
+  type FetchAuthDeps,
+  type InjectedAuth,
+  injectFetchAuth,
+  matchesConnectionHost,
+  parseConfigSecrets,
+  parseFetchAuth,
+  redactSecrets,
+  substituteConfigSecrets,
+} from "~/modules/apps/sandbox/bridge/fetch-auth"
+import { readAppConfigValue } from "~/modules/apps/sandbox/bridge/identity"
 import { buildMultipartBody, type MultipartUpload } from "~/modules/apps/sandbox/bridge/multipart"
 import {
   SANDBOX_FETCH_MAX_REDIRECTS,
@@ -179,11 +191,43 @@ export function createEgressMethods(ctx: BridgeContext): Record<string, any> {
     const trace = ctx.bridgeOptions?.upstreamTrace
     if (trace) trace.connection = identifier ? { name, identifier } : { name }
   }
-  return {
+  /** A db read from a tx-less method (fetch) takes its own short transaction on a session bridge. */
+  const shortDb = <T>(fn: (db: typeof txDb) => Promise<T>): Promise<T> =>
+    ctx.bridgeOptions?.withShortTx ? ctx.bridgeOptions.withShortTx(fn) : fn(txDb)
+  const authDeps: FetchAuthDeps = {
+    manifest,
+    orgId,
+    userId,
+    appName,
+    readToken: async (connectionName, identifier) => {
+      noteConnection(connectionName, identifier)
+      const { resolveConnectionAccount } = await import("~/modules/apps/connections/service")
+      const account = await shortDb((db) =>
+        resolveConnectionAccount(db, orgId, userId, appName, connectionName, identifier, {
+          actorType: actorType === "user" ? "user" : "system",
+        }),
+      )
+      return { token: account.token, identifier: account.identifier }
+    },
+    readCredentials: (connectionName, identifier) => {
+      noteConnection(connectionName, identifier)
+      return resolveCredentials(connectionName, identifier ?? "")
+    },
+    readConfigSecret: async (key) => {
+      const value = await shortDb((db) => readAppConfigValue(ctx, key, db))
+      return typeof value === "string" && value.length > 0 ? value : null
+    },
+    send: (url, optsJson) => methods.fetch(url, optsJson),
+  }
+  const methods: Record<string, any> = {
     // --- Network fetch ---
+    // `opts.auth` / `opts.configSecrets` put a credential or a config secret into the request
+    // HERE, after the allowlist check, so the app never holds it (fetch-auth.ts).
     fetch: async (url: string, optsJson: string) => {
       const opts = JSON.parse(optsJson || "{}")
       const method = opts.method ?? "GET"
+      const auth = parseFetchAuth(opts.auth)
+      const configSecrets = parseConfigSecrets(opts.configSecrets)
       // A multipart body is assembled HERE from the parts the app names: text fields as given,
       // file parts read from kernel.files under this bridge's own RLS context (so only a file the
       // calling app may read can leave), capped at 25 MB, each part fingerprinted.
@@ -257,6 +301,29 @@ export function createEgressMethods(ctx: BridgeContext): Record<string, any> {
       if (process.env.LIAISON_TEST_INJECT_ACTOR === "1") {
         headersWithActor["X-Liaison-Actor"] = userId
       }
+
+      // Host-side credentials, after the allowlist check (and before the demo
+      // and test answerers, which recognise their fixture credential).
+      let injected: InjectedAuth = { secrets: [] }
+      if (auth) {
+        injected = await injectFetchAuth(url, headersWithActor, auth, authDeps, fetchTimeoutMs)
+        if (injected.failed) {
+          // The token exchange failed: the app sees the token endpoint's answer.
+          const failed = injected.failed
+          return JSON.stringify({
+            status: failed.status,
+            headers: failed.headers,
+            body: failed.body,
+          })
+        }
+      }
+      if (configSecrets) {
+        const substituted = await substituteConfigSecrets(url, body, configSecrets, authDeps)
+        body = substituted.body
+        injected.secrets.push(...substituted.secrets)
+      }
+      const injectedFor = auth?.connection ?? null
+      const injectedHost = injected.boundHost ?? null
 
       // DEMO INSTANCE ONLY. On a normal deployment this is one boolean read of
       // a module-local that is false, and the call path below is byte-identical
@@ -351,6 +418,18 @@ export function createEgressMethods(ctx: BridgeContext): Record<string, any> {
                       allowPrivateHostsInTest,
                       appName,
                     )
+                    // An injected credential follows a redirect only to its own connection's hosts.
+                    if (injectedFor && !matchesConnectionHost(manifest, injectedFor, next)) {
+                      throw new Error(
+                        `Redirect to ${new URL(next).hostname} refused: not a host of connection "${injectedFor}"`,
+                      )
+                    }
+                    // A credential bound to its account's own host follows no redirect elsewhere.
+                    if (injectedHost && new URL(next).hostname.toLowerCase() !== injectedHost) {
+                      throw new Error(
+                        `Redirect to ${new URL(next).hostname} refused: not the host of this "${injectedFor}" account`,
+                      )
+                    }
                   },
                 },
               )
@@ -381,10 +460,15 @@ export function createEgressMethods(ctx: BridgeContext): Record<string, any> {
       // The run's last upstream answer, host and status only (see upstream-trace.ts).
       const trace = ctx.bridgeOptions?.upstreamTrace
       if (trace) trace.last = { host: new URL(url).host, status: response.status }
-      const responseBody = await readResponseBody(response, SANDBOX_FETCH_MAX_RESPONSE_BYTES)
+      if (response.status === 401) dropBearer(injected.bearerKey)
+      // Nothing the host injected comes back to the app, even when the upstream echoes it.
+      const responseBody = redactSecrets(
+        await readResponseBody(response, SANDBOX_FETCH_MAX_RESPONSE_BYTES),
+        injected.secrets,
+      )
       const headers: Record<string, string> = {}
       response.headers.forEach((v, k) => {
-        headers[k] = v
+        headers[k] = redactSecrets(v, injected.secrets)
       })
       if (upload) {
         // One audit line per upload: where, how much, which bytes, what came back. Never the
@@ -417,6 +501,32 @@ export function createEgressMethods(ctx: BridgeContext): Record<string, any> {
       return getTokenForConnection(txDb, orgId, userId, appName, connectionName, identifier, {
         actorType: actorType === "user" ? "user" : "system",
       })
+    },
+
+    // The NON-SECRET part of a credentials connection: the values of the fields the manifest
+    // marks `readable: true` (never a `password` field), and which declared fields hold no
+    // value. Safe on every executor; the secrets themselves reach the provider through
+    // `ctx.fetch` auth instead.
+    connections_getSettings: async (connectionName: string, identifier?: string) => {
+      const declaration = manifest.connections?.[connectionName]
+      if (!declaration) {
+        throw new Error(`Connection "${connectionName}" not declared in app manifest`)
+      }
+      noteConnection(connectionName, identifier)
+      const creds = await resolveCredentials(connectionName, identifier ?? "")
+      const values: Record<string, string> = {}
+      const missing: string[] = []
+      for (const field of declaration.credentialFields ?? []) {
+        const v = (creds as Record<string, unknown>)[field.name]
+        const present =
+          typeof v === "number" ? Number.isFinite(v) : typeof v === "string" && v !== ""
+        if (!present) {
+          missing.push(field.name)
+          continue
+        }
+        if (field.readable === true && field.type !== "password") values[field.name] = String(v)
+      }
+      return JSON.stringify({ values, missing })
     },
 
     connections_getAccounts: async (connectionName: string) => {
@@ -659,4 +769,5 @@ export function createEgressMethods(ctx: BridgeContext): Record<string, any> {
       return JSON.stringify(await listMcpConnections({ tx: txDb as never, orgId }))
     },
   }
+  return methods
 }

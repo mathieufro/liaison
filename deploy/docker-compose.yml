@@ -365,6 +365,18 @@ services:
       # Emergency override of the refusal to start an image older than the
       # database's schema. Not supported: docs/admin/upgrades.md.
       LIAISON_ALLOW_OLDER_IMAGE: ${LIAISON_ALLOW_OLDER_IMAGE:-false}
+      # Workers app executor (apps on a remote V8 isolate loader). All empty by
+      # default: every app runs on the local sandbox (docs/reference/env.md).
+      LIAISON_WORKERS_APPS: ${LIAISON_WORKERS_APPS:-}
+      LIAISON_APP_LOADER_URL: ${LIAISON_APP_LOADER_URL:-}
+      LIAISON_APP_LOADER_CELL_ID: ${LIAISON_APP_LOADER_CELL_ID:-}
+      LIAISON_APP_LOADER_KEY: ${LIAISON_APP_LOADER_KEY:-}
+      LIAISON_APP_BRIDGE_BASE_URL: ${LIAISON_APP_BRIDGE_BASE_URL:-}
+      LIAISON_WORKERS_BUNDLES: ${LIAISON_WORKERS_BUNDLES:-}
+      LIAISON_APP_BRIDGE_TIMINGS_FILE: ${LIAISON_APP_BRIDGE_TIMINGS_FILE:-}
+      # Test harness routes (/api/_test/*). Refused at boot under NODE_ENV=production,
+      # and the production image does not carry them: development builds only.
+      ENABLE_QA_SEED_ROUTES: ${ENABLE_QA_SEED_ROUTES:-}
       # Shutdown budgets (see stop_grace_period above; these are the defaults,
       # spelled out). A job still running at its budget goes back to its queue;
       # a turn still running stops at its next step boundary (up to

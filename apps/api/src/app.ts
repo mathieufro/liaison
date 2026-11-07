@@ -74,6 +74,11 @@ import { appRoutes, hostApiRoutes } from "~/modules/apps/routes"
 import { registerKernelAttentionProvider } from "~/modules/apps/runtime"
 import { appSettingsRoutes } from "~/modules/apps/settings-routes"
 import { uiBundleRoutes } from "~/modules/apps/ui-bundle-routes"
+import {
+  APP_BRIDGE_BODY_MAX_BYTES,
+  APP_BRIDGE_PATH_PREFIX,
+  appBridgeRoutes,
+} from "~/modules/apps/workers/bridge-route"
 import { assistRoutes } from "~/modules/assist/routes"
 import { TRANSCRIBE_REQUEST_TIMEOUT_MS } from "~/modules/assist/transcribe-service"
 import { attentionSubscriptionsRoutes } from "~/modules/attention/subscriptions-routes"
@@ -421,6 +426,11 @@ app.use(
 // exactly how the demo signup shipped under a 30 s timeout it could not meet.
 export const apiBodyLimitMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (c.req.path.startsWith("/api/file-relay/")) return next()
+  // A remote isolate's bridge call carries the args of one ctx.* call (a
+  // batch insert, a bulk page): 8 MiB, not the generic 1 MB JSON cap.
+  if (c.req.method === "POST" && c.req.path.startsWith(APP_BRIDGE_PATH_PREFIX)) {
+    return bodyLimit({ maxSize: APP_BRIDGE_BODY_MAX_BYTES })(c, next)
+  }
   // Bug reports carry inline base64 screenshots (reporters may hold no tickets
   // scopes, so they can't use the staged-upload path) — bounded by the route's
   // own per-attachment/count caps, not the generic 1 MB JSON cap.
@@ -546,6 +556,9 @@ app.use("/api/*", async (c, next) => {
   // The signed Control→cell API: one caller for every tenant, budgeted after
   // its signature is verified (modules/cloud/verify.ts), never per IP.
   if (c.req.path.startsWith("/api/cloud/")) return next()
+  // A run's isolate calls back once per ctx.* call, all from the loader's
+  // addresses; its bearer run token is the credential (workers/bridge-route.ts).
+  if (c.req.path.startsWith(APP_BRIDGE_PATH_PREFIX)) return next()
   if (await isHarnessSignedRequest(c)) return next()
   return isCredentialRecoveryPath(c.req.path) ? ipLimiterFailOpen(c, next) : ipLimiter(c, next)
 })
@@ -587,6 +600,9 @@ export const apiRequestTimeoutMiddleware: MiddlewareHandler<AppEnv> = async (c, 
   // The org export relay streams a whole-org archive (up to 4 GB); its token's
   // 5-minute TTL bounds the start, the stream runs to its end.
   if (c.req.path.startsWith("/api/org-export-dl/")) return next()
+  // A remote isolate's bridge call is bounded by its run's deadline
+  // (workers/run-registry.ts), which may exceed the generic budget.
+  if (c.req.path.startsWith(APP_BRIDGE_PATH_PREFIX)) return next()
   // A dictation is transcribed (and cleaned up) inside the request: the
   // upstream speech-to-text call alone may take up to its own 60 s timeout, so
   // the route gets a longer budget than the generic 30 s. The abort signal is
@@ -660,6 +676,11 @@ app.use("*", maintenanceMiddleware())
 // per request). Before the user JWT chain: its only credential is Control's
 // signature (modules/cloud/verify.ts).
 app.route("/api/cloud", cloudRoutes)
+
+// A remote isolate's bridge calls for one app run (Workers executor; 404 on
+// every path unless configured). Before the user JWT chain: its only
+// credential is the run's bearer token (modules/apps/workers/bridge-route.ts).
+app.route("/api/app-bridge", appBridgeRoutes)
 
 // The former bearer credit-mint API: retired (credits reach an org only
 // through the signed /api/cloud grants). Its paths keep answering 404 in every

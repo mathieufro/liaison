@@ -22,6 +22,7 @@ import type { AppContext } from "@liaison/app-sdk"
 import { emitEvent } from "../lib/emit"
 import { getShopifyClient } from "../lib/get-client"
 import type { ShopifyClient } from "../lib/shopify-client"
+import { createPollPacer } from "../lib/timers"
 
 interface BackfillError extends Error {
   code: string
@@ -140,18 +141,23 @@ async function startBulkOp(client: ShopifyClient): Promise<BulkOp> {
   return op
 }
 
+/** Total wait between bulk-op polls: well inside the job's default 60 s budget. */
+const BULK_POLL_WAIT_BUDGET_MS = 20_000
+
 async function pollUntilFinal(client: ShopifyClient): Promise<BulkOp> {
   // The kernel job scheduler retries this whole job, so we only poll a handful
-  // of times within one invocation. In tests, the second response is final.
+  // of times within one invocation. Between polls the pacer backs off (250 ms
+  // doubling to 2 s, at most BULK_POLL_WAIT_BUDGET_MS in all) where the runtime
+  // has a timer, and is a no-op where it has none.
+  const pace = createPollPacer(BULK_POLL_WAIT_BUDGET_MS)
   for (let i = 0; i < 20; i++) {
+    if (i > 0) await pace(i - 1)
     const data = await client.query<{ currentBulkOperation?: BulkOp }>(POLL_QUERY, {})
     const op = data.currentBulkOperation
     if (!op) throw makeError("NO_CURRENT_BULK_OP", "currentBulkOperation returned null")
     if (op.status === "COMPLETED" || op.status === "FAILED" || op.status === "CANCELED") {
       return op
     }
-    // Without a real timer we just spin; in production a wrapper schedule
-    // tick + an explicit `await ctx.sleep` would back off.
   }
   throw makeError("BULK_POLL_TIMEOUT", "bulk op did not reach a terminal state")
 }

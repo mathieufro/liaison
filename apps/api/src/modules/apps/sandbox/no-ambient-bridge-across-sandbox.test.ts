@@ -5,7 +5,7 @@ import path from "node:path"
 
 // GUARD ORACLE
 //
-// Contract: sandbox execution (executeInSandbox / getWorkerPool().execute) must not
+// Contract: sandbox execution (runApp / executeInSandbox / getWorkerPool().execute) must not
 // receive an AMBIENT-transaction bridge (createRpcBridge). Ambient bridges hold a
 // Postgres connection open across the whole sandbox call, which can deadlock the
 // pool and silently changes commit semantics (the tx spans multiple RPC calls
@@ -20,7 +20,9 @@ import path from "node:path"
 const SRC_ROOT = path.resolve(__dirname, "../../../")
 
 const AMBIENT_BRIDGE_MARKER = "createRpcBridge("
-const SANDBOX_EXEC_MARKERS = ["executeInSandbox(", "getWorkerPool().execute"]
+// `runApp(` is the funnel every app-code dispatch site goes through
+// (sandbox/run-app.ts): a site calling it drives sandbox execution.
+const SANDBOX_EXEC_MARKERS = ["executeInSandbox(", "getWorkerPool().execute", "runApp("]
 
 interface ExceptionEntry {
   file: string
@@ -84,14 +86,18 @@ function listSourceFiles(root: string): string[] {
   return out
 }
 
-function findViolations(): string[] {
-  const files = listSourceFiles(SRC_ROOT)
+function readSources(): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const rel of listSourceFiles(SRC_ROOT)) {
+    out.set(rel, fs.readFileSync(path.join(SRC_ROOT, rel), "utf8"))
+  }
+  return out
+}
+
+function findViolations(sources: Map<string, string> = readSources()): string[] {
   const violations: string[] = []
 
-  for (const rel of files) {
-    const full = path.join(SRC_ROOT, rel)
-    const content = fs.readFileSync(full, "utf8")
-
+  for (const [rel, content] of sources) {
     const hasAmbientBridge = content.includes(AMBIENT_BRIDGE_MARKER)
     const hasSandboxExec = SANDBOX_EXEC_MARKERS.some((marker) => content.includes(marker))
 
@@ -124,6 +130,40 @@ describe("guard: no ambient bridge across sandbox execution", () => {
     }
 
     expect(violations).toEqual([])
+  })
+
+  test("an ambient bridge handed to runApp in a non-excepted file is caught", () => {
+    const offender = [
+      'import { createRpcBridge } from "~/modules/apps/sandbox/rpc-bridge"',
+      'import { runApp } from "~/modules/apps/sandbox/run-app"',
+      "await withRlsContext(actor, (tx) =>",
+      "  runApp({ trusted: false, appName, orgId, bundlePath, exportName, params,",
+      "    bridge: createRpcBridge(appName, userId, orgId, tx, manifest), holdsTx: true }),",
+      ")",
+    ].join("\n")
+    const sources = new Map([
+      ["modules/some-feature/dispatch.ts", offender],
+      // The same code in an excepted file stays allowed.
+      ["modules/apps/runtime.ts", offender],
+      // A session bridge into runApp is the supported shape.
+      [
+        "modules/other/dispatch.ts",
+        "runApp({ bridge: createSessionRpcBridge(appName, userId, orgId, session, m), holdsTx: false })",
+      ],
+    ])
+    expect(findViolations(sources)).toEqual(["modules/some-feature/dispatch.ts"])
+  })
+
+  test("the funnel marker is live: the dispatch sites call runApp", () => {
+    // If the funnel were renamed, the marker would silently match nothing.
+    const sources = readSources()
+    for (const rel of [
+      "modules/apps/execute-tool.ts",
+      "modules/apps/runtime.ts",
+      "modules/webhooks/manifest-execution.ts",
+    ]) {
+      expect(sources.get(rel)?.includes("runApp(")).toBe(true)
+    }
   })
 
   test("exception list only contains the documented, reviewed entries", () => {

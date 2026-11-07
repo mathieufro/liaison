@@ -19,9 +19,10 @@
 // is the provider's own JWT and is covered by modules/webhooks/google-oidc.test.ts
 // and apps/calendar/webhook.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
-import { createHmac, timingSafeEqual } from "node:crypto"
+import { createHmac } from "node:crypto"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { buildVerifyBridge } from "~/modules/webhooks/verify-bridge"
 import { boxtalWebhookVerifier } from "../../../../../bundled-apps/boxtal/src/lib/hmac"
 import { callsWebhookVerifier } from "../../../../../bundled-apps/calls/src/lib/hmac"
 import { monitoringWebhookVerifier } from "../../../../../bundled-apps/monitoring/src/lib/hmac"
@@ -40,21 +41,12 @@ type Req = {
 }
 type Verify = (req: Req) => Promise<unknown>
 
-/** The host bridge, as routes.ts builds it, with the app's secret under every key. */
+/** The host bridge, as routes.ts builds it (verify-bridge.ts), with the app's secret under its key. */
 function bridge(secretKey: string) {
-  return {
-    config_get: async (key: string) => (key === secretKey ? SECRET : null),
-    crypto_timingSafeEqual: async (a: string, b: string) => {
-      const l = Buffer.from(a)
-      const r = Buffer.from(b)
-      if (l.length !== r.length) return false
-      return timingSafeEqual(l, r)
-    },
-    crypto_hmacSha256Base64: async (s: string, body: string) =>
-      createHmac("sha256", s).update(body, "utf8").digest("base64"),
-    crypto_hmacSha256Hex: async (s: string, body: string) =>
-      createHmac("sha256", s).update(body, "utf8").digest("hex"),
-  }
+  return buildVerifyBridge({
+    readConfig: async (key: string) => (key === secretKey ? SECRET : null),
+    secretConfigKeys: [secretKey],
+  })
 }
 const b64 = (body: string) => createHmac("sha256", SECRET).update(body, "utf8").digest("base64")
 const hex = (body: string) => createHmac("sha256", SECRET).update(body, "utf8").digest("hex")
@@ -76,7 +68,7 @@ const tsBody = (ms = Date.now()) => JSON.stringify({ ts: new Date(ms).toISOStrin
 
 const VERIFIERS: Record<string, VerifierCase> = {
   "shopify/*": {
-    verify: (r) => shopifyWebhookVerifier(r, bridge("shopifyWebhookSecret")),
+    verify: (r) => shopifyWebhookVerifier(r, bridge("shopifyWebhookSecret") as never),
     sign: (body) => ({ "x-shopify-hmac-sha256": b64(body), "x-shopify-webhook-id": "d-1" }),
     sigHeaders: ["x-shopify-hmac-sha256"],
     unsignedHeader: "x-shopify-webhook-id",

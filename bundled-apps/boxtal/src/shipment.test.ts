@@ -159,8 +159,8 @@ function makeCtx(opts?: {
     db,
     fetch,
     executeTool,
-    connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-    config: { get: async () => "whsecret" },
+    connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+    config: { get: async () => "whsecret", has: async () => true },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
     ...(opts?.filesImportFromUrl
       ? {
@@ -1076,8 +1076,8 @@ describe("set_package — named-pack reference (multi-carton override)", () => {
       db,
       fetch,
       executeTool: async (_t: string, _a: unknown) => ({ status: "completed", result: INVOICE }),
-      connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-      config: { get: async () => "whsecret" },
+      connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+      config: { get: async () => "whsecret", has: async () => true },
       logger: { info() {}, warn() {}, error() {}, debug() {} },
     } as any
     return { ctx, db, fetchCalls }
@@ -1699,8 +1699,8 @@ describe("create_shipment — return (reverse) flow", () => {
       db,
       fetch,
       executeTool,
-      connections: { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
-      config: { get: async () => "whsecret" },
+      connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } },
+      config: { get: async () => "whsecret", has: async () => true },
       logger: { info() {}, warn() {}, error() {}, debug() {} },
     } as any
     await createShipment(ctx, { ...CREATE_INPUT, is_return: true, return_reason: "Wrong item shipped" })

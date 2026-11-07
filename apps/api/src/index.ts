@@ -390,6 +390,12 @@ try {
   // Non-fatal: the run-tool path still lazy-inits (and retries) on demand.
   rootLogger.error({ err }, "Eager sandbox worker pool init failed — will retry lazily")
 }
+// Workers app executor: one warning when its variables are set but unusable
+// (partial, invalid, or a role other than "all"); every app then runs on QuickJS.
+{
+  const { warnWorkersSelectionOnce } = await import("~/modules/apps/workers/config")
+  warnWorkersSelectionOnce()
+}
 
 // Move what the pre-class shared `app-kernel` queue still holds (schedulers,
 // delayed jobs) onto the kernel class queues; what is already waiting there is

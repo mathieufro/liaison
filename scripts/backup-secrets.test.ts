@@ -64,6 +64,8 @@ const HOST_SETTINGS: Record<string, string> = {
   AGENT_HISTORY_BUDGET_TOKENS: "a conversation history size, a number",
   OPENROUTER_HOST_MIN_TOKENS_PER_SECOND: "a model routing threshold, a number",
   LIAISON_EDGE_SECRET: "shared with this host's edge proxy; the new host's edge sets its own",
+  LIAISON_APP_LOADER_KEY:
+    "signs this host's requests to its app loader, set with that loader; nothing stored is signed with it",
 }
 
 /** Read by test, QA or developer tooling only: never deployment configuration. */

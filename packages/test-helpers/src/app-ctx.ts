@@ -39,7 +39,7 @@ export function stubAppContext(): Record<string, unknown> {
     listContactsByExternalId: async () => ({ contacts: [], nextCursor: null }),
     fetch: async () => ({ status: 200, headers: {}, body: "" }),
     logger: noopLogger(),
-    config: { get: async () => null, setSecret: async () => {} },
+    config: { get: async () => null, has: async () => false, setSecret: async () => {} },
     agent_run: async () => "{}",
     realtime_publish: async () => "{}",
     grants_setUserScopes: async () => "{}",

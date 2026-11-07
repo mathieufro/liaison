@@ -4,9 +4,10 @@
 // `connected_account:create`/`disconnect` events.
 //
 // On connect: validate the v3 credentials with a token exchange, read the
-// kernel-minted webhook secret (`ctx.config.get("boxtalWebhookSecret")` —
+// kernel-minted webhook secret is set (`ctx.config.has("boxtalWebhookSecret")` —
 // Task K-WEBHOOK-SECRET), and register TWO v3 subscriptions (TRACKING_CHANGED,
-// DOCUMENT_CREATED) each carrying that secret and a callback URL of the form
+// DOCUMENT_CREATED) each carrying that secret (written into the request by the
+// host, `configSecrets`: the bundle never reads it) and a callback URL of the form
 // `${kernelPublicBaseUrl}/webhooks/{orgId}/boxtal/{endpoint}` (no /api prefix).
 // Persist the returned subscription ids + a `webhook_status` flag.
 //
@@ -56,7 +57,7 @@ interface ConnectionCtx {
     opts?: { method?: string; headers?: Record<string, string>; body?: string },
   ) => Promise<{ status: number; headers: Record<string, string>; body: string }>
   connections: unknown
-  config: { get(key: string): Promise<unknown> }
+  config: { get(key: string): Promise<unknown>; has(key: string): Promise<boolean> }
   // Methods are OPTIONAL to match BoxtalToolCtx's `BoxtalLogger` (whose methods
   // are `... | undefined`), so the structural-superset ctx passed by the tool
   // handlers (e.g. webhooksRepairHandler) is assignable here. Every call site
@@ -116,13 +117,13 @@ export async function onConnectionEstablished(event: ConnectionEvent, ctx: Conne
     // block the connection — fall through and let webhook setup decide.
   }
 
-  // 2. Read the kernel-minted webhook secret; degrade if absent.
+  // 2. The kernel-minted webhook secret must be set; degrade if absent.
   const baseUrl = data.kernelPublicBaseUrl
-  const secret = (await ctx.config.get(WEBHOOK_SECRET_KEY)) as string | null
-  if (!baseUrl || !secret) {
+  const hasSecret = await ctx.config.has(WEBHOOK_SECRET_KEY)
+  if (!baseUrl || !hasSecret) {
     ctx.logger?.warn?.("boxtal: webhook prerequisites unavailable; degrading", {
       hasBaseUrl: Boolean(baseUrl),
-      hasSecret: Boolean(secret),
+      hasSecret,
     })
     await setWebhookStatus(ctx, "degraded")
     return
@@ -134,10 +135,14 @@ export async function onConnectionEstablished(event: ConnectionEvent, ctx: Conne
   for (const { eventType, endpoint } of SUBSCRIPTIONS) {
     const callbackUrl = `${baseUrl.replace(/\/$/, "")}/webhooks/${orgId}/boxtal/${endpoint}`
     try {
-      const sub = await client.v3.createSubscription({ eventType, callbackUrl, webhookSecret: secret })
+      const sub = await client.v3.createSubscription({
+        eventType,
+        callbackUrl,
+        webhookSecretConfigKey: WEBHOOK_SECRET_KEY,
+      })
       // The inline webhookSecret above is IGNORED by the live API — only the
       // dedicated endpoint sets the signing key (see setSubscriptionWebhookSecret).
-      await client.v3.setSubscriptionWebhookSecret(sub.id, secret)
+      await client.v3.setSubscriptionWebhookSecret(sub.id, WEBHOOK_SECRET_KEY)
       await upsertSubscription(ctx, { event_type: eventType, subscription_id: sub.id, callback_url: callbackUrl })
     } catch (err) {
       allOk = false
@@ -178,8 +183,7 @@ export async function webhooksRepair(ctx: ConnectionCtx): Promise<{
   failed: Array<{ event_type: string; reason: string }>
   webhook_status: "active" | "degraded"
 }> {
-  const secret = (await ctx.config.get(WEBHOOK_SECRET_KEY)) as string | null
-  if (!secret) {
+  if (!(await ctx.config.has(WEBHOOK_SECRET_KEY))) {
     return {
       repaired: [],
       failed: [{ event_type: "*", reason: "no kernel webhook secret configured" }],
@@ -208,7 +212,7 @@ export async function webhooksRepair(ctx: ConnectionCtx): Promise<{
       // delete-then-recreate only when the stored subscription is gone on
       // their side (404/permission), and set the secret on the NEW id too.
       try {
-        await client.v3.setSubscriptionWebhookSecret(row.subscription_id, secret)
+        await client.v3.setSubscriptionWebhookSecret(row.subscription_id, WEBHOOK_SECRET_KEY)
         repaired.push({ event_type: eventType, subscription_id: row.subscription_id })
         continue
       } catch {
@@ -218,9 +222,9 @@ export async function webhooksRepair(ctx: ConnectionCtx): Promise<{
       const sub = await client.v3.createSubscription({
         eventType,
         callbackUrl: row.callback_url,
-        webhookSecret: secret,
+        webhookSecretConfigKey: WEBHOOK_SECRET_KEY,
       })
-      await client.v3.setSubscriptionWebhookSecret(sub.id, secret)
+      await client.v3.setSubscriptionWebhookSecret(sub.id, WEBHOOK_SECRET_KEY)
       await upsertSubscription(ctx, {
         event_type: eventType,
         subscription_id: sub.id,

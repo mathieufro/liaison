@@ -96,3 +96,9 @@ seed standard --admin: teammates, addresses, QaPass1!, content -> apps/api/src/s
 seed standard: an org already holding the teammates is refused -> apps/api/src/seed/tiers/standard/seed-standard.ts:96-101
 seed standard: --now default now, --only agent-app, one JSON line -> apps/api/src/seed/tiers/standard/seed-standard.ts:71-73 ; apps/api/src/seed/tiers/standard/seed-standard.ts:166-206
 seed outside the image: catalog default app-catalog/, apps default .liaison-apps/apps, missing catalog stops with exit 2 naming the variable -> apps/api/src/cli/seed/app-dirs.ts:32-72 ; apps/api/src/cli/seed/run.ts:65-71
+connect --token-env: token read from the named env var only, never printed; refuses non-OAuth (exit 2); --account required for identifierVar connections -> apps/api/src/cli/connect/index.ts:425-500 ; apps/api/src/cli/main.ts:528-545
+connect --token-env: stored as the OAuth callback stores a grant (encrypted, org connection, replaces the same account, connected_account:create, client secret mirrored to clientSecretConfigKey) -> apps/api/src/modules/apps/connections/service.ts:3152 ; apps/api/src/modules/apps/connections/service.ts:3558-3640
+connect --token-env: no client recorded, nothing refreshes the token -> apps/api/src/modules/apps/connections/service.ts:3558 ; apps/api/src/modules/apps/connections/service.ts:1068
+connect --org takes a slug or an id -> apps/api/src/cli/lib/resolve-org-id.ts:20-26
+app run-job: enqueueAppJob with one attempt, params may not set orgId or _ keys, --wait prints {jobId, ok, ms, error}, timeout default 600 -> apps/api/src/cli/app/run-job.ts:59 ; apps/api/src/cli/app/run-job.ts:78-160
+app run-job example: shopify backfill-customers is a declared job -> bundled-apps/shopify/app.manifest.json:1

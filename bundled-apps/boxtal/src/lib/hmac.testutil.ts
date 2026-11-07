@@ -8,11 +8,9 @@ import { type HmacTestBridge, hmacBase64, hmacHex, makeHmacTestBridge } from "@l
 export { hmacBase64, hmacHex }
 
 /**
- * A bridge stub that mirrors the host `crypto_*` + `config_get` surface.
- *
- * `withHex: false` models a host bridge predating `crypto_hmacSha256Hex`, so the
- * verifier's graceful degradation to base64-only stays covered. Boxtal reads no
- * other config key, so every other key is null.
+ * A bridge stub that mirrors the host `crypto_*` + `config_*` surface,
+ * including the by-key methods the verifier uses. Boxtal reads no other config
+ * key, so every other key is null.
  */
 export function makeTestBridge(
   secret: string | null,

@@ -103,14 +103,14 @@ function makeCtx(opts: {
       executeTool,
       connections: {
         boxtal: {
-          getCredentials: async () => ({ v1Key: "k", v1Secret: "s", v3Key: "k", v3Secret: "s", environment: "sandbox" }),
+          getSettings: async () => ({ values: { environment: "sandbox" }, missing: [] }),
           getToken: async () => {
             throw new Error("no")
           },
           getAccounts: async () => [],
         },
       },
-      config: { get: async () => null },
+      config: { get: async () => null, has: async () => false },
       logger: { info() {}, warn() {}, error() {}, debug() {} },
     } as never,
     db,
@@ -410,7 +410,7 @@ describe("partial shipments — end-to-end journey (two batches, proformas, work
         }
         return { status: 200, headers: {}, body: JSON.stringify({ status: 200, timestamp: "t", content: {} }) }
       },
-      config: { get: async () => "whsecret" },
+      config: { get: async () => "whsecret", has: async () => true },
       executeTool: async (target: string, args: unknown): Promise<CrossAppEnvelope> => {
         crossCalls.push({ target, args: args as Record<string, unknown> })
         if (target === "invoicing:proforma_create_and_issue") {

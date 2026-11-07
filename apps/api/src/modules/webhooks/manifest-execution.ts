@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import type { ManifestHandlerRef } from "~/modules/apps/app-registries"
-import { executeInSandbox, resolveToolTimeoutMs } from "~/modules/apps/sandbox/executor"
-import { getSandboxPool } from "~/modules/apps/sandbox/pool"
-import { getWorkerPool, initWorkerPool } from "~/modules/apps/sandbox/worker-pool"
+import { resolveToolTimeoutMs } from "~/modules/apps/sandbox/executor"
+import { runApp } from "~/modules/apps/sandbox/run-app"
 
 /**
  * What a declared budget leaves for waiting on a pinned slot and answering. The
@@ -33,6 +32,10 @@ interface ExecuteManifestWebhookOptions {
   timeoutMs?: number
   /** The app the handler belongs to: an org's custom app counts against its org's sandbox share. */
   appName: string
+  /** The org the delivery is for. */
+  orgId: string
+  /** The bridge holds the delivery's ambient transaction open for the whole run. */
+  holdsTx: boolean
   handlerRef: ManifestHandlerRef
   bundleSource: string
   params: unknown
@@ -45,41 +48,40 @@ interface ExecuteManifestWebhookOptions {
    * `x-shopify-webhook-id` for dedup.
    */
   extraArgs?: unknown[]
+  /** `webhook` (the delivery, default) or `webhook-verify`, for the run timing record. */
+  entryKind?: "webhook" | "webhook-verify"
 }
 
 export async function executeManifestWebhook({
   appName,
+  orgId,
+  holdsTx,
   handlerRef,
   bundleSource,
   params,
   bridge,
   extraArgs,
   timeoutMs,
+  entryKind,
 }: ExecuteManifestWebhookOptions): Promise<unknown> {
-  if (handlerRef.trusted) {
-    return executeInSandbox({
-      pool: getSandboxPool(),
-      bundleSource,
-      exportName: handlerRef.exportName,
-      params,
-      bridge,
-      extraArgs,
-      ...(timeoutMs ? { timeoutMs } : {}),
-    })
-  }
-
-  await initWorkerPool()
-  return getWorkerPool().execute({
+  return runApp({
+    trusted: handlerRef.trusted === true,
+    appName,
+    orgId,
+    bundlePath: handlerRef.bundlePath,
     bundleSource,
     exportName: handlerRef.exportName,
+    entry: `${entryKind ?? "webhook"}:${handlerRef.exportName}`,
     params,
     bridge,
     extraArgs,
-    // Webhook handlers are external-triggered background work; they must not
-    // starve foreground (user/agent) tool calls under load (worker-pool reserves
-    // capacity for interactive execs).
+    holdsTx,
+    ...(timeoutMs ? { timeoutMs } : {}),
+    // Webhook handlers are external-triggered background
+    // work; they must not starve foreground (user/agent) tool calls under load
+    // (worker-pool reserves capacity for interactive execs).
+    // (worker pool only).
     priority: "background",
     appId: appName,
-    ...(timeoutMs ? { timeoutMs } : {}),
   })
 }

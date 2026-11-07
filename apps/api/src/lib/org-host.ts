@@ -148,8 +148,10 @@ export function signInOrgSlug(c: Context, bodySlug: string | undefined): string 
 }
 
 /**
- * What a non-org host serves: the signed control API, health, diagnostics and
- * inbound webhooks. Everything else is 404 there.
+ * What a non-org host serves: the signed control API, health, diagnostics,
+ * inbound webhooks and the Workers app bridge (its run token is its only
+ * credential, and one bridge serves every org of the cell). Everything else is
+ * 404 there.
  */
 export function isNonOrgHostPath(path: string): boolean {
   return (
@@ -159,7 +161,8 @@ export function isNonOrgHostPath(path: string): boolean {
     path.startsWith("/diag/") ||
     path === "/api/cloud" ||
     path.startsWith("/api/cloud/") ||
-    path.startsWith("/webhooks/")
+    path.startsWith("/webhooks/") ||
+    path.startsWith("/api/app-bridge/")
   )
 }
 

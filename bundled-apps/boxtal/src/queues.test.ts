@@ -68,7 +68,7 @@ function makeCtx(opts: {
     db,
     fetch: (async () => new Response("")) as unknown as BoxtalToolCtx["fetch"],
     connections: {},
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     executeTool: executeTool as BoxtalToolCtx["executeTool"],
   }
 }

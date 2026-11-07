@@ -140,7 +140,7 @@ export function goldenCtx(c: GoldenCase) {
     fetch: async () => ({ status: 500, headers: {}, body: "" }),
     executeTool,
     connections: {},
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     logger: { info() {}, warn() {}, error() {}, debug() {} },
   }
   return { ctx, calls, id }

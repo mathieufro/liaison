@@ -14,6 +14,8 @@ Boxtal has two API generations and the app needs a key pair for each.
 3. In Liaison, open **Settings › Boxtal › Boxtal account** and click **Connect**.
 4. Fill in **v1 API key**, **v1 API secret**, **v3 API key**, **v3 API secret**, and **Environment (sandbox|production)** (`sandbox` or `production`).
 
+The four keys stay with the server: Liaison adds them to each Boxtal request itself, so the app's code never reads them. Only **Environment** is readable by the app, to pick the sandbox or production API.
+
 Connecting needs `boxtal:admin:connection`. Connect a shared company account as an organization connection, or other people and agents get `not_connected`. See [Connect apps](../connecting-apps.md).
 
 Boxtal posts tracking and document events back to Liaison through two webhooks, signed with a secret Liaison generates (`boxtalWebhookSecret`). If tracking stops updating, an agent can re-register them with `webhooks_repair`.

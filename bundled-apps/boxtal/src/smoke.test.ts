@@ -14,22 +14,39 @@ import { BoxtalV3Client, type BoxtalFetch } from "./lib/boxtal-v3-client"
 const RUN = process.env.BOXTAL_SMOKE === "1" && !!process.env.BOXTAL_V3_KEY
 const maybe = RUN ? it : it.skip
 
-/** Real fetch shaped like ctx.fetch. */
+const CREDS: Record<string, string | undefined> = {
+  v1Key: process.env.BOXTAL_V1_KEY,
+  v1Secret: process.env.BOXTAL_V1_SECRET,
+  v3Key: process.env.BOXTAL_V3_KEY,
+  v3Secret: process.env.BOXTAL_V3_SECRET,
+}
+const basic = (fields: readonly string[]) =>
+  `Basic ${Buffer.from(`${CREDS[fields[0]!]}:${CREDS[fields[1]!]}`).toString("base64")}`
+
+/** Real fetch shaped like ctx.fetch, doing the host's `auth` (Basic, bearer exchange). */
 const liveFetch: BoxtalFetch = async (url, opts) => {
-  const res = await fetch(url, { method: opts?.method ?? "GET", headers: opts?.headers, body: opts?.body })
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...(opts?.headers ?? {}) }
+  const auth = opts?.auth
+  if (auth?.scheme === "basic" && auth.fields) headers.Authorization = basic(auth.fields)
+  if (auth?.scheme === "bearer" && auth.exchange) {
+    const tok = await fetch(auth.exchange.url, {
+      method: "POST",
+      headers: { Authorization: basic(auth.exchange.fields), "Content-Type": "application/json" },
+    })
+    headers.Authorization = `Bearer ${((await tok.json()) as { accessToken: string }).accessToken}`
+  }
+  const res = await fetch(url, { method: opts?.method ?? "GET", headers, body: opts?.body })
+  const out: Record<string, string> = {}
   res.headers.forEach((v, k) => {
-    headers[k.toLowerCase()] = v
+    out[k.toLowerCase()] = v
   })
-  return { status: res.status, headers, body: await res.text() }
+  return { status: res.status, headers: out, body: await res.text() }
 }
 
 describe("Boxtal live sandbox smoke (opt-in)", () => {
   maybe("v3 token exchange + content-category returns ≥1 row", async () => {
     const v3 = new BoxtalV3Client({
       fetch: liveFetch,
-      v3Key: process.env.BOXTAL_V3_KEY!,
-      v3Secret: process.env.BOXTAL_V3_SECRET!,
       environment: "sandbox",
     })
     const categories = await v3.listContentCategories()
@@ -39,8 +56,6 @@ describe("Boxtal live sandbox smoke (opt-in)", () => {
   maybe("v1 domestic cotation returns ≥1 offer", async () => {
     const v1 = new BoxtalV1Client({
       fetch: liveFetch,
-      v1Key: process.env.BOXTAL_V1_KEY!,
-      v1Secret: process.env.BOXTAL_V1_SECRET!,
       environment: "sandbox",
     })
     const offers = await v1.quote({

@@ -60,7 +60,7 @@ function ctxWith(rows: Array<Record<string, unknown>>, attributes: Array<Record<
     db: createMockDb({ seed: { shipment: rows } }),
     fetch: (async () => new Response("")) as unknown as BoxtalToolCtx["fetch"],
     connections: {},
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     executeTool: executeTool as BoxtalToolCtx["executeTool"],
   }
   return { ctx, calls }

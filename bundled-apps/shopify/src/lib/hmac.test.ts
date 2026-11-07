@@ -2,28 +2,13 @@
 //
 // Task B9 — HMAC-SHA256 verifier tests.
 import { describe, expect, it } from "bun:test"
-import { createHmac, timingSafeEqual } from "node:crypto"
-import { hmacSha256VerifierViaBridge, shopifyWebhookVerifier } from "./hmac"
+import { createHmac } from "node:crypto"
+import { makeHmacTestBridge } from "@liaison/test-helpers/webhook-hmac"
+import { shopifyWebhookVerifier } from "./hmac"
 import { hmacSha256Verifier } from "./hmac.testutil"
 
 const sign = (body: string, secret: string) =>
   createHmac("sha256", secret).update(body, "utf8").digest("base64")
-
-// Host-faithful bridge: mirrors apps/api/src/modules/webhooks/routes.ts —
-// crypto_timingSafeEqual does the length check + constant-time compare itself,
-// and crypto_hmacSha256Base64 computes the real digest. Tests that drive the
-// PRODUCTION verifier (hmacSha256VerifierViaBridge) must use this, not a
-// stringy `a === b`, so the length-oracle fix is actually exercised.
-const hostBridge = {
-  crypto_hmacSha256Base64: async (s: string, body: string) =>
-    createHmac("sha256", s).update(body, "utf8").digest("base64"),
-  crypto_timingSafeEqual: async (a: string, b: string) => {
-    const left = Buffer.from(a)
-    const right = Buffer.from(b)
-    if (left.length !== right.length) return false
-    return timingSafeEqual(left, right)
-  },
-}
 
 describe("hmacSha256Verifier", () => {
   it("returns true on valid signature", () => {
@@ -51,60 +36,12 @@ describe("hmacSha256Verifier", () => {
   })
 })
 
-// Production verifier — the one the kernel webhook route actually calls
-// (hmac.test previously only covered the test-only hmac.testutil reimpl, so the
-// real path that runs in QuickJS was untested).
-describe("hmacSha256VerifierViaBridge (production, host-faithful bridge)", () => {
-  it("returns true on a valid base64 HMAC", async () => {
-    const body = '{"order":1}'
-    const secret = "shh"
-    const sig = sign(body, secret)
-    expect(
-      await hmacSha256VerifierViaBridge(body, { "x-shopify-hmac-sha256": sig }, secret, hostBridge),
-    ).toBe(true)
-  })
-
-  it("returns false when the header is missing", async () => {
-    expect(await hmacSha256VerifierViaBridge('{"x":1}', {}, "s", hostBridge)).toBe(false)
-  })
-
-  it("returns false on a tampered body", async () => {
-    const sig = sign('{"x":1}', "s")
-    expect(
-      await hmacSha256VerifierViaBridge('{"x":2}', { "x-shopify-hmac-sha256": sig }, "s", hostBridge),
-    ).toBe(false)
-  })
-
-  it("returns false on a wrong-length signature WITHOUT an app-side length short-circuit", async () => {
-    // The length mismatch must be resolved by the host crypto_timingSafeEqual
-    // (which checks length internally), not by an early return in hmac.ts —
-    // that early return was the length oracle we removed. Assert the bridge's
-    // compare is the decider by spying on whether it was invoked.
-    let compareCalled = false
-    const spyBridge = {
-      crypto_hmacSha256Base64: hostBridge.crypto_hmacSha256Base64,
-      crypto_timingSafeEqual: async (a: string, b: string) => {
-        compareCalled = true
-        return hostBridge.crypto_timingSafeEqual(a, b)
-      },
-    }
-    const ok = await hmacSha256VerifierViaBridge(
-      '{"x":1}',
-      { "x-shopify-hmac-sha256": "short" },
-      "s",
-      spyBridge,
-    )
-    expect(ok).toBe(false)
-    expect(compareCalled).toBe(true)
-  })
-})
-
+// Production verifier — the one the kernel webhook route actually calls, run
+// against a host-faithful by-key bridge (@liaison/test-helpers/webhook-hmac
+// mirrors apps/api secret-free.ts: secret read by key, timing-safe compare).
 describe("shopifyWebhookVerifier (manifest-format)", () => {
   const bridge = (secret: string | null) => ({
-    config_get: async () => secret,
-    crypto_hmacSha256Base64: async (s: string, body: string) =>
-      createHmac("sha256", s).update(body, "utf8").digest("base64"),
-    crypto_timingSafeEqual: async (a: string, b: string) => a === b,
+    ...makeHmacTestBridge({ secretKey: "shopifyWebhookSecret", secret }),
   })
 
   it("returns ok=true with replayKey when signature + webhookId present", async () => {
@@ -140,6 +77,35 @@ describe("shopifyWebhookVerifier (manifest-format)", () => {
     expect((r.replayTtlSeconds ?? 0) > 86_400).toBe(true)
   })
 
+  it("never reads the secret itself: it asks the host by key", async () => {
+    const body = '{"order":2}'
+    const calls: string[] = []
+    const b = bridge("shh")
+    const spy = {
+      ...b,
+      config_get: async (k: string) => {
+        calls.push(`config_get:${k}`)
+        return b.config_get(k)
+      },
+      crypto_hmacSha256Base64: async (s: string, d: string) => {
+        calls.push(`hmac:${s}`)
+        return b.crypto_hmacSha256Base64(s, d)
+      },
+    }
+    const r = await shopifyWebhookVerifier(
+      {
+        body,
+        method: "POST",
+        query: {},
+        headers: { "x-shopify-hmac-sha256": sign(body, "shh"), "x-shopify-webhook-id": "w" },
+      },
+      spy,
+    )
+    expect(r.ok).toBe(true)
+    // Only the public replay label is ever passed as a "secret".
+    expect(calls).toEqual(["hmac:shopify-delivery"])
+  })
+
   it("returns ok=false when secret unset", async () => {
     const r = await shopifyWebhookVerifier(
       { body: "{}", method: "POST", query: {}, headers: { "x-shopify-hmac-sha256": "x" } },
@@ -149,18 +115,18 @@ describe("shopifyWebhookVerifier (manifest-format)", () => {
     expect(r.reason).toBe("missing_secret")
   })
 
-  it("returns ok=false on signature mismatch", async () => {
-    const r = await shopifyWebhookVerifier(
-      {
-        body: "{}",
-        method: "POST",
-        query: {},
-        headers: { "x-shopify-hmac-sha256": "wrong", "x-shopify-webhook-id": "wh1" },
-      },
-      bridge("s"),
-    )
-    expect(r.ok).toBe(false)
-    expect(r.reason).toBe("signature_mismatch")
+  it("returns ok=false on signature mismatch, a tampered body, a short or missing signature", async () => {
+    const sig = sign('{"x":1}', "s")
+    for (const [body, headers] of [
+      ["{}", { "x-shopify-hmac-sha256": "wrong", "x-shopify-webhook-id": "wh1" }],
+      ['{"x":2}', { "x-shopify-hmac-sha256": sig, "x-shopify-webhook-id": "wh1" }],
+      ['{"x":1}', { "x-shopify-hmac-sha256": "short", "x-shopify-webhook-id": "wh1" }],
+      ['{"x":1}', { "x-shopify-webhook-id": "wh1" }],
+    ] as const) {
+      const r = await shopifyWebhookVerifier({ body, method: "POST", query: {}, headers }, bridge("s"))
+      expect(r.ok).toBe(false)
+      expect(r.reason).toBe("signature_mismatch")
+    }
   })
 
   it("returns ok=false when X-Shopify-Webhook-Id missing", async () => {

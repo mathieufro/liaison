@@ -121,6 +121,23 @@ liaison app rollback <name>
 | --- | --- | --- |
 | `<name>` | yes | The app to roll back. |
 
+## app run-job
+
+Runs one job of an installed app for one org now, the way an on-demand job runs: the org's apps are set up in the CLI process (an unknown job is refused), the job is queued with `{ ...params, orgId }` and one attempt, and the server's job worker runs it (the CLI never hosts a job). Refused when the app is Off for the org. Prints `{ jobId }`; with --wait, polls until the job finishes and prints `{ jobId, ok, ms, error? }` (`ms`: the run itself), exit 1 when it failed or did not finish in time.
+
+```
+liaison app run-job <app> <job> [--org <slug|id>] [--params-json <json>] [--wait] [--timeout <seconds>]
+```
+
+| Flag | Required | Description |
+| --- | --- | --- |
+| `<app>` | yes | The app. |
+| `<job>` | yes | The job, as the app's manifest names it. |
+| `--org <slug\|id>` | no | The org to run it for; needed when the instance has several orgs. |
+| `--params-json <json>` | no | The job's params, a JSON object. It may not set `orgId` or a key starting with `_`. |
+| `--wait` | no | Wait for the job to finish and print its outcome. |
+| `--timeout <seconds>` | no | With --wait: how long to wait (default 600). The job keeps its place on the queue after it. |
+
 ## app verify
 
 Checks an app package (`.liaisonapp`), an `app.manifest.json` or a signed artifact directory offline, the way an install does: the package's files and limits, the manifest schema, the host API range this build provides, and the icon. When `statement.json` and `statement.sig` sit beside the package, also checks the signed statement against the app-signing keys built into this release and reports the key id and whether the name, version and the ui.js, manifest and package hashes match (`signature.status`: `verified`, `refused` or `unsigned`). Reads no environment. Prints JSON; exits 1 when a check fails or the statement is refused, 2 for an unreadable file or a directory without exactly one package.
@@ -135,10 +152,10 @@ liaison app verify <file|dir>
 
 ## connect
 
-The one interactive command, for OAuth connections (`mail/gmail`, `tickets/gmail`, `social/google`, `social/meta`, `shopify/shop`). Saves the per-org Google OAuth client from `--config` when present, prints an authorize URL to STDERR and waits for a new connection to land.
+The one interactive command, for OAuth connections (`mail/gmail`, `tickets/gmail`, `social/google`, `social/meta`, `shopify/shop`). Saves the per-org Google OAuth client from `--config` when present, prints an authorize URL to STDERR and waits for a new connection to land. With `--token-env` it is not interactive: an OAuth connection whose provider issues an access token without a consent screen (a Shopify custom app's Admin API token) is connected from that token, stored as an OAuth callback stores one (encrypted, the same account's earlier connection replaced, the app told the connection exists), as the org's connection.
 
 ```
-liaison connect <app>/<connection> [--config <path>] [--email <address>] [--for <member email> [--send]]
+liaison connect <app>/<connection> [--config <path>] [--org <slug|id>] [--email <address>] [--for <member email> [--send]] [--token-env <VAR> [--account <id>] [--client-secret-env <VAR>] [--scopes <a,b>]]
 ```
 
 | Flag | Required | Description |
@@ -149,6 +166,11 @@ liaison connect <app>/<connection> [--config <path>] [--email <address>] [--for 
 | `--config <path>` | no | Config file supplying the org, the Google OAuth client and inbox settings. |
 | `--for <member email>` | no | Connect that member's OWN account (a personal connection): prints a one-time link instead of an authorize URL. It works once, for 30 minutes, only when that member is signed in as themselves (it never signs anyone in), and waits for a connection they own. A mailbox's standard or private choice is theirs, on that page. |
 | `--send` | no | With --for: also email the member their link. |
+| `--org <slug\|id>` | no | The org to act on; else the config's `org.slug`, else the single org. |
+| `--token-env <VAR>` | no | Connect from the access token held in this environment variable, no browser. The token is read from the environment only, never from the command line, and never printed. Refused for a connection that is not OAuth. |
+| `--account <id>` | no | With --token-env: the account the token is for. Required when the connection is identified by a value such as the shop domain (`acme.myshopify.com` for `shopify/shop`). |
+| `--client-secret-env <VAR>` | no | With --token-env: the environment variable holding the app's client secret, saved encrypted where the app checks webhook signatures (Shopify signs its webhooks with it). |
+| `--scopes <a,b>` | no | With --token-env: the scopes the token holds, comma-separated, recorded as its granted scopes. |
 
 ## disconnect
 

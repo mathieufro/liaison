@@ -56,6 +56,10 @@ The file has no webhook subscriptions: Liaison subscribes to the store's webhook
 
 Connect the store for the whole organization, not as a personal account. A personal connection returns `not_connected` to everyone else and to agents acting for someone else. See [Connect apps](../connecting-apps.md).
 
+### Connect with a store's access token
+
+A store whose custom app gives you an Admin API access token (`shpat_…`) can connect without the OAuth round trip, from the server's command line: `liaison connect shopify/shop --token-env SHOP_TOKEN --account your-store`, with the token in the `SHOP_TOKEN` environment variable (`--client-secret-env` for the app's secret, which signs its webhooks). The token is stored like an OAuth grant and never printed. The customer backfill and scope-seed jobs can then be run at once with `liaison app run-job shopify <job> --wait`. See the [provisioning CLI](../provisioning-cli.md).
+
 ### Full order history
 
 Liaison needs the store's full order history for support, invoicing and imports. Shopify shows an app only the last 60 days of orders until the app holds `read_all_orders`, a protected permission. An app the store's own organization creates in the Dev Dashboard gets it by listing it in its scopes; a Partner organization's app needs Shopify's approval first. The configuration file lists it only once **Full order history** is on, so `shopify app deploy` and the connect work while the approval is pending. Because Shopify grants a store only the scopes of the released configuration, full order history takes these steps: Shopify approves `read_all_orders` for the app, you turn on **Full order history**, the agent hands you the file again (it now lists `read_all_orders`), you run `shopify app deploy`, then you reconnect the store. Liaison also asks for it when the store being reconnected already holds it.

@@ -483,7 +483,7 @@ export async function reconcileTracking(
     // Not connected is a normal state (app installed, credentials not yet
     // entered) — report an empty run rather than failing the scheduled job.
     ctx.logger?.info?.("boxtal reconcile-tracking: not connected, skipping run")
-    return { candidates: 0, checked: 0, updated: 0, failed: 0, orphans: EMPTY_ORPHAN_SWEEP }
+    return { candidates: 0, checked: 0, updated: 0, failed: 0, orphans: { ...EMPTY_ORPHAN_SWEEP } }
   }
 
   // Every row still in play, bounded by state (an arbitrary 500-row window left some live parcels

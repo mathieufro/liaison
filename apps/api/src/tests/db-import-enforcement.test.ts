@@ -117,6 +117,10 @@ describe("db import enforcement", () => {
     // Phase 16.5 — UI bundle serving route reads kernel.apps_active_version to
     // pin the active version (system-wide; not per-request RLS context).
     "modules/apps/ui-bundle-routes.ts",
+    // Executor selection: the installed version and bundle digest of the app a run
+    // is for, read from the instance-wide install tables (apps_installed,
+    // apps_active_version) for the run's org (its own install or the instance's).
+    "modules/apps/sandbox/run-app.ts",
     "modules/apps/run-approved-handler.ts",
     // The sandbox rpc-bridge's per-capability factories (composed by rpc-bridge.ts).
     "modules/apps/sandbox/bridge/approvals.ts",

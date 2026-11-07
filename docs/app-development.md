@@ -391,6 +391,36 @@ If your app talks to an external service, declare a `connection` in the manifest
 reads a fresh token via `ctx.connections.<name>.getToken()` and never sees the
 client secret.
 
+### Let the host hold the secret
+
+An app can send a connection's credential without ever reading it: pass `auth`
+to `ctx.fetch` and the host adds it to the request, only for a host in that
+connection's `allowedDomains`, and redacts it from the answer.
+
+```ts
+await ctx.fetch(`https://${shop}/admin/api/graphql.json`, {
+  method: "POST",
+  body,
+  auth: { connection: "shop", scheme: "header:X-Shopify-Access-Token" },
+})
+```
+
+`scheme` is `"header:<Name>"` (the oauth2 token, or one credentials field named
+in `fields`), `"bearer"` (with `exchange`, a client-credentials token the host
+obtains, caches and drops on a 401), or `"basic"` (two credentials fields).
+`configSecrets: { "<placeholder>": "<config key>" }` writes a declared config
+secret into the string body where its placeholder stands, and `ctx.config.has(key)`
+tells whether a secret is set without reading it. For the non-secret part of a
+credentials connection, `ctx.connections.<name>.getSettings()` returns the fields
+the manifest marks `readable: true` and names the missing ones.
+
+Secret-returning calls (`getToken`, `getCredentials`, reading a secret config
+key) work on the local sandbox but are refused when the app runs on a remote
+isolate executor, so an app that should run on both sends its secrets with
+`auth`. `@liaison/app-sdk/connection-credentials` reads a credentials
+connection's fields whichever shape `ctx.connections` has, for code that still
+needs them locally.
+
 ### Call out once
 
 A job can run twice: a restart hands it back, or a stalled run is run again on

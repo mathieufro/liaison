@@ -195,6 +195,7 @@ All optional. Compose passes each of them to the app from `deploy/.env`.
 | `LIAISON_TEAM_ENDPOINT` | Where this server shares what an admin opts into with the Liaison team. Unset: the team's endpoint; empty: sharing is not available. See [Share with the Liaison team](liaison-team.md) |
 | `CONTROL_PLANE_URL`, `CONTROL_PLANE_API_KEY` | Both or neither. They do not make the server managed: set without `LIAISON_EDITION`, the server runs self-hosted and logs a warning saying what to set |
 | `LIAISON_REQUIRE_APP_SIGNATURE`, `LIAISON_TRUSTED_APP_PUBLISHERS` | Runtime app installs: signatures are required by default, and the trusted publisher is one cosign certificate-identity regex matched against the whole identity. The image ships cosign; verifying needs outbound HTTPS to Sigstore (`tuf-repo-cdn.sigstore.dev`) |
+| `LIAISON_WORKERS_APPS`, `LIAISON_APP_LOADER_URL`, `LIAISON_APP_LOADER_CELL_ID`, `LIAISON_APP_LOADER_KEY`, `LIAISON_APP_BRIDGE_BASE_URL`, `LIAISON_APP_BRIDGE_TIMINGS_FILE` | Run the listed apps on a remote V8 isolate loader instead of the local sandbox; their `ctx.*` calls come back over HTTPS to `/api/app-bridge`. All empty by default: every app runs on the local sandbox |
 
 For every variable, see the [environment reference](../reference/env.md).
 

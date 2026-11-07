@@ -12,9 +12,8 @@ import { createAppContext } from "~/modules/apps/context"
 import { validateToolResult } from "~/modules/apps/execute-tool"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import { loadBundle } from "~/modules/apps/sandbox/bundle-loader"
-import { executeInSandbox } from "~/modules/apps/sandbox/executor"
-import { getSandboxPool } from "~/modules/apps/sandbox/pool"
 import { createSessionRpcBridge } from "~/modules/apps/sandbox/rpc-bridge"
+import { runApp } from "~/modules/apps/sandbox/run-app"
 import { hasScope } from "~/modules/permissions/permissions"
 import { filterResponse } from "~/modules/permissions/response-filter"
 
@@ -114,26 +113,22 @@ export async function invokeAppExport(
       const source = await loadBundle(entry.handler.bundlePath)
       // Only trusted code runs on the host's in-process pool; a sandboxed app's
       // export runs in the isolated worker pool, like its tools.
-      if (entry.handler.trusted !== true) {
-        const { getWorkerPool, initWorkerPool } = await import("~/modules/apps/sandbox/worker-pool")
-        await initWorkerPool()
-        return getWorkerPool().execute({
-          bundleSource: source,
-          exportName: entry.handler.exportName,
-          params: { format, dateRange: filters?.dateRange },
-          bridge,
-          priority: "background",
-          appId: appName,
-        })
-      }
-      return executeInSandbox({
-        pool: getSandboxPool(),
+      return runApp({
+        trusted: entry.handler.trusted === true,
+        appName,
+        orgId,
+        bundlePath: entry.handler.bundlePath,
         bundleSource: source,
         exportName: entry.handler.exportName,
+        entry: `export:${entry.handler.exportName}`,
         // Date-range threads into the handler via params (the only sandbox
         // input channel); the handler applies it + paginates the full RLS set.
         params: { format, dateRange: filters?.dateRange },
         bridge,
+        holdsTx: false,
+        // Worker pool only.
+        priority: "background",
+        appId: appName,
       })
     }
     return withRlsContext(actor, async (tx) => {

@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //
 // Boxtal v3 JSON API client (shipping orders, tracking, documents, content
-// categories, webhook subscriptions). Authenticates via Basic→Bearer token
-// exchange against `/iam/account-app/token` (expiresIn seconds), caches the
-// bearer with a 60s safety skew, and refreshes once on a 401.
+// categories, webhook subscriptions). Authenticates with a bearer from the
+// Basic→Bearer exchange against `/iam/account-app/token`, which the HOST runs
+// (`ctx.fetch` auth `exchange`): it caches the bearer until shortly before its
+// declared expiry and drops it on a 401, and this client retries once on a 401
+// so the retry exchanges again. Neither the key pair nor the bearer enters the
+// bundle.
 //
 // Host-free: constructor-injected with a `fetch` shaped exactly like
 // `ctx.fetch` (`(url, {method,headers,body}) → {status,headers,body}`). NEVER
 // imports `node:*` — the bundle runs in the QuickJS sandbox.
 
-import { base64Encode } from "./base64"
+import type { FetchAuth } from "@liaison/app-sdk"
 import {
   BOXTAL_CALL_BUDGET_MS,
   BOXTAL_HTTP_TIMEOUT_MS,
@@ -33,6 +36,10 @@ export type BoxtalFetch = (
      *  correct: the client also refuses to start a request past its deadline. */
     signal?: unknown
     timeoutMs?: number
+    /** The credential the host adds (`@liaison/app-sdk` FetchAuth). */
+    auth?: FetchAuth
+    /** `{ placeholder: configKey }`: a config secret the host writes into the body. */
+    configSecrets?: Record<string, string>
   },
 ) => Promise<{ status: number; headers: Record<string, string>; body: string }>
 
@@ -49,9 +56,9 @@ export class BoxtalApiError extends Error {
 
 export interface BoxtalV3ClientOptions {
   fetch: BoxtalFetch
-  v3Key: string
-  v3Secret: string
   environment: BoxtalEnvironment
+  /** The credentials connection whose v3 key pair the host exchanges. Default "boxtal". */
+  connection?: string
   /** Injectable clock for deterministic expiry tests. Default Date.now. */
   now?: () => number
   /** Cap for ONE HTTP round trip. Default BOXTAL_HTTP_TIMEOUT_MS. */
@@ -61,36 +68,27 @@ export interface BoxtalV3ClientOptions {
   callBudgetMs?: number
 }
 
-/** Token-skew (ms): refresh this far BEFORE the server-declared expiry. */
-const TOKEN_SKEW_MS = 60_000
-
 const V3_BASE: Record<BoxtalEnvironment, string> = {
   sandbox: "https://api.boxtal.build",
   production: "https://api.boxtal.com",
 }
 
-interface CachedToken {
-  accessToken: string
-  expiresAtMs: number
+/** Where a body carries the webhook secret; the host replaces it with the value. */
+export function webhookSecretPlaceholder(configKey: string): string {
+  return `__LIAISON_CONFIG_SECRET__${configKey}__`
 }
 
 export class BoxtalV3Client {
   protected readonly fetchImpl: BoxtalFetch
-  private readonly v3Key: string
-  private readonly v3Secret: string
+  private readonly connection: string
   protected readonly environment: BoxtalEnvironment
   private readonly now: () => number
   protected readonly requestTimeoutMs: number
   protected readonly callBudgetMs: number
 
-  private cached: CachedToken | null = null
-  /** In-flight token exchange, memoized so a burst shares one POST. */
-  private inflight: Promise<CachedToken> | null = null
-
   constructor(opts: BoxtalV3ClientOptions) {
     this.fetchImpl = opts.fetch
-    this.v3Key = opts.v3Key
-    this.v3Secret = opts.v3Secret
+    this.connection = opts.connection ?? "boxtal"
     this.environment = opts.environment
     this.now = opts.now ?? (() => Date.now())
     this.requestTimeoutMs = opts.requestTimeoutMs ?? BOXTAL_HTTP_TIMEOUT_MS
@@ -102,7 +100,13 @@ export class BoxtalV3Client {
    *  spent, and hands the fetch layer this request's own abort hints. */
   protected async timedFetch(
     url: string,
-    opts: { method?: string; headers?: Record<string, string>; body?: string },
+    opts: {
+      method?: string
+      headers?: Record<string, string>
+      body?: string
+      auth?: FetchAuth
+      configSecrets?: Record<string, string>
+    },
     deadline: Deadline,
   ): Promise<{ status: number; headers: Record<string, string>; body: string }> {
     const left = deadline.remaining(this.now())
@@ -120,83 +124,54 @@ export class BoxtalV3Client {
     return V3_BASE[this.environment]
   }
 
-  /** Exchange (or reuse) a bearer token. Memoizes in-flight exchanges. */
-  private async token(deadline: Deadline, forceRefresh = false): Promise<string> {
-    if (!forceRefresh && this.cached && this.now() < this.cached.expiresAtMs) {
-      return this.cached.accessToken
-    }
-    if (forceRefresh) this.cached = null
-    if (!this.inflight) {
-      this.inflight = this.exchange(deadline).finally(() => {
-        this.inflight = null
-      })
-    }
-    const tok = await this.inflight
-    this.cached = tok
-    return tok.accessToken
-  }
-
-  private async exchange(deadline: Deadline): Promise<CachedToken> {
-    const url = `${this.base}/iam/account-app/token`
-    const res = await this.timedFetch(
-      url,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${base64Encode(`${this.v3Key}:${this.v3Secret}`)}`,
-          "Content-Type": "application/json",
-        },
-      },
-      deadline,
-    )
-    if (res.status >= 400) {
-      throw new BoxtalApiError(
-        `Boxtal token exchange failed (${res.status})`,
-        res.status,
-        res.body,
-      )
-    }
-    let parsed: { accessToken?: string; expiresIn?: number }
-    try {
-      parsed = JSON.parse(res.body) as { accessToken?: string; expiresIn?: number }
-    } catch {
-      throw new BoxtalApiError("Boxtal token response was not valid JSON", res.status, res.body)
-    }
-    if (!parsed.accessToken || typeof parsed.expiresIn !== "number") {
-      throw new BoxtalApiError("Boxtal token response missing accessToken/expiresIn", res.status, res.body)
-    }
+  /** The bearer the host obtains for this connection's v3 key pair. */
+  private get auth(): FetchAuth {
     return {
-      accessToken: parsed.accessToken,
-      expiresAtMs: this.now() + (parsed.expiresIn * 1000 - TOKEN_SKEW_MS),
+      connection: this.connection,
+      scheme: "bearer",
+      exchange: { url: `${this.base}/iam/account-app/token`, fields: ["v3Key", "v3Secret"] },
     }
   }
 
   /**
-   * Authenticated v3 request with single refresh-on-401. The `path` is
+   * Authenticated v3 request with single refresh-on-401 (the host drops the
+   * bearer a 401 answered, so the retry exchanges again). The `path` is
    * appended to the env base; `query` is serialized to a querystring.
+   * `configSecrets` lets the host write a config secret into the body.
    */
   protected async request<T = unknown>(
     method: string,
     path: string,
-    opts?: { body?: unknown; query?: Record<string, string | number | undefined> },
+    opts?: {
+      body?: unknown
+      query?: Record<string, string | number | undefined>
+      configSecrets?: Record<string, string>
+    },
   ): Promise<T> {
-    // ONE deadline for the whole logical call, so a slow token exchange eats
-    // into the same budget the request itself draws on (see http-budget.ts).
+    // ONE deadline for the whole logical call (the host's token exchange runs
+    // inside the first request's round trip; see http-budget.ts).
     const deadline = makeDeadline(this.now(), this.callBudgetMs)
     let attempt = 0
     while (true) {
-      const token = await this.token(deadline, attempt > 0)
       const qs = opts?.query ? buildQuery(opts.query) : ""
       const url = `${this.base}${path}${qs}`
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${token}`,
-      }
+      const headers: Record<string, string> = {}
       let body: string | undefined
       if (opts?.body !== undefined) {
         headers["Content-Type"] = "application/json"
         body = JSON.stringify(opts.body)
       }
-      const res = await this.timedFetch(url, { method, headers, body }, deadline)
+      const res = await this.timedFetch(
+        url,
+        {
+          method,
+          headers,
+          body,
+          auth: this.auth,
+          ...(opts?.configSecrets ? { configSecrets: opts.configSecrets } : {}),
+        },
+        deadline,
+      )
 
       if (res.status === 401) {
         if (attempt >= 1) {
@@ -224,7 +199,11 @@ export class BoxtalV3Client {
   private async requestContent<T = unknown>(
     method: string,
     path: string,
-    opts?: { body?: unknown; query?: Record<string, string | number | undefined> },
+    opts?: {
+      body?: unknown
+      query?: Record<string, string | number | undefined>
+      configSecrets?: Record<string, string>
+    },
   ): Promise<T> {
     const env = await this.request<V3Envelope<T>>(method, path, opts)
     return env.content
@@ -293,8 +272,10 @@ export class BoxtalV3Client {
   async createSubscription(input: {
     eventType: SubscriptionEventType
     callbackUrl: string
-    webhookSecret: string
+    /** The config key of the signing secret; the host writes its value into the body. */
+    webhookSecretConfigKey: string
   }): Promise<{ id: string }> {
+    const placeholder = webhookSecretPlaceholder(input.webhookSecretConfigKey)
     // Boxtal v3.1 returns the new subscription's `id` as a NUMBER, but the app's
     // `subscription` table types `subscription_id` as a string (and the DELETE
     // path takes it in the URL). Coerce here at the client boundary so the
@@ -305,7 +286,10 @@ export class BoxtalV3Client {
     const content = await this.requestContent<{ id: string | number }>(
       "POST",
       "/shipping/v3.1/subscription",
-      { body: input },
+      {
+        body: { eventType: input.eventType, callbackUrl: input.callbackUrl, webhookSecret: placeholder },
+        configSecrets: { [placeholder]: input.webhookSecretConfigKey },
+      },
     )
     return { id: String(content.id) }
   }
@@ -324,11 +308,12 @@ export class BoxtalV3Client {
    * registration path MUST follow createSubscription with this call, or
    * Boxtal signs with a server-generated secret we never see.
    */
-  async setSubscriptionWebhookSecret(id: string, webhookSecret: string): Promise<void> {
+  async setSubscriptionWebhookSecret(id: string, webhookSecretConfigKey: string): Promise<void> {
+    const placeholder = webhookSecretPlaceholder(webhookSecretConfigKey)
     await this.request(
       "PUT",
       `/shipping/v3.1/subscription/${encodeURIComponent(id)}/webhook-secret`,
-      { body: { webhookSecret } },
+      { body: { webhookSecret: placeholder }, configSecrets: { [placeholder]: webhookSecretConfigKey } },
     )
   }
 

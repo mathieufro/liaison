@@ -23,7 +23,7 @@ export interface BoxtalLogger {
  * The context every Boxtal tool handler receives. `db` is the generic CRUD
  * bridge (`DbClient`); `fetch` is the host fetch shaped like `BoxtalFetch`;
  * `connections` is the dual-shape credentials accessor (resolved in
- * `get-client.ts`); `config.get` reads the kernel-minted app config;
+ * `get-client.ts`); `config.get` / `config.has` read the kernel-minted app config;
  * `executeTool` is the cross-app K4 envelope.
  */
 export interface BoxtalToolCtx {
@@ -31,7 +31,7 @@ export interface BoxtalToolCtx {
   db: DbClient
   fetch: BoxtalFetch
   connections: unknown
-  config: { get(key: string): Promise<unknown> }
+  config: { get(key: string): Promise<unknown>; has(key: string): Promise<boolean> }
   executeTool: (
     target: string,
     args: string | Record<string, unknown>,

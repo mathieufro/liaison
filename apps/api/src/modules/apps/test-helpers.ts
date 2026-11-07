@@ -28,6 +28,7 @@ export interface MockAppContextOpts {
       getToken: (identifier?: string) => Promise<string>
       getAccounts?: ConnectionClient["getAccounts"]
       getCredentials?: ConnectionClient["getCredentials"]
+      getSettings?: ConnectionClient["getSettings"]
     }
   >
   fetchMock?: AppContext["fetch"]
@@ -86,6 +87,7 @@ export function mockAppContext(opts: MockAppContextOpts): MockAppContext {
       getToken: conn.getToken,
       getAccounts: conn.getAccounts ?? (async () => []),
       getCredentials: conn.getCredentials ?? (async () => ({})),
+      getSettings: conn.getSettings ?? (async () => ({ values: {}, missing: [] })),
     }
   }
 
@@ -112,7 +114,14 @@ export function mockAppContext(opts: MockAppContextOpts): MockAppContext {
     connections,
     fetch: opts.fetchMock ?? (async () => ({ status: 200, headers: {}, body: "" })),
     logger,
-    config: { get: opts.config?.get ?? (async (_key: string) => null), setSecret: async () => {} },
+    config: {
+      get: opts.config?.get ?? (async (_key: string) => null),
+      has: async (key: string) => {
+        const v = await (opts.config?.get ?? (async () => null))(key)
+        return v !== undefined && v !== null && v !== ""
+      },
+      setSecret: async () => {},
+    },
     // SDK platform-capability surfaces (2026-05-23). Return shape mirrors the
     // host bridge: JSON-stringified envelopes. Tests that exercise these
     // surfaces should re-stub them inline; the defaults below let

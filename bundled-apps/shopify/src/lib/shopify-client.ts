@@ -17,12 +17,20 @@
 // The client is constructor-injected with `fetch` to keep it host-free —
 // tests stub the network; production wires `globalThis.fetch`.
 
+import { sleep } from "./timers"
+
 export interface ShopifyFetchResponse {
   status: number
   headers: Record<string, string>
   body: string
 }
 
+/**
+ * One Admin API call. The client sets no credential: the fetch it is given
+ * carries the connection (`get-client.ts` passes `ctx.fetch` with an `auth`
+ * the host turns into `X-Shopify-Access-Token`), so the token never enters
+ * app code.
+ */
 export type ShopifyFetch = (input: {
   url: string
   method: "POST"
@@ -32,7 +40,6 @@ export type ShopifyFetch = (input: {
 
 export interface ShopifyClientOptions {
   shop: string
-  token: string
   fetch?: ShopifyFetch
   apiVersion?: string
   /**
@@ -87,7 +94,6 @@ const DEFAULT_API_VERSION = "2026-04"
 
 export class ShopifyClient {
   private readonly shop: string
-  private readonly token: string
   private readonly apiVersion: string
   private readonly baseUrlOverride: string | null
   private readonly fetchImpl: ShopifyFetch
@@ -100,7 +106,6 @@ export class ShopifyClient {
 
   constructor(opts: ShopifyClientOptions) {
     this.shop = opts.shop
-    this.token = opts.token
     this.apiVersion = opts.apiVersion ?? DEFAULT_API_VERSION
     this.baseUrlOverride = opts.baseUrlOverride ? opts.baseUrlOverride.replace(/\/$/, "") : null
     this.fetchImpl = opts.fetch ?? defaultFetch
@@ -133,7 +138,6 @@ export class ShopifyClient {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Shopify-Access-Token": this.token,
         },
         body: reqBody,
       })
@@ -250,10 +254,6 @@ function safeJsonParse(s: string): {
   } catch {
     return null
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 const defaultFetch: ShopifyFetch = async (req) => {

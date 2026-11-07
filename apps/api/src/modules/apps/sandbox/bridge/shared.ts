@@ -118,8 +118,10 @@ export interface AppManifestForBridge {
   connections?: Record<
     string,
     {
+      /** "oauth2" (a token) or "credentials" (a field map); decides what `ctx.fetch` auth injects. */
+      type?: string
       allowedDomains?: string[]
-      credentialFields?: Array<{ name: string }>
+      credentialFields?: Array<{ name: string; type?: string; readable?: boolean }>
       /**
        * Config keys naming an ENCRYPTED connection secret in `apps.config` — the
        * OAuth client-secret mirror and the kernel-minted webhook secret. The
@@ -165,7 +167,7 @@ export function snakeCase(str: string): string {
   return str.replace(/([A-Z])/g, "_$1").toLowerCase()
 }
 
-function matchesDomain(url: string | URL, allowedDomains: string[]): boolean {
+export function matchesDomain(url: string | URL, allowedDomains: string[]): boolean {
   let hostname: string
   try {
     hostname = new URL(url).hostname

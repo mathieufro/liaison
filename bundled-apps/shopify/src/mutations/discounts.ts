@@ -5,6 +5,7 @@
 
 import type { AppContext } from "@liaison/app-sdk"
 import { getShopifyClient } from "../lib/get-client"
+import { createPollPacer } from "../lib/timers"
 import {
   type PreflightResult,
   type ShopClient,
@@ -543,13 +544,19 @@ interface BulkCreationStatus {
 }
 
 /** Poll the async bulk-creation job until `done`, bounded so a stuck job throws loudly instead of hanging
- *  the gated turn forever. The app runs in a QuickJS sandbox that does NOT expose `setTimeout` (a guest
- *  `setTimeout` is "not defined" — the live chaos failure), so we cannot sleep between polls; instead each
- *  iteration's pacing comes from the REAL network round-trip of `client.query` itself (a bridged fetch to
- *  Shopify), which spaces the polls by tens-to-hundreds of ms naturally. Shopify's bulk-add of ≤200 redeem
- *  codes completes in well under the poll budget. Returns the final status. */
+ *  the gated turn forever. Between polls the pacer waits 250 ms doubling to 2 s, within
+ *  BULK_POLL_WAIT_BUDGET_MS in all, where the runtime has a timer; where it has none (a guest `setTimeout`
+ *  is "not defined") the wait is a no-op and the pacing comes from the network round trip of
+ *  `client.query` itself. Shopify's bulk-add of ≤200 redeem codes completes well inside the poll window.
+ *  Returns the final status. */
+/** Total wait between bulk-creation polls: the tool declares no `timeoutMs`, so it runs under the host's
+ *  tight default execution budget and most of that budget stays with the Shopify calls. */
+const BULK_POLL_WAIT_BUDGET_MS = 2_500
+
 async function pollBulkCreation(client: ShopClient, jobId: string): Promise<BulkCreationStatus> {
+  const pace = createPollPacer(BULK_POLL_WAIT_BUDGET_MS)
   for (let i = 0; i < 60; i++) {
+    if (i > 0) await pace(i - 1)
     const data = await client.query<{ discountRedeemCodeBulkCreation: BulkCreationStatus | null }>(
       DISCOUNT_BULK_CREATION_STATUS,
       { id: jobId },

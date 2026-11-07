@@ -68,7 +68,7 @@ function makeCtx(canned: Record<string, Canned>) {
     db,
     fetch: (async () => new Response("")) as unknown as BoxtalToolCtx["fetch"],
     connections: {},
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     executeTool: executeTool as unknown as BoxtalToolCtx["executeTool"],
   } as unknown as BoxtalToolCtx
   return { ctx, calls }

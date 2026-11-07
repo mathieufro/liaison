@@ -17,7 +17,7 @@
 import type { AppContext } from "@liaison/app-sdk"
 import { API_VERSION, SHOPIFY_DOMAIN_RE } from "./lib/constants"
 import { emitEvent } from "./lib/emit"
-import { ensureInstallMetadata, getShopifyClient, resolveShopConnection } from "./lib/get-client"
+import { ensureInstallMetadata, getShopifyClient, resolveShopConnection, shopFetchAuth } from "./lib/get-client"
 import { loadInstallMetadata } from "./lib/install-metadata"
 import { ShopifyClient, type ShopifyFetch } from "./lib/shopify-client"
 
@@ -151,16 +151,18 @@ async function buildShopifyClient(
 ): Promise<ShopifyClient | null> {
   const shopConn = resolveShopConnection(ctx)
   if (!shopConn) return null
-  let token: string
+  let accountIdentifier: string
   try {
     const accounts = await shopConn.getAccounts()
     const account = accounts.find((a) => a.ownerType === "org") ?? accounts[0]
-    token = await shopConn.getToken(account?.identifier ?? identifier)
+    accountIdentifier = account?.identifier ?? identifier
   } catch {
     return null
   }
+  // The token stays host-side: the fetch names the account, the host adds it.
+  const auth = shopFetchAuth(accountIdentifier)
   const fetchImpl: ShopifyFetch = async (req) => {
-    const res = await ctx.fetch(req.url, { method: req.method, headers: req.headers, body: req.body })
+    const res = await ctx.fetch(req.url, { method: req.method, headers: req.headers, body: req.body, auth })
     return { status: res.status, headers: res.headers, body: res.body }
   }
   // Bundled-app handlers run inside the QuickJS sandbox, where `process` is NOT
@@ -175,7 +177,6 @@ async function buildShopifyClient(
   const baseUrlOverride = envOverride && envOverride.length > 0 ? envOverride : undefined
   return new ShopifyClient({
     shop: shopDomain.replace(/\.myshopify\.com$/i, ""),
-    token,
     fetch: fetchImpl,
     baseUrlOverride,
   })

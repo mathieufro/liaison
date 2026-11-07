@@ -1,0 +1,95 @@
+{
+  "$comment": "Cell -> app-loader /run signing vectors. Generated once by an independent HMAC implementation (Python hmac); literals on purpose. Byte-identical copy in the product repo.",
+  "skewMs": 60000,
+  "headers": {
+    "cellId": "x-cell-id",
+    "ts": "x-cell-ts",
+    "signature": "x-cell-signature"
+  },
+  "canonical": "<ts>.<sha256hex(body)>",
+  "cellKey": "cell-key-for-vectors-only-7d2e91b4c0",
+  "sign": [
+    {
+      "cellId": "cell-vectors",
+      "cellKey": "cell-key-for-vectors-only-7d2e91b4c0",
+      "ts": 1794000000000,
+      "body": "{\"runId\":\"run-1\",\"orgId\":\"00000000-0000-4000-8000-000000000001\",\"app\":\"fixture\",\"version\":\"1.0.0\"}",
+      "bodySha256": "3a106a8c0b96fb673f599d0040900cac5b3e805a98098d3b37ef13e6921bf387",
+      "canonical": "1794000000000.3a106a8c0b96fb673f599d0040900cac5b3e805a98098d3b37ef13e6921bf387",
+      "signature": "iTHBiqGWvsrW4p7rjjhsnyZPxsHEYhkimtsCBnMkfgA="
+    },
+    {
+      "cellId": "cell-vectors",
+      "cellKey": "cell-key-for-vectors-only-7d2e91b4c0",
+      "ts": 1794000000000,
+      "body": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonical": "1794000000000.e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signature": "HIOv+XuQEA1PJ/0U2z4+1bd7sUG2sLFGxL2JlfcHDqw="
+    },
+    {
+      "cellId": "cell-vectors",
+      "cellKey": "cell-key-for-vectors-only-7d2e91b4c0",
+      "ts": 1794000012345,
+      "body": "{\"params\":{\"note\":\"café — ✓\"}}",
+      "bodySha256": "dd25c58cd638ff9c5d7d73d48ce01771274d1b0c0c9e4b78b73f1b8cd7dacd73",
+      "canonical": "1794000012345.dd25c58cd638ff9c5d7d73d48ce01771274d1b0c0c9e4b78b73f1b8cd7dacd73",
+      "signature": "MX0O4cGHlnvLXohJ58i7u/cgMYCXCuv3hUBtTn83GBU="
+    }
+  ],
+  "verify": [
+    {
+      "case": "valid",
+      "ts": 1794000000000,
+      "now": 1794000059000,
+      "body": "{\"runId\":\"run-1\",\"orgId\":\"00000000-0000-4000-8000-000000000001\",\"app\":\"fixture\",\"version\":\"1.0.0\"}",
+      "signature": "iTHBiqGWvsrW4p7rjjhsnyZPxsHEYhkimtsCBnMkfgA=",
+      "ok": true
+    },
+    {
+      "case": "skew-future",
+      "ts": 1794000000000,
+      "now": 1793999939999,
+      "body": "{\"runId\":\"run-1\",\"orgId\":\"00000000-0000-4000-8000-000000000001\",\"app\":\"fixture\",\"version\":\"1.0.0\"}",
+      "signature": "iTHBiqGWvsrW4p7rjjhsnyZPxsHEYhkimtsCBnMkfgA=",
+      "ok": false,
+      "reason": "skew"
+    },
+    {
+      "case": "skew-past",
+      "ts": 1794000000000,
+      "now": 1794000060001,
+      "body": "{\"runId\":\"run-1\",\"orgId\":\"00000000-0000-4000-8000-000000000001\",\"app\":\"fixture\",\"version\":\"1.0.0\"}",
+      "signature": "iTHBiqGWvsrW4p7rjjhsnyZPxsHEYhkimtsCBnMkfgA=",
+      "ok": false,
+      "reason": "skew"
+    },
+    {
+      "case": "body-tampered",
+      "ts": 1794000000000,
+      "now": 1794000000000,
+      "body": "{\"runId\":\"run-1\",\"orgId\":\"00000000-0000-4000-8000-000000000001\",\"app\":\"fixture\",\"version\":\"1.0.0\"} ",
+      "signature": "iTHBiqGWvsrW4p7rjjhsnyZPxsHEYhkimtsCBnMkfgA=",
+      "ok": false,
+      "reason": "bad_signature"
+    },
+    {
+      "case": "ts-tampered",
+      "ts": 1794000000001,
+      "now": 1794000000000,
+      "body": "{\"runId\":\"run-1\",\"orgId\":\"00000000-0000-4000-8000-000000000001\",\"app\":\"fixture\",\"version\":\"1.0.0\"}",
+      "signature": "iTHBiqGWvsrW4p7rjjhsnyZPxsHEYhkimtsCBnMkfgA=",
+      "ok": false,
+      "reason": "bad_signature"
+    },
+    {
+      "case": "wrong-key",
+      "ts": 1794000000000,
+      "now": 1794000000000,
+      "body": "{\"runId\":\"run-1\",\"orgId\":\"00000000-0000-4000-8000-000000000001\",\"app\":\"fixture\",\"version\":\"1.0.0\"}",
+      "signature": "rXMuoPsBQ43GApGZHoRZfqnPae15awh3NQkVOMeqSy8=",
+      "ok": false,
+      "reason": "bad_signature"
+    }
+  ]
+}

@@ -54,8 +54,10 @@ liaison api-connector validate <adapter file>
 liaison api-connector test <identifier> <operation> [--param name=value ...] [--org <slug>]
 liaison app status [name]
 liaison app rollback <name>
+liaison app run-job <app> <job> [--org <slug|id>] [--params-json <json>] [--wait] [--timeout <seconds>]
 liaison app verify <file|dir>
-liaison connect <app>/<connection> [--config <path>] [--email <addr>] [--for <member email> [--send]]
+liaison connect <app>/<connection> [--config <path>] [--org <slug|id>] [--email <addr>] [--for <member email> [--send]]
+liaison connect <app>/<connection> --token-env <VAR> [--account <id>] [--client-secret-env <VAR>] [--scopes <a,b>] [--org <slug|id>]
 liaison disconnect <app>/<connection> <account> [--force] [--yes] [--org <slug>]
 liaison guide <google|shopify|imap|server|<app>/<connection>> [--email <addr>] [--account-type <type>] [--org <slug>] [--locale en|fr] [--json]
 liaison setup state [--org <slug>] [--json]
@@ -139,6 +141,35 @@ liaison erase-user <userId>
     the authorized address; the command then applies the matching
     `tickets.inboxes` entry's `name`, `fromDisplayName`, `defaultTeam`,
     `notifyNewTicket` and `default`. If the inbox has not appeared yet, re-run `config apply`.
+- **`connect <app>/<connection> --token-env <VAR>`**: connects an OAuth
+  connection without a browser, from an access token the provider gave you
+  directly. For example, a Shopify custom app made in the store's admin shows
+  its Admin API access token once. Put the token in an environment variable
+  and name the variable: the command reads the token from there, never from
+  the command line, and never prints it. The token is stored as a finished
+  OAuth sign-in stores one: encrypted, as the organization's connection,
+  replacing an earlier connection of the same account, and the app is told
+  the connection exists (Shopify then registers its webhooks).
+  - `--account <id>`: the account the token is for. Required when the
+    connection is identified by a value: the store domain for `shopify/shop`
+    (`acme` or `acme.myshopify.com`).
+  - `--client-secret-env <VAR>`: the variable holding the app's client
+    secret. Shopify signs its webhooks with it; it is saved encrypted where the
+    app checks them. Without it, the secret saved before (if any) stays.
+  - `--scopes <a,b>`: the scopes the token holds, recorded like the scopes an
+    OAuth sign-in grants.
+  - `--org <slug|id>`: the organization, when the server has several.
+
+  A credentials connection is refused (exit `2`): its values go in the
+  config. Nothing refreshes such a token; connect again with a new one when it
+  changes.
+
+  ```sh
+  export SHOP_TOKEN=...        # the Admin API access token
+  export SHOP_SECRET=...       # the app's client secret
+  liaison connect shopify/shop --token-env SHOP_TOKEN --account acme \
+    --client-secret-env SHOP_SECRET --org acme
+  ```
 - **`guide <google|shopify|imap>`**: read only. Prints the setup steps the
   agent gives for this server and workspace, with the values computed here
   (redirect URIs, scopes, client IDs): `google --email <addr>` classifies the
@@ -334,6 +365,19 @@ liaison erase-user <userId>
   again for the whole server, with the same checks as an upgrade. Refused when
   there is no previous version or the running version is a security release.
   The running server follows without a restart. Exits `1` when refused.
+- **`app run-job <app> <job>`**: runs one job of an installed app for one
+  organization now, the way the app's own on-demand jobs run: it is queued
+  with the given `--params-json` (a JSON object; it may not set `orgId` or a
+  key starting with `_`) and the server runs it. One attempt, no retry. An
+  unknown job, or an app that is off for the organization, is refused and
+  nothing is queued. It prints `{ "jobId": ... }`. With `--wait` it waits for
+  the job to finish (at most `--timeout` seconds, 600 by default) and prints
+  `{ "jobId", "ok", "ms", "error" }`, `ms` being the run itself; it exits `1`
+  when the job failed or did not finish in time (the job then stays queued).
+
+  ```sh
+  liaison app run-job shopify backfill-customers --org acme --wait
+  ```
 - **`app verify <file|dir>`**: checks an app package (`.liaisonapp`), an
   `app.manifest.json` or a signed artifact directory offline, like
   `api-connector validate`: the package's files, the manifest, the host API

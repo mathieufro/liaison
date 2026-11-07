@@ -83,21 +83,22 @@ describe("boxtalWebhookVerifier", () => {
     expect(res2.sigShape).toBe("len=44,charset=base64")
   })
 
-  it("degrades to base64-only when the host bridge has no hex helper", async () => {
-    const bridge = makeTestBridge(SECRET, { withHex: false })
-    const okRes = await boxtalWebhookVerifier(
-      params({ "x-bxt-signature": hmacBase64(SECRET, BODY) }),
-      bridge,
-    )
-    expect(okRes.ok).toBe(true)
-    const hexRes = await boxtalWebhookVerifier(
-      params({ "x-bxt-signature": hmacHex(SECRET, BODY) }),
-      bridge,
-    )
-    expect(hexRes.ok).toBe(false)
+  it("never reads the secret: it verifies by config key on the host", async () => {
+    const bridge = makeTestBridge(SECRET)
+    const seen: string[] = []
+    const spy = {
+      ...bridge,
+      config_get: async (k: string) => {
+        seen.push(k)
+        return bridge.config_get(k)
+      },
+    }
+    const res = await boxtalWebhookVerifier(params({ "x-bxt-signature": hmacHex(SECRET, BODY) }), spy)
+    expect(res.ok).toBe(true)
+    expect(seen).toEqual([])
   })
 
-  it("missing secret (config_get null) → missing_secret", async () => {
+  it("missing secret (config_has false) → missing_secret", async () => {
     const sig = hmacBase64(SECRET, BODY)
     const res = await boxtalWebhookVerifier(
       params({ "x-bxt-signature": sig }),

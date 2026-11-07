@@ -3,17 +3,17 @@
 // Shared Shopify-client factory.
 //
 // Resolves the shop domain from `install_metadata`, finds the org-owned
-// connection account, fetches the offline token via the connections SDK,
-// and constructs a `ShopifyClient` wired to `ctx.fetch`. Centralised so
+// connection account, and constructs a `ShopifyClient` wired to `ctx.fetch`
+// with an `auth` naming that account: the host adds the offline token to each
+// request, so it never enters app code (one path on every executor). Centralised so
 // every read / mutation / job / webhook path uses the same resolution
 // rules (previously duplicated across six modules).
 //
-// A fresh client is built on every call (binding the current `ctx.fetch` and
-// offline token), but the bucket-aware throttle watermark (`nextEarliestCallAt`)
+// A fresh client is built on every call (binding the current `ctx.fetch`), but the bucket-aware throttle watermark (`nextEarliestCallAt`)
 // is persisted per (orgId, shopDomain) so back-pressure survives across calls
 // within the same org and shop — rebuilding the client must not reset the
 // watermark and defeat the throttle. Caching the whole client would instead pin
-// a stale per-invocation fetch closure and an un-rotated token. Watermarks
+// a stale per-invocation fetch closure. Watermarks
 // expire after 5 minutes.
 import type { AppContext } from "@liaison/app-sdk"
 import { API_VERSION, SHOPIFY_DOMAIN_RE } from "./constants"
@@ -50,9 +50,18 @@ interface CachedWatermark {
 // Module-level throttle-watermark cache, keyed by (orgId, shopDomain). A FRESH
 // `ShopifyClient` is built on every call so each invocation binds the current
 // `ctx.fetch` and offline token; only the bucket-aware throttle watermark is
-// persisted here so back-pressure survives across nearby tool calls. Entries
-// expire after the TTL.
+// persisted here so back-pressure survives across nearby tool calls. Module state
+// can outlive one run and be shared by every run the runtime keeps loaded, so an
+// entry is only ever read under its own org, a run without an org id neither
+// reads nor writes one, and expired entries are pruned on write. The value is a
+// timestamp: nothing about the shop or its data is kept.
 const throttleWatermarks = new Map<string, CachedWatermark>()
+
+function pruneExpiredWatermarks(now: number): void {
+  for (const [key, entry] of throttleWatermarks) {
+    if (entry.expiresAt <= now) throttleWatermarks.delete(key)
+  }
+}
 
 interface ConnAccount {
   /** `kernel.connected_accounts.id` — used as `install_metadata.connectionId`. */
@@ -198,23 +207,22 @@ export async function ensureInstallMetadata(ctx: AppContext): Promise<InstallMet
 /**
  * `ctx.connections` has two runtime shapes, and `getShopifyClient` is reached
  * from both contexts:
- *   - FLAT group `{ getAccounts(name), getToken(name, id) }` — what the sandbox
- *     worker AND the in-process executor actually build (the bridge methods
- *     `connections_getAccounts` / `connections_getToken` grouped by prefix).
- *   - RECORD `{ [name]: { getAccounts(), getToken(id) } }` — the `@liaison/app-sdk`
+ *   - FLAT group `{ getAccounts(name), ... }` — what the sandbox worker AND the
+ *     in-process executor actually build (the bridge methods
+ *     `connections_getAccounts` / ... grouped by prefix).
+ *   - RECORD `{ [name]: { getAccounts(), ... } }` — the `@liaison/app-sdk`
  *     type and the unit-test mock (`apps/test-helpers`).
- * Normalize to one accessor so the resolver is correct under both.
+ * Normalize to one accessor so the resolver is correct under both. Only the
+ * account list is read: the token itself stays host-side (`shopFetchAuth`).
  */
 export function resolveShopConnection(ctx: AppContext): {
   getAccounts: () => Promise<ConnAccount[]>
-  getToken: (identifier: string) => Promise<string>
 } | null {
   const conns = ctx.connections as unknown
   const flat = conns as {
     getAccounts?: (name: string) => Promise<ConnAccount[]>
-    getToken?: (name: string, identifier?: string) => Promise<string>
   }
-  if (typeof flat.getAccounts === "function" && typeof flat.getToken === "function") {
+  if (typeof flat.getAccounts === "function") {
     return {
       // The flat sandbox bridge call passes a primitive arg, so the host shim's
       // `__wrap` takes its RAW path and returns the JSON-stringified account list
@@ -224,21 +232,29 @@ export function resolveShopConnection(ctx: AppContext): {
         const raw = (await flat.getAccounts!(SHOP_CONNECTION)) as unknown
         return (typeof raw === "string" ? JSON.parse(raw) : (raw ?? [])) as ConnAccount[]
       },
-      getToken: (identifier) => flat.getToken!(SHOP_CONNECTION, identifier),
     }
   }
-  const record = conns as Record<
-    string,
-    { getAccounts?: () => Promise<ConnAccount[]>; getToken?: (identifier?: string) => Promise<string> } | undefined
-  >
+  const record = conns as Record<string, { getAccounts?: () => Promise<ConnAccount[]> } | undefined>
   const shop = record?.[SHOP_CONNECTION]
-  if (shop && typeof shop.getAccounts === "function" && typeof shop.getToken === "function") {
+  if (shop && typeof shop.getAccounts === "function") {
     return {
       getAccounts: () => shop.getAccounts!(),
-      getToken: (identifier) => shop.getToken!(identifier),
     }
   }
   return null
+}
+
+/**
+ * The `ctx.fetch` auth that sends the shop account's offline token as
+ * `X-Shopify-Access-Token`. The host adds it (only to `*.myshopify.com`, the
+ * connection's own hosts) and redacts it from the answer.
+ */
+export function shopFetchAuth(identifier: string): {
+  connection: string
+  identifier: string
+  scheme: "header:X-Shopify-Access-Token"
+} {
+  return { connection: SHOP_CONNECTION, identifier, scheme: "header:X-Shopify-Access-Token" }
 }
 
 /**
@@ -266,12 +282,13 @@ export async function getShopifyClient(
   const accounts = await shopConn.getAccounts()
   const account = pickShopAccount(accounts)
   if (!account) throw makeError("CONNECTION_MISSING", "No Shopify connection")
-  const token = await shopConn.getToken(account.identifier)
+  const auth = shopFetchAuth(account.identifier)
   const fetchImpl: ShopifyFetch = async (req) => {
     const res = await ctx.fetch(req.url, {
       method: req.method,
       headers: req.headers,
       body: req.body,
+      auth,
       ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
     })
     return { status: res.status, headers: res.headers, body: res.body }
@@ -286,19 +303,22 @@ export async function getShopifyClient(
 
   // Restore the persisted throttle watermark (if still fresh) and keep it
   // updated as this client makes calls, so back-pressure carries across
-  // invocations without caching the client's per-call fetch closure / token.
-  const cacheKey = `${ctx.orgId}:${domain}`
-  const cached = throttleWatermarks.get(cacheKey)
+  // invocations without caching the client's per-call fetch closure.
+  const orgId = typeof ctx.orgId === "string" && ctx.orgId.length > 0 ? ctx.orgId : null
+  const cacheKey = orgId ? `${orgId}:${domain.toLowerCase()}` : null
+  const cached = cacheKey ? throttleWatermarks.get(cacheKey) : undefined
   const initialThrottleAt = cached && cached.expiresAt > Date.now() ? cached.at : 0
   return new ShopifyClient({
     shop: domain.replace(/\.myshopify\.com$/i, ""),
-    token,
     fetch: fetchImpl,
     baseUrlOverride,
     initialThrottleAt,
     failFast: !!opts.timeoutMs,
     onThrottleChange: (at) => {
-      throttleWatermarks.set(cacheKey, { at, expiresAt: Date.now() + THROTTLE_TTL_MS })
+      if (!cacheKey) return
+      const now = Date.now()
+      pruneExpiredWatermarks(now)
+      throttleWatermarks.set(cacheKey, { at, expiresAt: now + THROTTLE_TTL_MS })
     },
   })
 }

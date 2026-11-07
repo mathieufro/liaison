@@ -39,9 +39,9 @@ function makeCtx(rows: Array<Record<string, unknown>>, boxtalLabels: string[] = 
       return { status: 200, headers: {}, body: JSON.stringify({ status: 200, timestamp: "t", content }) }
     },
     connections: connected
-      ? { boxtal: { getCredentials: async () => CREDS, getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } }
+      ? { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }), getToken: async () => { throw new Error("no") }, getAccounts: async () => [] } }
       : {},
-    config: { get: async () => null },
+    config: { get: async () => null, has: async () => false },
     executeTool: async () => ({ ok: true, data: null }) as never,
     logger: { info() {}, warn() {} },
     emit: async (e) => {

@@ -37,8 +37,8 @@ function makeCtx(opts?: {
     orgId: "org-1",
     db,
     fetch,
-    connections: { boxtal: { getCredentials: async () => CREDS } },
-    config: { get: async () => null },
+    connections: { boxtal: { getSettings: async () => ({ values: { environment: CREDS.environment }, missing: [] }) } },
+    config: { get: async () => null, has: async () => false },
     // biome-ignore lint/suspicious/noExplicitAny: test ctx (same idiom as reads.test.ts)
   } as any
   return { ctx, db }
