@@ -48,6 +48,8 @@ const REVIEWED: Record<string, string> = {
   "modules/demo/shopify/connection.ts#*": "demo org seeding",
   "modules/demo/api-connector/connection.ts#*": "demo org seeding",
   "modules/demo/warehouse/connection.ts#*": "demo org seeding",
+  "modules/demo/worlds/saas/payments/connection.ts#*":
+    "demo org seeding: a card-payments sentinel connection, not a mailbox",
   // The sign-up that CREATES an org: its first admin is the first seat of an
   // org that has no caps yet (caps are set by the operator afterwards).
   "modules/auth/auth.ts#bootstrapRegister":
@@ -59,6 +61,10 @@ const REVIEWED: Record<string, string> = {
     "putTemplateObject checks the cap before this row",
   // A row written by the test harness's seed factory, with no object behind it.
   "seed/factories/files/file-row.ts#*": "test seed data, no org member reaches it",
+  // A client's portal account (user_type external): countSeats counts members only,
+  // so it takes no seat. modules/org/caps.test.ts proves it at a full cap.
+  "modules/users/external-user.ts#createExternalUser":
+    "a portal account, user_type external, counted as no seat",
   // Test seed factories: bare rows with a known id for a test, never a person's
   // or an agent's write (the product's paths are the ones under test).
   "seed/factories/org/rows.ts#seedUserRows": "test seed rows, not a product write",
@@ -91,7 +97,8 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
     if (statSync(full).isDirectory()) {
-      if (["node_modules", "tests", "__fixtures__", "test-helpers"].includes(name)) continue
+      if (["node_modules", "tests", "__tests__", "__fixtures__", "test-helpers"].includes(name))
+        continue
       sourceFiles(full, out)
     } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$|test-fixtures|test-helpers/.test(name)) {
       out.push(full)

@@ -5,9 +5,11 @@
  * demo world it seeds. Shared by the signup route, the seeder and the web
  * picker so the three never disagree.
  *
- * The order of `DEMO_NEEDS` is the order the picker lists them in, and the
- * order "Everything" picks them in. A visitor's own picks keep the order they
- * were made in.
+ * `DEMO_NEEDS` holds every world's needs; each world shows seven of them
+ * (`DEMO_WORLD_NEEDS` in `./worlds`), with its own need in commerce's seat. The
+ * order here is tile order: the order the picker lists a world's needs in, and
+ * the order "Everything" picks them in. A visitor's own picks keep the order
+ * they were made in.
  */
 import { z } from "zod"
 
@@ -17,6 +19,8 @@ export const DEMO_NEEDS = [
   "chat",
   "sales",
   "commerce",
+  "money",
+  "client",
   "dev",
   "knowledge",
 ] as const
@@ -35,10 +39,26 @@ export type DemoSeedPart =
   | "prospect-routine"
   | "commerce"
   | "warehouse"
+  | "stripe"
+  | "recurring"
+  | "crm"
+  | "client-work"
+
+/**
+ * A scenario tour's id: `kernel.scenario-<need>` in the products world, and
+ * `kernel.scenario-<world>-<need>` in the others (`demoScenarioTourId`).
+ */
+export type DemoScenarioTourId =
+  | `kernel.scenario-${DemoNeed}`
+  | `kernel.scenario-saas-${DemoNeed}`
+  | `kernel.scenario-studio-${DemoNeed}`
 
 export interface DemoNeedSpec {
-  /** The guided scenario (a demo-only kernel tour) that shows this need. */
-  scenarioTourId: `kernel.scenario-${DemoNeed}`
+  /**
+   * The guided scenario (a demo-only kernel tour) that shows this need, in the
+   * first world that has the need. Another world's id: `demoNeedSpec`.
+   */
+  scenarioTourId: DemoScenarioTourId
   /** Apps installed for this need, on top of the baseline apps. */
   apps: readonly string[]
   /** World parts seeded for this need, on top of the baseline world. */
@@ -73,6 +93,16 @@ export const DEMO_NEED_SPECS: Readonly<Record<DemoNeed, DemoNeedSpec>> = {
     apps: ["shopify", "invoicing"],
     seedParts: ["commerce", "warehouse"],
   },
+  money: {
+    scenarioTourId: "kernel.scenario-saas-money",
+    apps: ["stripe", "invoicing"],
+    seedParts: ["stripe", "recurring", "crm"],
+  },
+  client: {
+    scenarioTourId: "kernel.scenario-studio-client",
+    apps: ["agreements", "projects", "mail", "github"],
+    seedParts: ["client-work"],
+  },
   dev: {
     scenarioTourId: "kernel.scenario-dev",
     apps: [],
@@ -89,7 +119,10 @@ export const DEMO_NEED_SPECS: Readonly<Record<DemoNeed, DemoNeedSpec>> = {
 
 export const demoNeedSchema = z.enum(DEMO_NEEDS)
 
-/** One or more distinct needs (at most every need), in pick order. */
+/**
+ * One or more distinct needs (at most every need), in pick order. Which world
+ * the needs belong to is checked where the world is known (the signup route).
+ */
 export const demoNeedsSchema = z
   .array(demoNeedSchema)
   .min(1)
@@ -98,14 +131,6 @@ export const demoNeedsSchema = z
 
 export function isDemoNeed(value: unknown): value is DemoNeed {
   return typeof value === "string" && (DEMO_NEEDS as readonly string[]).includes(value)
-}
-
-/** The need a demo scenario tour shows (`kernel.scenario-<need>`), or null for any other tour. */
-export function scenarioNeedOf(tourId: string): DemoNeed | null {
-  for (const need of DEMO_NEEDS) {
-    if (DEMO_NEED_SPECS[need].scenarioTourId === tourId) return need
-  }
-  return null
 }
 
 /**

@@ -6,11 +6,11 @@
 // (`withAppDimensionAliases` applies the app's entry in
 // `appScopeAliasProviders`), so a table that a scope alias makes reachable
 // was still reported. The check now applies the app's aliases, one grantable
-// scope at a time; a table no alias reaches is still reported.
-import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test"
+// scope at a time; a table no alias reaches is still reported, and refuses the
+// registration (outside production it throws).
+import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { sql } from "~/db/connection"
-import { appsLogger } from "~/lib/logger"
-import { registerApps } from "~/modules/apps/runtime"
+import { AppRegistrationFatalError, registerApps } from "~/modules/apps/runtime"
 import {
   appScopeAliasProviders,
   grantableScopesWithAppAliases,
@@ -75,18 +75,14 @@ describe("the registration's governance check applies the app's scope aliases", 
     await sql`DELETE FROM kernel.organizations WHERE id = ${ORG}`
   })
 
-  it("reports only the table no grantable scope or alias reaches", async () => {
-    const reported: unknown[] = []
-    const spy = spyOn(appsLogger, "warn").mockImplementation(((obj: unknown, msg: unknown) => {
-      if (String(msg).includes("no grantable scope can reach")) {
-        reported.push((obj as { tables?: unknown }).tables)
-      }
-    }) as never)
+  it("refuses the registration naming only the table no grantable scope or alias reaches", async () => {
+    let caught: unknown
     try {
       await registerApps([manifest as never], ORG)
-    } finally {
-      spy.mockRestore()
+    } catch (err) {
+      caught = err
     }
-    expect(reported).toEqual([["orphan"]])
+    expect(caught).toBeInstanceOf(AppRegistrationFatalError)
+    expect((caught as AppRegistrationFatalError).details.tables).toEqual(["orphan"])
   })
 })

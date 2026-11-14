@@ -14,6 +14,8 @@ export interface AssignableMember {
   id: string
   name: string
   email: string
+  /** Away today: until when. Who can be picked does not change. */
+  away?: { until: string | null } | null
 }
 
 export type AssignableMembersStatus = "idle" | "loading" | "ready" | "error"

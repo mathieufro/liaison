@@ -425,6 +425,61 @@ describe("executeTool", () => {
     toolRegistry.delete([TEST_ORG, "test_et", "internal_helper"])
   })
 
+  it("an internal tool runs when its own app's code calls it, and for no person, agent or client directly", async () => {
+    let ran = 0
+    toolRegistry.set([TEST_ORG, "test_et", "own_internal"], {
+      appName: "test_et",
+      name: "own_internal",
+      description: "Own internal step",
+      requiredScopes: ["test_et:items:write"],
+      trustBoundary: "internal",
+      agentVisible: false,
+      handler: async () => {
+        ran++
+        return { ok: true }
+      },
+    })
+    const job = {
+      actorType: "system" as const,
+      orgId: TEST_ORG,
+      purpose: "job" as const,
+      scopes: ["test_et:*"],
+    }
+    const person: UserContext = { ...actor, scopes: ["test_et:items:write", "test_et:approve"] }
+    type CoreOptions = Parameters<typeof executeToolCore>[0]
+    const call = (o: Omit<Partial<CoreOptions>, "origin"> & { origin: CoreOptions["origin"] }) =>
+      executeToolCore({
+        toolName: "test_et:own_internal",
+        orgId: TEST_ORG,
+        actor: job,
+        params: {},
+        ...o,
+      })
+    try {
+      // Its own job, and one of its own tools a person clicked (the hop is "in-app-agent").
+      const job_ = await call({ origin: "system", internalCall: { callerApp: "test_et" } })
+      expect("data" in job_ ? job_.data : job_).toEqual({ ok: true })
+      const hop = await call({
+        actor: person,
+        origin: "in-app-agent",
+        internalCall: { callerApp: "test_et" },
+      })
+      expect("data" in hop ? hop.data : hop).toEqual({ ok: true })
+      const agent: UserContext & { actorType: "agent" } = { ...person, actorType: "agent" } as never
+      const refused = [
+        await call({ actor: person, origin: "human-ui" }),
+        await call({ actor: person, origin: "mcp" }),
+        await call({ actor: agent, origin: "in-app-agent" }),
+        await call({ origin: "system" }),
+        await call({ origin: "system", internalCall: { callerApp: "other_et" } }),
+      ]
+      for (const r of refused) expect("error" in r ? r.error.code : r).toBe("forbidden")
+      expect(ran).toBe(2)
+    } finally {
+      toolRegistry.delete([TEST_ORG, "test_et", "own_internal"])
+    }
+  })
+
   // Phase 16 code-review I8 — per-user enforcement (success criterion #3):
   // a denied user must produce ZERO downstream calls (no fetcher invocation,
   // no handler execution). The scope-check must short-circuit before any

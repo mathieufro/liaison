@@ -76,6 +76,7 @@ const QUALIFIED_TABLE = /^([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)$/
  * name tables of its own `app_<name>` schema (`importTableErrors`).
  */
 export const KERNEL_IMPORT_TABLES: ReadonlySet<string> = new Set([
+  "kernel.companies",
   "kernel.contacts",
   "kernel.files",
   "kernel.message_reactions",

@@ -127,8 +127,8 @@ describe("@liaison/host runtime", () => {
     }
   })
 
-  it("the host API is 1.3: the typed host calls are additions", () => {
-    expect(HOST_API_VERSION).toBe("1.3.0")
+  it("the host API is 1.5: tabLabel and the typed host calls are additions", () => {
+    expect(HOST_API_VERSION).toBe("1.5.0")
   })
 
   it("navigate falls back to globalThis.location.assign when host.navigate is absent", () => {
@@ -202,6 +202,20 @@ describe("typed host calls (1.3)", () => {
     expect(openFileById).toHaveBeenCalledWith("test-app", "f1", "a.pdf")
     await app.decideApproval("a1", "deny")
     expect(decideApproval).toHaveBeenCalledWith("test-app", "a1", "deny", undefined)
+  })
+
+  it("editApproval posts the fields to the approvals route, or uses the host's call in a frame", async () => {
+    const editApproval = mock(async () => ({ payloadHash: "h2" }))
+    mockHost.editApproval = editApproval
+    await app.editApproval("a1", { amountMinor: "500" })
+    expect(editApproval).not.toHaveBeenCalled()
+    expect(mockHost.fetch).toHaveBeenCalledWith("/api/approvals/a1/payload", {
+      method: "POST",
+      body: JSON.stringify({ fields: { amountMinor: "500" } }),
+    })
+    mockHost.framed = true
+    await app.editApproval("a1", { amountMinor: "400" })
+    expect(editApproval).toHaveBeenCalledWith("test-app", "a1", { amountMinor: "400" })
   })
 
   it("print, templates, approvals list and records fall back to the kernel routes on an older host", async () => {

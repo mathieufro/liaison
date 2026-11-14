@@ -58,8 +58,10 @@ function applyView(projectId: string, taskId: string, view: ChecklistView): void
   const levels = Array.isArray(view?.levels) ? view.levels : []
   const items = Array.isArray(view?.items) ? [...view.items].sort(byPosition) : []
   const status = view?.status ?? computeChecklistStatus(levels, items)
-  // Merge by id so a refetch keeps each row's identity (open popovers survive).
-  setState("byTaskId", taskId, { projectId, levels, status, loading: false, error: null })
+  // Merge rows and levels by id so a refetch keeps their identity: a row's chips are keyed by
+  // level object, so a replaced level would remount its chip and close an open popover.
+  setState("byTaskId", taskId, { projectId, status, loading: false, error: null })
+  setState("byTaskId", taskId, "levels", reconcile(levels, { key: "id", merge: true }))
   setState("byTaskId", taskId, "items", reconcile(items, { key: "id", merge: true }))
   setTaskChecklist(taskId, status)
 }

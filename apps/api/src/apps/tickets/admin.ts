@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto"
 import {
   formatTicketHandle,
+  maskWithNote,
   ticketIdSegmentSchema,
   ticketsApproveRepliesFromHome,
 } from "@liaison/shared"
@@ -322,7 +323,9 @@ async function addNote(
   params: Record<string, unknown>,
   actor: ActorRef,
 ): Promise<AdminResult> {
-  const text = (params.text as string | undefined) ?? ""
+  // A staff note is masked like a customer's message: no card number or
+  // payment key reaches the row, its event or the agent's next read.
+  const text = maskWithNote((params.text as string | undefined) ?? "").text
   const attachmentSessionId = params.attachmentSessionId as string | undefined
   const attachments = Array.isArray(params.attachments) ? (params.attachments as string[]) : []
   if (!params.ticketId || (!text && !attachmentSessionId && attachments.length === 0)) {
@@ -562,7 +565,7 @@ async function editNote(
   actor: ActorRef,
 ): Promise<AdminResult> {
   const messageId = params.messageId as string
-  const text = params.text as string
+  const text = maskWithNote(typeof params.text === "string" ? params.text : "").text
   const pre = await preflightNoteParams(tx, orgId, params, { requireText: true })
   if (!pre.ok) return { error: pre.error }
   const ticketId = pre.ticketId

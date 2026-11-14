@@ -207,6 +207,11 @@ void checkSandboxAtBoot().catch(() => undefined)
 // The orchestrator's stop grace period must exceed hardDeadlineMs (+ 5 s), or
 // it kills the process mid-drain (docs/self-hosting/docker.md).
 rootLogger.info(shutdownBudgets(), "Shutdown budgets (ms from SIGTERM)")
+if (!env.MAIL_SEND_GUARD_ENFORCE) {
+  rootLogger.error(
+    "MAIL_SEND_GUARD_ENFORCE=0: staged mail is checked for opt-outs only, a reply no longer stops it",
+  )
+}
 // From here a SIGTERM runs the shutdown phases: boot halts at each step below.
 await haltBootIfShuttingDown()
 

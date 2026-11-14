@@ -7,6 +7,7 @@
 // claimed it logged a note it never could). A visible locked match is the truthful "this exists
 // but I lack permission" signal — which flows to the chat UI / persona / judge via the agent reply.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
+import { rankDeferredTools } from "~/modules/agent/tools/tool-rank"
 import {
   compactToolSearchResult,
   handleToolSearch,
@@ -187,26 +188,23 @@ describe("tool_search surfaces routine-only tools (discoverable to the authoring
   })
 })
 
-// Regression (marco-bulk-import-carrier-rate-sheet — tool-ergonomics). A keyword query that scores 0
-// against every deferred tool previously returned `matches:[]` while `totalDeferredTools>0` — an
-// INVISIBLE catalog: the agent (e.g. searching "packaging"/"template"/"shipment", none a `pack_upsert`
-// name-part) concluded the capability didn't exist and refused for 10+ turns rather than calling the one
-// Boxtal tool sitting right there. tool_search must NEVER hide a present tool behind an imperfect query.
-describe("tool_search never returns empty while deferred tools exist (no-invisible-catalog fallback)", () => {
-  it("falls back to the deferred catalog when the keyword query matches nothing", async () => {
-    // "zzznomatch" scores 0 against widgets__search/create (name/app/desc) — without the fallback this
-    // returned []. The privileged actor sees both as available (not crowded out by a locked one).
+// A keyword query that scores 0 against every deferred tool must not leave the catalog
+// invisible: the agent would conclude the capability does not exist. It used to list a
+// sample of five deferred tools, and a weak model called one of them as the answer. It
+// now names the apps, with how many tools each has, and lists and loads no tool.
+describe("a search nothing matches names the apps, never a sample of tools", () => {
+  it("answers with each app by name and its tool count, and no tool", async () => {
     const privileged = { ...ACTOR, scopes: ["widgets:widgets:read", "widgets:widgets:write"] }
     const res = await handleToolSearch(
       { query: "zzznomatch totallyunrelated" },
       { orgId: ORG, userId: privileged.userId, scopes: privileged.scopes },
     )
     expect(res.totalDeferredTools).toBeGreaterThan(0)
-    // The present tool is surfaced, NOT hidden behind the 0-score query.
-    expect(res.matches.length).toBeGreaterThan(0)
+    expect(res.matches).toEqual([])
     expect(res.fellBackToCatalog).toBe(true)
-    expect(res.matches.some((m) => m.name === "widgets__search")).toBe(true)
-    expect(res.matches.some((m) => m.name === "widgets__create")).toBe(true)
+    expect(res.apps).toContainEqual({ name: "widgets", tools: 3 })
+    expect(res.note).toContain("nothing was loaded")
+    expect(res.note).toContain("widgets (3)")
   })
 
   it("does NOT fall back when the query DOES match (keyword hits win, no catalog dump)", async () => {
@@ -216,18 +214,140 @@ describe("tool_search never returns empty while deferred tools exist (no-invisib
     )
     expect(res.matches.length).toBeGreaterThan(0)
     expect(res.fellBackToCatalog).toBeUndefined()
+    expect(res.apps).toBeUndefined()
+  })
+})
+
+describe("select: with a bare name two apps share", () => {
+  const DUP_ORG = "00000000-0000-0000-0000-000000000a1a"
+  const DUP = {
+    userId: "00000000-0000-0000-0000-000000000a1b",
+    scopes: ["shop:x:write", "pay:x:write"],
+  }
+  const tool = (app: string, name: string, description: string) =>
+    toolRegistry.set([DUP_ORG, app, name], {
+      appName: app,
+      name,
+      description,
+      requiredScopes: [`${app}:x:write`],
+      handler: async () => ({ ok: true }),
+      deferLoading: true,
+    } as any)
+
+  beforeAll(() => {
+    tool("shop", "refunds_create", "Refund an order in the shop.")
+    tool("pay", "refunds_create", "Refund a card payment.")
+    tool("shop", "orders_get", "Read one order.")
+  })
+  afterAll(() => toolRegistry.deleteByPrefix([DUP_ORG]))
+
+  it("select:refunds_create loads none and lists both, each with its app", async () => {
+    const frame = { discoveredTools: new Set<string>() } as any
+    const { runContextStore } = await import("~/modules/agent/runtime/run-context")
+    const res = await runContextStore.run(frame, () =>
+      handleToolSearch({ query: "select:refunds_create" }, { orgId: DUP_ORG, ...DUP }),
+    )
+    expect(res.matches.map((m) => [m.name, m.appName]).sort()).toEqual([
+      ["pay__refunds_create", "pay"],
+      ["shop__refunds_create", "shop"],
+    ])
+    expect(frame.discoveredTools.size).toBe(0)
+    expect(res.note).toContain("Not loaded")
+    expect(res.note).toContain("more than one app")
   })
 
-  it("the fallback still ranks available tools before locked ones", async () => {
-    // ACTOR lacks widgets:write, so widgets__create is locked; a 0-score query must still put the
-    // usable widgets__search first.
-    const res = await handleToolSearch(
-      { query: "zzznomatch", maxResults: 2 },
-      { orgId: ORG, userId: ACTOR.userId, scopes: ACTOR.scopes },
+  it("a name in one app loads", async () => {
+    const frame = { discoveredTools: new Set<string>() } as any
+    const { runContextStore } = await import("~/modules/agent/runtime/run-context")
+    await runContextStore.run(frame, () =>
+      handleToolSearch(
+        { query: "select:orders_get,shop__refunds_create" },
+        { orgId: DUP_ORG, ...DUP },
+      ),
     )
-    expect(res.fellBackToCatalog).toBe(true)
-    expect(res.matches[0]?.name).toBe("widgets__search")
-    expect(res.matches[0]?.locked).toBeUndefined()
+    expect([...frame.discoveredTools].sort()).toEqual(["shop__orders_get", "shop__refunds_create"])
+  })
+})
+
+describe("a whole-app query", () => {
+  const BIG_ORG = "00000000-0000-0000-0000-000000000a1c"
+  const USER = { userId: "00000000-0000-0000-0000-000000000a1d", scopes: ["bigapp:x:read"] }
+  beforeAll(() => {
+    for (let i = 0; i < 26; i++) {
+      toolRegistry.set([BIG_ORG, "bigapp", `step_${i}`], {
+        appName: "bigapp",
+        name: `step_${i}`,
+        description: `Step ${i}.`,
+        requiredScopes: ["bigapp:x:read"],
+        handler: async () => ({ ok: true }),
+        deferLoading: true,
+      } as any)
+    }
+  })
+  afterAll(() => toolRegistry.deleteByPrefix([BIG_ORG]))
+
+  it("names how many tools it left out", async () => {
+    const frame = { discoveredTools: new Set<string>() } as any
+    const { runContextStore } = await import("~/modules/agent/runtime/run-context")
+    const res = await runContextStore.run(frame, () =>
+      handleToolSearch({ query: "bigapp" }, { orgId: BIG_ORG, ...USER }),
+    )
+    expect(res.matches).toHaveLength(20)
+    expect(res.note).toContain("6 more bigapp tools were left out")
+  })
+})
+
+describe("one ranker", () => {
+  it("handleToolSearch and rankDeferredTools return the same names on a fixture", async () => {
+    const { rankDeferredTools } = await import("~/modules/agent/tools/tool-rank")
+    const { listDeferredTools } = await import("~/modules/agent/tools/tool-bridge")
+    const privileged = { ...ACTOR, scopes: ["widgets:widgets:read", "widgets:widgets:write"] }
+    const catalog = listDeferredTools(ORG, privileged, "agent", true)
+    for (const query of ["widgets", "search widgets", "create a widget", "watch page", "diff"]) {
+      const res = await handleToolSearch(
+        { query },
+        { orgId: ORG, userId: privileged.userId, scopes: privileged.scopes },
+      )
+      const ranked = rankDeferredTools(catalog, query, { cap: 5, appNames: ["widgets"] }).ranked
+      expect(
+        res.matches.map((m) => m.name),
+        query,
+      ).toEqual(ranked.map((s) => s.tool.sdkName))
+    }
+  })
+})
+
+describe("rankDeferredTools -- whole names and several actions of one app", () => {
+  const R = (toolName: string, appName: string, description: string) => ({
+    toolName,
+    appName,
+    description,
+    sdkName: `${appName}__${toolName}`,
+  })
+  const CATALOG = [
+    R("search", "mail", "Search the synced mail database for conversations"),
+    R("read", "mail", "Read a mail conversation"),
+    R("reply", "mail", "Reply to a conversation"),
+    R("mail_attachment_read", "kernel", "Read an attachment of an email"),
+    R("internalCallback", "test-bridge", "Internal callback"),
+    R("categories_list", "tickets", "List ticket categories"),
+    R("templates_list", "tickets", "List reply templates"),
+    R("create", "tickets", "Create a ticket"),
+  ]
+  const appNames = ["mail", "test-bridge", "tickets"]
+  const strong = (q: string) => [...rankDeferredTools(CATALOG, q, { cap: 5, appNames }).strongNames]
+
+  it("a camelCase name typed as one word finds and loads the tool", () => {
+    expect(strong("internalcallback")).toEqual(["test-bridge__internalCallback"])
+    expect(strong("internalcall")).toEqual(["test-bridge__internalCallback"])
+  })
+
+  it("an app named with two of its tools' names loads both, not the kernel tool that outscores each", () => {
+    expect(strong("search and read mail").sort()).toEqual(["mail__read", "mail__search"])
+  })
+
+  it("a word that is only part of names keeps the every-word rule", () => {
+    expect(strong("list and create tickets")).not.toContain("tickets__categories_list")
   })
 })
 

@@ -312,6 +312,55 @@ describe("merging a placeholder into the real person", () => {
   })
 })
 
+describe("merging a placeholder named on approvals, away records and feature changes", () => {
+  it("merging a placeholder repoints route person, setter, changer, both next in line and its own away record", async () => {
+    const ph = await placeholder("away")
+    const room = await thread(admin.userId)
+    const [req] = await sql<Array<{ id: string }>>`
+      INSERT INTO kernel.approval_requests (org_id, handle, thread_id, originating_thread_id,
+                                            tool_name, tool_params, current_payload,
+                                            requested_by, route_person_id, status, expires_at)
+      VALUES (${orgId}, ${`ap-${crypto.randomUUID().slice(0, 8)}`}, ${room}, ${room},
+              'kernel:x', '{}'::jsonb, '{}'::jsonb, ${admin.userId}, ${ph}, 'denied',
+              now() + interval '1 day')
+      RETURNING id`
+    // Someone else's away record names the placeholder twice; it has one of its own too.
+    const [theirs] = await sql<Array<{ id: string }>>`
+      INSERT INTO kernel.away_ranges (org_id, user_id, starts_on, ends_on, next_in_line_id, source, set_by)
+      VALUES (${orgId}, ${admin.userId}, '2026-12-01', '2026-12-05', ${ph}, 'said', ${ph})
+      RETURNING id`
+    const [own] = await sql<Array<{ id: string }>>`
+      INSERT INTO kernel.away_ranges (org_id, user_id, starts_on, ends_on, source)
+      VALUES (${orgId}, ${ph}, '2026-12-01', '2026-12-05', 'said')
+      RETURNING id`
+    await sql`INSERT INTO kernel.user_preferences (user_id, next_in_line_id)
+              VALUES (${admin.userId}, ${ph})
+              ON CONFLICT (user_id) DO UPDATE SET next_in_line_id = ${ph}`
+    const feature = `feature-${crypto.randomUUID().slice(0, 8)}`
+    await sql`INSERT INTO kernel.org_app_features (org_id, app_name, feature, enabled, changed_by, changed_at)
+              VALUES (${orgId}, 'projects', ${feature}, true, ${ph}, now())`
+
+    const res = await post(admin.bearer, ph, { targetUserId: realId })
+    expect(res.status).toBe(200)
+
+    const [route] =
+      await sql`SELECT route_person_id FROM kernel.approval_requests WHERE id = ${req!.id}`
+    expect(route?.route_person_id).toBe(realId)
+    const [away] =
+      await sql`SELECT user_id, next_in_line_id, set_by FROM kernel.away_ranges WHERE id = ${theirs!.id}`
+    expect(away).toEqual({ user_id: admin.userId, next_in_line_id: realId, set_by: realId })
+    const [prefs] =
+      await sql`SELECT next_in_line_id FROM kernel.user_preferences WHERE user_id = ${admin.userId}`
+    expect(prefs?.next_in_line_id).toBe(realId)
+    const [changed] = await sql`SELECT changed_by FROM kernel.org_app_features
+                                 WHERE org_id = ${orgId} AND feature = ${feature}`
+    expect(changed?.changed_by).toBe(realId)
+    // The placeholder's own away record is a real absence: it becomes the person's.
+    const [moved] = await sql`SELECT user_id FROM kernel.away_ranges WHERE id = ${own!.id}`
+    expect(moved?.user_id).toBe(realId)
+  })
+})
+
 describe("merging a placeholder that owns contacts", () => {
   it("its private contacts, grants and ACL places move to the person; the placeholder can go", async () => {
     const ph2 = await placeholder("contact-owner")
@@ -358,6 +407,30 @@ describe("merging a placeholder that owns contacts", () => {
     expect(nulls!.n).toBe(2)
     const [gone] = await sql<Array<{ n: number }>>`
       SELECT count(*)::int AS n FROM kernel.users WHERE id = ${ph2}`
+    expect(gone!.n).toBe(0)
+  })
+})
+
+describe("merging a placeholder that created a company", () => {
+  it("the person becomes the creator of a private company the placeholder created", async () => {
+    const ph3 = await placeholder("company-creator")
+    const [company] = await sql<Array<{ id: string }>>`
+      INSERT INTO kernel.companies (org_id, handle, name, org_access, created_by)
+      VALUES (${orgId}, ${`@co-${crypto.randomUUID().slice(0, 6)}`}, 'Placeholder Works', 'none', ${ph3})
+      RETURNING id`
+
+    await mergePlaceholderIntoUser({
+      orgId,
+      actorId: admin.userId,
+      placeholderId: ph3,
+      targetId: realId,
+    })
+
+    const [after] = await sql<Array<{ created_by: string }>>`
+      SELECT created_by::text FROM kernel.companies WHERE id = ${company!.id}`
+    expect(after!.created_by).toBe(realId)
+    const [gone] = await sql<Array<{ n: number }>>`
+      SELECT count(*)::int AS n FROM kernel.users WHERE id = ${ph3}`
     expect(gone!.n).toBe(0)
   })
 })

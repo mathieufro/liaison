@@ -5,12 +5,11 @@ description: "Ask agents about customer spend in Shopify, read your own database
 
 Agents can answer sales questions from the data you already have: customer spend and repeat purchases in your Shopify store, the tables of your own database, and the transcripts of your calls. This page shows what each source gives an agent and what to connect first. You ask in plain words, for example "Who are our customers who spent over 1,000 this year?", and the agent picks the tools.
 
-## Liaison has no deal pipeline
+## Where deals live
 
-There are no deals, stages or pipeline in Liaison. Keep deals in one of these places:
+Deals live in Liaison, on a pipeline in [Projects](../apps/projects.md), with an amount, a company and a contact (see [Track deals on a pipeline](deals.md)). Ask the agent about them with `deals_search`, and sum them with `deals_rollup` (see [Forecast your pipeline](forecast.md)).
 
-- **Your own CRM or ERP.** Connect it with the API connector. An adapter that fills the `deal.list` role shows a customer's **Deals** on the customer card and lets agents read them. See [Connect your own CRM or ERP](connect-your-crm.md).
-- **Tasks in Projects.** Create a project for your deals and track each deal as a task. A call transcript can be linked to such a task (see below). See [Projects](../apps/projects.md).
+If your deals live in your own CRM or ERP, connect it with the API connector. An adapter that fills the `deal.list` role shows a customer's **Deals** on the customer card and lets agents read them. See [Connect your own CRM or ERP](connect-your-crm.md). A call transcript can be linked to a deal task (see below).
 
 ## Ask about Shopify customers
 

@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test"
 import { Hono } from "hono"
 import { type AppEnv, apiBodyLimitMiddleware, apiRequestTimeoutMiddleware, app } from "~/app"
 import { sql } from "~/db"
+import { env } from "~/lib/env"
 import { redis } from "~/lib/redis"
 import { errorHandler } from "~/middleware/error-handler"
 import { reserveStep, settleStep, snapshot } from "~/modules/demo/demo-budget"
@@ -20,6 +21,7 @@ import { DemoModeTestAccess } from "~/modules/demo/demo-mode"
 import { invalidateDemoMarker, markOrgAsDemo, reservedMarker } from "~/modules/demo/demo-org"
 import { DemoSeederTestAccess, setDemoSeeder } from "~/modules/demo/demo-seeder"
 import { DemoVerificationTestAccess, demoVerifiedIdentity } from "~/modules/demo/demo-verification"
+import { DemoWorldsTestAccess } from "~/modules/demo/demo-worlds"
 import { mountDemoRoutes, useDemoRateLimit } from "~/modules/demo/routes"
 import { ensureOrg } from "~/modules/provisioning/ensure-org"
 import * as minimal from "~/seed/tiers/minimal"
@@ -109,6 +111,9 @@ describe("POST /api/demo/start-over", () => {
   afterEach(async () => {
     await clearRedisPatterns(["ratelimit:*", "bruteforce:*", "demo:*"])
     await sql`DELETE FROM kernel.demo_spend`
+    // The domain's daily verification cap counts verified leads, across runs
+    // of this file on the same namespace database: keep each test its own.
+    await sql`UPDATE kernel.demo_leads SET verified_at = NULL WHERE verified_at IS NOT NULL`
     invalidateDemoMarker()
     DemoVerificationTestAccess.reset()
   })
@@ -208,6 +213,94 @@ describe("POST /api/demo/start-over", () => {
     const member = await minimal.adminSession((await createTestOrg()).id)
     await markOrgAsDemo(member.orgId, reservedMarker())
     expect((await startOver(member.bearer)).status).toBe(404)
+  })
+
+  describe("the world", () => {
+    const savedWorlds = env.LIAISON_DEMO_WORLDS
+    const seededWorlds: Array<{ orgId: string; worldId: unknown }> = []
+
+    beforeAll(() => {
+      DemoWorldsTestAccess.setSeedable(["products", "saas", "studio"])
+      setDemoSeeder(async ({ orgSlug, orgName, locale, worldId }) => {
+        const { orgId } = await ensureOrg({ slug: orgSlug, name: orgName, locale })
+        seededWorlds.push({ orgId, worldId })
+        return { ok: true, orgId }
+      })
+    })
+    afterEach(() => {
+      env.LIAISON_DEMO_WORLDS = "products,saas"
+    })
+    afterAll(() => {
+      env.LIAISON_DEMO_WORLDS = savedWorlds
+      DemoWorldsTestAccess.setSeedable(null)
+    })
+
+    async function softwareVisitor(): Promise<Session> {
+      env.LIAISON_DEMO_WORLDS = "products,saas"
+      return signup(nextEmail(), { entry: { id: "software" }, needs: ["money", "support"] })
+    }
+
+    async function startOverOk(session: Session): Promise<Session> {
+      const response = await startOver(session.accessToken)
+      expect(response.status).toBe(201)
+      return ((await response.json()) as { data: Session }).data
+    }
+
+    async function rewriteWorld(orgId: string, worldId: unknown): Promise<void> {
+      await sql`
+        UPDATE kernel.organizations
+        SET settings = jsonb_set(settings, '{demo,worldId}', ${JSON.stringify(worldId)}::jsonb)
+        WHERE id = ${orgId}`
+      invalidateDemoMarker(orgId)
+    }
+
+    async function seededWorldOf(orgId: string): Promise<unknown> {
+      for (let i = 0; i < 100; i++) {
+        const found = seededWorlds.find((s) => s.orgId === orgId)
+        if (found) return found.worldId
+        await Bun.sleep(50)
+      }
+      throw new Error(`no seed ran for ${orgId}`)
+    }
+
+    it("start over keeps the world and the end time", async () => {
+      const first = await softwareVisitor()
+      const before = (await markerOf(first.orgId)) as { worldId?: string; expiresAt: string }
+      expect(before.worldId).toBe("saas")
+      const fresh = await startOverOk(first)
+      const after = (await markerOf(fresh.orgId)) as {
+        worldId?: string
+        worldMonth?: string
+        expiresAt: string
+        needs?: string[]
+      }
+      expect(after.worldId).toBe("saas")
+      expect(after.worldMonth).toMatch(/^\d{4}-\d{2}$/)
+      expect(after.expiresAt).toBe(before.expiresAt)
+      expect(after.needs).toEqual(["money", "support"])
+      expect(fresh.needs).toEqual(["money", "support"])
+      expect(await seededWorldOf(fresh.orgId)).toBe("saas")
+    })
+
+    it("a rewritten marker naming a world the box does not run starts over in products", async () => {
+      for (const forged of ["studio", "elsewhere", 7]) {
+        const first = await softwareVisitor()
+        await rewriteWorld(first.orgId, forged)
+        const fresh = await startOverOk(first)
+        expect(((await markerOf(fresh.orgId)) as { worldId?: string }).worldId).toBe("products")
+        // Only the needs the products world shows carry over.
+        expect(fresh.needs).toEqual(["support"])
+        expect(await seededWorldOf(fresh.orgId)).toBe("products")
+      }
+    })
+
+    it("a world switched off since the first start falls back to products", async () => {
+      const first = await softwareVisitor()
+      env.LIAISON_DEMO_WORLDS = "products"
+      const fresh = await startOverOk(first)
+      expect(((await markerOf(fresh.orgId)) as { worldId?: string }).worldId).toBe("products")
+      expect(fresh.needs).toEqual(["support"])
+    })
   })
 
   it("refuses without a session", async () => {

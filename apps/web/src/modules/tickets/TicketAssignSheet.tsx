@@ -5,13 +5,14 @@
 // member directory with a search field, plus "Assign to me" and "Unassign")
 // and the same store action: only the container differs, because a popup anchored to a row a
 // finger is still holding is not a control anyone can hit.
-import { type Component, createMemo, For } from "solid-js"
+import { type Component, createMemo, For, Show } from "solid-js"
 import { disambiguatedLabel, markAmbiguousNames } from "~/lib/name-collision"
 import { userFromToken } from "~/modules/auth/auth-store"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { AssigneeListStatus, AssigneeSearchField } from "~/modules/members/AssigneeSearch"
 import { createAssignableMembers } from "~/modules/members/assignable-members"
 import { useApi } from "~/modules/shell/ApiContext"
+import { awayLabel } from "~/modules/shell/route-line"
 import { assignTicket } from "~/modules/tickets/ticket-detail-store"
 import { OverlaySheet } from "~/ui/OverlaySheet"
 
@@ -79,7 +80,17 @@ export const TicketAssignSheet: Component<Props> = (props) => {
               class={rowClass}
               onClick={() => void pick(member.id, member.name)}
             >
-              {disambiguatedLabel(member.name, member.email, ambiguous)}
+              <span>{disambiguatedLabel(member.name, member.email, ambiguous)}</span>
+              <Show when={awayLabel(member.away, i18n.t, i18n.locale())}>
+                {(away) => (
+                  <span
+                    data-testid={`ticket-assign-away-${member.id}`}
+                    class="ml-auto text-[13px] text-text-tertiary"
+                  >
+                    {away()}
+                  </span>
+                )}
+              </Show>
             </button>
           )}
         </For>

@@ -433,6 +433,14 @@ export const routineApproverSchema = z
       "mailbox). 'owner' is refused when the owner may not approve those actions.",
   )
 
+export const routineFollowUpSchema = z
+  .boolean()
+  .optional()
+  .describe(
+    "true: each run stages its drafts and ends, without waiting for their approval; " +
+      "a staged mail checks again for a reply before it leaves.",
+  )
+
 /**
  * WHERE A ROUTINE POSTS ITS RUNS (`routines.report_thread_id`): a conversation
  * id, or a channel's handle (`#marketing`). The routine's owner must sit in
@@ -547,6 +555,7 @@ const createRoutineBaseSchema = z.object({
   runsOn: routineRunsOnSchema,
   eventFilter: routineEventFilterSchema,
   approver: routineApproverSchema,
+  followUp: routineFollowUpSchema,
   reportThreadId: routineReportThreadRefSchema,
   // The routine's flow (0303): its steps after the trigger. Null/absent = a legacy routine (one
   // agent step, its prompt). A flow routine still keeps a prompt: the plain summary of what it does.
@@ -632,6 +641,7 @@ const updateRoutineBaseSchema = z.object({
   runsOn: routineRunsOnSchema,
   eventFilter: routineEventFilterSchema,
   approver: routineApproverSchema,
+  followUp: routineFollowUpSchema,
   // Where the routine POSTS its runs (0166): see routineReportThreadRefSchema.
   // The ONE "where it posts" field. The routine's own run thread
   // (`outputThreadId`) is internal: always its own, made on its first run, and
@@ -701,6 +711,7 @@ export const routineResponseSchema = z.object({
     .optional(),
   flow: z.unknown().nullable().optional(),
   approver: z.enum(ROUTINE_APPROVERS).optional(),
+  followUp: z.boolean().optional(),
   enabled: z.boolean(),
   status: routineStatusSchema,
   lastRunAt: z.string().nullable(),

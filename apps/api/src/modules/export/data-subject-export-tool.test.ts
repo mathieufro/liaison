@@ -8,8 +8,10 @@
 // shell is exercised by the chaos gate; this pins the data-honesty + shape contract.
 import { describe, expect, it } from "bun:test"
 import {
+  billingCustomerRecord,
   buildDataSubjectBundle,
   handleDataSubjectExport,
+  scheduleRecord,
 } from "~/modules/export/data-subject-export-tool"
 
 const ORG = "00000000-0000-0000-0000-0000000000e1"
@@ -96,6 +98,8 @@ describe("buildDataSubjectBundle — DSR assembly [BL-261]", () => {
     expect(bundle.counts).toEqual({
       tickets: 1,
       invoices: 1,
+      recurringSchedules: 0,
+      billingCustomers: 0,
       shopifyOrders: 0,
       memoryFiles: 0,
       memoryEpisodes: 0,
@@ -110,9 +114,12 @@ describe("buildDataSubjectBundle — DSR assembly [BL-261]", () => {
     // No invented record types leaked into the bundle. `memory` is P4m-T32's
     // one appended section, following the same one-section-per-data-holder shape.
     expect(Object.keys(bundle.records).sort()).toEqual([
+      "deals",
       "identity",
       "invoices",
       "memory",
+      "payments",
+      "recurringSchedules",
       "shopify",
       "tickets",
     ])
@@ -157,6 +164,8 @@ describe("buildDataSubjectBundle — DSR assembly [BL-261]", () => {
     expect(bundle.counts).toEqual({
       tickets: 0,
       invoices: 0,
+      recurringSchedules: 0,
+      billingCustomers: 0,
       shopifyOrders: 0,
       memoryFiles: 0,
       memoryEpisodes: 0,
@@ -276,5 +285,97 @@ describe("handleDataSubjectExport — param guard [BL-261]", () => {
     expect(r.error.code).toBe("REQUESTER_REQUIRED")
     expect(r.error.message).toContain("nothing was exported or saved")
     expect(reads).toBe(0)
+  })
+})
+
+describe("buildDataSubjectBundle — recurring schedules and payments customers", () => {
+  it("a payments customer carries its subscriptions with brand, last 4 and expiry of the card, never more", () => {
+    const customer = {
+      mirror_id: "cus_maison1",
+      email: "buyer@maison.example",
+      name: "Maison Buyer",
+      currency: "eur",
+      delinquent: false,
+      address: { city: "Lyon" },
+      tax_ids: null,
+      company_id: null,
+      created_upstream_at: "2026-03-01T00:00:00.000Z",
+      deleted_at: null,
+      metadata: { internal: "never exported" },
+    }
+    const subscription = {
+      mirror_id: "sub_maison1",
+      customer_id: "cus_maison1",
+      status: "active",
+      plan_name: "Studio",
+      mrr_minor: "4900",
+      currency: "eur",
+      current_period_start: "2026-11-01T00:00:00.000Z",
+      current_period_end: "2026-12-01T00:00:00.000Z",
+      trial_end: null,
+      cancel_at: null,
+      canceled_at: null,
+      card_brand: "visa",
+      card_last4: "4242",
+      card_exp: "04/29",
+      card_fingerprint: "never exported",
+      items: [{ price: "never exported" }],
+    }
+    const other = { ...subscription, mirror_id: "sub_other", customer_id: "cus_other" }
+    const record = billingCustomerRecord(customer, [subscription, other])
+    expect(record).toEqual({
+      id: "cus_maison1",
+      email: "buyer@maison.example",
+      name: "Maison Buyer",
+      currency: "eur",
+      delinquent: false,
+      address: { city: "Lyon" },
+      taxIds: null,
+      companyId: null,
+      createdAt: "2026-03-01T00:00:00.000Z",
+      deletedAt: null,
+      subscriptions: [
+        {
+          id: "sub_maison1",
+          status: "active",
+          planName: "Studio",
+          mrrMinor: 4900,
+          currency: "eur",
+          currentPeriodStart: "2026-11-01T00:00:00.000Z",
+          currentPeriodEnd: "2026-12-01T00:00:00.000Z",
+          trialEnd: null,
+          cancelAt: null,
+          canceledAt: null,
+          card: { brand: "visa", last4: "4242", exp: "04/29" },
+        },
+      ],
+    })
+  })
+
+  it("a schedule carries what it bills and when, with days as dates", () => {
+    const record = scheduleRecord({
+      id: "5f0c0b8e-6f8d-4a37-9e1a-2f4b1c7d9e01",
+      status: "ended",
+      repeats: "month",
+      billing_day: "1",
+      ends_on: new Date("2026-10-31T00:00:00.000Z"),
+      covers: "current",
+      issue_mode: "review",
+      paid_by: "transfer",
+      due_rule: "days",
+      due_days: 30,
+      language: "fr",
+      lines: [{ description: "Studio rent", quantity: 1 }],
+      notes: null,
+      paused_until: null,
+      next_issue_on: null,
+      company_id: null,
+      created_at: "2026-01-05T00:00:00.000Z",
+      card_link_url: "never exported",
+    })
+    expect(record.endsOn).toBe("2026-10-31")
+    expect(record.status).toBe("ended")
+    expect(record.lines).toEqual([{ description: "Studio rent", quantity: 1 }])
+    expect(Object.keys(record)).not.toContain("cardLinkUrl")
   })
 })

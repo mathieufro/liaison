@@ -23,6 +23,7 @@ const EXPECTED_EXPORTS: ReadonlyArray<readonly [string, Kind]> = [
   ["creditNoteIssue", "function"],
   ["creditNoteIssuePreflight", "function"],
   ["creditedTotalMinor", "function"],
+  ["documentsConvertLocal", "function"],
   ["documentsConvertToInvoice", "function"],
   ["documentsConvertToInvoicePreflight", "function"],
   ["documentsMarkPaid", "function"],

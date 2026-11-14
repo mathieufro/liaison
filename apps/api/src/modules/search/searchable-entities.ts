@@ -78,6 +78,25 @@ const KERNEL_BUILTINS: Array<{
   },
   {
     app: "kernel",
+    entityType: "company",
+    schemaName: "kernel",
+    tableName: "companies",
+    readScope: "kernel:companies:read",
+    labelField: "name",
+    indexFields: { title: "name", handle: "handle", labelSecondary: "domain" },
+    // Shareable like contacts (migration 0293): a company shared with nobody is
+    // found only by its creator and its grantees, never by its account manager.
+    permissionFields: {
+      aclFields: {
+        orgWideField: "org_wide",
+        userIdsField: "acl_user_ids",
+        roleIdsField: "acl_role_ids",
+      },
+    },
+    mentionable: false,
+  },
+  {
+    app: "kernel",
     entityType: "approval_request",
     schemaName: "kernel",
     tableName: "approval_requests",

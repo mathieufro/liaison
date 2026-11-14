@@ -25,6 +25,30 @@
 /** The reply metadata key holding a turn's guide notes. */
 export const GUIDE_NOTES_META_KEY = "guideNotes"
 
+/**
+ * The guide and schema notes one conversation may store across all its turns,
+ * in tokens (`chars / 4`, as `noteTokens` counts). A long conversation that
+ * touches app after app kept sending guides and schemas (34,000 tokens over 30
+ * turns). Past it, a note lists the tools it loads by name only
+ * (renderIndexedToolsBlock): a call whose arguments do not fit is answered
+ * with the tool's parameters, so the tool stays usable.
+ */
+export const THREAD_GUIDE_NOTES_TOKEN_CAP = 15_000
+
+/** A note's size as the conversation's notes budget counts it. */
+export function noteTokens(content: string): number {
+  return Math.ceil(content.length / 4)
+}
+
+/** The tokens of the guide notes stored on `metadatas` (replies' metadata). */
+export function storedNotesTokens(metadatas: ReadonlyArray<unknown>): number {
+  let total = 0
+  for (const metadata of metadatas) {
+    for (const note of readGuideNotes(metadata)) total += noteTokens(note.content)
+  }
+  return total
+}
+
 /** One guide note of a turn, as stored on its reply. */
 export interface GuideNote {
   /** The tool call the note followed; null for the note sent before the turn's first step. */

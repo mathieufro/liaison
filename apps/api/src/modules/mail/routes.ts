@@ -13,7 +13,9 @@ import { requireScope } from "~/middleware/require-scope"
 import { type MailCategory, parseMailCategory } from "~/modules/mail/category"
 import { enqueueGmailWriteBack } from "~/modules/mail/gmail-write-back"
 import * as providerSettings from "~/modules/mail/provider-settings"
+import { checkPersonCompose, recipientFacts, recipientsOf } from "~/modules/mail/send-guard"
 import * as mailService from "~/modules/mail/service"
+import { withAway } from "~/modules/users/away-today"
 
 /** Recipients per field (to, cc, bcc) of one draft: far above any real send. */
 const MAX_RECIPIENTS = 500
@@ -359,12 +361,17 @@ mailRoutes.get(
   requireScope("mail:conversations:read"),
   zValidator("param", idParam),
   async (c) => {
-    const result = await withRequestRls(c, (tx) =>
-      mailService.listAssignableUsersForAccount(tx, {
-        orgId: c.get("orgId"),
-        requesterId: c.get("userId"),
-        accountId: c.req.param("id"),
-      }),
+    // A colleague away today says until when; who can be picked does not change.
+    const result = await withRequestRls(c, async (tx) =>
+      withAway(
+        tx,
+        c.get("orgId"),
+        await mailService.listAssignableUsersForAccount(tx, {
+          orgId: c.get("orgId"),
+          requesterId: c.get("userId"),
+          accountId: c.req.param("id"),
+        }),
+      ),
     )
     return success(c, result)
   },
@@ -485,6 +492,65 @@ mailRoutes.post(
       }),
     )
     return success(c, result)
+  },
+)
+
+const composeCheckBody = z.object({
+  to: z.array(z.string().max(320)).max(MAX_RECIPIENTS).default([]),
+  cc: z.array(z.string().max(320)).max(MAX_RECIPIENTS).default([]),
+  bcc: z.array(z.string().max(320)).max(MAX_RECIPIENTS).default([]),
+})
+
+/**
+ * What a new message to these recipients will carry, for the composer: the
+ * commercial footer when the data marks a recipient as a prospect (fixed, added
+ * at send), or why it cannot go, or the opted-out line of a person's own mail.
+ * `missingBasis` names the prospect with no recorded lawful basis: the person
+ * is told, and may still send. `recipients` is what is recorded about each
+ * recipient who is a contact (basis, consumer or business, opted out), the
+ * same facts an agent mail's approval card shows.
+ */
+mailRoutes.post(
+  "/compose-check",
+  requireScope("mail:conversations:write"),
+  zValidator("json", composeCheckBody),
+  async (c) => {
+    const body = c.req.valid("json")
+    const addresses = recipientsOf(body.to, body.cc, body.bcc)
+    const [own, recipients] = await Promise.all([
+      checkPersonCompose(c.get("orgId"), addresses),
+      recipientFacts(c.get("orgId"), addresses),
+    ])
+    if (!own.commercial) {
+      return success(c, {
+        recipients,
+        commercial: false,
+        footerLines: null,
+        refusal: null,
+        line: own.line,
+        missingBasis: null,
+      })
+    }
+    if ("refused" in own) {
+      return success(c, {
+        recipients,
+        commercial: true,
+        footerLines: null,
+        // Asked before any send: the reason it cannot go, without the send
+        // refusal's "Nothing was sent." (it reads as a failed send).
+        refusal: own.refused.message.replace(/^Nothing was sent\. /, ""),
+        line: null,
+        missingBasis: null,
+      })
+    }
+    return success(c, {
+      recipients,
+      commercial: true,
+      footerLines: own.footerLines,
+      refusal: null,
+      line: null,
+      missingBasis: own.missingBasis,
+    })
   },
 )
 

@@ -166,6 +166,22 @@ describe("runWorldBeat", () => {
     expect((await rowOf(plainOrg, plainOwner)).beat_id).toBe(WORLD_BEAT)
   })
 
+  it("an injector bound to another world refuses: no injection, no mark, the beat stays", async () => {
+    restore?.()
+    restore = WorldRegistryTestAccess.override("chat-question", {
+      id: "chat-question",
+      world: "saas",
+      async injectWorldEvent() {
+        calls++
+      },
+    })
+    await onWorldBeat(demoOrg, owner)
+    expect(await runWorldBeatOnce(demoOrg, owner, TOUR_ID)).toBe("other_world")
+    expect(calls).toBe(0)
+    expect(await marks(demoOrg)).toHaveLength(0)
+    expect((await rowOf(demoOrg, owner)).beat_id).toBe(WORLD_BEAT)
+  })
+
   it("runs the current world beat once and stays on it to be read; a second delivery runs nothing", async () => {
     await onWorldBeat(demoOrg, owner)
     expect(await runWorldBeatOnce(demoOrg, owner, TOUR_ID)).toBe("completed")

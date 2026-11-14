@@ -1,0 +1,4 @@
+Native lookup tools contacts_search, companies_search (name or domain) -> apps/api/src/modules/agent/tools/kernel-tools.ts (buildKernelAgentTools) ; docs/reference/agent-tools.md (companies_search)
+Native proposals contacts_write and companies_write are gated -> apps/api/src/modules/agent/tools/kernel-tools.ts (buildKernelAgentTools) ; apps/api/src/modules/agent/tools/company-tools.ts (registerCompanyTools)
+The company page shows the open deal -> apps/web/src/modules/contacts/CompanyDetail.tsx (CompanyDetail)
+Scopes kernel:companies:read and kernel:companies:write -> apps/api/src/modules/permissions/scope-catalog.ts (KERNEL_SCOPES)

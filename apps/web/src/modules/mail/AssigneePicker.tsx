@@ -4,6 +4,7 @@ import { type Component, createMemo, createSignal, For, Show } from "solid-js"
 import { disambiguatedLabel, markAmbiguousNames } from "~/lib/name-collision"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { useApi } from "~/modules/shell/ApiContext"
+import { awayLabel } from "~/modules/shell/route-line"
 import { Avatar } from "~/ui/AvatarStack"
 import { PopupMenu } from "~/ui/PopupMenu"
 
@@ -12,6 +13,8 @@ interface AssignableUser {
   name: string
   email: string | null
   avatarUrl: string | null
+  /** Away today: until when. Who can be picked does not change. */
+  away?: { until: string | null } | null
 }
 
 interface AssigneePickerProps {
@@ -96,6 +99,16 @@ export const AssigneePicker: Component<AssigneePickerProps> = (props) => {
               >
                 <Avatar user={user} size="sm" />
                 <span>{disambiguatedLabel(user.name, user.email, ambiguous)}</span>
+                <Show when={awayLabel(user.away, i18n.t, i18n.locale())}>
+                  {(away) => (
+                    <span
+                      data-testid={`assignee-picker-away-${user.id}`}
+                      class="ml-auto text-[11px] text-text-tertiary"
+                    >
+                      {away()}
+                    </span>
+                  )}
+                </Show>
               </PopupMenu.Item>
             )}
           </For>

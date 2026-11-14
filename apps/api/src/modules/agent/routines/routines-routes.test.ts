@@ -1107,6 +1107,8 @@ describe("routines-routes — /api/agent/routines", () => {
         lastRunStatus: "succeeded",
         outputThreadId: null,
         messageId: null,
+        // No brief written yet: no brief time, whatever the last run.
+        messageAt: null,
       })
       expect(new Date(data.lastRunAt).getTime()).toBe(ranAt.getTime())
     })

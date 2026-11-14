@@ -91,6 +91,14 @@ describe("openers for attention-only entity types", () => {
     expect(target).toMatchObject({ tabType: "kernel:settings", routePath: "/settings/billing" })
   })
 
+  it("a company hand-over item's link (kernel:company) opens the company page", async () => {
+    boot()
+    const opener = getEntityOpener("kernel", "company")
+    expect(opener).toBeDefined()
+    const target = await opener!({} as never, "co-1")
+    expect(target).toMatchObject({ tabType: "contacts:company-detail", entityId: "co-1" })
+  })
+
   it("a file shared in a thread opens that thread", async () => {
     boot()
     const opener = getEntityOpener("kernel", "file")

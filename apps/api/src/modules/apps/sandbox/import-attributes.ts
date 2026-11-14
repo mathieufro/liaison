@@ -16,8 +16,35 @@
  */
 import type ts from "typescript"
 
+/**
+ * Verdicts already reached, keyed on the bundle's SHA-256 (a collision-resistant
+ * hash: a bundle cannot borrow another's verdict) and its length. Parsing a large
+ * bundle costs the API thread hundreds of milliseconds of synchronous work, and the
+ * same bytes are checked at activation and again before each export-only build.
+ */
+const verdicts = new Map<string, string | null>()
+const MAX_VERDICTS = 256
+
 /** Why `source` must not reach Bun's parser, or null when it may. */
 export async function importAttributeIssue(source: string): Promise<string | null> {
+  const key = `${new Bun.CryptoHasher("sha256").update(source).digest("hex")}:${source.length}`
+  if (verdicts.has(key)) {
+    const known = verdicts.get(key) ?? null
+    verdicts.delete(key)
+    verdicts.set(key, known)
+    return known
+  }
+  const verdict = await parseForImportAttributes(source)
+  verdicts.set(key, verdict)
+  while (verdicts.size > MAX_VERDICTS) {
+    const oldest = verdicts.keys().next().value
+    if (oldest === undefined) break
+    verdicts.delete(oldest)
+  }
+  return verdict
+}
+
+async function parseForImportAttributes(source: string): Promise<string | null> {
   const t = (await import("typescript")).default
   const sf = t.createSourceFile("bundle.js", source, t.ScriptTarget.Latest, false, t.ScriptKind.JS)
   const syntax =

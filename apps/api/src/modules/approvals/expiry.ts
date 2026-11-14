@@ -11,11 +11,47 @@ import {
   emitApprovalStateChange,
   lockedUpdateApproval,
 } from "~/modules/approvals/event-data"
+import { type GuardRow, readHeldUntil } from "~/modules/approvals/list"
 import { sweepSkippingMoving, writeUnlessMoving } from "~/modules/org/transfer-state/skip-moving"
 
 const K = drizzleSql.raw(schemaRef("kernel"))
 
+/**
+ * A mail draft held by an auto-reply does not lapse while it waits: its deadline moves to the
+ * hold's end plus the window it was first given, so it comes back to Home with time to decide.
+ * True when the deadline moved (nothing expires now).
+ */
+async function extendWhileHeld(orgId: string, requestId: string): Promise<boolean> {
+  const [row] = extractRows<GuardRow>(
+    await withPrivilegedDb(orgId, "approval-expiry-held-read", (tx) =>
+      tx.execute(drizzleSql`
+        SELECT id, status, tool_name, current_payload, requested_by
+          FROM ${K}.approval_requests
+         WHERE org_id = ${orgId}::uuid AND id = ${requestId}::uuid AND status = 'pending'
+           AND current_payload ? 'sendGuard'`),
+    ),
+  )
+  if (!row) return false
+  let until: Date | null = null
+  try {
+    until = await readHeldUntil(orgId, row)
+  } catch (err) {
+    // An unreadable check expires as before: a deadline is never kept open on a failed read.
+    log.warn({ err, requestId }, "Expiry could not read a draft's hold; expiring as usual")
+    return false
+  }
+  if (!until || until.getTime() <= Date.now()) return false
+  await withPrivilegedDb(orgId, "approval-expiry-held-extend", (tx) =>
+    tx.execute(drizzleSql`
+      UPDATE ${K}.approval_requests
+         SET expires_at = ${until.toISOString()}::timestamptz + (expires_at - created_at)
+       WHERE org_id = ${orgId}::uuid AND id = ${requestId}::uuid AND status = 'pending'`),
+  )
+  return true
+}
+
 export async function runApprovalExpiry(payload: { orgId: string; requestId: string }) {
+  if (await extendWhileHeld(payload.orgId, payload.requestId)) return
   const expiredId = await withPrivilegedDb(payload.orgId, "approval-expiry", async (tx) => {
     // Accept both 'pending' and 'deferred' as source states so that deferred
     // bundle steps are expired when their deadline is reached.

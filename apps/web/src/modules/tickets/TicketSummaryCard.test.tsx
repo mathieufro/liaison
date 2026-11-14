@@ -7,11 +7,12 @@ const state = vi.hoisted(() => ({
   ticket: { id: "t1", summaryText: "All good" } as any,
   collapsed: false,
   status: "idle" as "idle" | "generating" | "error",
-  applyTicketSummaryResult: vi.fn((ticketId: string, result: any) => {
-    if (ticketId !== "t1") return
+  applyTicketSummaryResult: vi.fn((ticketId: string, result: any, _sinceVersion?: number) => {
+    if (ticketId !== "t1") return false
     if ("summary" in result) state.ticket.summaryText = result.summary
     if ("summaryStatus" in result) state.ticket.summaryStatus = result.summaryStatus
     if ("summaryError" in result) state.ticket.summaryError = result.summaryError
+    return true
   }),
   handleTicketSummaryEvent: vi.fn((data: any) => {
     if (data.ticketId === "t1" && data.summaryStatus) state.status = data.summaryStatus
@@ -24,6 +25,7 @@ const state = vi.hoisted(() => ({
 vi.mock("~/modules/shell/ApiContext", () => ({ useApi: () => state.api }))
 vi.mock("~/modules/tickets/ticket-detail-store", () => ({
   applyTicketSummaryResult: state.applyTicketSummaryResult,
+  ticketSummaryVersion: () => 0,
   ticketDetailStore: {
     get byId() {
       return { t1: state.ticket }
@@ -87,6 +89,7 @@ describe("TicketSummaryCard", () => {
       expect(state.applyTicketSummaryResult).toHaveBeenCalledWith(
         "t1",
         expect.objectContaining({ summary: "Fresh summary" }),
+        0,
       ),
     )
     expect(state.handleTicketSummaryEvent).toHaveBeenCalledWith(

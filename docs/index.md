@@ -52,6 +52,7 @@ description: "Learn to run your business with AI agents that work under your tea
 <a href="apps/knowledge.md"><i class="sq app-knowledge"></i>Knowledge</a>
 <a href="apps/google-drive.md"><i class="sq"></i>Google Drive</a>
 <a href="apps/gitlab.md"><i class="sq"></i>GitLab</a>
+<a href="apps/github.md"><i class="sq"></i>GitHub</a>
 <a href="apps/contacts.md"><i class="sq app-contacts"></i>Contacts</a>
 <a href="apps/calendar.md"><i class="sq app-calendar"></i>Calendar</a>
 <a href="apps/projects.md"><i class="sq app-projects"></i>Projects</a>

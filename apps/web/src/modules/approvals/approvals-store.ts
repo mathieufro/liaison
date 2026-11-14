@@ -352,9 +352,13 @@ export async function decide(
     reason?: string
     mailboxFulfilment?: MailboxFulfilmentBody
     payloadHash?: string
+    /** "Send now" on a held mail draft (approvals-service.ts `DecideBody`). */
+    sendGuardOverride?: "auto_reply"
     /** What the decision toast names, when the surface knows better than the
      *  row alone (a sequence's outcome and its steps). */
     label?: DecisionLabel | null
+    /** Put a stopped draft away: a deny whose toast says Dismissing, not Rejecting. */
+    dismiss?: boolean
   },
 ) {
   inFlightDecideById.add(id)
@@ -372,7 +376,11 @@ export async function decide(
     // The decision toast names what is decided: the surface's label (a
     // sequence's outcome and steps), else the approval's own title.
     const row = approvalsStore.byId[id]
-    const label = opts?.label ?? (row ? decisionLabel(row) : null)
+    const baseLabel = opts?.label ?? (row ? decisionLabel(row) : null)
+    const label =
+      opts?.dismiss && decision === "deny"
+        ? { ...(baseLabel ?? { title: "" }), verb: "dismiss" as const }
+        : baseLabel
     const result =
       decision === "approve"
         ? await decideApi(
@@ -382,6 +390,7 @@ export async function decide(
               decision: "approve",
               ...(opts?.mailboxFulfilment ? { mailboxFulfilment: opts.mailboxFulfilment } : {}),
               ...(payloadHash ? { payloadHash } : {}),
+              ...(opts?.sendGuardOverride ? { sendGuardOverride: opts.sendGuardOverride } : {}),
               ...(stepPayloadHashes && Object.keys(stepPayloadHashes).length > 0
                 ? { stepPayloadHashes }
                 : {}),

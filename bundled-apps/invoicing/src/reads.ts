@@ -178,6 +178,8 @@ export interface DocumentsSearchInput {
    *  form field) and the legacy `contact` alias are accepted. */
   contact_id?: string
   contact?: string
+  /** Only documents made out to the people of this company (kernel:companies_read). */
+  company_id?: string
   date_range?: { from?: string | null; to?: string | null }
   treatment?: string
   /** "newest" (default) or "oldest" first, by issue date. */
@@ -564,6 +566,22 @@ function contactAddressLine(a: Record<string, unknown>): string {
  * of its addresses (same house number and street, compared by `addressMatch`). Needs the kernel
  * contact reads; without them (or for a malformed id) it finds nothing extra.
  */
+/** The ids of a company's people the caller can see; none when it is not visible. */
+async function companyPeople(ctx: ReadsCtx, companyId: string): Promise<string[]> {
+  const exec = ctx.executeTool
+  if (!exec || !UUID_RE.test(companyId)) return []
+  try {
+    const env = await exec("kernel:companies_read", { companyId })
+    if (env.status !== "completed") return []
+    const people = (env.result as { people?: unknown } | null)?.people
+    return (Array.isArray(people) ? people : [])
+      .map((p) => (p as { id?: unknown })?.id)
+      .filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
+  } catch {
+    return []
+  }
+}
+
 async function contactMatchedRows(
   ctx: ReadsCtx,
   contactId: string,
@@ -714,6 +732,11 @@ export async function documentsSearch(
   if (input.treatment) where.tax_treatment = input.treatment
   const contactFilter = input.contact_id?.trim() || input.contact?.trim()
   if (contactFilter) where.counterparty_contact_id = contactFilter
+  if (input.company_id?.trim() && !contactFilter) {
+    const people = await companyPeople(ctx, input.company_id.trim())
+    if (people.length === 0) return input.countOnly ? { totalCount: 0 } : []
+    where.counterparty_contact_id = { in: people }
+  }
   if (Array.isArray(input.ids)) {
     // Only well-formed ids reach the IN list: a malformed one would fail the whole read
     // ("invalid input syntax for type uuid") instead of matching nothing.

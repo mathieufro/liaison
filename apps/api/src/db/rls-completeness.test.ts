@@ -114,6 +114,9 @@ const DENY_ALL_LEDGERS = new Set<string>([
   // Restore drill markers (migration 0269): instance-wide, no org column,
   // privileged pool only.
   "kernel.restore_drill_markers",
+  // Opt-out link tokens (migration 0313): org-scoped, but read and written
+  // only by the send path and the public opt-out route, on the privileged pool.
+  "kernel.suppression_links",
   // The data steps run when an in-tree app became a catalog app (migration
   // 0293): instance-wide, no org column, written and read by the boot
   // reconcile (modules/apps/moved-apps.ts) through the privileged pool only.

@@ -3,6 +3,8 @@
 // The door describes the seeded company in words, and the web bundle cannot
 // import the seed. So every fact it states is pinned here to the seed itself:
 // the company, its price range, its dealers, its people and its desk agents.
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import en from "../../../../../packages/shared/src/i18n/locales/en/kernel.json"
 import fr from "../../../../../packages/shared/src/i18n/locales/fr/kernel.json"
@@ -13,7 +15,8 @@ import {
   DEMO_ROLE_AGENTS,
   DEMO_TEAM,
 } from "../../../../api/src/seed/world/fiction"
-import { DEMO_COMPANY_NAME, DEMO_DOOR_TEAM } from "./door-company"
+import { SAAS_COMPANY, SAAS_PLANS, SAAS_TEAM } from "../../../../api/src/seed/worlds/saas/fiction"
+import { DEMO_COMPANY_NAME, DEMO_DOOR, DEMO_DOOR_TEAM, doorCompanyOf } from "./door-company"
 
 const copy = en.demo
 
@@ -73,5 +76,58 @@ describe("the company page states the seed's facts", () => {
     expect(copy.companyOps.support.body).toContain("The Support Desk agent")
     expect(copy.companyOps.orders.body).toContain("The Operations Desk agent")
     expect(copy.companyOps.invoicing.body).toContain("The Finance Desk agent")
+  })
+})
+
+describe("the software company's page states its pack's facts", () => {
+  const saas = en.demo.world.saas
+
+  it("names the pack's company, its city and its headcount", () => {
+    expect(DEMO_DOOR.saas.name).toBe(SAAS_COMPANY.name)
+    expect(saas.companyExample).toContain(SAAS_COMPANY.name)
+    expect(fr.demo.world.saas.companyExample).toContain(SAAS_COMPANY.name)
+    expect(saas.companyFacts).toBe(
+      `Fictional company · ${SAAS_COMPANY.city} · ${SAAS_TEAM.length + 1} people`,
+    )
+  })
+
+  it("gives the plan price range and the paying count of the pack", () => {
+    const monthly = Object.values(SAAS_PLANS).map((plan) => plan.monthlyMinor / 100)
+    const euros = (n: number) => `€${n.toLocaleString("en-US")}`
+    expect(saas.companyAbout).toContain(
+      `from ${euros(Math.min(...monthly))} to ${euros(Math.max(...monthly))} a month`,
+    )
+    // The pack's plan module reads through the api's path aliases, which this
+    // bundle's test runner does not resolve: its source is read for the count.
+    const planSource = readFileSync(
+      join(process.cwd(), "../api/src/seed/worlds/saas/plan.ts"),
+      "utf8",
+    )
+    const paying = Number(/\bpaying: (\d+)/.exec(planSource)?.[1])
+    expect(paying).toBeGreaterThan(0)
+    expect(saas.companyAbout).toContain(`${paying} customers pay by card`)
+    expect(saas.companyOps.payments.body).toContain(`${paying} customers`)
+  })
+
+  it("lists every teammate of the pack, with a title taken from theirs", () => {
+    expect(DEMO_DOOR.saas.team.map((p) => [p.key, p.name])).toEqual(
+      SAAS_TEAM.map((p) => [p.key, p.name]),
+    )
+    const roles: Record<string, string> = saas.teamRole
+    for (const person of SAAS_TEAM) {
+      expect(roles[person.key], person.key).toBeTruthy()
+      expect(person.jobTitle, person.key).toContain(roles[person.key])
+    }
+  })
+
+  it("has a line for every operations row, in both languages, and reads as products for any other world", () => {
+    for (const op of DEMO_DOOR.saas.opsList) {
+      expect(saas.companyOps[op.key as keyof typeof saas.companyOps].body, op.key).toBeTruthy()
+      expect(
+        fr.demo.world.saas.companyOps[op.key as keyof typeof saas.companyOps].body,
+      ).toBeTruthy()
+    }
+    expect(doorCompanyOf("studio")).toBe(DEMO_DOOR.products)
+    expect(doorCompanyOf(null)).toBe(DEMO_DOOR.products)
   })
 })

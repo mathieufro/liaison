@@ -24,6 +24,11 @@ import { projectTaintScopes, taintReadCatalog } from "~/modules/agent/scopes/tai
 export interface TurnScopeAccumulator {
   record: (toolDef: ScopeDeclaringToolDef) => void
   recordInjected: (requiredScopes: string[]) => void
+  /** `recordInjected` for scopes a read's RESULT carried (a tool's `resultTaintWhen`), also kept
+   *  until `takeResultScopes` so the caller can stamp them as read now. */
+  recordResultScopes: (requiredScopes: string[]) => void
+  /** The scopes recorded by `recordResultScopes` since the last take, cleared. */
+  takeResultScopes: () => string[]
   /** Unions the stamp of the turn's OWN INSTRUCTIONS (the routine tick's prompt, the agent's
    *  skills) into the set exactly as `recordInjected` does, without counting it as org data the
    *  turn read (`readInternalData`). Writes are judged on the set, so nothing changes for them. */
@@ -114,6 +119,7 @@ export function createTurnScopeAccumulator(opts: { orgId?: string } = {}): TurnS
   const countsAsOrgData = (projected: readonly string[]): boolean =>
     projected.some((scope) => scope !== PUBLIC_WEB_SCOPE)
   const origins = new Map<string, Set<string>>()
+  const resultScopes = new Set<string>()
   let catalog: string[] | undefined
   // This turn's own searches: each one's result URLs, the scopes the turn held when it ran, and
   // how many fetches it has exempted. Per turn by construction: a new turn builds a new
@@ -127,6 +133,12 @@ export function createTurnScopeAccumulator(opts: { orgId?: string } = {}): TurnS
     catalog ??= taintReadCatalog(opts.orgId)
     return projectTaintScopes(raw, catalog)
   }
+  const inject = (requiredScopes: string[]): string[] => {
+    const projected = project(requiredScopes)
+    if (countsAsOrgData(projected)) internal = true
+    for (const scope of projected) scopes.add(scope)
+    return projected
+  }
   return {
     record(toolDef) {
       const projected = project(resolveRequiredScopes(toolDef))
@@ -137,10 +149,14 @@ export function createTurnScopeAccumulator(opts: { orgId?: string } = {}): TurnS
     // them in assembleContext (spec-security.md D5). Unions an already-resolved requiredScopes
     // array, e.g. from an injected agent_memory row, knowledge document, thread-search result
     // or prior message read as history, into the same accumulated set as record().
-    recordInjected(requiredScopes) {
-      const projected = project(requiredScopes)
-      if (countsAsOrgData(projected)) internal = true
-      for (const scope of projected) scopes.add(scope)
+    recordInjected: inject,
+    recordResultScopes(requiredScopes) {
+      for (const scope of inject(requiredScopes)) resultScopes.add(scope)
+    },
+    takeResultScopes() {
+      const taken = [...resultScopes].sort()
+      resultScopes.clear()
+      return taken
     },
     recordInstructions(requiredScopes) {
       for (const scope of project(requiredScopes)) scopes.add(scope)

@@ -22,7 +22,9 @@ import { sql } from "drizzle-orm"
 import { withSystemDb } from "~/db/privileged"
 import { hashPassword, verifyPassword } from "~/lib/crypto"
 import { env } from "~/lib/env"
+import { DemoModeTestAccess } from "~/modules/demo/demo-mode"
 import { DEMO_REVIEWER_EMAIL, reservedOwner } from "~/modules/demo/demo-seeder"
+import { findOrgIdBySlug } from "~/seed/factories/org/org"
 import { runSeedDemoCli, type SeedDemoWorldOptions, type SeedDemoWorldResult } from "./seed-demo"
 import { type SeedDemoOrgResult, seedDemoOrg } from "./seed-org"
 
@@ -148,5 +150,131 @@ describe("demo:seed, the CLI", () => {
     expect(seen.at(-1)?.owner).toBeUndefined()
     expect(await reviewerPasswordIsPinned()).toBe(false)
     expect(await otherAdmins()).toBe(0)
+  })
+
+  it("the reserved variant with a world flag exits 2", async () => {
+    const before = seen.length
+    for (const argv of [
+      ["--slug", ORG_SLUG, "--world", "saas"],
+      ["--slug", ORG_SLUG, "--world", "studio", "--variant", "reserved"],
+    ]) {
+      const { exitCode, result } = await runSeedDemoCli(argv, { seedWorld: stubWorld })
+      expect(exitCode).toBe(2)
+      expect(result).toBeNull()
+    }
+    expect(seen.length).toBe(before)
+  })
+
+  it("an unknown world exits 2", async () => {
+    const before = seen.length
+    const { exitCode } = await runSeedDemoCli(
+      ["--slug", ORG_SLUG, "--variant", "visitor", "--world", "atlantis"],
+      { seedWorld: stubWorld },
+    )
+    expect(exitCode).toBe(2)
+    expect(seen.length).toBe(before)
+  })
+
+  it("the products world flag seeds the products world, and no flag means products", async () => {
+    await runSeedDemoCli(["--slug", ORG_SLUG, "--no-reset", "--world", "products"], {
+      seedWorld: stubWorld,
+    })
+    expect(seen.at(-1)?.worldId).toBe("products")
+    expect(seen.at(-1)?.variant).toBe("reserved")
+    await runSeedDemoCli(["--slug", ORG_SLUG, "--no-reset"], { seedWorld: stubWorld })
+    expect(seen.at(-1)?.worldId).toBe("products")
+  })
+
+  it("the software world seeds as a visitor org under its pack's own name", async () => {
+    const { exitCode } = await runSeedDemoCli(
+      ["--slug", ORG_SLUG, "--world", "saas", "--variant", "visitor", "--no-reset"],
+      { seedWorld: stubWorld },
+    )
+    expect(exitCode).toBe(0)
+    const asked = seen.at(-1)
+    expect(asked?.worldId).toBe("saas")
+    expect(asked?.variant).toBe("visitor")
+    // No name flag: the world's pack names the company, not the products default.
+    expect(asked?.orgName).toBeUndefined()
+    expect(asked?.owner).toBeUndefined()
+  })
+
+  it("the services world seeds from the command line though the door never offers it", async () => {
+    const { exitCode } = await runSeedDemoCli(
+      ["--slug", ORG_SLUG, "--world", "studio", "--variant", "visitor", "--no-reset"],
+      { seedWorld: stubWorld },
+    )
+    expect(exitCode).toBe(0)
+    const asked = seen.at(-1)
+    expect(asked?.worldId).toBe("studio")
+    expect(asked?.variant).toBe("visitor")
+  })
+
+  it("reads the persona password from the named environment variable", async () => {
+    const name = "DEMO_SEED_CLI_TEST_PASSWORDS"
+    process.env[name] = "from-the-environment-1"
+    try {
+      const { exitCode } = await runSeedDemoCli(
+        ["--slug", ORG_SLUG, "--world", "saas", "--variant", "visitor", "--passwords-env", name],
+        { seedWorld: stubWorld },
+      )
+      expect(exitCode).toBe(0)
+      expect(seen.at(-1)?.personaPassword).toBe("from-the-environment-1")
+    } finally {
+      delete process.env[name]
+    }
+  })
+
+  it("exits 2 before seeding when the named variable is not set", async () => {
+    const before = seen.length
+    const { exitCode, result } = await runSeedDemoCli(
+      ["--slug", ORG_SLUG, "--variant", "visitor", "--passwords-env", "DEMO_SEED_CLI_TEST_UNSET"],
+      { seedWorld: stubWorld },
+    )
+    expect(exitCode).toBe(2)
+    expect(result).toBeNull()
+    expect(seen.length).toBe(before)
+  })
+
+  it("keeps the password flag working beside it", async () => {
+    await runSeedDemoCli(
+      ["--slug", ORG_SLUG, "--variant", "visitor", "--no-reset", "--passwords", "literal-pw-1"],
+      { seedWorld: stubWorld },
+    )
+    expect(seen.at(-1)?.personaPassword).toBe("literal-pw-1")
+  })
+})
+
+describe("demo:seed --reset on a private box (demo mode off)", () => {
+  const PRIVATE_SLUG = `${ORG_SLUG}-private-${Date.now().toString(36)}`
+
+  beforeAll(() => DemoModeTestAccess.set(false))
+  afterAll(() => DemoModeTestAccess.set(null))
+
+  it("deletes the visitor org an earlier seed made and seeds it fresh, with no content reset", async () => {
+    // An earlier world seed's org: it carries the demo marker.
+    await seedDemoOrg({ orgSlug: PRIVATE_SLUG, variant: "visitor" })
+    expect(await findOrgIdBySlug(PRIVATE_SLUG)).not.toBeNull()
+
+    const { exitCode } = await runSeedDemoCli(
+      ["--slug", PRIVATE_SLUG, "--world", "saas", "--variant", "visitor", "--reset"],
+      { seedWorld: stubWorld },
+    )
+
+    expect(exitCode).toBe(0)
+    expect(await findOrgIdBySlug(PRIVATE_SLUG)).toBeNull()
+    expect(seen.at(-1)?.orgSlug).toBe(PRIVATE_SLUG)
+    expect(seen.at(-1)?.resetContent).toBe(false)
+  }, 600_000)
+
+  it("seeds a slug no org holds yet without deleting anything", async () => {
+    const fresh = `${PRIVATE_SLUG}-new`
+    const { exitCode } = await runSeedDemoCli(
+      ["--slug", fresh, "--world", "saas", "--variant", "visitor", "--reset"],
+      { seedWorld: stubWorld },
+    )
+    expect(exitCode).toBe(0)
+    expect(seen.at(-1)?.orgSlug).toBe(fresh)
+    expect(seen.at(-1)?.resetContent).toBe(false)
   })
 })

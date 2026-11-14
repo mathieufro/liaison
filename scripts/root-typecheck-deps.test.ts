@@ -16,20 +16,22 @@
 import { describe, expect, it } from "bun:test"
 import { readFileSync, statSync } from "node:fs"
 import path from "node:path"
+import ts from "typescript"
 
 const ROOT = path.resolve(import.meta.dir, "..")
 const SUFFIXES = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]
 
-const SPECIFIER_RE = /\b(?:from|import)\s*\(?\s*["']([^"'\n]+)["']/g
+const SOURCE_RE = /\.[cm]?[jt]sx?$/
 
-/** Module specifiers a source file names. Deliberately local: this file ships in the public tree. */
-function specifiers(text: string): string[] {
-  SPECIFIER_RE.lastIndex = 0
-  const out: string[] = []
-  for (let m = SPECIFIER_RE.exec(text); m; m = SPECIFIER_RE.exec(text)) {
-    if (m[1]) out.push(m[1])
-  }
-  return out
+/**
+ * Module specifiers a source file names: static and dynamic imports, re-exports and type-only
+ * imports (they count for a typecheck). TypeScript's own pre-processing scan reads them, so a
+ * word in a string ("Invoice from", "the import's progress") is never taken for one. A file that
+ * is not a script (a JSON manifest) names none.
+ */
+function specifiers(file: string, text: string): string[] {
+  if (!SOURCE_RE.test(file)) return []
+  return ts.preProcessFile(text, true, true).importedFiles.map((f) => f.fileName)
 }
 
 function isFile(p: string): boolean {
@@ -57,7 +59,7 @@ function webEntryImports(): { file: string; target: string }[] {
     const file = path.join(ROOT, rel)
     const text = readFileSync(file, "utf8")
     if (!text.includes("bundled-apps/")) continue
-    for (const spec of specifiers(text)) {
+    for (const spec of specifiers(file, text)) {
       if (!spec.includes("bundled-apps/")) continue
       const target = resolveLocal(file, spec)
       if (target) out.push({ file: rel, target })
@@ -75,7 +77,7 @@ function reachableBarePackages(entries: readonly string[]): Map<string, string> 
     const file = queue.pop() as string
     if (seen.has(file)) continue
     seen.add(file)
-    for (const spec of specifiers(readFileSync(file, "utf8"))) {
+    for (const spec of specifiers(file, readFileSync(file, "utf8"))) {
       if (spec.startsWith(".")) {
         const next = resolveLocal(file, spec)
         if (next) queue.push(next)

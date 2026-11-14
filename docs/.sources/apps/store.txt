@@ -125,7 +125,6 @@ customers_update gated -> bundled-apps/shopify/app.manifest.json:3035
 customers_email_marketing_consent_update gated -> bundled-apps/shopify/app.manifest.json:3101
 customers_sms_marketing_consent_update gated -> bundled-apps/shopify/app.manifest.json:3160
 apply_seed_suggestion gated -> bundled-apps/shopify/app.manifest.json:3213
-settings_load -> bundled-apps/shopify/app.manifest.json:3235
 connection_disconnect gated -> bundled-apps/shopify/app.manifest.json:3250
 staff_overrides_upsert gated -> bundled-apps/shopify/app.manifest.json:3267
 staff_overrides_delete gated -> bundled-apps/shopify/app.manifest.json:3295

@@ -1,0 +1,6 @@
+{
+  "privileged": {
+    "apps/projects/service/home-lines.ts": "Time and budgets Home lines: the daily pass and a days-off change compute this week's capacity for one org from timeboxes only (no time entered, no activity), and write one calm line per over person and week to the leads holding capacity read, which no single person's transaction can see or write. Lists the orgs using time.",
+    "apps/projects/service/days-off-calendar.ts": "The shared days-off calendar job: reads the one calendar a settings admin chose (its account and owner status, its whole-day events) and writes company days off for one org; when the calendar can no longer be read it keeps the days as typed ones, clears the setting and tells the settings admins once. Lists the orgs that chose a calendar."
+  }
+}

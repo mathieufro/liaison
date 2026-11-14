@@ -1,0 +1,7 @@
+Up to four next-step buttons under a reply -> apps/api/src/modules/agent/tools/suggest-steps-tool.ts (SUGGESTED_STEPS_MAX)
+A button sends its own words as your message -> apps/web/src/modules/agent/SuggestionChips.tsx (SuggestionChips)
+A button opens the tab it names -> apps/web/src/modules/agent/SuggestionChips.tsx (SuggestionChips)
+Buttons only under the newest message -> apps/web/src/modules/agent/SuggestionChips.tsx (SuggestionChips)
+None in a conversation holding outside text -> apps/api/src/modules/agent/tools/suggest-steps-tool.ts (handleSuggestNextSteps)
+An agent reads card numbers and keys masked -> apps/api/src/modules/agent/mailbox-plaintext/mailbox-plaintext-broker.ts (renderContextBlock)
+Web links carrying a card number are refused -> apps/api/src/modules/agent/tools/web-read-guardrails.ts (dataPattern)

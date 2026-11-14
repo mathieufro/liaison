@@ -1,0 +1,32 @@
+{
+  "entry": "tool:github_list_pull_requests",
+  "params": {
+    "repo": "maison-example/site",
+    "state": "all"
+  },
+  "unrecorded": {
+    "reason": "hand-written, not recorded: a recording needs a read-only GitHub token on a test repository, which the recording run does not have yet. Awaiting a recording against GitHub."
+  },
+  "expectError": {
+    "reason": "the replay holds no GitHub token, so the host refuses the call before it reaches GitHub; the working path waits for a recording with a read-only token"
+  },
+  "calls": [
+    {
+      "method": "connections_getSettings",
+      "args": ["github"],
+      "reply": "{\"values\":{\"owner\":\"maison-example\"},\"missing\":[]}"
+    },
+    {
+      "method": "fetch",
+      "args": [
+        "https://api.github.com/repos/maison-example/site/pulls?state=all&sort=updated&direction=desc&per_page=100",
+        "{\"method\":\"GET\",\"headers\":{\"accept\":\"application/vnd.github+json\",\"x-github-api-version\":\"2022-11-28\"},\"auth\":{\"connection\":\"github\",\"scheme\":\"bearer\",\"fields\":[\"token\"]}}"
+      ],
+      "error": {
+        "message": "Connection \"github\" has no token",
+        "status": 409,
+        "code": "credential_missing"
+      }
+    }
+  ]
+}

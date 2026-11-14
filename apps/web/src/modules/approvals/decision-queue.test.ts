@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-// S15 (iPhone walk 2026-10-19): approve and reject wait out a 5 s Undo window.
+// S15 (iPhone walk 2026-10-19): approve and reject wait out an 8 s Undo window.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ApiError } from "~/lib/api-error"
 import { runBeforeSignOut } from "~/lib/session-lifecycle"
@@ -12,9 +12,11 @@ import {
   flushDecisions,
   installDecisionFlush,
   isDecisionInFlight,
+  isDecisionNotSent,
   isDecisionQueued,
   queueDecision,
   resendStoredDecisions,
+  STORED_DECISION_MAX_AGE_MS,
   UNDO_WINDOW_MS,
   undoDecision,
 } from "~/modules/approvals/decision-queue"
@@ -47,6 +49,42 @@ afterEach(() => {
 })
 
 describe("decision queue", () => {
+  it("the Undo window is 8 seconds", () => {
+    expect(UNDO_WINDOW_MS).toBe(8_000)
+  })
+
+  it("undo at 7999 ms: never sent", async () => {
+    const { api, post } = makeApi()
+    const done = queueDecision(api, "approval", "a1", { decision: "approve" }).catch((e) => e)
+    await vi.advanceTimersByTimeAsync(7_999)
+    expect(undoDecision("approval", "a1")).toBe(true)
+    expect(await done).toBeInstanceOf(DecisionUndoneError)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  // The decided-for audit row is written by the server's decide, which an undone decision never reaches.
+  it("Undo inside 8 s leaves no decided-for audit", async () => {
+    const { api, post } = makeApi()
+    const done = queueDecision(api, "approval", "a1", { decision: "approve" }).catch((e) => e)
+    await vi.advanceTimersByTimeAsync(4_000)
+    undoDecision("approval", "a1")
+    await done
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(post.mock.calls.filter(([path]) => String(path).endsWith("/decide"))).toEqual([])
+  })
+
+  it("at 8001 ms: sent once", async () => {
+    const { api, post } = makeApi()
+    const done = queueDecision(api, "approval", "a1", { decision: "approve" })
+    await vi.advanceTimersByTimeAsync(7_999)
+    expect(post).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(2)
+    await done
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
   it("sends nothing inside the window, names the decision in the toast, then sends", async () => {
     const { api, post } = makeApi()
     const done = queueDecision(
@@ -246,6 +284,54 @@ describe("decision queue", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 
+  it("pagehide flushes with keepalive: a Dismiss 2.5 s into its window is sent as the tab closes", async () => {
+    const teardown = installDecisionFlush()
+    try {
+      const { api, post } = makeApi()
+      void queueDecision(api, "approval", "d1", { decision: "deny", reason: "" })
+      await vi.advanceTimersByTimeAsync(2_500)
+      expect(post).not.toHaveBeenCalled()
+      window.dispatchEvent(new Event("pagehide"))
+      // Issued in the pagehide task itself: nothing awaits before the fetch leaves.
+      expect(post).toHaveBeenCalledTimes(1)
+      expect(post).toHaveBeenLastCalledWith(
+        "/approvals/d1/decide",
+        { decision: "deny", reason: "" },
+        { suppressGlobalError: true, keepalive: true },
+      )
+      await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS)
+      expect(post).toHaveBeenCalledTimes(1)
+    } finally {
+      teardown()
+    }
+  })
+
+  // Dismiss, then the tab closes 2.5 s into the window without pagehide.
+  it("stored decision sent at next boot: a tab closed inside the window loses nothing", async () => {
+    ;(globalThis as Record<string, unknown>)[SERVER_GLOBAL] = "https://a.test"
+    const first = makeApi()
+    void queueDecision(first.api, "approval", "s1", { decision: "deny", reason: "" }).catch(
+      () => {},
+    )
+    await vi.advanceTimersByTimeAsync(2_500)
+    expect(first.post).not.toHaveBeenCalled()
+    DecisionQueueTestAccess.forgetInMemory()
+    await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS)
+    expect(first.post).not.toHaveBeenCalled()
+    // The next boot: the row stays hidden while the stored decision goes out, then it is sent once.
+    let answer: (v: unknown) => void = () => {}
+    const next = makeApi(() => new Promise((r) => (answer = r)))
+    const resent = resendStoredDecisions(next.api)
+    expect(isDecisionInFlight("approval", "s1")).toBe(true)
+    expect(next.post).toHaveBeenCalledTimes(1)
+    expect(next.post.mock.calls[0]?.[0]).toBe("/approvals/s1/decide")
+    expect(next.post.mock.calls[0]?.[1]).toEqual({ decision: "deny", reason: "" })
+    answer({ status: "denied" })
+    await resent
+    expect(isDecisionInFlight("approval", "s1")).toBe(false)
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
   it("keeps a decision stored when the boot resend cannot reach the server", async () => {
     ;(globalThis as Record<string, unknown>)[SERVER_GLOBAL] = "https://a.test"
     localStorage.setItem(STORAGE_KEY, JSON.stringify([stored("n1")]))
@@ -296,6 +382,33 @@ describe("decision queue", () => {
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]")).toEqual([
       expect.objectContaining({ id: "o1", userId: "u-1", origin: "https://a.test" }),
     ])
+  })
+
+  it("a stored decision lives 15 minutes: a fresh one is sent at boot, an older one is dropped and its row says it was not sent", async () => {
+    expect(STORED_DECISION_MAX_AGE_MS).toBe(15 * 60_000)
+    ;(globalThis as Record<string, unknown>)[SERVER_GLOBAL] = "https://a.test"
+    const now = Date.now()
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        stored("fresh", { queuedAt: now - STORED_DECISION_MAX_AGE_MS + 1_000 }),
+        stored("old", { queuedAt: now - STORED_DECISION_MAX_AGE_MS - 1_000 }),
+        stored("future", { queuedAt: now + 60 * 60_000 }),
+        stored("undated", { queuedAt: undefined }),
+      ]),
+    )
+    const { api, post } = makeApi()
+    await resendStoredDecisions(api)
+    expect(post.mock.calls.map((c) => c[0])).toEqual(["/approvals/fresh/decide"])
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+    expect(isDecisionNotSent("approval", "fresh")).toBe(false)
+    for (const id of ["old", "future", "undated"]) {
+      expect(isDecisionNotSent("approval", id)).toBe(true)
+    }
+    // Deciding again clears the line.
+    DecisionQueueTestAccess.setUndoWindow(0)
+    await queueDecision(api, "approval", "old", { decision: "approve" })
+    expect(isDecisionNotSent("approval", "old")).toBe(false)
   })
 
   it("discards at boot a decision another account or another server left, sending only this session's", async () => {
@@ -387,7 +500,7 @@ function stored(id: string, over: Record<string, unknown> = {}) {
     id,
     decision: "approve",
     body: { decision: "approve" },
-    queuedAt: 1,
+    queuedAt: Date.now(),
     userId: "u-1",
     origin: "https://a.test",
     ...over,

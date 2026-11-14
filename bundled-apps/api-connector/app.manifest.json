@@ -1,6 +1,6 @@
 {
   "name": "api-connector",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "kind": "connector",
   "description": "Generic connector for an ERP, CRM or any HTTP API described by an adapter document: named operations, projected fields, customer card and agent tools.",
   "iconName": "plug",
@@ -112,6 +112,7 @@
       }
     }
   },
+  "outsideTextFields": ["records"],
   "tools": {
     "connector_list_operations": {
       "readOnly": true,

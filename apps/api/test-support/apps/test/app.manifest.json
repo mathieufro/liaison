@@ -29,6 +29,7 @@
       "searchable": ["title"]
     },
     "event_log": {
+      "rlsScope": "items",
       "fields": {
         "eventType": "string",
         "entityId": "string",
@@ -36,6 +37,7 @@
       }
     },
     "externalrecords": {
+      "rlsScope": "items",
       "fields": {
         "name": "string",
         "market": "string"

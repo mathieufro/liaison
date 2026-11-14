@@ -8,6 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { sql } from "~/db"
+import { redis } from "~/lib/redis"
 import {
   DemoOrgTestAccess,
   invalidateDemoMarker,
@@ -45,6 +46,19 @@ describe("the demo marker cache", () => {
     await DemoOrgTestAccess.bumpVersionAsAnotherProcess(orgId)
 
     expect((await loadDemoMarker(orgId))?.expiresAt).toBe(later)
+  })
+
+  it("drops a marker read while the org was being purged once the purge ends", async () => {
+    await markOrgAsDemo(orgId, visitorMarker(24))
+    // The purge sweeps the org's Redis keys, its version counter among them,
+    // before it deletes the row: a read in between caches the marker.
+    await redis.del(`demo:marker-version:${orgId}`)
+    expect(await loadDemoMarker(orgId)).not.toBeNull()
+    // Then the row goes (here: its marker), and the purging process says so.
+    await sql`UPDATE kernel.organizations SET settings = settings - 'demo' WHERE id = ${orgId}`
+    await DemoOrgTestAccess.endPurgeAsAnotherProcess(orgId)
+
+    expect(await loadDemoMarker(orgId)).toBeNull()
   })
 
   it("keeps answering from the cache while nothing changed", async () => {

@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-import { DEMO_NEED_SPECS, DEMO_NEEDS, type DemoNeed, type DemoSeedPart } from "@liaison/shared"
+import {
+  DEMO_DEFAULT_WORLD,
+  DEMO_NEED_SPECS,
+  DEMO_WORLD_NEEDS,
+  type DemoNeed,
+  type DemoSeedPart,
+  type DemoWorldId,
+} from "@liaison/shared"
 
 /**
  * The demo app surface. `ads`, `calls` and `kpi` are excluded on purpose: one
@@ -23,13 +30,49 @@ export const DEMO_APPS = [
   "shopify",
   "monitoring",
   "api-connector",
+  "stripe",
 ] as const
+
+export type DemoApp = (typeof DEMO_APPS)[number]
+
+/**
+ * The demo apps each world can show. `products` keeps the list it always had
+ * (no payments app); `saas` sells subscriptions, so it has the payments app and
+ * no shop, carrier, books, monitoring, social or connector. `studio` holds the
+ * shared desk apps until its own pack brings the client-work apps.
+ */
+export const DEMO_WORLD_APPS: Readonly<Record<DemoWorldId, readonly DemoApp[]>> = {
+  products: DEMO_APPS.filter((app) => app !== "stripe"),
+  saas: ["tickets", "mail", "knowledge", "projects", "calendar", "contacts", "invoicing", "stripe"],
+  studio: ["tickets", "mail", "knowledge", "projects", "calendar", "contacts", "invoicing"],
+}
+
+/**
+ * The demo apps a world's picks switch On or Off. `products` governs its own
+ * apps only, as it always has. The other worlds govern every demo app: they
+ * share a box with `products`, whose apps would otherwise show in them.
+ */
+function governedApps(world: DemoWorldId): readonly DemoApp[] {
+  return world === "products" ? DEMO_WORLD_APPS.products : DEMO_APPS
+}
 
 /**
  * Apps a tailored seed always installs (the baseline world: people, contacts,
  * knowledge, calendar, threads), whatever the visitor picked.
  */
 export const DEMO_BASELINE_APPS = ["mail", "knowledge", "contacts", "calendar"] as const
+
+/**
+ * Each world's baseline: the apps its story needs whatever the visitor picked.
+ * The software company's sales deals sit on the Projects board and its team
+ * plans product work there, so its door and company pages point into Projects:
+ * it stays On for every software visitor.
+ */
+export const DEMO_WORLD_BASELINE_APPS: Readonly<Record<DemoWorldId, readonly string[]>> = {
+  products: DEMO_BASELINE_APPS,
+  saas: [...DEMO_BASELINE_APPS, "projects"],
+  studio: [...DEMO_BASELINE_APPS, "projects"],
+}
 
 /**
  * The commerce layer writes the shop, its invoices, the carrier, the books and
@@ -82,42 +125,54 @@ export interface DemoSeedPlanOptions {
 /** Parts that run only when the deployment opts in (`DemoSeedPlanOptions`). */
 export const OPT_IN_PARTS = ["warehouse"] as const satisfies readonly DemoSeedPart[]
 
-const ALL_PARTS: readonly DemoSeedPart[] = DEMO_NEEDS.flatMap((n) => DEMO_NEED_SPECS[n].seedParts)
+/** Every part a world's needs can seed, in tile order. */
+function allParts(world: DemoWorldId): Set<DemoSeedPart> {
+  return new Set(DEMO_WORLD_NEEDS[world].flatMap((n) => DEMO_NEED_SPECS[n].seedParts))
+}
 
 /**
- * The seed a list of needs asks for. No needs: the whole world, untailored (the
- * reserved org and the nightly reset). All six ("Everything"): the whole world
- * with every scenario's extras. Otherwise the baseline plus each need's apps
- * and parts.
+ * The seed a list of needs asks for, in a world (`products` when none is
+ * named). No needs: the whole world, untailored (the reserved org and the
+ * nightly reset). All of the world's needs ("Everything"): the whole world with
+ * every scenario's extras. Otherwise the baseline plus each need's apps and
+ * parts, kept to the world's own apps.
  */
 export function demoSeedPlan(
   needs: readonly DemoNeed[] | undefined,
   opts: DemoSeedPlanOptions,
+  world: DemoWorldId = DEMO_DEFAULT_WORLD,
 ): DemoSeedPlan {
-  const plan = needsPlan(needs)
+  const plan = needsPlan(world, needs)
   const off = new Set<DemoSeedPart>(opts.warehouse ? [] : ["warehouse"])
   const parts = new Set([...plan.parts].filter((p) => !off.has(p)))
   const partsOff = OPT_IN_PARTS.filter((p) => off.has(p) && plan.parts.has(p))
   return { ...plan, parts, partsOff }
 }
 
-function needsPlan(needs?: readonly DemoNeed[]): Omit<DemoSeedPlan, "partsOff"> {
-  if (!needs) {
-    return { tailored: false, apps: DEMO_APPS, offApps: [], parts: new Set(ALL_PARTS) }
-  }
+function needsPlan(
+  world: DemoWorldId,
+  needs: readonly DemoNeed[] | undefined,
+): Omit<DemoSeedPlan, "partsOff"> {
+  const worldApps = DEMO_WORLD_APPS[world]
+  const governed = governedApps(world)
+  const whole = (tailored: boolean) => ({
+    tailored,
+    apps: worldApps,
+    offApps: governed.filter((app) => !worldApps.includes(app)),
+    parts: allParts(world),
+  })
+  if (!needs) return whole(false)
   const picked = new Set(needs)
-  if (DEMO_NEEDS.every((n) => picked.has(n))) {
-    return { tailored: true, apps: DEMO_APPS, offApps: [], parts: new Set(ALL_PARTS) }
-  }
-  const apps = new Set<string>(DEMO_BASELINE_APPS)
+  if (DEMO_WORLD_NEEDS[world].every((n) => picked.has(n))) return whole(true)
+  const apps = new Set<string>(DEMO_WORLD_BASELINE_APPS[world])
   const parts = new Set<DemoSeedPart>()
   for (const need of needs) {
     for (const app of DEMO_NEED_SPECS[need].apps) apps.add(app)
     for (const part of DEMO_NEED_SPECS[need].seedParts) parts.add(part)
     if (need === "commerce") for (const app of COMMERCE_LAYER_APPS) apps.add(app)
   }
-  // Installed in DEMO_APPS order, so two plans with the same apps install alike.
-  const ordered = DEMO_APPS.filter((app) => apps.has(app))
-  const offApps = DEMO_APPS.filter((app) => !apps.has(app))
+  // Installed in the order of `DEMO_APPS`, so two plans with the same apps install alike.
+  const ordered = worldApps.filter((app) => apps.has(app))
+  const offApps = governed.filter((app) => !ordered.includes(app))
   return { tailored: true, apps: ordered, offApps, parts }
 }

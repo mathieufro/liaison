@@ -337,6 +337,20 @@ describe("every key the web asks for exists in the catalog", () => {
         manifestKinds.add(tail.includes(".") ? tail.slice(tail.lastIndexOf(".") + 1) : tail)
       }
     }
+    // A core app writes its kinds from its own service code, under a `*_KIND` constant.
+    const coreSources = import.meta.glob("../../../../api/src/apps/*/service/*.ts", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }) as Record<string, string>
+    for (const [file, src] of Object.entries(coreSources)) {
+      if (file.includes(".test.")) continue
+      for (const hit of src.matchAll(/_KIND = "([a-z_]+:[a-z_.]+)"/g)) {
+        const tail = hit[1]!.slice(hit[1]!.indexOf(":") + 1)
+        manifestKinds.add(tail.includes(".") ? tail.slice(tail.lastIndexOf(".") + 1) : tail)
+      }
+    }
+    expect(manifestKinds.has("first_on")).toBe(true)
     const kernelKinds = [
       "awaiting_agent",
       "unassigned",
@@ -425,6 +439,9 @@ describe("no hardcoded English in the surfaces a customer works in", () => {
     "src/modules/auth/Register.tsx::Liaison",
     // The contacts tab's stored fallback; the tab strip names it from the catalog.
     "src/modules/contacts/ContactsSidebar.tsx::Contacts",
+    // The company list and contact list tabs' stored fallbacks; the manifest's labelKey names them.
+    "src/modules/contacts/company-visuals.ts::Companies",
+    "src/modules/contacts/company-visuals.ts::Contacts",
     // Fixture data of the browser-baseline test helper; never mounted by the app.
     "src/modules/desktop/baseline-render.tsx::Baseline thread",
     // The `label` stored on a new mailbox wrap row (data, like the enrollment's

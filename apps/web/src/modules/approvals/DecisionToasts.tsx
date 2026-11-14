@@ -37,7 +37,9 @@ function statusLine(item: DecisionToastItem, now: number, t: T): string {
   const verbs =
     item.kind === "scope-request"
       ? { yes: "granting", no: "denying", yesDone: "granted", noDone: "denied" }
-      : { yes: "approving", no: "rejecting", yesDone: "approved", noDone: "rejected" }
+      : item.label?.verb === "dismiss"
+        ? { yes: "approving", no: "dismissing", yesDone: "approved", noDone: "dismissed" }
+        : { yes: "approving", no: "rejecting", yesDone: "approved", noDone: "rejected" }
   const approve = item.decision === "approve"
   if (item.phase === "queued") {
     // The clock may lag a just-queued decision by a tick: never count above the window.

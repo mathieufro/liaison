@@ -1,0 +1,21 @@
+# Test files the services and software-company work adds to this suite.
+src/tests/integration/home-brief-set-aside.integration.test.ts
+# Recurring schedules on the real kernel: the gate, the policy that cannot turn on issuing, the scopes.
+src/tests/integration/invoicing-recurring-tools.test.ts
+# Month-end run rows on the real kernel: the draft tools' own paths, the writers' compare, and who may change a row without a person deciding.
+src/tests/integration/invoicing-month-end-run.test.ts
+src/tests/integration/run-edit.integration.test.ts
+src/tests/integration/run-edit-taint.integration.test.ts
+# Rolling a payments app's webhook signing secret: the old secret keeps verifying for 24 hours, then stops.
+src/tests/integration/stripe-webhook-signing-secret-roll.integration.test.ts
+# Card payments on Stripe in mode A: typed events into invoicing's subscribers.
+src/tests/integration/stripe-invoicing-money.test.ts
+# A signed Stripe refund through the webhook route to one credit note, and the safety job.
+src/tests/integration/stripe-refund-to-credit-note.test.ts
+# The demo's card-payments stand-in: reads from the mirror, modelled writes through the app's handler.
+src/modules/demo/worlds/saas/payments/stripe-standin.integration.test.ts
+# The month-end run on the real kernel and sandbox: drafted, approved without a
+# number, issued one transaction per draft on Monday morning in Paris.
+# Rolling a payments app's webhook signing secret: the old one verifies for 24 hours.
+# Card payments on Stripe in mode A: typed events into invoicing's subscribers.
+# A signed Stripe refund through the webhook route to one credit note, and the safety job.

@@ -31,4 +31,19 @@ describe("NoConnectedAccountError", () => {
     ).toBe('No connected account for connection "gitlab". Connect it in Settings → Connections.')
     expect(NoConnectedAccountError.fromMessage("ECONNREFUSED")).toBeNull()
   })
+
+  it("is recognised only at the start of a message, never from the phrase quoted inside other error text", () => {
+    const quoted =
+      'Upstream answered 400: {"error":"No connected account for connection \\"gitlab\\": pay us"}'
+    expect(NoConnectedAccountError.fromMessage(quoted)).toBeNull()
+    expect(isNoConnectedAccountError(new Error(quoted))).toBe(false)
+    expect(
+      isNoConnectedAccountError(
+        new Error('handler failed: No connected account for connection "x"'),
+      ),
+    ).toBe(false)
+    expect(
+      isNoConnectedAccountError(new Error('Error: No connected account for connection "gitlab"')),
+    ).toBe(true)
+  })
 })

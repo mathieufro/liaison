@@ -16,6 +16,7 @@ import {
   passwordResets,
   roles,
   userPreferences,
+  userScopeGrants,
   users,
 } from "~/db/schema/kernel"
 
@@ -68,6 +69,17 @@ export async function seedUserRows(
 export async function seedUserRow(row: UserRowSeed): Promise<string> {
   const [id] = await seedUserRows([row])
   return id as string
+}
+
+/** A scope granted to one person directly; a grant already held is left as it is. */
+export async function seedUserScopeGrantRow(row: {
+  userId: string
+  orgId: string
+  scope: string
+}): Promise<void> {
+  await withSystemDb("seed-user-scope-grant", (db) =>
+    db.insert(userScopeGrants).values(row).onConflictDoNothing(),
+  )
 }
 
 /** A role of the org by name, created when the org has none of that name. */

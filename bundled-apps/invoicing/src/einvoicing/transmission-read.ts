@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 // `einvoice_transmission_get` (read only): what the document panel and the agent show about one
 // document's e-invoicing transmission or booking.
+import { documentStream } from "./standing"
 import {
   attemptOf,
   type EinvCtx,
@@ -66,6 +67,11 @@ export async function einvoiceTransmissionGet(ctx: EinvCtx, params: { document_i
     number: doc.number ?? null,
     regime: doc.regime ?? null,
     einvoice_state: doc.einvoice_state ?? null,
+    // The collection report and payment, for the document's e-invoicing status word, and the
+    // stream it came from (card payments on Stripe or a recurring schedule).
+    collection_state: doc.collection_state ?? null,
+    payment_status: doc.payment_status ?? null,
+    stream: documentStream(doc),
     send_approval_id: doc.einvoice_send_approval_id ?? null,
     send_requested_at: doc.einvoice_send_requested_at ?? null,
     provider_app: settings.provider_app,

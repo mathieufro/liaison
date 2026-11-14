@@ -26,6 +26,7 @@ export const APP_DISPLAY_NAMES: Record<string, string> = {
   contacts: "Contacts",
   database: "Database",
   files: "Files",
+  github: "GitHub",
   gitlab: "GitLab",
   "google-drive": "Google Drive",
   invoicing: "Invoicing",
@@ -100,7 +101,8 @@ export function appDisplayName(slug: string, opts: AppNameOptions = {}): string 
   if (typeof slug !== "string" || slug === "") return ""
   const manifest = opts.appNames?.[slug]
   if (manifest) return manifest
-  if (Object.hasOwn(APP_DISPLAY_NAMES, slug)) return APP_DISPLAY_NAMES[slug]
+  const known = Object.hasOwn(APP_DISPLAY_NAMES, slug) ? APP_DISPLAY_NAMES[slug] : undefined
+  if (known !== undefined) return known
   return humanizeSlug(slug)
 }
 
@@ -185,8 +187,8 @@ export function scopeDisplayLabel(scope: string, opts: ScopeLabelOptions = {}): 
 
   const rest = parts.slice(1)
   if (rest.length === 0) return `${app}${vocab.separator}${vocab.fullAccess}`
-  const last = rest[rest.length - 1]
-  const verb = Object.hasOwn(vocab.actions, last) ? vocab.actions[last] : ""
+  const last = rest[rest.length - 1] ?? ""
+  const verb = (Object.hasOwn(vocab.actions, last) ? vocab.actions[last] : undefined) ?? ""
   const words = (verb ? rest.slice(0, -1) : rest)
     .flatMap((w) => w.split(/[-_.]+/))
     .filter((w) => w.length > 0)

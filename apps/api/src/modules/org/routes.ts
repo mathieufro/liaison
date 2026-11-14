@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-import { orgKernelSettingsSchema, updateOrgSchema } from "@liaison/shared"
+import { commercialIdentitySchema, orgKernelSettingsSchema, updateOrgSchema } from "@liaison/shared"
 import { eq, sql } from "drizzle-orm"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -245,6 +245,46 @@ org.get("/usage", async (c) => {
   }
   return success(c, await getOrgUsage(c.get("orgId")))
 })
+
+// The legal name and postal address every commercial mail states, and the
+// country policy for professional interest (modules/mail/commercial-footer.ts).
+// Unset, no commercial mail stages or sends.
+org.get("/settings/commercial-identity", async (c) => {
+  const orgId = c.get("orgId")
+  if (!hasScope("kernel:org:admin", c.get("scopes") ?? [])) {
+    throw new HTTPException(403, { message: "Missing scope: kernel:org:admin" })
+  }
+  const { readCommercialIdentity } = await import("~/modules/mail/commercial-footer")
+  return success(c, { commercialIdentity: await readCommercialIdentity(orgId) })
+})
+
+org.put(
+  "/settings/commercial-identity",
+  zValidator("json", commercialIdentitySchema),
+  async (c) => {
+    const orgId = c.get("orgId")
+    if (!hasScope("kernel:org:admin", c.get("scopes") ?? [])) {
+      throw new HTTPException(403, { message: "Missing scope: kernel:org:admin" })
+    }
+    const body = c.req.valid("json")
+    await withPrivilegedDb(orgId, "org-commercial-identity", async (tx) => {
+      // jsonb_set keyed to {commercialIdentity}: every other settings key is untouched.
+      await tx.execute(sql`
+        UPDATE ${organizations}
+        SET settings = jsonb_set(
+              COALESCE(settings, '{}'::jsonb),
+              '{commercialIdentity}',
+              ${JSON.stringify(body)}::jsonb,
+              true
+            ),
+            updated_at = now()
+        WHERE id = ${orgId}
+      `)
+    })
+    const { readCommercialIdentity } = await import("~/modules/mail/commercial-footer")
+    return success(c, { commercialIdentity: await readCommercialIdentity(orgId) })
+  },
+)
 
 org.get("/settings/media-analysis", async (c) => {
   const orgId = c.get("orgId")

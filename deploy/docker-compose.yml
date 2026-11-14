@@ -443,6 +443,9 @@ services:
       # A private demo-mode QA box (tunnel only, loopback BASE_URL) may reseed its
       # own demo org with passwords; empty everywhere else (see lib/env.ts).
       LIAISON_PRIVATE_DEMO_BOX: ${LIAISON_PRIVATE_DEMO_BOX:-}
+      # A labelled private test box only: the Shopify app's Admin API requests go to
+      # this fake origin. Anywhere else the app refuses to start (see lib/env.ts).
+      LIAISON_TEST_SHOPIFY_ADMIN_URL: ${LIAISON_TEST_SHOPIFY_ADMIN_URL:-}
       # Demo signup ceilings (box-wide signups per hour, live visitor workspaces).
       # Empty keeps the built-in defaults (60 and 500).
       LIAISON_DEMO_SIGNUPS_PER_HOUR: ${LIAISON_DEMO_SIGNUPS_PER_HOUR:-}
@@ -454,6 +457,12 @@ services:
       LIAISON_DEMO_SYNTHETIC_MAX_ORGS: ${LIAISON_DEMO_SYNTHETIC_MAX_ORGS:-}
       # Pre-seeded visitor workspaces kept ready (empty: 5; 0 turns the pool off).
       LIAISON_DEMO_POOL_SIZE: ${LIAISON_DEMO_POOL_SIZE:-}
+      # The demo worlds this box runs (empty: products only), how the pool splits
+      # across them (world=count pairs; empty: POOL_SIZE shared evenly), and the
+      # oldest a ready pooled workspace may be, in hours (empty: 12).
+      LIAISON_DEMO_WORLDS: ${LIAISON_DEMO_WORLDS:-}
+      LIAISON_DEMO_POOL_SIZES: ${LIAISON_DEMO_POOL_SIZES:-}
+      LIAISON_DEMO_POOL_MAX_AGE_HOURS: ${LIAISON_DEMO_POOL_MAX_AGE_HOURS:-}
       # Demo workspaces seeded at once, pool refill and empty-pool signups alike (empty: 2).
       LIAISON_DEMO_SEED_CONCURRENCY: ${LIAISON_DEMO_SEED_CONCURRENCY:-}
       # Minutes after which an org unused in a process has its in-memory setup
@@ -470,6 +479,7 @@ services:
       # Private QA box only: answers a demo marked org Shopify calls from the
       # demo fixtures while demo mode itself stays off. See apps/api/src/lib/env.ts.
       LIAISON_DEMO_SHOPIFY_FIXTURES: ${LIAISON_DEMO_SHOPIFY_FIXTURES:-}
+      LIAISON_DEMO_PAYMENTS_FIXTURES: ${LIAISON_DEMO_PAYMENTS_FIXTURES:-}
       LIAISON_DEMO_REVIEWER_PASSWORD: ${LIAISON_DEMO_REVIEWER_PASSWORD:-}
       # Optional privacy policy link for the notice under the demo signup button.
       LIAISON_PRIVACY_URL: ${LIAISON_PRIVACY_URL:-}
@@ -512,6 +522,17 @@ services:
       LIAISON_WEB_READS_CONSECUTIVE: ${LIAISON_WEB_READS_CONSECUTIVE:-}
       LIAISON_WEB_FETCH_HOSTS_PER_TURN: ${LIAISON_WEB_FETCH_HOSTS_PER_TURN:-}
       LIAISON_WEB_READS_PER_THREAD_HOUR: ${LIAISON_WEB_READS_PER_THREAD_HOUR:-}
+      # Tool search by meaning: on|off. Empty = on in the managed edition, off on
+      # a self-hosted server. On, also start the `embedder` service below
+      # (COMPOSE_PROFILES=meaning in deploy/.env): it holds the model once for
+      # the whole host, and every app/api/worker process asks it over a socket.
+      LIAISON_TOOL_MEANING: ${LIAISON_TOOL_MEANING:-}
+      # Tool search's embedding model files, on the data volume (host ./data/models).
+      LIAISON_MODEL_CACHE_DIR: ${LIAISON_MODEL_CACHE_DIR:-/var/lib/liaison/models}
+      # The embedding process's Unix socket, on the data volume every container
+      # here mounts (host ./data/run). No network port.
+      LIAISON_EMBEDDER_SOCKET: ${LIAISON_EMBEDDER_SOCKET:-/var/lib/liaison/run/embedder.sock}
+      LIAISON_EMBEDDER_DEADLINE_MS: ${LIAISON_EMBEDDER_DEADLINE_MS:-150}
       LIAISON_DEMO_CODE_ATTEMPTS: ${LIAISON_DEMO_CODE_ATTEMPTS:-}
       LIAISON_DEMO_EDGE_OVERWRITES_XFF: ${LIAISON_DEMO_EDGE_OVERWRITES_XFF:-}
       LIAISON_DEMO_BOOKING_URL: ${LIAISON_DEMO_BOOKING_URL:-}
@@ -823,6 +844,43 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
+  # Tool search's embedding process (profile `meaning`): one per host, whatever
+  # the number of app/api/worker processes. It loads the model (about 1.1 GB)
+  # once and answers on LIAISON_EMBEDDER_SOCKET; it has no port. Start it only
+  # with LIAISON_TOOL_MEANING=on: COMPOSE_PROFILES=meaning in deploy/.env makes
+  # `docker compose up -d` start it. While it is down or loading, tool search
+  # ranks by words. A deploy never needs to restart it (the socket's protocol
+  # stays the same across releases).
+  embedder:
+    <<: *liaison-app
+    profiles: ["meaning"]
+    command: ["embedder"]
+    depends_on:
+      data-init: { condition: service_completed_successfully }
+    ports: []
+    stop_grace_period: 10s
+    mem_limit: 2g
+    mem_reservation: 1g
+    cpus: 2.0
+    healthcheck:
+      # Ready = the socket answers an empty request.
+      test:
+        - CMD
+        - bun
+        - --eval
+        - |
+          const s = require('node:net').createConnection(process.env.LIAISON_EMBEDDER_SOCKET)
+          let b = ''
+          s.on('connect', () => s.write('{"kind":"query","texts":[]}\n'))
+          s.on('data', (c) => { b += c })
+          s.on('end', () => process.exit(b.startsWith('{"ok":true') ? 0 : 1))
+          s.on('error', () => process.exit(1))
+          setTimeout(() => process.exit(1), 3000)
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
+
   # The sandbox service (docs/self-hosting/sandbox.md), part of every stack: a
   # supervised pool of workerd processes (packages/sandbox-supervisor) running
   # the apps' Worker modules, one org's app@version per process. The same image

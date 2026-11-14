@@ -12,6 +12,7 @@ import {
   validateSandboxFetchUrl,
 } from "~/modules/apps/sandbox/bridge/shared"
 import { maybeDemoBoxtalResponse } from "~/modules/demo/boxtal/responder"
+import { maybeDemoPaymentsResponse } from "~/modules/demo/worlds/saas/payments/provider"
 
 /** Headers a sandbox may set on a `files_importFromUrl` download. */
 const IMPORT_HEADER_ALLOWLIST = new Set(["authorization", "accept"])
@@ -527,13 +528,25 @@ export function createFilesMethods(ctx: BridgeContext): Record<string, any> {
       // DEMO INSTANCE ONLY, the gate `ctx.fetch` applies (egress.ts): a demo org's download from
       // a Boxtal host (its booking's specimen label) is answered in-process and never put on the
       // wire. One module-local boolean on a normal deployment.
-      const demoResponse = await maybeDemoBoxtalResponse({
-        orgId,
-        url: p.url,
-        method: "GET",
-        body: undefined,
-        headers,
-      })
+      // The card-payments stand-in too: a demo org's download from the payments host is answered
+      // (or refused) in-process, whatever app asks.
+      const demoResponse =
+        (await maybeDemoBoxtalResponse({
+          orgId,
+          url: p.url,
+          method: "GET",
+          body: undefined,
+          headers,
+        })) ??
+        (await maybeDemoPaymentsResponse({
+          orgId,
+          appName,
+          allowedDomains,
+          url: p.url,
+          method: "GET",
+          body: undefined,
+          headers,
+        }))
       const response =
         demoResponse ??
         (await fetchWithPinnedHost(

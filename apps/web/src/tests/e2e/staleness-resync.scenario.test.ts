@@ -26,7 +26,11 @@
 import { randomUUID } from "node:crypto"
 import { expect, loginAs, test } from "./fixtures/test"
 import { seedGatedApproval } from "./helpers/approvals-seed"
-import { grantPhase8AttentionScopes, resetAttentionForUser } from "./helpers/projects-seed"
+import {
+  grantPhase8AttentionScopes,
+  refreshStoredAttention,
+  resetAttentionForUser,
+} from "./helpers/projects-seed"
 import { seedInbox } from "./helpers/seed"
 
 async function seedAwaitingAgentTicket(
@@ -86,6 +90,10 @@ test("staleness.ws-resync-updates-home-without-tab-click", async ({ page, env, q
   )
   const ticketRow = page.locator(`[data-testid="attention-row-tickets-ticket-${ticketId}"]`)
   await expect(ticketRow).toHaveCount(0)
+  // Home reads the stored attention lists, and a row written straight into the
+  // table wakes no refresh: recompute them as the minute tick would. The
+  // refresh is queued (one interval at most), so the wait below covers it.
+  await refreshStoredAttention(env, world.org.id)
 
   // Fire an UNRELATED kernel WS event: an approval request naming Elodie as
   // a notify target, queued via the real outbox pipeline (pending_events ->
@@ -101,7 +109,7 @@ test("staleness.ws-resync-updates-home-without-tab-click", async ({ page, env, q
   })
 
   // No click anywhere: the WS resync path alone must surface the ticket row.
-  await expect(ticketRow).toBeVisible({ timeout: 15000 })
+  await expect(ticketRow).toBeVisible({ timeout: 30_000 })
 })
 
 test("staleness.activation-revalidation-past-threshold", async ({ page, env, qa, world }) => {

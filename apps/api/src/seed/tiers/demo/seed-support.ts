@@ -50,14 +50,25 @@ import {
   seedApprovalRequests,
   ticketReadableBy,
 } from "~/seed/factories/approvals/requests"
-import { seedTeamCalendar } from "~/seed/factories/calendar/events"
-import { seedKnowledgeArticles } from "~/seed/factories/knowledge/articles"
+import { type EventSpec, seedTeamCalendar } from "~/seed/factories/calendar/events"
+import {
+  type ArticleSpec,
+  type KnowledgeCollectionSpec,
+  seedKnowledgeArticles,
+} from "~/seed/factories/knowledge/articles"
 import { insertUnarmedMail, type MailConversationSpec } from "~/seed/factories/mail/conversations"
 import { orgSlugOf } from "~/seed/factories/org/org"
 import { actorFor } from "~/seed/factories/people/actors"
+import { type CompanySpec, seedCompanies } from "~/seed/factories/people/companies"
 import { resolveContacts } from "~/seed/factories/people/contacts"
 import { orgUserIdsByEmail } from "~/seed/factories/people/people"
-import { isOverdue, seedProject, seedProjectTask } from "~/seed/factories/projects/projects"
+import { type PipelineSpec, seedPipeline } from "~/seed/factories/projects/deals"
+import {
+  isOverdue,
+  type ProjectSpec,
+  seedProject,
+  seedProjectTask,
+} from "~/seed/factories/projects/projects"
 import { ensureTicketCategories, ensureTicketInboxes } from "~/seed/factories/support/inboxes"
 import {
   seedTickets as seedTicketQueue,
@@ -65,8 +76,10 @@ import {
   ticketIdsByExternalRef,
 } from "~/seed/factories/support/tickets"
 import {
+  type AgentDmSpec,
   seedAgentDms as seedAgentDmRooms,
   seedThreads as seedThreadRooms,
+  type ThreadSpec,
   threadIdsByTitle,
 } from "~/seed/factories/threads/threads"
 import { DEMO_QUOTE_DEALER, DEMO_TEAM } from "~/seed/world/fiction"
@@ -74,6 +87,7 @@ import { assertTicketApprovalsResolve } from "./approval-payload"
 import { APPROVAL_SPECS, type ApprovalRefs, type ApprovalSpec } from "./approval-specs"
 import { commerceDemoId } from "./commerce-ids"
 import { COMMERCE_LAYER_APPS } from "./demo-apps"
+import { COMPANY_SPECS, dealRef, SALES_PIPELINE } from "./sales-specs"
 import { seedKnowledgeSources } from "./seed-knowledge-sources"
 import { demoPersonEmail, type SeedDemoOrgResult } from "./seed-org"
 import {
@@ -83,6 +97,7 @@ import {
   CUSTOMER_COMPANIES,
   DEMO_CALENDAR_NAME,
   DEMO_CONTACT_DUPLICATES,
+  type DuplicateSpec,
   EVENT_SPECS,
   KNOWLEDGE_COLLECTIONS,
   MAIL_CONVERSATIONS,
@@ -96,9 +111,63 @@ import {
 
 // ── Public surface ─────────────────────────────────────────────────────────
 
+/**
+ * What a world's support and collaboration layer writes: the contact book's
+ * extras, the ticket queue, the project boards, the calendar, the mailboxes,
+ * the companies and their pipeline, and the decided approvals. Pure data, one
+ * per world pack (`seed/worlds`); the `products` world's is `PRODUCTS_SUPPORT_SPECS`.
+ */
+export interface DemoSupportSpecs {
+  /** The company each world customer works for, by customer key. */
+  customerCompanies: Readonly<Record<string, string>>
+  /** The deliberate duplicate contacts, a merge queue's work. */
+  contactDuplicates: readonly DuplicateSpec[]
+  inboxes: { support: string; sales: string; bugs: string }
+  ticketCategories: readonly string[]
+  tickets: readonly TicketSpec[]
+  ticketMerges: ReadonlyArray<{ target: string; source: string; note: string }>
+  projects: readonly ProjectSpec[]
+  calendarName: string
+  events: readonly EventSpec[]
+  mail: readonly MailConversationSpec[]
+  /** The conversation the Mail tour opens, kept in a short backlog. */
+  mailTourConversation: string | null
+  companies: readonly CompanySpec[]
+  pipeline: PipelineSpec
+  approvals: readonly ApprovalSpec[]
+  /**
+   * The rows only the `products` world's scenarios use: its synced knowledge
+   * sources, the scenario prospect, support customer and quote dealer, and the
+   * visitor's projects task.
+   */
+  productScenarios: boolean
+}
+
+/** A world's knowledge base, written as its author (a person key of the world). */
+export interface DemoKnowledgeSpecs {
+  authorKey: string
+  collections: readonly KnowledgeCollectionSpec[]
+  articles: readonly ArticleSpec[]
+}
+
+/** A world's team conversations and the owner's agent DMs. */
+export interface DemoThreadSpecs {
+  threads: readonly ThreadSpec[]
+  agentDms: readonly AgentDmSpec[]
+}
+
+/** The specs `seedDemoSupport` writes: one world pack's support, knowledge and threads. */
+export interface DemoSupportWorld {
+  support: DemoSupportSpecs
+  knowledge: DemoKnowledgeSpecs
+  threads: DemoThreadSpecs
+}
+
 export interface SeedDemoSupportOptions {
   /** The instant the seeded world is "now" relative to. */
   now: Date
+  /** The world pack's specs. Defaults to the `products` world's (`PRODUCTS_SUPPORT_WORLD`). */
+  specs?: DemoSupportWorld
   log?: (msg: string) => void
   /**
    * A tailored seed (a visitor's picks, `demoSeedPlan`): only these optional
@@ -154,6 +223,7 @@ async function seedContacts(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
   actor: UserContext,
+  specs: DemoSupportSpecs,
 ): Promise<{
   contactIds: string[]
   byKey: Record<string, string>
@@ -167,6 +237,7 @@ async function seedContacts(
       company: dealer.name,
       externalId: { demo: `dealer:${dealer.key}` },
       tags: dealer.isVip ? ["dealer", "vip"] : ["dealer"],
+      recipientCountry: dealer.country,
       metadata: {
         country: dealer.country,
         ...(dealer.vat ? { vat: dealer.vat } : {}),
@@ -174,7 +245,7 @@ async function seedContacts(
       },
     })),
     ...org.world.customers.map((customer) => {
-      const company = CUSTOMER_COMPANIES[customer.key]
+      const company = specs.customerCompanies[customer.key]
       return {
         key: `customer:${customer.key}`,
         email: customer.email,
@@ -182,10 +253,11 @@ async function seedContacts(
         ...(company ? { company } : {}),
         externalId: { demo: `customer:${customer.key}` },
         tags: customer.isVip ? ["customer", "vip"] : ["customer"],
+        recipientCountry: customer.country,
         metadata: { country: customer.country, relationship: "direct" },
       }
     }),
-    ...DEMO_CONTACT_DUPLICATES.map((dup) => ({
+    ...specs.contactDuplicates.map((dup) => ({
       key: `duplicate:${dup.ofKey}`,
       email: dup.email,
       name: dup.name,
@@ -197,7 +269,7 @@ async function seedContacts(
   ])
   const byKey = Object.fromEntries(resolved.map(([key, c]) => [key, c.id]))
   const contactIds = resolved.map(([, c]) => c.id)
-  const pairs = DEMO_CONTACT_DUPLICATES.map(
+  const pairs = specs.contactDuplicates.map(
     (d) =>
       [byKey[`customer:${d.ofKey}`] as string, byKey[`duplicate:${d.ofKey}`] as string] as [
         string,
@@ -217,6 +289,7 @@ async function seedTickets(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
   contactsByKey: Record<string, string>,
+  world: DemoSupportSpecs,
   specs: readonly TicketSpec[],
 ): Promise<{
   ticketIds: string[]
@@ -228,9 +301,9 @@ async function seedTickets(
     ctx,
     org.adminUserId,
     [
-      { name: SUPPORT_INBOX, team: "support" },
-      { name: SALES_INBOX, team: "sales" },
-      { name: BUGS_INBOX, team: "support" },
+      { name: world.inboxes.support, team: "support" },
+      { name: world.inboxes.sales, team: "sales" },
+      { name: world.inboxes.bugs, team: "support" },
     ],
     {
       fromDisplayName: org.world.company.name,
@@ -239,7 +312,7 @@ async function seedTickets(
     },
   )
   ctx.log(`tickets: ${Object.keys(inboxes).length} inboxes ready`)
-  const categories = await ensureTicketCategories(ctx, org.adminUserId, TICKET_CATEGORIES)
+  const categories = await ensureTicketCategories(ctx, org.adminUserId, world.ticketCategories)
 
   const byKey = await seedTicketQueue(ctx, {
     adminUserId: org.adminUserId,
@@ -259,19 +332,16 @@ async function seedTickets(
     categoryIds: categories,
     inboxIdOf: (spec) =>
       inboxes[
-        spec.channel === "api" ? BUGS_INBOX : spec.team === "sales" ? SALES_INBOX : SUPPORT_INBOX
+        spec.channel === "api"
+          ? world.inboxes.bugs
+          : spec.team === "sales"
+            ? world.inboxes.sales
+            : world.inboxes.support
       ] ?? null,
     supportEmail: org.world.company.supportEmail,
     specs,
     externalRefOf: ticketRef,
-    // The customer wrote twice about the same delayed parcel.
-    merges: [
-      {
-        target: "merge-target-delay",
-        source: "merge-source-delay",
-        note: "Same parcel, same customer. Merged so the chase happens once.",
-      },
-    ],
+    merges: world.ticketMerges,
   })
 
   ctx.log(`tickets: ${Object.keys(byKey).length} tickets across the queue`)
@@ -293,13 +363,14 @@ async function seedKnowledge(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
   actors: Record<string, UserContext>,
+  specs: DemoKnowledgeSpecs,
 ): Promise<{ collectionIds: string[]; documentIds: string[]; staleCount: number }> {
-  const adminActor = actors.elodie
+  const adminActor = actors[specs.authorKey]
   if (!adminActor) throw new Error("demo support seed: no admin actor for knowledge")
   const seeded = await seedKnowledgeArticles(ctx, adminActor, {
     people: org.peopleByKey,
-    collections: KNOWLEDGE_COLLECTIONS,
-    articles: ARTICLE_SPECS,
+    collections: specs.collections,
+    articles: specs.articles,
   })
   ctx.log(
     `knowledge: ${seeded.collectionIds.length} collections, ${seeded.documentIds.length} articles ` +
@@ -320,13 +391,14 @@ async function seedProjects(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
   actors: Record<string, UserContext>,
+  specs: readonly ProjectSpec[],
 ): Promise<{ projectIds: string[]; taskIds: string[]; overdueCount: number }> {
   const projectIds: string[] = []
   const taskIds: string[] = []
   // Counted from the SPEC: this describes the world the seeder guarantees, not
   // how much of it this particular run inserted, so a re-run reports the same.
   let overdueCount = 0
-  for (const spec of PROJECT_SPECS) {
+  for (const spec of specs) {
     const owner = actors[spec.owner]
     if (!owner) throw new Error(`demo support seed: no actor for '${spec.owner}'`)
     const seeded = await seedProject(ctx, owner, {
@@ -439,6 +511,7 @@ async function seedQuoteDealerContact(ctx: SeedContext, actor: UserContext): Pro
         shopify: `gid://shopify/Customer/${DEMO_QUOTE_DEALER.shopifyCustomerId}`,
       },
       tags: ["dealer"],
+      recipientCountry: DEMO_QUOTE_DEALER.country,
       metadata: { country: DEMO_QUOTE_DEALER.country, relationship: "dealer" },
     },
   ])
@@ -462,10 +535,13 @@ export const MAIL_TOUR_CONVERSATION = "org-acme-volume-quote"
 export const SHORT_BACKLOG = 6
 
 /** The tickets and mail conversations a seeded approval's payload names, by spec key. */
-function approvalReferences(): { tickets: Set<string>; mail: Set<string> } {
+function approvalReferences(approvals: readonly ApprovalSpec[]): {
+  tickets: Set<string>
+  mail: Set<string>
+} {
   const tickets = new Set<string>()
   const mail = new Set<string>()
-  for (const spec of APPROVAL_SPECS) {
+  for (const spec of approvals) {
     if (spec.ticketKey) tickets.add(spec.ticketKey)
     spec.payload({
       ticket: (key) => {
@@ -528,14 +604,15 @@ async function seedCalendar(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
   adminActor: UserContext,
+  specs: DemoSupportSpecs,
 ): Promise<{ eventIds: string[]; calendarId: string }> {
   const seeded = await seedTeamCalendar(ctx, adminActor, {
     accountEmail: `team@${org.world.company.supportEmail.split("@")[1]}`,
     calendarExternalId: "demo-team-calendar",
-    calendarName: DEMO_CALENDAR_NAME,
+    calendarName: specs.calendarName,
     timezone: org.timezone,
     people: org.peopleByKey,
-    events: EVENT_SPECS,
+    events: specs.events,
   })
   ctx.log(`calendar: ${seeded.eventIds.length} events on the shared team calendar`)
   return seeded
@@ -547,14 +624,12 @@ async function seedMail(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
   conversations: readonly MailConversationSpec[],
+  all: readonly MailConversationSpec[],
 ): Promise<{ accountIds: string[]; conversationIds: string[] }> {
   const domain = org.world.company.supportEmail.split("@")[1] as string
   // Every mailbox of the whole world, even when a short backlog seeds fewer
   // conversations: the accounts are part of the workspace either way.
-  const boxes = [
-    "org",
-    ...new Set(MAIL_CONVERSATIONS.filter((c) => c.box !== "org").map((c) => c.box)),
-  ]
+  const boxes = ["org", ...new Set(all.filter((c) => c.box !== "org").map((c) => c.box))]
   const mailboxes = boxes.map((box) => {
     if (box === "org") {
       return {
@@ -581,14 +656,15 @@ async function seedThreads(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
   actors: Record<string, UserContext>,
+  specs: readonly ThreadSpec[],
 ): Promise<{ threadIds: string[]; byKey: Record<string, string> }> {
   const byKey = await seedThreadRooms(ctx, {
     actors,
     people: org.peopleByKey,
     agentsByHandle: org.agentsByHandle,
-    specs: THREAD_SPECS,
+    specs,
   })
-  const channels = THREAD_SPECS.filter((t) => t.topic !== undefined).length
+  const channels = specs.filter((t) => t.topic !== undefined).length
   ctx.log(
     `threads: ${Object.keys(byKey).length} conversations, one pinned, ` +
       `${channels} described channels`,
@@ -602,7 +678,11 @@ async function seedThreads(
  * probe seeds one that way): the human seat is the owner, and there is no
  * honest stand-in for them.
  */
-async function seedAgentDms(ctx: SeedContext, org: SeedDemoOrgResult): Promise<string[]> {
+async function seedAgentDms(
+  ctx: SeedContext,
+  org: SeedDemoOrgResult,
+  specs: readonly AgentDmSpec[],
+): Promise<string[]> {
   if (!org.ownerUserId) {
     ctx.log("agent dms: this org has no owner, so there is nobody to hold the human seat")
     return []
@@ -610,7 +690,7 @@ async function seedAgentDms(ctx: SeedContext, org: SeedDemoOrgResult): Promise<s
   const owner = await actorFor(ctx, org.ownerUserId)
   const threadIds = await seedAgentDmRooms(ctx, owner, {
     agentsByHandle: org.agentsByHandle,
-    specs: AGENT_DM_SPECS,
+    specs,
   })
   ctx.log(`agent dms: ${threadIds.length} one to one conversations for the owner`)
   return threadIds
@@ -624,6 +704,40 @@ async function seedAgentDms(ctx: SeedContext, org: SeedDemoOrgResult): Promise<s
 
 // Refused at load, not at the first "Open ticket" that goes nowhere.
 assertTicketApprovalsResolve(APPROVAL_SPECS, TICKET_SPECS)
+
+/** The `products` world's support, knowledge and threads: today's Resonant Audio Labs. */
+export const PRODUCTS_SUPPORT_WORLD: DemoSupportWorld = {
+  support: {
+    customerCompanies: CUSTOMER_COMPANIES,
+    contactDuplicates: DEMO_CONTACT_DUPLICATES,
+    inboxes: { support: SUPPORT_INBOX, sales: SALES_INBOX, bugs: BUGS_INBOX },
+    ticketCategories: TICKET_CATEGORIES,
+    tickets: TICKET_SPECS,
+    // The customer wrote twice about the same delayed parcel.
+    ticketMerges: [
+      {
+        target: "merge-target-delay",
+        source: "merge-source-delay",
+        note: "Same parcel, same customer. Merged so the chase happens once.",
+      },
+    ],
+    projects: PROJECT_SPECS,
+    calendarName: DEMO_CALENDAR_NAME,
+    events: EVENT_SPECS,
+    mail: MAIL_CONVERSATIONS,
+    mailTourConversation: MAIL_TOUR_CONVERSATION,
+    companies: COMPANY_SPECS,
+    pipeline: SALES_PIPELINE,
+    approvals: APPROVAL_SPECS,
+    productScenarios: true,
+  },
+  knowledge: {
+    authorKey: "elodie",
+    collections: KNOWLEDGE_COLLECTIONS,
+    articles: ARTICLE_SPECS,
+  },
+  threads: { threads: THREAD_SPECS, agentDms: AGENT_DM_SPECS },
+}
 
 /**
  * Who a ticket approval may notify. A notification is an invitation to
@@ -653,12 +767,13 @@ async function seedApprovals(
   threadsByKey: Record<string, string>,
   ticketsByKey: Record<string, string>,
   actors: Record<string, UserContext>,
+  approvals: readonly ApprovalSpec[],
   /** A tailored seed keeps only the approvals whose tool's app is installed. */
   keep?: (spec: ApprovalSpec) => boolean,
 ): Promise<string[]> {
   const { orgId } = ctx
   const clock: SeedClock = seedClock(ctx.now)
-  const specs = keep ? APPROVAL_SPECS.filter(keep) : APPROVAL_SPECS
+  const specs = keep ? approvals.filter(keep) : approvals
   // Resolved first: each check is a read under that person's own RLS context.
   const notifyByKey: Record<string, { keep: string[]; dropped: string[] }> = {}
   for (const spec of specs) {
@@ -744,6 +859,8 @@ export async function seedDemoSupport(
 ): Promise<SeedDemoSupportResult> {
   const log = opts.log ?? (() => {})
   const ctx = seedContext({ orgId: org.orgId, now: opts.now, log })
+  const world = opts.specs ?? PRODUCTS_SUPPORT_WORLD
+  const specs = world.support
 
   const adminActor = await actorFor(ctx, org.adminUserId)
   const actors: Record<string, UserContext> = {}
@@ -755,54 +872,75 @@ export async function seedDemoSupport(
   // tailored seed writes each optional part only for a need that asks for it.
   const tailored = opts.tailored
   const wants = (part: DemoSeedPart) => !tailored || tailored.parts.has(part)
-  const contacts = await seedContacts(ctx, org, adminActor)
+  const contacts = await seedContacts(ctx, org, adminActor, specs)
+  // Companies come after the address book they group; their deals need the
+  // projects app, so a tailored seed without it keeps the companies only.
+  const companyIds = await seedCompanies(ctx, adminActor, specs.companies, contacts.byKey)
+  if (wants("projects")) {
+    await seedPipeline(ctx, adminActor, {
+      people: org.peopleByKey,
+      companyIds,
+      contactIds: contacts.byKey,
+      spec: specs.pipeline,
+      externalRefOf: dealRef,
+    })
+  }
   // Several needs picked: each app seeds a short backlog, not its whole history.
-  const short = tailored?.shortBacklog === true ? approvalReferences() : null
+  const short = tailored?.shortBacklog === true ? approvalReferences(specs.approvals) : null
   const tickets = wants("tickets")
     ? await seedTickets(
         ctx,
         org,
         contacts.byKey,
+        specs,
         short
-          ? shortBacklogOf(TICKET_SPECS, (t) => t.createdHoursAgo, short.tickets)
-          : TICKET_SPECS,
+          ? shortBacklogOf(specs.tickets, (t) => t.createdHoursAgo, short.tickets)
+          : specs.tickets,
       )
     : { ticketIds: [], inboxIds: [], categoryIds: [], byKey: {} }
-  const knowledge = await seedKnowledge(ctx, org, actors)
+  const knowledge = await seedKnowledge(ctx, org, actors, world.knowledge)
   // The synced sources (manuals from GitLab, finance from Google Drive) and the
   // playbook written in Liaison, with their sharing: every visitor's world.
-  const founder = actors.elodie
-  if (!founder) throw new Error("demo support seed: no founder for the knowledge sources")
-  const sources = await seedKnowledgeSources(org, founder, opts.now, log)
-  knowledge.collectionIds.push(...sources.collectionIds)
-  knowledge.documentIds.push(...sources.documentIds)
+  if (specs.productScenarios) {
+    const founder = actors.elodie
+    if (!founder) throw new Error("demo support seed: no founder for the knowledge sources")
+    const sources = await seedKnowledgeSources(org, founder, opts.now, log)
+    knowledge.collectionIds.push(...sources.collectionIds)
+    knowledge.documentIds.push(...sources.documentIds)
+  }
   const projects = wants("projects")
-    ? await seedProjects(ctx, org, actors)
+    ? await seedProjects(ctx, org, actors, specs.projects)
     : { projectIds: [], taskIds: [], overdueCount: 0 }
-  if (tailored?.parts.has("scenario-task")) {
+  if (specs.productScenarios && tailored?.parts.has("scenario-task")) {
     const scenarioTask = await seedScenarioTask(ctx, org, actors)
     if (scenarioTask) projects.taskIds.push(scenarioTask)
   }
-  const calendar = await seedCalendar(ctx, org, adminActor)
+  const calendar = await seedCalendar(ctx, org, adminActor, specs)
   const mail = wants("mail")
     ? await seedMail(
         ctx,
         org,
         short
           ? shortBacklogOf(
-              MAIL_CONVERSATIONS,
+              specs.mail,
               (c) => (c.messages[c.messages.length - 1] as { hoursAgo: number }).hoursAgo,
               // The Mail tour's conversation is always there.
-              new Set([...short.mail, MAIL_TOUR_CONVERSATION]),
+              new Set([
+                ...short.mail,
+                ...(specs.mailTourConversation ? [specs.mailTourConversation] : []),
+              ]),
             )
-          : MAIL_CONVERSATIONS,
+          : specs.mail,
+        specs.mail,
       )
     : { accountIds: [], conversationIds: [] }
-  if (tailored?.parts.has("prospect-routine")) await seedProspectContact(ctx, adminActor)
-  await seedSupportCustomerContact(ctx, adminActor)
-  await seedQuoteDealerContact(ctx, adminActor)
-  const threads = await seedThreads(ctx, org, actors)
-  const dmThreadIds = await seedAgentDms(ctx, org)
+  if (specs.productScenarios) {
+    if (tailored?.parts.has("prospect-routine")) await seedProspectContact(ctx, adminActor)
+    await seedSupportCustomerContact(ctx, adminActor)
+    await seedQuoteDealerContact(ctx, adminActor)
+  }
+  const threads = await seedThreads(ctx, org, actors, world.threads.threads)
+  const dmThreadIds = await seedAgentDms(ctx, org, world.threads.agentDms)
   // A visitor's workspace opens with nothing waiting on them: a scenario's
   // pending approvals are written when that scenario starts
   // (`seedScenarioApprovals`), and the decided ones are history.
@@ -812,6 +950,7 @@ export async function seedDemoSupport(
     threads.byKey,
     tickets.byKey,
     actors,
+    specs.approvals,
     tailored
       ? (spec) => spec.status !== "pending" && approvalToolInstalled(spec, tailored.installedApps)
       : undefined,
@@ -916,7 +1055,13 @@ export async function seedScenarioApprovals(
       )
       .map((spec) => spec.key),
   )
-  return seedApprovals(ctx, peopleByKey, threadsByKey, ticketsByKey, actors, (spec) =>
-    writable.has(spec.key),
+  return seedApprovals(
+    ctx,
+    peopleByKey,
+    threadsByKey,
+    ticketsByKey,
+    actors,
+    APPROVAL_SPECS,
+    (spec) => writable.has(spec.key),
   )
 }

@@ -28,6 +28,7 @@
 //   LIAISON_WEB_READS_PER_THREAD_HOUR per conversation in a rolling hour (Redis, so a turn
 //   that loses its frame, a sub-run or an MCP client is still bounded).
 
+import { luhnValid } from "@liaison/shared"
 import type { Redis } from "ioredis"
 import { env } from "~/lib/env"
 import { rootLogger } from "~/lib/logger"
@@ -106,21 +107,6 @@ function digitRuns(text: string): string[] {
 function ibanLike(text: string): boolean {
   for (const m of text.matchAll(IBAN)) if (m[0].replace(/\D/g, "").length >= 10) return true
   return false
-}
-
-function luhnValid(digits: string): boolean {
-  let sum = 0
-  let double = false
-  for (let i = digits.length - 1; i >= 0; i--) {
-    let d = digits.charCodeAt(i) - 48
-    if (double) {
-      d *= 2
-      if (d > 9) d -= 9
-    }
-    sum += d
-    double = !double
-  }
-  return sum % 10 === 0
 }
 
 function mixedToken(text: string): boolean {

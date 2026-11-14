@@ -34,6 +34,7 @@ import { runConversationId } from "~/modules/tours/conversation"
 import {
   availableTours,
   findServerTour,
+  isPlayedSingleRun,
   listProgressRows,
   loadTourOrgContext,
   progressOf,
@@ -41,6 +42,7 @@ import {
   serverTourCatalogue,
   startTour,
   type TourMoveRefusal,
+  TourPlayedError,
   TourWorldBeatRefusedError,
   tourBeats,
   updateTour,
@@ -68,6 +70,7 @@ async function resolveTour(c: Context<AppEnv>): Promise<{
       scopes: c.get("scopes") ?? [],
       // A demo scenario (demoOnly) exists only in a demo org: elsewhere it is not found.
       isDemo: ctx.isDemo,
+      worldId: ctx.worldId,
     }).length === 0
   ) {
     throw new HTTPException(404, { message: "Tour not found" })
@@ -84,6 +87,7 @@ export const tourRoutes = new Hono<AppEnv>()
       installedApps: ctx.installedApps,
       scopes: c.get("scopes") ?? [],
       isDemo: ctx.isDemo,
+      worldId: ctx.worldId,
     })
     const rows = await withRequestRls(c, (tx) => listProgressRows(tx, { orgId, userId }))
     const byTour = new Map(rows.map((r) => [r.tourId, r]))
@@ -97,6 +101,7 @@ export const tourRoutes = new Hono<AppEnv>()
           title: tour.title,
           summary: tour.summary,
           beatCount: beats.length,
+          ...(tour.singleRun ? { singleRun: true as const } : {}),
           // An active run carries its step's status (only active runs compute one).
           progress: row
             ? await withBeatStatus(orgId, userId, progressOf(tour, row, beats), beats)
@@ -111,24 +116,46 @@ export const tourRoutes = new Hono<AppEnv>()
     const { tour, ctx } = await resolveTour(c)
     const orgId = c.get("orgId")
     const userId = c.get("userId")
+    // A played single-run scenario (a stale tab's start or Next) changes
+    // nothing: refused before its scenario brings anything in.
+    const played = (tourId: string) =>
+      c.json({ error: { message: new TourPlayedError(tourId).message, code: "tour_played" } }, 409)
+    if (
+      tour.singleRun &&
+      isPlayedSingleRun(
+        tour,
+        await withRequestRls(c, (tx) => readProgressRow(tx, { orgId, userId, tourId: tour.id })),
+      )
+    ) {
+      return played(tour.id)
+    }
     // A visitor's scenario brings its own seeded approvals in as it starts:
     // the workspace opened with none waiting.
     const need = tour.demoOnly ? scenarioNeedOf(tour.id) : null
-    if (need && (await isVisitorDemoOrgId(orgId))) await prepareDemoScenario(orgId, userId, need)
+    // What it brings is its own world's, never another world's.
+    if (need && (await isVisitorDemoOrgId(orgId))) {
+      await prepareDemoScenario(orgId, userId, need, tour.world ?? ctx.worldId)
+    }
     // A tour that asks the agent does so in the person's DM with it.
     const conversationId = await runConversationId(orgId, userId, tour)
     const beats = tourBeats(tour, ctx)
-    const started = await withRequestRls(c, (tx) =>
-      startTour(tx, {
-        orgId,
-        userId,
-        tour,
-        beats,
-        source: c.req.valid("json").source ?? "help",
-        actor: { userId, actorType: "user" },
-        conversationId,
-      }),
-    )
+    let started: Awaited<ReturnType<typeof startTour>>
+    try {
+      started = await withRequestRls(c, (tx) =>
+        startTour(tx, {
+          orgId,
+          userId,
+          tour,
+          beats,
+          source: c.req.valid("json").source ?? "help",
+          actor: { userId, actorType: "user" },
+          conversationId,
+        }),
+      )
+    } catch (err) {
+      if (err instanceof TourPlayedError) return played(tour.id)
+      throw err
+    }
     const body: TourProgressResponse = {
       progress: await withBeatStatus(orgId, userId, started, beats),
     }

@@ -261,12 +261,12 @@ async function lockCap(
   )
 }
 
-/** Active people of the org (the seats in use). */
+/** Active members of the org (the seats in use): a client's portal account takes no seat. */
 export async function countSeats(db: RlsClient | PrivilegedDb, orgId: string): Promise<number> {
   const [row] = await db
     .select({ n: drizzleSql<number>`count(*)::int` })
     .from(users)
-    .where(and(eq(users.orgId, orgId), eq(users.status, "active")))
+    .where(and(eq(users.orgId, orgId), eq(users.status, "active"), eq(users.userType, "member")))
   return Number(row?.n ?? 0)
 }
 

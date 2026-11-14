@@ -121,13 +121,52 @@ function endsInToolResults(params: CallOptions): boolean {
   return prompt.length > 0 && prompt[prompt.length - 1]?.role === "tool"
 }
 
+/**
+ * Tools that close a reply instead of gathering for it: chips drawn under an
+ * answer already written. A model that writes its answer, calls one of these
+ * and then says nothing more has finished, and must not be asked to answer
+ * again (that wrote the same answer twice into one reply).
+ */
+export const REPLY_CLOSING_TOOLS: ReadonlySet<string> = new Set(["kernel__suggest_next_steps"])
+
+type PromptPart = { type?: string; text?: unknown; toolName?: unknown }
+type PromptMessage = { role: string; content: unknown }
+
+/**
+ * True when the turn's steps since its last tool that gathered something wrote
+ * text, and every call after that closed the reply: the silent step is the end
+ * of an answer already given. Text in a step that also called a gathering tool
+ * is a note before that tool ("I'll check"), not an answer.
+ */
+function answeredBeforeClosing(params: CallOptions): boolean {
+  const prompt = params.prompt as PromptMessage[]
+  let wrote = false
+  for (let i = prompt.length - 1; i >= 0; i--) {
+    const message = prompt[i]
+    if (message?.role === "tool") continue
+    if (message?.role !== "assistant") break
+    const parts = Array.isArray(message.content) ? (message.content as PromptPart[]) : []
+    const gathers = parts.some(
+      (p) => p.type === "tool-call" && !REPLY_CLOSING_TOOLS.has(String(p.toolName)),
+    )
+    if (gathers) break
+    if (typeof message.content === "string" && message.content.trim().length > 0) wrote = true
+    if (
+      parts.some((p) => p.type === "text" && typeof p.text === "string" && p.text.trim() !== "")
+    ) {
+      wrote = true
+    }
+  }
+  return wrote
+}
+
 function createAnswerAfterToolsMiddleware(): LanguageModelMiddleware {
   let used = false
   return {
     specificationVersion: "v4",
     wrapStream: async ({ doStream, params, model }) => {
       const result = await doStream()
-      if (used || !endsInToolResults(params)) return result
+      if (used || !endsInToolResults(params) || answeredBeforeClosing(params)) return result
 
       let said = false
       const stream = result.stream.pipeThrough(

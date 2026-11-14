@@ -1,0 +1,1 @@
+relation cells: a step of the first unit job when the test map attributes a change to relations, and on every merge group -> .github/workflows/ci.yml (name) ; scripts/ci-scope.ts (testScope)

@@ -26,6 +26,8 @@ import {
   type OrderPaidPayload,
   onShopifyOrderPaid,
 } from "./shopify-order-paid"
+import { onStripeInvoiceFinalized, STRIPE_PARK_PREFIX } from "./stripe-invoice-finalized"
+import { retryParkedStripeCreditNote, STRIPE_CREDIT_NOTE_PARK } from "./stripe-refund-created"
 
 // The cron ctx is the full bundled-app bridge, so it satisfies both the
 // order-handler surface (re-issue path) and the mutations surface (PDF retry).
@@ -160,6 +162,28 @@ export async function deferredRetryJobHandler(
     // that credit note alone, never the refund or cancellation handler (see parked-credit-note.ts).
     if (isParkedCreditNote(row.event_payload_json)) {
       return retryParkedCreditNote(ctx, row)
+    }
+
+    // Card payments on Stripe: a parked credit note re-runs the refund path by its refund id; a
+    // parked invoice re-runs its finalized handler (the undecided stream, an unmatched payment and
+    // the approval wait for a person, never this sweep). Never the Shopify order handler.
+    const payloadKind = String(
+      (row.event_payload_json as Record<string, unknown> | null)?.kind ?? "",
+    )
+    if (payloadKind === STRIPE_CREDIT_NOTE_PARK)
+      return retryParkedStripeCreditNote(ctx, row.event_payload_json)
+    if (payloadKind.startsWith(STRIPE_PARK_PREFIX) || kind.startsWith(STRIPE_PARK_PREFIX)) {
+      if (
+        payloadKind !== "stripe_invoice" ||
+        kind === "stripe_issuer_undecided" ||
+        kind === "stripe_invoice_approval"
+      ) {
+        return { status: "still_blocked", reason: row.reason ?? "waits_for_a_person" }
+      }
+      const r = await onStripeInvoiceFinalized(row.event_payload_json, ctx)
+      return r.status === "deferred" || r.status === "error" || r.status === "pending_approval"
+        ? { status: "still_blocked", reason: r.status === "deferred" ? r.reason : r.status }
+        : { status: "ok" }
     }
 
     // A Shopify draft order's quote that waited for its issuer's time zone: make that quote, never

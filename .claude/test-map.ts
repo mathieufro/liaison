@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+import { readFileSync } from "node:fs"
+
 /**
  * Path → suite mapping for `run-tests --files`.
  *
@@ -13,10 +15,13 @@
 /** Paths that carry no code: a change to them alone runs no test. */
 export const NO_CODE_PATHS = [/\.md$/, /^docs\//, /^LICENSE/, /\.(png|jpe?g|svg|gif|webp)$/]
 
-/** The suites of the first entry matching `file`, or null when none matches. */
+/**
+ * The suites of the first entry matching `file`, or null when none matches. A
+ * path a relation link names (see {@link relationSuitesFor}) also runs `relations`.
+ */
 export function suitesFor(file: string): string[] | null {
   for (const entry of TEST_MAP) {
-    if (new Bun.Glob(entry.glob).match(file)) return entry.suites
+    if (new Bun.Glob(entry.glob).match(file)) return relationSuitesFor(file, entry.suites)
   }
   return null
 }
@@ -54,6 +59,24 @@ export const TEST_MAP: { glob: string; suites: string[] }[] = [
     glob: "apps/api/src/modules/agent/subruns/spawn-agent.ts",
     suites: ["unit", "integration", "cell"],
   },
+  // The client-row guard scans every privileged read of kernel.users, and the manifest
+  // and tool-rule guards read the declarations: the pure scans run with the module.
+  // The demo worlds (their packs, seed plans, payments stand-in, scenarios and
+  // tours): the pure guards and the seeded reads run in demo-seed, the modules
+  // they reach in unit, the tour anchors against the web source in guards.
+  { glob: "apps/api/src/modules/demo/worlds/saas/payments/stripe-standin.integration.test.ts", suites: ["integration-extra", "unit", "demo-seed"] },
+  // The stand-in itself and the sandbox egress paths that hand it a demo org's payments
+  // calls (fetch, file download, platform-held SQL): its real-kernel test runs in integration-extra.
+  { glob: "apps/api/src/modules/demo/worlds/saas/payments/**", suites: ["integration-extra", "demo-seed", "unit", "web-unit", "guards"] },
+  { glob: "apps/api/src/modules/apps/sandbox/bridge/{egress,files,db}.ts", suites: ["integration-extra", "unit", "integration", "api-guards"] },
+  // The owner's question played through the agent loop on the seeded world: seeded, so demo-seed only.
+  { glob: "apps/api/src/seed/worlds/saas/owner-question-reach.saas.integration.test.ts", suites: ["demo-seed"] },
+  { glob: "apps/api/src/seed/worlds/saas/seed-without-owner.saas.integration.test.ts", suites: ["demo-seed"] },
+  { glob: "apps/api/src/modules/demo/worlds/**", suites: ["demo-seed", "unit", "web-unit", "guards"] },
+  { glob: "apps/api/src/seed/worlds/**", suites: ["demo-seed", "unit", "web-unit", "guards"] },
+  { glob: "apps/api/src/seed/factories/payments/**", suites: ["demo-seed", "integration", "unit"] },
+  { glob: "apps/api/src/modules/users/**", suites: ["unit", "integration", "api-guards"] },
+  { glob: "apps/api/src/modules/mcp/**", suites: ["unit", "integration", "api-guards"] },
   // The app runtime and its limit table: the app wake-up contract runs in api-guards.
   { glob: "apps/api/src/modules/apps/**", suites: ["unit", "integration", "api-guards"] },
   { glob: "apps/api/src/modules/**", suites: ["unit", "integration"] },
@@ -88,6 +111,8 @@ export const TEST_MAP: { glob: string; suites: string[] }[] = [
   // The multi-process scenarios (about 3 servers per file) run only in `cell`.
   { glob: "apps/api/src/tests/e2e/cell/**", suites: ["cell"] },
   { glob: "apps/api/src/tests/e2e/**", suites: ["e2e-parallel"] },
+  // The relation cells, their classes and the schema guard: their own suite.
+  { glob: "apps/api/src/tests/relations/**", suites: ["relations"] },
   // src/tests also holds the files of the two side suites (integration-extra,
   // integration-mocked) that cannot share the integration process.
   { glob: "apps/api/src/tests/**", suites: ["integration", "integration-extra", "integration-mocked"] },
@@ -109,6 +134,9 @@ export const TEST_MAP: { glob: string; suites: string[] }[] = [
   // are web-unit, and the bundled-app UIs that run in it are playwright.
   { glob: "apps/web/src/app-frame/**", suites: ["web-unit", "playwright"] },
   { glob: "apps/web/src/ui/**", suites: ["web-unit", "playwright"] },
+  // The global stylesheet and the style tests beside it shape every screen.
+  { glob: "apps/web/src/index.css", suites: ["web-unit", "playwright"] },
+  { glob: "apps/web/src/styles/**", suites: ["web-unit", "playwright"] },
   { glob: "apps/web/src/tests/e2e/**", suites: ["playwright"] },
   { glob: "apps/web/src/lib/**", suites: ["web-unit", "playwright"] },
   // The socket and other shared reactive primitives: the blip and live-order
@@ -131,6 +159,8 @@ export const TEST_MAP: { glob: string; suites: string[] }[] = [
     glob: "packages/host-sdk/**",
     suites: ["workspace-packages", "bundled-freeze", "web-unit", "playwright"],
   },
+  // The demo worlds' tours and scenarios: the world packs they read run in demo-seed.
+  { glob: "packages/shared/src/tours/demo/worlds/**", suites: ["demo-seed", "unit", "web-unit", "guards"] },
   // Tour definitions: their anchors are checked against the web source (guards).
   { glob: "packages/shared/src/tours/**", suites: ["unit", "web-unit", "integration", "guards"] },
   { glob: "packages/shared/**", suites: ["shared", "unit", "web-unit", "integration"] },
@@ -184,11 +214,13 @@ export const TEST_MAP: { glob: string; suites: string[] }[] = [
   { glob: "bundled-apps/database/**", suites: ["api-guards", "bundled-database", "bundled-freeze", "e2e-parallel", "demo-seed"] },
   { glob: "bundled-apps/google-drive/**", suites: ["api-guards", "bundled-google-drive", "bundled-freeze"] },
   { glob: "bundled-apps/gitlab/**", suites: ["api-guards", "bundled-gitlab", "bundled-freeze", "e2e-parallel", "demo-seed"] },
+  { glob: "bundled-apps/github/**", suites: ["api-guards", "bundled-github", "bundled-freeze", "e2e-parallel", "demo-seed"] },
   // Its manifest is also the test template's api-connector schema and the app the
   // platform-held API connection tests register (apps/api/src/db/apply-app-schemas.ts).
   { glob: "bundled-apps/api-connector/**", suites: ["api-guards", "bundled-api-connector", "bundled-freeze", "e2e-parallel", "demo-seed", "unit", "integration"] },
   { glob: "bundled-apps/pennylane/**", suites: ["api-guards", "bundled-pennylane", "bundled-freeze", "e2e-parallel", "demo-seed"] },
   { glob: "bundled-apps/shopify/**", suites: ["api-guards", "bundled-shopify", "bundled-freeze", "e2e-parallel", "demo-seed"] },
+  { glob: "bundled-apps/stripe/**", suites: ["api-guards", "bundled-stripe", "bundled-freeze", "e2e-parallel", "demo-seed"] },
   { glob: "bundled-apps/social/**", suites: ["api-guards", "bundled-social", "bundled-social-ui", "integration-extra", "bundled-freeze", "e2e-parallel", "demo-seed"] },
   { glob: "bundled-apps/*/**", suites: ["api-guards", "bundled-freeze", "e2e-parallel", "demo-seed"] },
 
@@ -222,6 +254,10 @@ export const TEST_MAP: { glob: string; suites: string[] }[] = [
   { glob: "apps/api/scripts/**", suites: ["api-guards"] },
   // The French table feeds the fr dictionaries; its parity test is in shared.
   { glob: "scripts/i18n-*.ts", suites: ["shared"] },
+  // The per-feature French string files are read by the same parity test.
+  { glob: "scripts/i18n-fr/**", suites: ["shared"] },
+  // Which CI jobs a pull request needs: its pure tests run in guards.
+  { glob: "scripts/ci-scope*.ts", suites: ["guards"] },
   { glob: "docker-compose.yml", suites: ["root"] },
   { glob: "deploy/**", suites: ["root"] },
   // The deploy and load-test tooling and their repo-root tests (compose file
@@ -261,8 +297,10 @@ export const TEST_MAP: { glob: string; suites: string[] }[] = [
   { glob: "scripts/pr-land*.ts", suites: ["root"] },
   { glob: "scripts/lib/**", suites: ["root"] },
   { glob: ".claude/test-map.ts", suites: ["root"] },
+  { glob: "scripts/test-map*.ts", suites: ["root"] },
   // The docs map feeds check-docs (its test is in root) and ci-scope (guards).
   { glob: ".claude/docs-map.ts", suites: ["root", "guards"] },
+  { glob: "knip.json", suites: ["guards", "root"] },
   { glob: "scripts/backup-secrets*", suites: ["root"] },
   // Read only by CI's gitleaks job (.github/workflows/codeql.yml); no test reads it.
   { glob: ".gitleaks.toml", suites: [] },
@@ -292,3 +330,21 @@ export const TEST_MAP: { glob: string; suites: string[] }[] = [
   { glob: "docs/api-connector.md", suites: ["root"] },
   { glob: ".claude/skills/api-connector-authoring/**", suites: ["root"] },
 ]
+
+/**
+ * The paths each built link of the relation matrix names (apps/api/src/tests/relations/links.yaml):
+ * a change under one also runs the `relations` suite, on top of what TEST_MAP gives it.
+ */
+export const RELATION_PATHS: string[] = (() => {
+  const file = `${import.meta.dir}/../apps/api/src/tests/relations/links.yaml`
+  const parsed = Bun.YAML.parse(readFileSync(file, "utf8")) as {
+    links?: Array<{ paths?: string[] }>
+  }
+  return [...new Set((parsed.links ?? []).flatMap((l) => l.paths ?? []))]
+})()
+
+export function relationSuitesFor(file: string, suites: string[]): string[] {
+  if (suites.includes("relations")) return suites
+  const touched = RELATION_PATHS.some((p) => (p.endsWith("/") ? file.startsWith(p) : file === p))
+  return touched ? [...suites, "relations"] : suites
+}

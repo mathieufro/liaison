@@ -72,9 +72,13 @@ export interface CreditNoteIssueOptions {
    *  The original's line kinds come from the Shopify adapter, so they state the operation
    *  category, and a buyer with no company and no VAT id is a checkout consumer. */
   source?: "shopify"
-  /** The note's dedup key, written to `documents.external_ref` (unique) in the issuing commit: an
-   *  automatic note re-run after its run died is found by it instead of issued twice. */
-  external_ref?: string
+  /** The note's dedup key, written to `documents.external_ref` (unique) in the issuing commit (a
+   *  Stripe refund's `stripe:re_...`): one refund never yields two credit notes, and an automatic
+   *  note re-run after its run died is found by it instead of issued twice. */
+  external_ref?: string | null
+  /** "batch": issued with no person (a Stripe refund's automatic credit note), so its e-invoice
+   *  goes out like every other no-person issue instead of asking for its own send card. */
+  einvoice_send?: "batch"
 }
 
 /** The gate inputs an automatic Shopify credit note carries (see `CreditNoteIssueOptions.source`). */
@@ -573,6 +577,7 @@ export async function prepareCreditNoteCreateAndIssue(
     operation_category: input.operation_category ?? null,
     ...autoSourceGateFields(opts),
     ...(opts.external_ref ? { external_ref: opts.external_ref } : {}),
+    ...(opts.einvoice_send ? { einvoice_send: opts.einvoice_send } : {}),
     commit_with: original ? [await creditedOnOriginal(ctx, original)] : [],
   }
   const after = async (result: IssueResult): Promise<void> => {

@@ -71,3 +71,5 @@ share_folder_on_my_computer gated owner-approved -> apps/api/src/modules/agent/t
 Agents search only in own private conversation -> apps/api/src/modules/agent/tools/kernel-tools.ts:1308
 Candidate ids last one hour, single use -> apps/api/src/modules/nodes/folder-requests.ts:42
 Owner REST routes are session-only -> apps/api/src/modules/nodes/folder-routes.ts:5
+Search tools offered only with a computer set up -> apps/api/src/modules/agent/tools/kernel-tools.ts:1653
+Not offered to a person with no computer -> apps/api/src/modules/agent/tools/tool-bridge.ts:879

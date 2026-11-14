@@ -5,6 +5,7 @@ import { z } from "zod"
 import { sql } from "~/db"
 import { CryptoContext, encryptSecret } from "~/lib/crypto"
 import { byokEncryptionKey } from "~/lib/env"
+import { type AppGuideInput, normalizeAppGuide } from "~/modules/agent/context/app-guide"
 import {
   agentInstructionsRegistry,
   skillRegistry,
@@ -28,6 +29,12 @@ async function affordance(name: string, orgId: string = ORG_ID): Promise<string>
   const params = (entry as { params?: unknown }).params
   const schema = params ? JSON.stringify(z.toJSONSchema(params as z.ZodType)) : ""
   return `${entry.description}\n${KERNEL_RESULT_HINTS[name] ?? ""}\n${schema}`
+}
+
+// The kernel guide is a core plus sections; a test about its words reads all of them.
+function guideText(raw: AppGuideInput): string {
+  const g = normalizeAppGuide(raw)
+  return [g.core, ...g.sections.map((x) => x.text)].join("\n")
 }
 
 describe("kernel tool registration", () => {
@@ -95,10 +102,10 @@ describe("kernel tool registration", () => {
     }
   })
 
-  // P4m-T11: the file verbs join the registry. Every one of them is in the
-  // STABLE tool set from the first turn (I7): a tools array change already
-  // invalidates the cached prefix, so a memory verb discovered mid session
-  // would cost a full cache miss on the turn it appeared.
+  // P4m-T11: the file verbs join the registry. view, create, str_replace, insert and search are in
+  // the STABLE tool set from the first turn (I7): a tools array change already invalidates the
+  // cached prefix, so those are never discovered mid session. delete, rename and open load on
+  // discovery.
   const MEMORY_VERBS = [
     "memory_view",
     "memory_create",
@@ -106,12 +113,6 @@ describe("kernel tool registration", () => {
     "memory_insert",
     "memory_delete",
     "memory_rename",
-  ]
-  const MEMORY_ENTRIES = [
-    ...MEMORY_VERBS,
-    "user_memory_get",
-    "user_memory_set",
-    "user_memory_delete",
   ]
 
   it("every memory verb declares a taint posture", () => {
@@ -130,19 +131,28 @@ describe("kernel tool registration", () => {
     expect(entry!.writesToTable).toBe("kernel.agent_memory")
   })
 
-  it("the memory FILE verbs are never deferred; the typed user_memory_* trio is", () => {
-    // The file verbs are the stable tool set from the first turn: a tools-array
-    // change invalidates the cached prefix, so one appearing mid session costs a
-    // full cache miss. The three typed user_memory_* entries are the older,
-    // path-free surface the file verbs supersede, so they load on discovery and
-    // stay off the per-step budget.
-    for (const name of MEMORY_VERBS) {
-      const entry = toolRegistry.get([ORG_ID, "kernel", name])
-      expect(entry).toBeDefined()
-      expect(Boolean(entry!.deferLoading)).toBe(false)
+  it("the everyday memory verbs are in the stable set; the rarer ones and the typed trio load on discovery", () => {
+    // view, create, str_replace, insert and search are the stable tool set from the first turn: a
+    // tools-array change invalidates the cached prefix, so one appearing mid session costs a full
+    // cache miss. delete, rename and open are rarer verbs, found by tool_search. The three
+    // typed user_memory_* entries are the older path-free surface the file verbs supersede: hidden
+    // from the agent, still registered for a screen or a parked approval.
+    for (const name of [
+      "memory_view",
+      "memory_create",
+      "memory_str_replace",
+      "memory_insert",
+      "memory_search",
+    ]) {
+      expect(Boolean(toolRegistry.get([ORG_ID, "kernel", name])!.deferLoading)).toBe(false)
+    }
+    for (const name of ["memory_delete", "memory_rename", "memory_open"]) {
+      expect(toolRegistry.get([ORG_ID, "kernel", name])!.deferLoading).toBe(true)
     }
     for (const name of ["user_memory_get", "user_memory_set", "user_memory_delete"]) {
-      expect(toolRegistry.get([ORG_ID, "kernel", name])!.deferLoading).toBe(true)
+      const entry = toolRegistry.get([ORG_ID, "kernel", name])!
+      expect(entry.deferLoading).toBe(true)
+      expect(entry.agentVisible).toBe(false)
     }
   })
 
@@ -208,28 +218,28 @@ describe("kernel tool registration", () => {
     expect(desc.includes("duplicate")).toBe(true)
   })
 
-  it("user_memory_set steers ORG/SHARED business facts to capture_business_knowledge (first-run-org-bootstrap)", async () => {
+  it("memory_create steers ORG/SHARED business facts to capture_business_knowledge (first-run-org-bootstrap)", async () => {
     // first-run-org-bootstrap-resonant-audio-labs: the weak model recorded "support@… is our shared
-    // inbox" into PRIVATE user_memory (kernel__user_memory_set) instead of an org-visible Knowledge doc
-    // via capture_business_knowledge — failing the rubric's "a Knowledge doc records the shared inbox"
-    // clause (the fact was invisible to the team). The disambiguation lives in the tool descriptions
-    // (the affordance layer, operator-preferred over a broad system.md edit); guard both ends here so a
+    // inbox" into PRIVATE memory instead of an org-visible Knowledge doc via
+    // capture_business_knowledge — failing the rubric's "a Knowledge doc records the shared inbox"
+    // clause (the fact was invisible to the team). The disambiguation lives in the tool text (the
+    // affordance layer, operator-preferred over a broad system.md edit); guard both ends here so a
     // future edit can't drop the steering and re-flake the scenario.
-    const mem = toolRegistry.get([ORG_ID, "kernel", "user_memory_set"])
+    const mem = toolRegistry.get([ORG_ID, "kernel", "memory_create"])
     expect(mem).toBeDefined()
-    const memDesc = (await affordance("user_memory_set")).toLowerCase()
-    // user_memory_set must (a) say its memory is PRIVATE to the operator / not org-visible, and
+    const memText = (await affordance("memory_create")).toLowerCase()
+    // memory_create must (a) say its memory is PRIVATE to the operator / not org-visible, and
     // (b) route a "write down our shared inbox / company fact" to capture_business_knowledge.
-    expect(memDesc).toContain("private")
-    expect(memDesc).toContain("capture_business_knowledge")
-    expect(memDesc.includes("shared") && memDesc.includes("inbox")).toBe(true)
+    expect(memText).toContain("private")
+    expect(memText).toContain("capture_business_knowledge")
+    expect(memText.includes("shared") && memText.includes("inbox")).toBe(true)
 
     // capture_business_knowledge must POSITIVELY claim the shared-inbox / company-fact "write down"
-    // request, naming user_memory_set as the wrong home so the model pulls toward Knowledge.
+    // request, naming memory_create as the wrong home so the model pulls toward Knowledge.
     const kb = toolRegistry.get([ORG_ID, "kernel", "capture_business_knowledge"])
     expect(kb).toBeDefined()
     const kbDesc = (await affordance("capture_business_knowledge")).toLowerCase()
-    expect(kbDesc).toContain("user_memory_set")
+    expect(kbDesc).toContain("memory_create")
     expect(kbDesc.includes("shared") && kbDesc.includes("inbox")).toBe(true)
     expect(kbDesc.includes("write down") || kbDesc.includes("record")).toBe(true)
   })
@@ -353,7 +363,7 @@ describe("kernel tool registration", () => {
     // states the identity-match + same-name disambiguation. Guard the guidance so an edit can't drop it.
     const kernelInstr = agentInstructionsRegistry.get([ORG_ID, "kernel"])
     expect(kernelInstr, "kernel agent instructions must be registered").toBeDefined()
-    const lc = (kernelInstr as string).toLowerCase()
+    const lc = guideText(kernelInstr as AppGuideInput).toLowerCase()
     expect(lc.includes("web-sourced")).toBe(true)
     expect(lc.includes("unverified")).toBe(true)
     expect(lc.includes("identity-match") || lc.includes("identity match")).toBe(true)
@@ -524,7 +534,7 @@ describe("kernel tool registration", () => {
   it("registerKernelAgentTools seeds agentInstructionsRegistry with the kernel overview body", () => {
     const overview = agentInstructionsRegistry.get([ORG_ID, "kernel"])
     expect(overview).toBeDefined()
-    expect(overview!).toContain("thread management")
+    expect(guideText(overview!)).toContain("thread management")
     // The legacy _overview skillRegistry slot must no longer exist for kernel.
     expect(skillRegistry.get([ORG_ID, "kernel", "_overview" as any])).toBeUndefined()
   })
@@ -641,6 +651,8 @@ describe("kernel tool registration", () => {
       "report_bug",
       // Reads the tool registry and the scope catalog, never an org record.
       "routine_tool_scopes",
+      // Chips drawn on the requester's own screen; a chip only sends its label as their message.
+      "suggest_next_steps",
       "tool_search",
     ])
     // skill_read returns skill bodies (org content), so it taints like any read.
@@ -764,10 +776,10 @@ describe("memory tool descriptions reflect typed model", () => {
     expect(nameShape.safeParse("").success).toBe(false)
   })
 
-  it("user_memory_delete explains update-over-delete preference", async () => {
-    const d = await affordance("user_memory_delete", TYPED_ORG)
+  it("memory_delete explains correct-over-delete preference", async () => {
+    const d = await affordance("memory_delete", TYPED_ORG)
     expect(d).toMatch(/outdated|wrong|forget/i)
-    expect(d).toMatch(/update.*instead|prefer.*update/i)
+    expect(d).toMatch(/prefer.*correcting|edit of the existing file/i)
   })
 
   it("user_memory_get rejects type='_index' via Zod enum", () => {

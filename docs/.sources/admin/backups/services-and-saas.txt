@@ -1,0 +1,5 @@
+Left out (null) payment card details mirrored from Stripe -> apps/api/src/modules/export/org-archive/redaction.ts (REDACTED_COLUMNS)
+Contact export says when and how they opted out -> apps/api/src/modules/export/data-subject-export-tool.ts (buildDataSubjectBundle)
+Member export lists the opt-outs they recorded, never an address -> apps/api/src/modules/export/member-data-subject-bundle.ts (MEMBER_SECTIONS)
+member export lists app drafts made and the runs their actions logged, whatever the member's current permissions, without code or log text -> apps/api/src/modules/export/member-data-subject-bundle.ts (MEMBER_SECTIONS)
+Contact export carries the schedules billing them and their linked Stripe customers with subscriptions; a card is brand, last 4 and expiry only -> apps/api/src/modules/export/data-subject-export-tool.ts (buildDataSubjectBundle) ; apps/api/src/modules/export/data-subject-export-tool.ts (billingCustomerRecord)

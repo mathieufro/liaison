@@ -33,6 +33,7 @@ export const DOCS_MAP: { glob: string; pages: string[] }[] = [
   // Agents
   { glob: "apps/api/src/modules/approvals/**", pages: ["agents/approvals"] },
   { glob: "apps/web/src/modules/approvals/**", pages: ["agents/approvals"] },
+  { glob: "apps/api/src/modules/home/**", pages: ["agents/routines"] },
   { glob: "packages/shared/src/approvals/**", pages: ["agents/approvals"] },
   { glob: "apps/api/src/modules/scope-requests/**", pages: ["agents/permissions"] },
   { glob: "apps/web/src/modules/admin-scope-requests/**", pages: ["agents/permissions"] },
@@ -41,6 +42,8 @@ export const DOCS_MAP: { glob: string; pages: string[] }[] = [
   { glob: "packages/shared/src/setup-guides*", pages: ["connecting-apps", "apps/store"] },
   { glob: "apps/web/src/modules/secret-request/**", pages: ["agents/tools"] },
   { glob: "apps/api/src/modules/permissions/**", pages: ["agents/permissions", "admin/roles"] },
+  { glob: "apps/api/src/modules/agent/routines/deal-followups*", pages: ["sales/follow-ups", "agents/routines"] },
+  { glob: "apps/api/src/modules/agent/tools/company-tools.ts", pages: ["sales/companies", "agents/tools"] },
   { glob: "apps/api/src/modules/agent/**", pages: ["agents/how-agents-work", "agents/create-an-agent", "agents/routines", "agents/models", "agents/tools"] },
   { glob: "apps/web/src/modules/agent/**", pages: ["agents/how-agents-work", "agents/create-an-agent", "agents/routines", "agents/models"] },
   { glob: "packages/shared/src/agents/**", pages: ["agents/how-agents-work", "agents/models"] },
@@ -62,6 +65,25 @@ export const DOCS_MAP: { glob: string; pages: string[] }[] = [
   { glob: "apps/desktop/**", pages: ["computers/connect", "computers/sessions", "getting-started/desktop-and-phone"] },
   { glob: "apps/mobile/**", pages: ["getting-started/desktop-and-phone"] },
 
+  // Sales and CRM: specific before the app globs below.
+  { glob: "apps/api/src/modules/mail/suppressions*", pages: ["sales/opt-outs", "apps/mail"] },
+  { glob: "apps/api/src/modules/mail/commercial-footer*", pages: ["sales/opt-outs", "apps/mail"] },
+  { glob: "apps/api/src/modules/mail/opt-out*", pages: ["sales/opt-outs", "apps/mail"] },
+  { glob: "apps/api/src/modules/mail/optout*", pages: ["sales/opt-outs", "apps/mail"] },
+  { glob: "apps/api/src/modules/mail/send-guard*", pages: ["sales/opt-outs", "sales/follow-ups", "apps/mail"] },
+  { glob: "apps/api/src/modules/contacts/prospect-retention*", pages: ["sales/opt-outs", "apps/mail"] },
+  { glob: "apps/api/src/modules/contacts/compan*", pages: ["sales/companies", "apps/contacts"] },
+  { glob: "apps/api/src/modules/contacts/activity*", pages: ["sales/companies", "apps/contacts"] },
+  { glob: "apps/api/src/apps/contacts/import-kind*", pages: ["sales/importing-companies-and-deals", "apps/contacts"] },
+  { glob: "apps/api/src/apps/projects/import-deal-kind*", pages: ["sales/importing-companies-and-deals", "sales/deals"] },
+  { glob: "apps/api/src/apps/projects/service/deals*", pages: ["sales/deals", "sales/quiet-deals", "sales/follow-ups", "sales/forecast"] },
+  { glob: "apps/web/src/modules/contacts/Compan*", pages: ["sales/companies", "apps/contacts"] },
+  { glob: "apps/web/src/modules/contacts/Activity*", pages: ["sales/companies", "apps/contacts"] },
+  { glob: "apps/web/src/modules/projects/Deal*", pages: ["sales/deals", "apps/projects"] },
+  { glob: "apps/web/src/modules/projects/CompanyWorkPanel*", pages: ["sales/companies", "apps/projects"] },
+  { glob: "apps/web/src/modules/tickets/CompanySupportPanel*", pages: ["sales/companies", "apps/tickets"] },
+  { glob: "bundled-apps/invoicing/src/ui/CompanyMoneyPanel*", pages: ["sales/companies", "apps/invoicing"] },
+
   // Built-in apps
   { glob: "apps/api/src/apps/mail/**", pages: ["apps/mail"] },
   { glob: "apps/api/src/modules/mail*/**", pages: ["apps/mail"] },
@@ -79,6 +101,7 @@ export const DOCS_MAP: { glob: string; pages: string[] }[] = [
   { glob: "apps/web/src/modules/sharing/**", pages: ["apps/knowledge"] },
   { glob: "bundled-apps/google-drive/**", pages: ["apps/google-drive"] },
   { glob: "bundled-apps/gitlab/**", pages: ["apps/gitlab"] },
+  { glob: "bundled-apps/github/**", pages: ["apps/github"] },
   { glob: "apps/api/src/apps/contacts/**", pages: ["apps/contacts", "sales/contacts"] },
   { glob: "apps/api/src/modules/contacts/**", pages: ["apps/contacts", "sales/contacts", "sales/duplicates"] },
   { glob: "apps/api/src/modules/product-attributes/**", pages: ["agents/tools"] },
@@ -100,6 +123,8 @@ export const DOCS_MAP: { glob: string; pages: string[] }[] = [
   { glob: "apps/api/src/apps/example/**", pages: ["app-development"] },
 
   // Bundled apps
+  { glob: "bundled-apps/invoicing/src/recurring/**", pages: ["apps/recurring"] },
+  { glob: "bundled-apps/invoicing/src/{streams,ui/IssuerStreams}*", pages: ["money/who-issues-what", "money/turn-off-stripe-emails", "apps/invoicing"] },
   { glob: "bundled-apps/invoicing/**", pages: ["apps/invoicing", "sales/quotes"] },
   { glob: "bundled-apps/boxtal/**", pages: ["apps/boxtal"] },
   { glob: "bundled-apps/boxtal/src/{customs-documents,print-pack,needed-documents}.ts", pages: ["admin/shipping-documents"] },
@@ -109,6 +134,9 @@ export const DOCS_MAP: { glob: string; pages: string[] }[] = [
   { glob: "bundled-apps/ads/**", pages: ["apps/ads"] },
   { glob: "bundled-apps/calls/**", pages: ["apps/calls", "sales/sales-data"] },
   { glob: "bundled-apps/monitoring/**", pages: ["apps/monitoring"] },
+  { glob: "bundled-apps/stripe/src/{mrr,mrr-events,mrr-rebuild,tools/mrr-query}*", pages: ["apps/stripe", "money/mrr-rules"] },
+  { glob: "bundled-apps/stripe/src/tools/refunds*", pages: ["apps/stripe", "money/refunds-and-credit-notes"] },
+  { glob: "bundled-apps/stripe/**", pages: ["apps/stripe"] },
 
   // Admin
   { glob: "apps/api/src/modules/users/**", pages: ["admin/users"] },
@@ -192,6 +220,7 @@ export const DOCS_MAP: { glob: string; pages: string[] }[] = [
   { glob: "apps/api/Dockerfile", pages: ["self-hosting/docker"] },
   { glob: "apps/api/scripts/entrypoint.sh", pages: ["self-hosting/docker", "admin/upgrades"] },
   { glob: "apps/api/scripts/cron-fanout-rollback.ts", pages: ["self-hosting/docker", "backend-overview"] },
+  { glob: "apps/api/scripts/kernel-queues-rollback.ts", pages: ["self-hosting/docker", "backend-overview"] },
   { glob: "apps/api/app-index-none.json", pages: ["self-hosting/docker"] },
   { glob: "scripts/build-app-catalog.ts", pages: ["self-hosting/docker"] },
 

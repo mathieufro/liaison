@@ -1,0 +1,5 @@
+{
+  "privileged": {
+    "seed/factories/projects/reconcile.ts": "The reconcile factory writes the rows an old reconcile card left behind (an idle proposal, an hour-old claim), which only time produces, through the one app table writer for one org."
+  }
+}

@@ -1,0 +1,8 @@
+The card lives in the conversation; reconcile_get opens it again; no accept step, no invoice -> apps/api/src/apps/projects/service/reconcile.ts (CARD_NEXT)
+Card actions are Change, Connect GitHub and Move it to -> apps/api/src/apps/projects/app.manifest.json (reconcile_propose resultCard)
+At most three proof chips, the last counting the rest -> apps/api/src/apps/projects/service/reconcile-card.ts (shownProof, PROOF_LINKS_SHOWN)
+Lines not in the plan: nothing asked of you, change a line to bill it -> apps/api/src/apps/projects/service/reconcile-card.ts (reconcileCardFields)
+A day or hour-billed project shows its rate in the budget -> apps/api/src/apps/projects/service/budget.ts (BudgetRate, getBudget money)
+Rate shown in the budget panel -> apps/web/src/modules/projects/BudgetPanel.tsx (Figures)
+Dated sheet tab with dated hours off says how to turn them on -> apps/web/src/modules/projects/TimesheetView.tsx (noSheetKey)
+dated_hours_off refusal -> apps/api/src/apps/projects/service/timesheet.ts (getTimesheet)

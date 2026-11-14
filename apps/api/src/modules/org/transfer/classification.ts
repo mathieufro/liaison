@@ -62,6 +62,7 @@ export const OBJECT_KEY_COLUMNS: Record<string, string> = {
  */
 export const NOT_OBJECT_KEY_COLUMNS: Record<string, string> = {
   "app_knowledge.documents.external_path": "a path in the connected source",
+  "app_projects.billing_claims.period_key": "the billing period a claim is for",
   "app_projects.projects.key": "the project's short code",
   "kernel.agent_local_claims.holder_key": "a lease holder id",
   "kernel.agent_memory.path": "a memory note's name",

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import projectsManifest from "~/apps/projects/app.manifest.json"
 import { manifestRegistry, toolRegistry } from "~/modules/apps/app-registries"
 import { getScopeCatalog, invalidateScopeCatalog } from "~/modules/permissions/scope-catalog"
 
@@ -91,6 +92,23 @@ describe("scope catalog", () => {
     const found = out.find((s) => s.scope === "tickets:tickets:read")
     expect(found).toBeDefined()
     expect(found?.app).toBe("tickets")
+  })
+
+  it("lists the company, suppression and deal scopes", () => {
+    manifestRegistry.set([ORG, "projects"], { ...projectsManifest, uiBundleUrl: null } as never)
+    const scopes = getScopeCatalog(ORG).map((s) => s.scope)
+    for (const scope of [
+      "kernel:companies:read",
+      "kernel:companies:write",
+      "mail:suppressions:read",
+      "mail:suppressions:write",
+      "projects:deals:read",
+      "projects:deals:write",
+    ]) {
+      expect(scopes, scope).toContain(scope)
+    }
+    const mail = getScopeCatalog(ORG).filter((s) => s.scope.startsWith("mail:suppressions:"))
+    expect(mail.map((s) => s.app)).toEqual(["mail", "mail"])
   })
 
   it("includes manifest role, settings admin, and entity read scopes", () => {

@@ -571,7 +571,12 @@ async function notifyRefusal(
       .select({ id: users.id })
       .from(users)
       .where(
-        and(eq(users.orgId, run.orgId), inArray(users.id, others), eq(users.status, "active")),
+        and(
+          eq(users.orgId, run.orgId),
+          inArray(users.id, others),
+          eq(users.status, "active"),
+          eq(users.userType, "member"),
+        ),
       ),
   )
   const activeIds = new Set(active.map((u) => u.id))

@@ -1,0 +1,1 @@
+Liaison has its own companies and deals -> apps/api/src/modules/contacts/companies.ts (COMPANY_RESOURCE) ; apps/api/src/apps/projects/service/deals.ts (listDeals)

@@ -251,4 +251,16 @@ describe("a contact under #", () => {
     expect(glyph?.querySelector(".lucide-contact")).not.toBeNull()
     expect(glyph?.querySelector(".lucide-user")).toBeNull()
   })
+
+  it("a colleague away shows away until a date, and is still listed", async () => {
+    results.value = [
+      { type: "user", id: "u-2", label: "Élodie Renard", away: { until: "2099-12-20" } },
+      { type: "user", id: "u-3", label: "Tom Reyes", away: null },
+    ]
+    renderPicker()
+    await waitFor(() => expect(screen.getAllByTestId("mention-result-user")).toHaveLength(2))
+    const away = screen.getAllByTestId("mention-result-away")
+    expect(away).toHaveLength(1)
+    expect(away[0]?.textContent).toMatch(/away until (20 Dec|Dec 20)/)
+  })
 })

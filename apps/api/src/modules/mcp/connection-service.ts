@@ -2,7 +2,7 @@
 import { timingSafeEqual } from "node:crypto"
 import { and, eq, isNull } from "drizzle-orm"
 import { withPrivilegedDb, withSystemDb } from "~/db/privileged"
-import { agents, mcpConnections } from "~/db/schema/kernel"
+import { agents, mcpConnections, users } from "~/db/schema/kernel"
 import { generateToken, hashToken } from "~/lib/crypto"
 import { env } from "~/lib/env"
 import { redis } from "~/lib/redis"
@@ -133,6 +133,12 @@ export async function mintAccessToken(connectionId: string): Promise<{ token: st
     throw new Error("mcp connection owner not active")
   }
 
+  // An external user reaches no agent and no tool, whoever created the row.
+  const [owner] = await withSystemDb("mcp-conn-owner-type", (db) =>
+    db.select({ userType: users.userType }).from(users).where(eq(users.id, conn.userId)),
+  )
+  if (owner?.userType !== "member") throw new Error("mcp connection owner is an external user")
+
   const perms = await withPrivilegedDb(conn.orgId, "mcp-conn-perms", (pdb) =>
     loadEffectivePermissions(pdb, conn.userId, conn.orgId),
   )
@@ -152,6 +158,7 @@ export async function mintAccessToken(connectionId: string): Promise<{ token: st
       userId: conn.userId,
       orgId: conn.orgId,
       name: "mcp",
+      userType: owner.userType,
       // Use the owner's live auth/permission versions so that credential
       // revocations (password change, scope update) are reflected in MCP
       // tokens at next mint — matching the REST auth middleware behaviour.

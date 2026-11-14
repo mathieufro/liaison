@@ -1,0 +1,6 @@
+threads_create createdFrom a contact posts in its one discussion -> apps/api/src/modules/threads/entity-discussion.ts (openEntityDiscussion) ; apps/api/src/modules/contacts/discussion.ts (contactVisible)
+The previous manager gets one Home row naming who gave which companies to whom -> apps/api/src/modules/contacts/company-unowned.ts (tellPreviousManagers)
+Deactivating a manager asks who takes their companies -> apps/api/src/modules/apps/kernel-bulk.ts (deactivateWithCompanies)
+Activity timeline, Follow-ups block and company link on the person's page -> apps/web/src/modules/contacts/ContactDetail.tsx (ContactDetail)
+Companies in the Contacts sidebar -> apps/web/src/modules/contacts/ContactsSidebar.tsx (ContactListSidebar)
+contacts_read: one line per other app with records for the person, only what the caller may read -> apps/api/src/modules/agent/tools/contact-tools.ts (linkedRecordLines) ; apps/api/src/modules/contacts/activity.ts (withReadOnlySource)

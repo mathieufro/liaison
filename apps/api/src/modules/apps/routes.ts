@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { SUPPORTED_HOST_API_MAJORS } from "@liaison/host"
 import { sql as drizzleSql } from "drizzle-orm"
+import type { Context } from "hono"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import type { AppEnv } from "~/app"
@@ -13,6 +14,16 @@ import { success } from "~/lib/response"
 import { quoteIdent } from "~/lib/sql-utils"
 import { getRequestSignal } from "~/middleware/request-timeout"
 import { requireScope } from "~/middleware/require-scope"
+import {
+  claimToolCard,
+  currentToolCard,
+  type OpenedToolCardRef,
+  openToolCardRef,
+  parseToolCardRef,
+  releaseToolCard,
+  replaceToolCard,
+  type ToolCardRef,
+} from "~/modules/agent/runtime/tool-card-store"
 import {
   checkAppConfigWriteForOrg,
   declaredAppConfigKeys,
@@ -37,7 +48,12 @@ import { getDetailExternalLink } from "~/modules/apps/detail-external-link"
 import { executeTool } from "~/modules/apps/execute-tool"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import { getInstallTrust } from "~/modules/apps/install-trust"
-import { isAppUnavailableFor, primeOrgApps, unavailableAppsFor } from "~/modules/apps/org-apps"
+import {
+  enabledFeaturesFor,
+  isAppUnavailableFor,
+  primeOrgApps,
+  unavailableAppsFor,
+} from "~/modules/apps/org-apps"
 import { restToolCall } from "~/modules/apps/rest-tool-call"
 import { boundHost, signUiBundleToken } from "~/modules/apps/ui-bundle-token"
 import { invokeAppExport, toHttpException } from "~/modules/export/invoke-export"
@@ -92,6 +108,39 @@ appRoutes.post("/tools/:toolName", async (c) => {
   return success(c, result.data)
 })
 
+/** Why a `cardRef` stopped the call. On each of these nothing ran and no card changed. */
+function cardRefRefused(c: Context<AppEnv>, opened: OpenedToolCardRef & { ok: false }) {
+  if (opened.refusal === "not_readable") {
+    const message = "This card's conversation cannot be read here. Nothing ran."
+    return c.json({ error: { message, code: "card_not_found" } }, 404)
+  }
+  if (opened.refusal === "other_app") {
+    const message = "This card came from another app's tool. Nothing ran."
+    return c.json({ error: { message, code: "card_other_app" } }, 422)
+  }
+  if (opened.refusal === "not_an_action") {
+    const message =
+      "This card does not offer that call with these values. Nothing ran and the card is unchanged. Use one of the card's own actions."
+    return c.json({ error: { message, code: "card_action_unknown" } }, 422)
+  }
+  const message = opened.card
+    ? "This card changed since it was drawn. Nothing was saved. The latest card is attached."
+    : "This card is no longer there. Nothing was saved."
+  return c.json(
+    {
+      error: {
+        message,
+        code: "card_changed",
+        card: opened.card,
+        cardRevision: opened.cardRevision,
+        // The web client's error reader keeps `details` only: the latest card rides there too.
+        details: { card: opened.card, cardRevision: opened.cardRevision },
+      },
+    },
+    409,
+  )
+}
+
 // Phase 16.6 — Plugin-friendly form: `/api/apps/<appName>/tools/<toolName>`.
 // Built so plugin UIs can call `host.invokeTool(appName, toolName, args)`
 // without composing the namespaced `<appName>:<toolName>` themselves. The
@@ -117,27 +166,110 @@ appRoutes.post("/:appName/tools/:toolName", async (c) => {
           orgId: c.get("orgId"),
           scopes: (c.get("scopes") as unknown as string[]) ?? [],
           slot,
+          userId: c.get("userId"),
         })
       : []
     return success(c, { panels })
   }
 
+  // A call from a stored card names that card. It is no parameter of the tool.
+  const { cardRef: rawCardRef, ...toolBody } = body
+  const cardRef = parseToolCardRef(rawCardRef)
+  if (cardRef === "invalid") {
+    throw new HTTPException(422, { message: "cardRef needs a messageId and a toolCallId" })
+  }
+  const orgId = c.get("orgId")
+  const actor = extractRlsContext(c)
+  if (!cardRef) {
+    const params = toolBody.params ?? toolBody
+    return runAppTool(c, { appName, toolName, params, threadId: toolBody.threadId })
+  }
+  // What the card is asked to do: the flat form carries the thread beside the params. The tool
+  // gets exactly the params the card check matched, and runs in the card's own thread: a thread
+  // the request names must be that one.
+  const { threadId: requestThread, ...flatParams } = toolBody
+  const request = { toolName, params: toolBody.params ?? flatParams, threadId: requestThread }
+
+  const first = await openToolCardRef(actor, orgId, appName, cardRef, request)
+  if (!first.ok) return cardRefRefused(c, first)
+  // One action at a time per card: the revision is checked again once the claim is held, so of
+  // two clicks on the same revision one runs and the other is told the card changed.
+  const claim = await claimToolCard(cardRef)
+  if (!claim) {
+    const current = await currentToolCard(actor, orgId, appName, cardRef)
+    return cardRefRefused(
+      c,
+      current.ok ? { ok: false, refusal: "changed", card: null, cardRevision: null } : current,
+    )
+  }
+  try {
+    const opened = await openToolCardRef(actor, orgId, appName, cardRef, request)
+    if (!opened.ok) return cardRefRefused(c, opened)
+    return await runAppTool(c, {
+      appName,
+      toolName,
+      params: request.params,
+      threadId: opened.threadId,
+      cardRef,
+    })
+  } finally {
+    await releaseToolCard(cardRef, claim)
+  }
+})
+
+/** Run an app tool from the REST form, and replace the card it was clicked from, if any. */
+async function runAppTool(
+  c: Context<AppEnv>,
+  args: {
+    appName: string
+    toolName: string
+    params: unknown
+    threadId: unknown
+    cardRef?: ToolCardRef
+  },
+) {
+  const { appName, toolName, cardRef } = args
+  const orgId = c.get("orgId")
+  const actor = extractRlsContext(c)
   // Plugin-friendly REST form: same direct browser UI call as /tools/:toolName.
-  const call = await restToolCall(c, body.threadId)
-  const result = await executeTool({
-    toolName: `${appName}:${toolName}`,
-    orgId: c.get("orgId"),
-    actor: extractRlsContext(c),
-    threadId: call.threadId,
-    params: body.params ?? body,
-    origin: call.origin,
-    signal: getRequestSignal(c),
-  })
+  const call = await restToolCall(c, args.threadId)
+  let result: Awaited<ReturnType<typeof executeTool>>
+  try {
+    result = await executeTool({
+      toolName: `${appName}:${toolName}`,
+      orgId,
+      actor,
+      threadId: call.threadId,
+      params: args.params,
+      origin: call.origin,
+      signal: getRequestSignal(c),
+    })
+  } catch (err) {
+    // The tool's own revision moved: it refused, so draw what is stored now.
+    if (cardRef && (err as { code?: unknown } | null)?.code === "card_changed") {
+      const current = await currentToolCard(actor, orgId, appName, cardRef)
+      if (!current.ok) return cardRefRefused(c, current)
+    }
+    throw err
+  }
   if (result.blocked) {
     return success(c, { blocked: result.blocked })
   }
-  return success(c, result.data)
-})
+  if (!cardRef) return success(c, result.data)
+  const { card, cardRevision, stored, why } = await replaceToolCard(cardRef, {
+    orgId,
+    actorId: c.get("userId"),
+    appName,
+    toolName,
+    result: result.data,
+  })
+  return success(c, result.data, {
+    card,
+    cardRevision,
+    cardStored: stored,
+    ...(why ? { why } : {}),
+  })
+}
 
 appRoutes.post("/run-tool", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
@@ -265,6 +397,15 @@ appRoutes.get("/dimensions/:dimensionKey/values", requireScope("kernel:users:adm
 // Apps that declare NO scopes stay visible to everyone (fail-open — there is
 // nothing to gate on, and historically every app was visible to every member);
 // a full-wildcard (`*`) admin holder sees every app via `hasScope`.
+// The features switched on in this workspace, read with the shell's app list. What
+// is not listed is off: the shell hides a settings section or tab type that names it.
+// Fail-closed: an unreadable app state fails the request.
+appRoutes.get("/features", async (c) => {
+  const orgId = c.get("orgId")
+  await primeOrgApps(orgId)
+  return c.json({ data: enabledFeaturesFor(orgId) })
+})
+
 appRoutes.get("/manifests", async (c) => {
   const orgId = c.get("orgId")
   await ensureAppsForOrg(orgId)

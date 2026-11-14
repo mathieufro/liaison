@@ -1403,15 +1403,15 @@ describe("Agent Runtime Scenario", () => {
       const { status, events } = await consumeSse(url, "/api/agent/chat", phase4cUser.token, {
         threadId,
         content:
-          "Call the kernel__user_memory_set tool now with type 'reference', name 'marker', description 'Test marker: ALPHA-7749', content 'the secret test code is ALPHA-7749'. Do not skip this step.",
+          "Call the kernel__memory_create tool now with path 'reference/marker.md' and body 'Test marker: ALPHA-7749\n\nthe secret test code is ALPHA-7749'. Do not skip this step.",
         modelId: DEFAULT_MODEL,
       })
 
       expect(status).toBe(200)
 
-      // Require tool-call for user_memory_set
+      // Require tool-call for memory_create
       const toolCall = events.find(
-        (e) => e.event === "tool-call" && (e.data as any).toolName?.includes("user_memory_set"),
+        (e) => e.event === "tool-call" && (e.data as any).toolName?.includes("memory_create"),
       )
       expect(toolCall).toBeDefined()
 
@@ -1445,8 +1445,8 @@ describe("Agent Runtime Scenario", () => {
       const threadId2 = await seedAgentThread(env.db.sql, ks, world.org.id, phase4cUser.id)
       const recallPrompts = [
         "What test marker code do I have saved? Check your saved information and tell me the exact code.",
-        "Use the kernel__user_memory_get tool with type='reference' and name='marker' to read my saved entry, then quote its `content` field verbatim in your reply.",
-        "Your only task this turn: call kernel__user_memory_get({ type: 'reference', name: 'marker' }), then in your reply include the EXACT string returned in the entry's content field. No paraphrasing.",
+        "Use the kernel__memory_view tool with path 'reference/marker.md' to read my saved entry, then quote its body verbatim in your reply.",
+        "Your only task this turn: call kernel__memory_view({ path: 'reference/marker.md' }), then in your reply include the EXACT string returned in the file's body. No paraphrasing.",
       ]
       let fullResponse = ""
       let doneEvent2: SseEvent | undefined
@@ -2382,12 +2382,12 @@ describe("Agent Runtime Scenario", () => {
       const { events: events1 } = await consumeSse(url, "/api/agent/chat", memUser.token, {
         threadId: threadId1,
         content:
-          "Call the kernel__user_memory_set tool now with type='reference', name='item1', description='test item1', content='value one'. Do not skip this step.",
+          "Call the kernel__memory_create tool now with path 'reference/item1.md' and body 'test item1: value one'. Do not skip this step.",
         modelId: DEFAULT_MODEL,
       })
 
       const setCall1 = events1.find(
-        (e) => e.event === "tool-call" && (e.data as any).toolName?.includes("user_memory_set"),
+        (e) => e.event === "tool-call" && (e.data as any).toolName?.includes("memory_create"),
       )
       expect(setCall1).toBeDefined()
 
@@ -2399,12 +2399,12 @@ describe("Agent Runtime Scenario", () => {
       const { events: events2 } = await consumeSse(url, "/api/agent/chat", memUser.token, {
         threadId: threadId2,
         content:
-          "Call the kernel__user_memory_delete tool now with type='reference', name='item1'. Do not skip this step.",
+          "Call the kernel__memory_delete tool now with path 'reference/item1.md'. Do not skip this step.",
         modelId: DEFAULT_MODEL,
       })
 
       const deleteCall = events2.find(
-        (e) => e.event === "tool-call" && (e.data as any).toolName?.includes("user_memory_delete"),
+        (e) => e.event === "tool-call" && (e.data as any).toolName?.includes("memory_delete"),
       )
       expect(deleteCall).toBeDefined()
 
@@ -2416,12 +2416,12 @@ describe("Agent Runtime Scenario", () => {
       const { events: events3 } = await consumeSse(url, "/api/agent/chat", memUser.token, {
         threadId: threadId3,
         content:
-          "Call the kernel__user_memory_set tool now with type='reference', name='item2', description='test item2', content='value two'. Do not skip this step.",
+          "Call the kernel__memory_create tool now with path 'reference/item2.md' and body 'test item2: value two'. Do not skip this step.",
         modelId: DEFAULT_MODEL,
       })
 
       const setCall2 = events3.find(
-        (e) => e.event === "tool-call" && (e.data as any).toolName?.includes("user_memory_set"),
+        (e) => e.event === "tool-call" && (e.data as any).toolName?.includes("memory_create"),
       )
       expect(setCall2).toBeDefined()
 

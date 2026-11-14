@@ -1,0 +1,22 @@
+{
+  "key": {
+    "projects.timesheet.tab": "Heures datées",
+    "projects.timesheet.loading": "Chargement de la feuille datée",
+    "projects.timesheet.noAccess": "Seuls le responsable du projet et la finance voient cette feuille. Le temps total du projet est dans son panneau de budget.",
+    "projects.timesheet.empty": "Aucune ligne sur la feuille datée ce mois-ci.",
+    "projects.timesheet.previous": "Mois précédent",
+    "projects.timesheet.next": "Mois suivant",
+    "projects.timesheet.exportPdf": "Exporter en PDF",
+    "projects.timesheet.exportCsv": "Exporter en CSV",
+    "projects.timesheet.partialAsk": "La feuille de ce mois est partielle. L'exporter avec sa ligne de couverture ?",
+    "projects.timesheet.exportAnyway": "Exporter telle quelle",
+    "projects.timesheet.saved": "Fichier prêt. Il s'ouvre dans un nouvel onglet.",
+    "projects.timesheet.date": "Date",
+    "projects.timesheet.person": "Personne",
+    "projects.timesheet.task": "Tâche",
+    "projects.timesheet.hours": "Heures",
+    "projects.timesheet.total": "Total",
+    "projects.timesheet.whoSees": "Qui la voit : le responsable du projet et la finance. Les saisies faites avant l'activation des heures datées restent à chaque personne.",
+    "projects.timesheet.not": "Ce n'est pas un registre légal du temps de travail, et elle ne rappelle rien à personne."
+  }
+}

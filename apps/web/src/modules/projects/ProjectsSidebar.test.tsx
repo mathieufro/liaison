@@ -25,6 +25,8 @@ const state = vi.hoisted(() => ({
   loaded: true,
   loadProjects: vi.fn(),
   loadArchived: vi.fn(async () => {}),
+  featureOff: true,
+  canCapacity: true,
   activeTabId: "home",
   tabs: [{ id: "home", type: "projects:home" }] as Array<{
     id: string
@@ -43,7 +45,9 @@ vi.mock("~/modules/shell/ApiContext", () => ({ useApi: () => state.api }))
 vi.mock("~/modules/auth/auth-store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/modules/auth/auth-store")>()),
   userFromToken: () => ({ orgId: "org-1", userId: "user-1" }),
+  hasScope: (s: string) => (s === "projects:capacity:read" ? state.canCapacity : true),
 }))
+vi.mock("~/framework/org-features", () => ({ isFeatureOff: () => state.featureOff }))
 vi.mock("~/modules/shell/saved-views/SavedViewsList", () => ({
   SavedViewsList: (props: { app: string; viewId: string }) => (
     <div data-testid={`saved-views-${props.app}-${props.viewId}`} />
@@ -118,6 +122,24 @@ describe("ProjectsSidebar", () => {
     state.activeProjectTasks = []
     state.taskProjectId = null
     state.openTab.mockClear()
+  })
+
+  it("shows the Capacity row only once a project uses time and budgets, to someone who may read it", () => {
+    state.featureOff = true
+    const off = render(() => <ProjectsSidebar />)
+    expect(screen.queryByTestId("side-capacity")).toBeNull()
+    off.unmount()
+    state.featureOff = false
+    state.canCapacity = false
+    const noScope = render(() => <ProjectsSidebar />)
+    expect(screen.queryByTestId("side-capacity")).toBeNull()
+    noScope.unmount()
+    state.canCapacity = true
+    render(() => <ProjectsSidebar />)
+    fireEvent.click(screen.getByTestId("side-capacity"))
+    expect(state.openTab).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "projects:capacity" }),
+    )
   })
 
   it("offers a Recently involved chip that toggles the filter", () => {

@@ -1082,7 +1082,7 @@ export const COMMANDS = [
         name: "--passwords-env",
         arg: "<VAR>",
         summary:
-          "`lively` and `load`: read that password from this environment variable, so it never shows in a process list.",
+          "`demo`, `lively` and `load`: read that password from this environment variable, so it never shows in a process list.",
       },
       {
         name: "--replace",

@@ -39,6 +39,46 @@ describe("isConsumerMailDomain (P2-SK2)", () => {
     }
   })
 
+  it("covers the common national providers", () => {
+    for (const d of [
+      "hotmail.fr",
+      "hotmail.co.uk",
+      "hotmail.de",
+      "outlook.fr",
+      "outlook.de",
+      "live.fr",
+      "live.co.uk",
+      "msn.com",
+      "orange.fr",
+      "free.fr",
+      "sfr.fr",
+      "neuf.fr",
+      "bbox.fr",
+      "laposte.net",
+      "wanadoo.fr",
+      "t-online.de",
+      "gmx.de",
+      "gmx.at",
+      "web.de",
+      "bluewin.ch",
+      "skynet.be",
+      "libero.it",
+      "btinternet.com",
+      "comcast.net",
+      "yahoo.de",
+      "yahoo.com.br",
+      "ymail.com",
+      "icloud.com",
+      "me.com",
+      "mac.com",
+      "proton.me",
+      "pm.me",
+      "aol.fr",
+    ]) {
+      expect({ d, consumer: isConsumerMailDomain(d) }).toEqual({ d, consumer: true })
+    }
+  })
+
   it("is case-insensitive and never matches a company domain", () => {
     expect(isConsumerMailDomain("GMail.COM")).toBe(true)
     for (const d of [
@@ -47,6 +87,9 @@ describe("isConsumerMailDomain (P2-SK2)", () => {
       "notgmail.com",
       "yahoofinance.example",
       "orange.com",
+      "outlookfinance.test",
+      "live-music.fr",
+      "hotmail.acme.example",
     ]) {
       expect({ d, consumer: isConsumerMailDomain(d) }).toEqual({ d, consumer: false })
     }

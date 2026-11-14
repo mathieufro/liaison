@@ -27,7 +27,8 @@ export function parseRefToken(s: unknown): { approvalId: string; outputKey: stri
   if (typeof s !== "string") return null
   const m = TOKEN_RE.exec(s)
   // UUID lowercased; key is already lowercase-only per KEY_RE.
-  return m ? { approvalId: m[1].toLowerCase(), outputKey: m[2] } : null
+  const [, approvalId, outputKey] = m ?? []
+  return approvalId && outputKey ? { approvalId: approvalId.toLowerCase(), outputKey } : null
 }
 
 /** Accept either a concrete value of `inner`'s type, or a ref token resolved later. */
@@ -47,7 +48,9 @@ export function findRefTokens(value: unknown, path = ""): FoundRef[] {
   const out: FoundRef[] = []
   if (typeof value === "string") {
     for (const m of value.matchAll(EMBED_RE)) {
-      out.push({ approvalId: m[1].toLowerCase(), outputKey: m[2], path })
+      const [, approvalId, outputKey] = m
+      if (approvalId && outputKey)
+        out.push({ approvalId: approvalId.toLowerCase(), outputKey, path })
     }
   } else if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) {

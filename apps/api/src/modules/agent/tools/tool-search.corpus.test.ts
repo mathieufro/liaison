@@ -1,22 +1,17 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 //
-// Can a tool be found by what people say? This runs the real ranker over the real
-// catalog (kernel and in-tree apps as registered, bundled apps from their manifests)
-// with the phrases in tool-bench/corpus.json:
-//
-// - `seed`: phrases people say and forms a model types, some of which the keyword
-//   lists were written from. An upper bound.
-// - `screen`: the product's own labels, read while writing keywords. Same.
-// - `heldout`: the action labels of the approval screens, French and English, not
-//   read while writing keywords. Every line is a label and the tool it names.
-//
-// The floors below are what the ranker reached when they were set. A floor moves up
-// when a change earns it; a fall names the phrases that fell.
+// The tool-finding bench (tool-bench/) ranks the corpus over a catalog it reads
+// from source, with no server: each typed form's result is in its baseline.json.
+// This file holds what needs registration itself: the catalog the bench reads
+// is the one an org's registration builds (kernel and in-tree apps), and a
+// manifest keyword reaches the registered tool.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { env } from "~/lib/env"
 import { isDeferredTool } from "~/modules/agent/tools/tool-bridge"
-import { rankDeferredTools } from "~/modules/agent/tools/tool-rank"
+import { hiddenToolAliases, rankDeferredTools } from "~/modules/agent/tools/tool-rank"
+import { registerAppBuilderTools } from "~/modules/app-builder/tools"
 import {
   agentInstructionsRegistry,
   skillRegistry,
@@ -24,6 +19,7 @@ import {
 } from "~/modules/apps/app-registries"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import { createTestOrg } from "~/tests/helpers/org"
+import { loadBenchCatalog, searchableTools } from "./tool-bench/catalog"
 import corpus from "./tool-bench/corpus.json"
 
 /** The apps of the catalog that declare an API connection (they connect systems no app covers). */
@@ -31,13 +27,8 @@ const CONNECTOR_APPS: ReadonlySet<string> = new Set(["api-connector"])
 
 const BUNDLED_APPS = join(import.meta.dir, "../../../../../../bundled-apps")
 const LEFT_OUT_APPS = new Set(["example", "contacts"])
+const customApps = env.LIAISON_CUSTOM_APPS
 const ACCENT = /[àâäéèêëîïôöùûüçœæ]/i
-
-const FLOOR_SEED = 93 // of 107
-const FLOOR_SCREEN = 38 // of 40
-const FLOOR_ACCENTED = 26 // of 29
-const FLOOR_HELDOUT_FR = 76 // of 88
-const FLOOR_HELDOUT_EN = 87 // of 88
 
 interface CatalogTool {
   sdkName: string
@@ -45,22 +36,36 @@ interface CatalogTool {
   appName: string
   description: string
   keywords?: readonly string[]
+  aliases?: readonly string[]
 }
 
 const sdkNameOf = (app: string, tool: string) => `${app}__${tool.replace(/[^a-zA-Z0-9_-]/g, "_")}`
 
 function registeredTools(): CatalogTool[] {
   const out: CatalogTool[] = []
+  const aliases = hiddenToolAliases(
+    [...toolRegistry.entries()]
+      .filter(([key]) => key[0] === ORG_ID)
+      .map(([key, def]) => ({
+        appName: key[1],
+        toolName: key[2],
+        agentVisible: def.agentVisible,
+        useInstead: def.useInstead,
+      })),
+  )
   for (const [key, def] of toolRegistry.entries()) {
     if (key[0] !== ORG_ID || LEFT_OUT_APPS.has(key[1]) || key[1].startsWith("test")) continue
     if (def.agentVisible === false) continue
     if (!isDeferredTool(key[1], def) && !def.routineOnly) continue
+    const sdkName = sdkNameOf(key[1], key[2])
+    const names = aliases.get(sdkName)
     out.push({
-      sdkName: sdkNameOf(key[1], key[2]),
+      sdkName,
       toolName: key[2],
       appName: key[1],
       description: def.description,
       ...(def.searchKeywords?.length ? { keywords: def.searchKeywords } : {}),
+      ...(names ? { aliases: names } : {}),
     })
   }
   return out
@@ -115,43 +120,21 @@ describe("a tool is found by what people say", () => {
     await ensureAppsForOrg(ORG_ID)
     const { registerKernelAgentTools } = await import("./kernel-tools")
     await registerKernelAgentTools(ORG_ID)
+    // The catalog read from source holds every kernel tool, the app builder's included: the org
+    // gets them as an instance offering custom apps does, whatever this process registered first.
+    env.LIAISON_CUSTOM_APPS = "on"
+    registerAppBuilderTools(ORG_ID)
     catalog = [...registeredTools(), ...bundledTools()]
     appNames = new Set(catalog.map((t) => t.appName))
     appNames.delete("kernel")
   })
 
   afterAll(() => {
+    env.LIAISON_CUSTOM_APPS = customApps
     toolRegistry.deleteByPrefix([ORG_ID])
     skillRegistry.deleteByPrefix([ORG_ID])
     agentInstructionsRegistry.deleteByPrefix([ORG_ID])
   })
-
-  /** Forms in the top 5 and the ones that are not, for the lines picked. */
-  function reach(
-    lines: typeof corpus,
-    formsOf: (line: (typeof corpus)[number]) => string[] = (l) => l.typed,
-  ) {
-    const missed: string[] = []
-    let forms = 0
-    let found = 0
-    let noHit = 0
-    for (const line of lines) {
-      for (const form of formsOf(line)) {
-        const { ranked, all } = rankDeferredTools(catalog, form, {
-          cap: 5,
-          appNames,
-          connectorApps: CONNECTOR_APPS,
-        })
-        forms++
-        if (all.length === 0) noHit++
-        if (ranked.some((s) => line.any.includes(s.tool.sdkName))) found++
-        else missed.push(`${line.id} "${form}" (top: ${ranked[0]?.tool.sdkName ?? "none"})`)
-      }
-    }
-    return { forms, found, noHit, missed }
-  }
-
-  const set = (name: string) => corpus.filter((l) => l.set === name)
 
   it("a manifest keyword is one word", () => {
     for (const tool of catalog) {
@@ -160,9 +143,21 @@ describe("a tool is found by what people say", () => {
     }
   })
 
-  it("every tool the corpus names is in the catalog", () => {
-    const names = new Set(catalog.map((t) => t.sdkName))
-    expect(corpus.flatMap((l) => l.any).filter((n) => !names.has(n))).toEqual([])
+  it("the catalog read from source is the one registration builds", () => {
+    const registered = new Map(
+      registeredTools().map((t) => [
+        t.sdkName,
+        { d: t.description, k: t.keywords ?? [], a: t.aliases ?? [] },
+      ]),
+    )
+    const regApps = new Set([...registered.keys()].map((n) => n.split("__")[0]))
+    const fromSource = new Map(
+      searchableTools(loadBenchCatalog())
+        .filter((t) => regApps.has(t.appName))
+        .map((t) => [t.sdkName, { d: t.description, k: t.keywords ?? [], a: t.aliases ?? [] }]),
+    )
+    expect([...fromSource.keys()].sort()).toEqual([...registered.keys()].sort())
+    for (const [name, def] of registered) expect(fromSource.get(name), name).toEqual(def)
   })
 
   it("a keyword declared in a manifest reaches the registered tool", () => {
@@ -179,32 +174,6 @@ describe("a tool is found by what people say", () => {
     }
     const crowded = [...toolsOfWord].filter(([, tools]) => tools.length > 25).map(([w]) => w)
     expect(crowded).toEqual([])
-  })
-
-  it("the seed phrases reach the right tool", () => {
-    const r = reach(set("seed"))
-    expect(r.found, r.missed.join("\n")).toBeGreaterThanOrEqual(FLOOR_SEED)
-    expect(r.noHit, r.missed.join("\n")).toBeLessThanOrEqual(1)
-  })
-
-  it("the product's screen labels reach the right tool", () => {
-    const r = reach(set("screen"))
-    expect(r.found, r.missed.join("\n")).toBeGreaterThanOrEqual(FLOOR_SCREEN)
-    expect(r.noHit).toBe(0)
-  })
-
-  it("accented French phrases reach the right tool", () => {
-    const lines = corpus.filter((l) => l.set !== "heldout" && l.lang === "fr")
-    const r = reach(lines, (l) => l.typed.filter((form) => ACCENT.test(form)))
-    expect(r.found, r.missed.join("\n")).toBeGreaterThanOrEqual(FLOOR_ACCENTED)
-    expect(r.noHit).toBe(0)
-  })
-
-  it("the held-out labels reach the right tool, in French and in English", () => {
-    const fr = reach(set("heldout").filter((l) => l.lang === "fr"))
-    const en = reach(set("heldout").filter((l) => l.lang === "en"))
-    expect(fr.found, fr.missed.join("\n")).toBeGreaterThanOrEqual(FLOOR_HELDOUT_FR)
-    expect(en.found, en.missed.join("\n")).toBeGreaterThanOrEqual(FLOOR_HELDOUT_EN)
   })
 
   it("an accent typed or left out finds the same tools", () => {

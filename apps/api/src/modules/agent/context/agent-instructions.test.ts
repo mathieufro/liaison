@@ -61,7 +61,14 @@ const bundled: Record<string, { agentInstructions?: unknown }> = {
 // the merge merely surfaced it alongside the registry-discipline guards. Headroom
 // over the current tickets size keeps the tripwire biting on a genuine
 // runaway/duplication regression without failing the legitimately grown instruction.
-const HOST_INSTRUCTIONS_MAX = 36000
+//
+// Re-bumped to 48000: the long tickets tool descriptions (search, assign and
+// others past 600 characters) moved word for word into tickets guide sections
+// that name each tool (tool-text-moves.json), about 8.7k characters. A section
+// reaches a turn only with its tool loaded, and the tool lost the same text, so
+// a turn carries less than before; the guide's own total grew by exactly the
+// moved text (tickets ~42.8k).
+const HOST_INSTRUCTIONS_MAX = 48000
 
 /** The whole guide as one string: the core and every section (app-guide.ts). */
 function guideText(raw: unknown): string {

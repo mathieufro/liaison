@@ -2,6 +2,7 @@
 import { describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
+import { DEV_COMPOSE_PROJECT, selfHostComposeIn } from "./ensure-infra"
 import { deterministicPorts } from "./port-allocator"
 import {
   LEGACY_PORT_BASE,
@@ -142,6 +143,30 @@ describe("resolveTestCoordinates", () => {
   it("names the key docker-compose.yml starts the substrate's Meilisearch with", () => {
     const compose = readFileSync(path.join(import.meta.dir, "../../../docker-compose.yml"), "utf8")
     expect(compose).toContain(`MEILI_MASTER_KEY: ${TEST_SUBSTRATE_MEILI_KEY}`)
+  })
+
+  it("names one compose project, so every checkout and worktree starts and recovers the same substrate", () => {
+    const compose = readFileSync(path.join(import.meta.dir, "../../../docker-compose.yml"), "utf8")
+    expect(compose).toMatch(new RegExp(`^name: ${DEV_COMPOSE_PROJECT}$`, "m"))
+  })
+
+  it("dev tooling refuses a compose project that holds the self-host stack, which shares its name", () => {
+    const selfHost = readFileSync(
+      path.join(import.meta.dir, "../../../deploy/docker-compose.yml"),
+      "utf8",
+    )
+    expect(selfHost).toMatch(new RegExp(`^name: ${DEV_COMPOSE_PROJECT}$`, "m"))
+    expect(selfHostComposeIn(["/srv/liaison/deploy/docker-compose.yml"])).toBe(
+      "/srv/liaison/deploy/docker-compose.yml",
+    )
+    expect(
+      selfHostComposeIn([
+        "/home/me/liaison/deploy/docker-compose.yml,/home/me/liaison/deploy/override.compose.yml",
+      ]),
+    ).toBe("/home/me/liaison/deploy/docker-compose.yml")
+    expect(
+      selfHostComposeIn(["/home/me/liaison/docker-compose.yml", "", "/x/wt/docker-compose.yml"]),
+    ).toBeNull()
   })
 
   it("points children at the substrate's Meilisearch key, whatever the checkout's .env says", () => {

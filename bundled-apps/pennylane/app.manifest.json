@@ -17,7 +17,7 @@
       }
     ]
   },
-  "version": "0.1.53",
+  "version": "0.1.55",
   "iconName": "calculator",
   "kind": "connector",
   "description": "Pennylane accounting connector: supplier/customer invoices, trial balance, derived P&L, cash position, transactions, spend-by-category, runway",
@@ -241,6 +241,7 @@
       }
     }
   },
+  "outsideTextFields": ["supplier_name", "label"],
   "tools": {
     "webhooks_setup": {
       "description": "Subscribe Pennylane's e-invoicing events (status changes of sent e-invoices, received supplier e-invoices) to this instance's webhook, replacing an earlier subscription to the same address. Gated: a person approves. The signing secret Pennylane returns is kept by the kernel and never shown.",
@@ -350,6 +351,12 @@
           },
           "idempotency_key": {
             "type": "string"
+          },
+          "stream_ref": {
+            "type": "string"
+          },
+          "run_item_ref": {
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -391,6 +398,12 @@
             "type": "string"
           },
           "legal_original_sha256": {
+            "type": "string"
+          },
+          "stream_ref": {
+            "type": "string"
+          },
+          "run_item_ref": {
             "type": "string"
           }
         },
@@ -666,6 +679,7 @@
       }
     },
     "supplier_invoices_list": {
+      "taintSource": true,
       "description": "List all SUPPLIER (accounts-payable) bills booked in accounting — the bills YOU OWE to vendors/carriers/suppliers — id, supplier, total (minor units), status, due date. These are NOT your customer/dealer receivables: for 'dealer invoices', 'customer invoices', or 'overdue invoices we are owed' use the invoicing app's documents_search instead (this list is money you owe OUT, not money owed to you). Supports cursor paging and a filter array of {field,operator,value} clauses (see the filter param — it is an ARRAY of OBJECTS, never a bare string like \"status=unpaid\").",
       "searchKeywords": ["fournisseur", "factures", "achats", "bills", "charges", "comptabilité", "compta", "facture"],
       "readOnly": true,
@@ -704,6 +718,7 @@
       }
     },
     "supplier_invoice_get": {
+      "taintSource": true,
       "description": "Get one supplier invoice header by id (normalized projection, no raw payload).",
       "searchKeywords": ["fournisseur", "achat"],
       "readOnly": true,
@@ -720,6 +735,7 @@
       }
     },
     "customer_invoices_list": {
+      "taintSource": true,
       "description": "List CUSTOMER (accounts-receivable / revenue) invoices as booked in the accounting system; to act on an invoice use invoicing. Returns id, customer, total (minor units), status, due date. Use this for accounting/AR-from-the-books questions. For the operational 'dealer invoices' / 'overdue invoices' a sales or ops person means day-to-day (the issued documents in the Invoicing app), prefer the invoicing app's documents_search (status=issued, derive overdue by comparing due_date to today). Cursor paging + filter array of {field,operator,value} objects (same shape as supplier_invoices_list — never a bare string).",
       "searchKeywords": ["comptabilité", "compta", "comptable", "ventes", "booked"],
       "readOnly": true,
@@ -757,6 +773,7 @@
       }
     },
     "trial_balance_get": {
+      "taintSource": true,
       "description": "Read the trial balance for a period — account_code, label, balance_minor (minor units, on the account's natural side: credits − debits for revenue accounts, debits − credits otherwise), plus the period_start/period_end window used. Reconstructs from ledger entries when trial_balance is firm-scoped (403).",
       "searchKeywords": ["comptable", "grand", "livre", "ledger"],
       "readOnly": true,
@@ -864,6 +881,8 @@
       }
     },
     "home_load": {
+      "agentVisible": false,
+      "useInstead": "pnl_summary",
       "description": "Load the cached P&L + cash snapshot for the Pennylane home view (reads the snapshot, not the live API).",
       "readOnly": true,
       "requiredScopes": ["pennylane:reports:read"],

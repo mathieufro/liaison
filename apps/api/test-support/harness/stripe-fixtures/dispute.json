@@ -1,0 +1,20 @@
+{
+  "id": "dp_FIXTURE0001",
+  "object": "dispute",
+  "amount": 17640,
+  "charge": "ch_FIXTURE0001",
+  "created": 1767312000,
+  "currency": "eur",
+  "evidence_details": {
+    "due_by": 1767916800,
+    "has_evidence": false,
+    "past_due": false,
+    "submission_count": 0
+  },
+  "is_charge_refundable": false,
+  "livemode": false,
+  "metadata": {},
+  "payment_intent": "pi_FIXTURE0001",
+  "reason": "fraudulent",
+  "status": "needs_response"
+}

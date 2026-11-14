@@ -161,3 +161,26 @@ describe("ProjectsHome live cross-project tasks", () => {
     await waitFor(() => expect(listCalls()).toBe(before + 1), { timeout: 5000 })
   }, 15000)
 })
+
+describe("ProjectsHome cross-project rows and time and budgets", () => {
+  it("a row shows Planned only when its task carries a timebox", async () => {
+    const get = vi.fn(async (path: string) => {
+      if (path === "/projects/p1") {
+        return { id: "p1", statuses: [{ id: "s1", label: "backlog", terminal: false }] }
+      }
+      return { items: [{ ...task("t1"), timeboxMinutes: 960 }, task("t2")] }
+    })
+    const api = { get, post: vi.fn(), patch: vi.fn(), delete: vi.fn() }
+    projectsFilterStore.setQuery(" ")
+    const { findByTestId, queryByTestId } = render(() => (
+      // biome-ignore lint/suspicious/noExplicitAny: minimal ApiClient stub
+      <ApiContext.Provider value={api as any}>
+        <ProjectsHome entityId="projects-home" />
+      </ApiContext.Provider>
+    ))
+    const planned = await findByTestId("projects-home.row-planned-t1")
+    expect(planned.textContent).toBe("Planned 16 h")
+    await findByTestId("projects-home.cross-project-row-t2")
+    expect(queryByTestId("projects-home.row-planned-t2")).toBeNull()
+  })
+})

@@ -44,6 +44,21 @@ describe("projects settings manifest", () => {
           },
         ],
       }),
+      // Hours in a day and company days off, shown only once the org uses time and budgets.
+      expect.objectContaining({
+        id: "time",
+        scope: "org",
+        adminScope: "projects:settings:admin",
+        feature: "time_budgets",
+        blocks: [
+          expect.objectContaining({ block: "field", key: "hoursPerDay", type: "number" }),
+          expect.objectContaining({ block: "field", key: "daysOffCalendarId", type: "select" }),
+          expect.objectContaining({
+            block: "list",
+            ops: { list: "days_off_list", create: "days_off_set", archive: "days_off_remove" },
+          }),
+        ],
+      }),
     ])
   })
 })

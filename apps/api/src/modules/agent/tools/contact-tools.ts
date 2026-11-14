@@ -5,16 +5,20 @@ import { HTTPException } from "hono/http-exception"
 import type { RlsClient, RlsTx } from "~/db"
 import { extractRows } from "~/db"
 import { withPrivilegedDb } from "~/db/privileged"
+import type { UserContext } from "~/db/rls"
 import {
   type ContactAddressRole,
   type ContactAddressSource,
+  companies as companiesTable,
   contactSegments,
   contacts as contactsTable,
   users as usersTable,
 } from "~/db/schema/kernel"
 import { schemaRef } from "~/db/schema-ref"
+import { rootLogger } from "~/lib/logger"
 import { quoteIdent } from "~/lib/sql-utils"
 import { UUID_RE } from "~/lib/uuid"
+import { linkedAppLine, readLinkedRecords } from "~/modules/contacts/activity"
 import {
   type AddressFields,
   addAddress,
@@ -51,6 +55,8 @@ import { getContactSharing, setContactSharing } from "~/modules/contacts/sharing
 import { loadOrgSettings, wouldExceedOrgQuota } from "~/modules/files/service"
 import { actorGrantRole } from "~/modules/sharing/service"
 
+const log = rootLogger.child({ module: "contact-tools" })
+
 interface ContactToolContext {
   userId: string
   orgId: string
@@ -58,6 +64,11 @@ interface ContactToolContext {
   scopes?: string[]
   /** The agent the call acts as, when an agent drafted it (execute-tool sets it). */
   actingAgentId?: string | null
+  /** The app that called app-to-app, when one did (execute-tool sets it). */
+  callerApp?: string
+  dimensionGrants?: UserContext["dimensionGrants"]
+  /** The person's roles: a record shared to one of them is theirs to read. */
+  roles?: UserContext["roles"]
 }
 
 /**
@@ -188,6 +199,36 @@ export async function handleContactsSearch(
   }
 }
 
+/**
+ * A contact's identifiers only (id, email, company id), for an app's own internal check (the
+ * invoicing issuer guard). It returns none of the text people outside the org wrote (mail
+ * subjects, snippets, notes), so unlike contacts_read it does not mark the turn as having read
+ * outside text.
+ */
+export async function handleContactsIdentity(
+  params: { contactId: string },
+  ctx: ContactToolContext,
+) {
+  const [row] = await ctx.db
+    .select({
+      id: contactsTable.id,
+      email: contactsTable.email,
+      companyId: contactsTable.companyId,
+    })
+    .from(contactsTable)
+    .where(and(eq(contactsTable.id, params.contactId), eq(contactsTable.orgId, ctx.orgId)))
+    .limit(1)
+  if (!row) {
+    return {
+      error: {
+        code: "NOT_FOUND",
+        message: `Contact not found: ${params.contactId}. Nothing was read.`,
+      },
+    }
+  }
+  return { contact: { id: row.id, email: row.email ?? null, companyId: row.companyId ?? null } }
+}
+
 export async function handleContactsRead(
   params: {
     contactId: string
@@ -241,6 +282,9 @@ export async function handleContactsRead(
   `),
   )
 
+  // An app reading a contact app-to-app (a recipient prefill) gets the contact alone.
+  const linkedRecords = ctx.callerApp ? [] : await linkedRecordLines(params.contactId, ctx)
+
   return {
     contact: {
       id: contact.id,
@@ -267,6 +311,46 @@ export async function handleContactsRead(
       summary: entry.summary,
       occurredAt: entry.created_at,
     })),
+    ...(linkedRecords.length > 0 ? { linkedRecords } : {}),
+  }
+}
+
+/** Mail is already in the result as its backlinks. */
+const LINKED_SKIP = ["mail"]
+
+/**
+ * One line per other app that holds records for the contact, read as the
+ * caller through each app's timeline source: what the caller may not read is
+ * absent, never named. A source that did not answer says so.
+ */
+async function linkedRecordLines(contactId: string, ctx: ContactToolContext): Promise<string[]> {
+  // Always the person: the call's provenance (agent, mcp) is not a row-security actor, and a
+  // non-person actor would read with every dimension.
+  const actor: UserContext = {
+    actorType: "user",
+    userId: ctx.userId,
+    orgId: ctx.orgId,
+    scopes: ctx.scopes ?? [],
+    dimensionGrants: ctx.dimensionGrants ?? {},
+    roles: ctx.roles,
+  }
+  try {
+    const linked = await readLinkedRecords({
+      orgId: ctx.orgId,
+      actor,
+      contactId,
+      skip: LINKED_SKIP,
+    })
+    if (!linked) return []
+    return [
+      ...linked.apps.map(linkedAppLine),
+      ...linked.unavailable.map(
+        (u) => `${u.label}: not read (${u.reason === "timeout" ? "no answer in time" : "error"}).`,
+      ),
+    ]
+  } catch (err) {
+    log.warn({ err, contactId }, "contact read: other apps' records not read")
+    return ["Other apps' records for this contact were not read (error)."]
   }
 }
 
@@ -327,19 +411,52 @@ export function liftMisplacedPhone(
   }
 }
 
-export async function handleContactsWrite(
-  params: {
-    contactId?: string
-    name?: string
-    email?: string
-    phone?: string
-    company?: string
-    externalIds?: Record<string, string>
-    metadata?: Record<string, unknown>
-    tags?: string[]
-  },
+/** The company and legal-record fields of a contacts_write, resolved for `updateContact`. */
+async function contactCompanyAndBasis(
+  params: ContactsWriteParams,
   ctx: ContactToolContext,
-) {
+): Promise<
+  | { fields: Parameters<typeof updateContact>[1]["updates"] }
+  | { error: { code: string; message: string } }
+> {
+  const fields: Parameters<typeof updateContact>[1]["updates"] = {}
+  if (params.companyId !== undefined) {
+    if (params.companyId === null) {
+      fields.companyId = null
+    } else {
+      const [company] = UUID_RE.test(params.companyId)
+        ? await ctx.db
+            .select({ id: companiesTable.id, name: companiesTable.name })
+            .from(companiesTable)
+            .where(
+              and(eq(companiesTable.id, params.companyId), eq(companiesTable.orgId, ctx.orgId)),
+            )
+            .limit(1)
+        : []
+      if (!company) {
+        return {
+          error: {
+            code: "NOT_FOUND",
+            message: `Company not found: ${params.companyId}. Only pass an id you saw in a kernel__companies_search result.`,
+          },
+        }
+      }
+      fields.companyId = company.id
+      // The person carries the company's name as their company text.
+      fields.company = company.name
+    }
+  }
+  if (params.lawfulBasis !== undefined) fields.lawfulBasis = params.lawfulBasis
+  if (params.lawfulBasisSource !== undefined) fields.lawfulBasisSource = params.lawfulBasisSource
+  if (params.isConsumer !== undefined) fields.isConsumer = params.isConsumer
+  if (params.recipientCountry !== undefined) fields.recipientCountry = params.recipientCountry
+  if (params.dataSource !== undefined) fields.dataSource = params.dataSource
+  return { fields }
+}
+
+export async function handleContactsWrite(params: ContactsWriteParams, ctx: ContactToolContext) {
+  const extra = await contactCompanyAndBasis(params, ctx)
+  if ("error" in extra) return extra
   // BL-25: route a VAT the agent put in `metadata` onto the field of record `externalIds.vat_id`.
   const { externalIds, metadata: metadataAfterVat } = liftMisplacedVatId(
     params.externalIds,
@@ -388,6 +505,7 @@ export async function handleContactsWrite(
         externalIds,
         metadata,
         tags: params.tags,
+        ...extra.fields,
       },
     })
     if (!updated) return { error: { code: "NOT_FOUND", message: "Contact not found" } }
@@ -443,6 +561,15 @@ export async function handleContactsWrite(
     },
     { audience: "owner", ownerUserId: ctx.userId },
   )
+  if (contact && Object.keys(extra.fields).length > 0) {
+    const withExtra = await updateContact(ctx.db, {
+      orgId: ctx.orgId,
+      userId: ctx.userId,
+      contactId: contact.id,
+      updates: extra.fields,
+    })
+    return { contact: withExtra ?? contact }
+  }
   return { contact }
 }
 
@@ -484,7 +611,14 @@ export async function handleContactsMerge(
   params: {
     sourceId: string
     targetId: string
-    resolvedFields?: { name?: string; email?: string; phone?: string; company?: string }
+    resolvedFields?: {
+      name?: string
+      email?: string
+      phone?: string
+      company?: string
+      companyId?: string
+      lawfulBasis?: string
+    }
   },
   ctx: ContactToolContext,
 ) {
@@ -1072,6 +1206,12 @@ export interface ContactsWriteParams {
   externalIds?: Record<string, string>
   metadata?: Record<string, unknown>
   tags?: string[]
+  companyId?: string | null
+  lawfulBasis?: "consent" | "customer" | "professional_interest" | "generic_address"
+  lawfulBasisSource?: string
+  isConsumer?: boolean
+  recipientCountry?: string
+  dataSource?: "direct" | "third_party" | "enrichment"
 }
 
 function summaryValue(v: unknown): string {
@@ -1096,6 +1236,17 @@ export function contactsWriteChanges(params: ContactsWriteParams): string[] {
   if (params.tags !== undefined) {
     lines.push(`Tags → ${params.tags.length > 0 ? params.tags.join(", ") : "(none)"}`)
   }
+  if (params.companyId !== undefined) lines.push(`Company id → ${params.companyId ?? "(none)"}`)
+  if (params.lawfulBasis !== undefined) {
+    lines.push(
+      `Lawful basis → ${params.lawfulBasis}${params.lawfulBasisSource ? ` (${params.lawfulBasisSource})` : ""}`,
+    )
+  } else if (params.lawfulBasisSource !== undefined) {
+    lines.push(`Lawful basis source → ${params.lawfulBasisSource}`)
+  }
+  if (params.isConsumer !== undefined) lines.push(`Consumer → ${params.isConsumer ? "yes" : "no"}`)
+  if (params.recipientCountry !== undefined) lines.push(`Country → ${params.recipientCountry}`)
+  if (params.dataSource !== undefined) lines.push(`Data source → ${params.dataSource}`)
   for (const [k, v] of Object.entries(externalIds ?? {})) lines.push(`${k} → ${v}`)
   for (const [k, v] of Object.entries(metadata ?? {})) lines.push(`${k} → ${summaryValue(v)}`)
   return lines

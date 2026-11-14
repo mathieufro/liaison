@@ -127,3 +127,10 @@ export {
   handleTicketNoteEvent,
   TicketsIcon,
 }
+
+// The Support section of a company's page — registered via manifest `slots.company_detail`.
+export const CompanySupportPanel = lazy(() =>
+  import("~/modules/tickets/CompanySupportPanel").then((m) => ({
+    default: m.CompanySupportPanel,
+  })),
+)

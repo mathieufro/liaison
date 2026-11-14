@@ -43,6 +43,9 @@ export const tasks = appProjects.table(
     // Free-text release (0106); filtering uses the effective release (own, else
     // nearest ancestor's).
     release: text("release"),
+    // A task's timebox in minutes and its milestone mark (0319).
+    timeboxMinutes: integer("timebox_minutes"),
+    isMilestone: boolean("is_milestone").notNull().default(false),
     position: doublePrecision("position").notNull().default(1000),
     blocked: boolean("blocked").notNull().default(false),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -69,5 +72,8 @@ export const tasks = appProjects.table(
     index("idx_tasks_assignee_due").on(t.assigneeId, t.dueDate),
     uniqueIndex("app_projects_tasks_number_uidx").on(t.projectId, t.number),
     index("idx_tasks_org_release").on(t.orgId, sql`lower(${t.release})`),
+    index("idx_tasks_assignee_timebox")
+      .on(t.orgId, t.assigneeId)
+      .where(sql`timebox_minutes IS NOT NULL AND archived_at IS NULL`),
   ],
 )

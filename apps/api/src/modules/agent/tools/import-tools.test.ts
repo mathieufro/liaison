@@ -486,7 +486,7 @@ describe("import tools: kinds and transforms", () => {
     expect(why(r)).toContain("The mail app is on in this workspace and declares no import kinds")
     expect(why(r)).not.toContain("kernel__enable_app")
     const t = await call("import_kinds", { kind: "contacts.person" })
-    expect(why(t)).toContain("its kinds are contacts.contact")
+    expect(why(t)).toContain("its kinds are contacts.company, contacts.contact")
   })
 })
 

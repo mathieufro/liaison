@@ -11,6 +11,7 @@ import {
   toolRegistry,
 } from "~/modules/apps/app-registries"
 import { registerApprovalSummarizer } from "~/modules/apps/approval-summarizers"
+import { insertSql } from "~/seed/factories/org/test-rows"
 
 const ORG = "00000000-0000-4000-8000-000000064001"
 const REQUESTER = "00000000-0000-4000-8000-000000064002"
@@ -51,6 +52,12 @@ const PROJECTS_CREATE_REQUEST = "00000000-0000-4000-8000-000000064010"
 // before this change) — used to assert the invalid_edit message says "(none)" rather than
 // silently omitting the allowlist.
 const NO_EDITABLE_REQUEST = "00000000-0000-4000-8000-000000064011"
+// A team channel neither REQUESTER nor TICKETS_TEAMMATE ever joined: an agent staged a draft
+// into it for its person. The requester-decider (holds edit_approval:approve, in the notify-set)
+// may edit it; a requester who cannot decide it is still refused.
+const CHANNEL = "00000000-0000-4000-8000-000000064030"
+const CHANNEL_DECIDER_REQUEST = "00000000-0000-4000-8000-000000064031"
+const CHANNEL_NONDECIDER_REQUEST = "00000000-0000-4000-8000-000000064032"
 
 const requesterActor: UserContext = {
   actorType: "user",
@@ -137,6 +144,23 @@ describe("updatePayload", () => {
       (${TICKETS_REQUEST}, ${ORG}, 'request-tickets-reply', ${THREAD}, ${THREAD}, 'tickets:reply', '{"message":"old"}'::jsonb,
        '{"message":"old"}'::jsonb, now() + interval '1 hour', ARRAY[${REQUESTER}]::uuid[], ${REQUESTER}, 'pending', 'gated',
        '{"kind":"edit","title":"Ticket Reply Draft","lines":[]}'::jsonb)
+      ON CONFLICT DO NOTHING`
+
+    await sql`INSERT INTO kernel.threads (id, org_id, handle, type, created_by)
+      VALUES (${CHANNEL}, ${ORG}, 'approval-edit-channel', 'approval', ${TICKETS_READER}) ON CONFLICT DO NOTHING`
+    await sql`INSERT INTO kernel.thread_participants (thread_id, user_id, org_id, role) VALUES
+      (${CHANNEL}, ${TICKETS_READER}, ${ORG}, 'admin')
+      ON CONFLICT DO NOTHING`
+    await sql`INSERT INTO kernel.approval_requests (
+      id, org_id, handle, thread_id, originating_thread_id, tool_name, tool_params,
+      current_payload, expires_at, notify_user_ids, requested_by, status, reason, summary
+    ) VALUES
+      (${CHANNEL_DECIDER_REQUEST}, ${ORG}, 'request-channel-decider', ${CHANNEL}, ${CHANNEL}, 'edit_approval:tool', '{"message":"old"}'::jsonb,
+       '{"message":"old"}'::jsonb, now() + interval '1 hour', ARRAY[${REQUESTER}]::uuid[], ${REQUESTER}, 'pending', 'gated',
+       '{"kind":"edit","title":"Channel draft","lines":[]}'::jsonb),
+      (${CHANNEL_NONDECIDER_REQUEST}, ${ORG}, 'request-channel-nondecider', ${CHANNEL}, ${CHANNEL}, 'edit_approval:tool', '{"message":"old"}'::jsonb,
+       '{"message":"old"}'::jsonb, now() + interval '1 hour', ARRAY[${TICKETS_TEAMMATE}]::uuid[], ${TICKETS_TEAMMATE}, 'pending', 'gated',
+       '{"kind":"edit","title":"Channel draft, no decider","lines":[]}'::jsonb)
       ON CONFLICT DO NOTHING`
 
     approvalEditableFieldsRegistry.set(
@@ -481,6 +505,50 @@ describe("updatePayload", () => {
     expect(msg.author_id).not.toBe(NONPARTICIPANT_APPROVER)
   })
 
+  it("a decider edits a draft waiting in a channel neither they nor the requester joined", async () => {
+    const result = await updatePayload({
+      orgId: ORG,
+      requestId: CHANNEL_DECIDER_REQUEST,
+      fields: { message: "decider fix" },
+      actor: requesterActor,
+    })
+    expect(result.currentPayload).toEqual({ message: "decider fix" })
+    expect(result.lastEdit?.editorUserId).toBe(REQUESTER)
+    const [row] = await sql`
+      SELECT current_payload FROM kernel.approval_requests WHERE id = ${CHANNEL_DECIDER_REQUEST}`
+    expect(row.current_payload).toEqual({ message: "decider fix" })
+    // The edit event still names the editor and the diff.
+    const [event] = await sql`
+      SELECT payload FROM kernel.pending_events
+      WHERE org_id = ${ORG} AND payload->>'entity' = 'approval_request'
+        AND payload->>'action' = 'update' AND payload->>'entityId' = ${CHANNEL_DECIDER_REQUEST}
+      ORDER BY created_at DESC LIMIT 1`
+    expect(event.payload.data.lastEdit.editorUserId).toBe(REQUESTER)
+  })
+
+  it("a requester who cannot decide a draft in a channel they never joined is still refused, with the cause", async () => {
+    await expect(
+      updatePayload({
+        orgId: ORG,
+        requestId: CHANNEL_NONDECIDER_REQUEST,
+        fields: { message: "not mine to change" },
+        actor: {
+          actorType: "user",
+          userId: TICKETS_TEAMMATE,
+          orgId: ORG,
+          scopes: ["tickets:approve", "tickets:tickets:read", "kernel:approvals:read"],
+          dimensionGrants: {},
+        },
+      }),
+    ).rejects.toMatchObject({
+      status: 403,
+      message: "cannot record the edit: you are not a participant of this approval's thread",
+    })
+    const [row] = await sql`
+      SELECT current_payload FROM kernel.approval_requests WHERE id = ${CHANNEL_NONDECIDER_REQUEST}`
+    expect(row.current_payload).toEqual({ message: "old" })
+  })
+
   it("uses the persisted payload-edit message timestamp for response, event, list, and detail parity", async () => {
     const result = await updatePayload({
       orgId: ORG,
@@ -605,6 +673,62 @@ describe("updatePayload", () => {
       code: "invalid_edit",
       message: expect.stringContaining("editable fields: (none)"),
     })
+  })
+
+  it("an edit refused on a tool that declares editWith names those tools", async () => {
+    const id = "00000000-0000-4000-8000-0000000640e1"
+    await sql.unsafe(
+      insertSql("kernel.approval_requests", {
+        id,
+        org_id: ORG,
+        handle: "request-edit-with",
+        thread_id: THREAD,
+        originating_thread_id: THREAD,
+        tool_name: "edit_approval:run_issue",
+        tool_params: { raw: `'{"run_id":"r1","items":[]}'::jsonb` },
+        current_payload: { raw: `'{"run_id":"r1","items":[]}'::jsonb` },
+        expires_at: { raw: "now() + interval '1 hour'" },
+        notify_user_ids: { raw: `ARRAY['${APPROVER}']::uuid[]` },
+        requested_by: REQUESTER,
+        status: "pending",
+        reason: "gated",
+        summary: { raw: `'{"kind":"run_issue","title":"Run","lines":[]}'::jsonb` },
+      }),
+    )
+    toolRegistry.set([ORG, "edit_approval", "run_issue"], {
+      appName: "edit_approval",
+      name: "run_issue",
+      description: "Issue a run",
+      requiredScopes: ["edit_approval:write"],
+      gated: true,
+      handler: { bundlePath: "unused", exportName: "unused" },
+      editWith: ["drafts_update", "drafts_create", "drafts_discard"],
+      params: {
+        type: "object",
+        properties: { run_id: { type: "string" }, items: { type: "array" } },
+      },
+    } as Parameters<typeof toolRegistry.set>[1])
+    try {
+      let err: { status?: number; code?: string; message?: string } | undefined
+      try {
+        await updatePayload({
+          orgId: ORG,
+          requestId: id,
+          fields: { items: [{ total: 1 }] },
+          actor: requesterActor,
+        })
+      } catch (e) {
+        err = e as typeof err
+      }
+      expect(err).toMatchObject({ status: 400, code: "invalid_edit" })
+      for (const tool of ["drafts_update", "drafts_create", "drafts_discard"]) {
+        expect(err?.message).toContain(`edit_approval__${tool}`)
+      }
+      const [row] = await sql`SELECT current_payload FROM kernel.approval_requests WHERE id = ${id}`
+      expect(row?.current_payload).toEqual({ run_id: "r1", items: [] })
+    } finally {
+      toolRegistry.delete([ORG, "edit_approval", "run_issue"])
+    }
   })
 
   it("blanks the derived htmlBody when the invalidating textBody is edited, so the executed send cannot ship the stale pre-edit HTML", async () => {

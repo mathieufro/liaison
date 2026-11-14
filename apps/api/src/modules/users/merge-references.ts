@@ -86,12 +86,25 @@ export const USER_FK_DISPOSITION: Record<string, ReferenceDisposition> = {
   // A private contact is the person's: it moves to them (ON DELETE RESTRICT
   // would otherwise refuse the placeholder's delete).
   "kernel.contacts.owner_user_id": repoint,
+  // A company's account manager: a label that routes approvals, the person
+  // holds it now. (Its created_by is a soft column, not a foreign key: the
+  // merge re-points it beside the other soft columns, merge-placeholder.ts.)
+  "kernel.companies.owner_user_id": repoint,
   "kernel.invitations.invited_by": repoint,
   "kernel.credit_transactions.user_id": repoint,
   "kernel.agent_memory.user_id": repoint,
   "kernel.approval_requests.decided_by": repoint,
   "kernel.approval_requests.requested_by": repoint,
   "kernel.approval_requests.resource_owner_id": repoint,
+  // Who an approval is routed to, who takes over for someone away, and who set
+  // that or changed a feature: the real person now holds those.
+  "kernel.approval_requests.route_person_id": repoint,
+  // A person's own away record is a real absence: it moves to them too.
+  "kernel.away_ranges.user_id": repoint,
+  "kernel.away_ranges.set_by": repoint,
+  "kernel.away_ranges.next_in_line_id": repoint,
+  "kernel.user_preferences.next_in_line_id": repoint,
+  "kernel.org_app_features.changed_by": repoint,
   "kernel.approved_handler_executions.actor_id": repoint,
   "kernel.saved_views.owner_user_id": repoint,
   "kernel.skills.author_user_id": repoint,
@@ -109,6 +122,11 @@ export const USER_FK_DISPOSITION: Record<string, ReferenceDisposition> = {
   "app_projects.tasks.created_by": repoint,
   "app_projects.project_templates.created_by": repoint,
   "app_projects.task_checklist_items.created_by": repoint,
+  // A person's own time, days per week and cost rates, and who bills a project.
+  "app_projects.task_time.user_id": repoint,
+  "app_projects.person_capacity.user_id": repoint,
+  "app_projects.cost_rates.user_id": repoint,
+  "app_projects.project_time_plan.biller_id": repoint,
   "app_knowledge.documents.created_by": repoint,
   "app_knowledge.documents.owner_user_id": repoint,
   "app_knowledge.documents.updated_by": repoint,

@@ -1,0 +1,4 @@
+# Test files the services and software-company work adds to this suite.
+src/tests/integration/real-cards.test.ts
+# A system guard's identity read of contacts leaves the turn untainted.
+src/tests/integration/contacts-identity-taint.integration.test.ts

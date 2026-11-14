@@ -27,18 +27,34 @@
 //   expiry      `demoExpiryMiddleware` in modules/demo/demo-expiry.ts refuses
 //               every authenticated request once the marker's `expiresAt` has
 //               passed. Every workspace a visitor creates carries one.
+import type { DemoWorldId } from "@liaison/shared"
 import { type Component, For } from "solid-js"
+import { demoWorldId } from "~/modules/demo/demo-world"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { Dialog } from "~/ui/Dialog"
 
-const LIMIT_KEYS = [
-  "kernel.demo.limitMail",
-  "kernel.demo.limitConnectors",
-  "kernel.demo.limitAds",
-  "kernel.demo.limitAgents",
-  "kernel.demo.limitBudget",
-  "kernel.demo.limitExpiry",
-] as const
+/**
+ * The connectors line is the one that depends on the company: the products
+ * world's own fixtures, the software world's payments stand-in. A world with no
+ * line of its own, or one that is not known yet, states the generic limits
+ * only, never another world's.
+ */
+const CONNECTORS_KEY: Readonly<Partial<Record<DemoWorldId, string>>> = {
+  products: "kernel.demo.limitConnectors",
+  saas: "kernel.demo.world.saas.limitConnectors",
+}
+
+export function limitKeys(world: DemoWorldId | null): string[] {
+  const connectors = world ? CONNECTORS_KEY[world] : undefined
+  return [
+    "kernel.demo.limitMail",
+    ...(connectors ? [connectors] : []),
+    "kernel.demo.limitAds",
+    "kernel.demo.limitAgents",
+    "kernel.demo.limitBudget",
+    "kernel.demo.limitExpiry",
+  ]
+}
 
 export interface DemoLimitsPanelProps {
   open: boolean
@@ -52,7 +68,7 @@ export const DemoLimitsPanel: Component<DemoLimitsPanelProps> = (props) => {
       <Dialog.Content class="w-full max-w-lg">
         <Dialog.Title>{i18n.t("kernel.demo.limitsTitle")}</Dialog.Title>
         <ul data-testid="demo-limits" class="mt-4 flex flex-col gap-3">
-          <For each={LIMIT_KEYS}>
+          <For each={limitKeys(demoWorldId())}>
             {(key) => (
               <li class="flex gap-2.5 text-[13px] leading-relaxed text-text-secondary">
                 <span aria-hidden="true" class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent" />

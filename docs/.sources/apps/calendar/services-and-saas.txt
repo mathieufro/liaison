@@ -1,0 +1,8 @@
+Away days only from the person's own primary calendar on a personal connection -> apps/api/src/apps/calendar/away-from-calendar.ts (ownerOfPrimary) ; apps/api/src/apps/calendar/away-from-calendar.ts (isMaster)
+Out-of-office over whole working days counts at once; part days, focus time, location, birthdays, Gmail events never -> apps/api/src/apps/calendar/away-from-calendar.ts (classifyCalendarItem) ; apps/api/src/apps/calendar/away-from-calendar.ts (NEVER_AWAY) ; apps/api/src/modules/attention/work-hours.ts (wholeWorkingDays)
+Leave-looking all-day event organised or accepted is asked once, three open at most -> apps/api/src/apps/calendar/away-from-calendar.ts (LEAVE_WORDS) ; apps/api/src/modules/users/away.ts (spanDays)
+Moves, outsider moves re-ask, over 30 days asked, cancel removes unless ended early -> apps/api/src/modules/users/away.ts (answerCalendarAway)
+Recurring occurrences over 60 days, daily refresh -> apps/api/src/apps/calendar/away-from-calendar.ts (CALENDAR_AWAY_HORIZON_DAYS) ; apps/api/src/infra/jobs/kernel-jobs.ts (registerKernelJobs)
+Disconnect removes calendar days, keeps said ones -> apps/api/src/apps/calendar/sync.ts (hasActiveCalendarConnection) ; apps/api/src/modules/users/away.ts (deleteCalendarAwayRanges)
+Yes and No on the profile -> apps/web/src/modules/settings/ProfileSettings.tsx (AwaySection) ; apps/api/src/modules/users/preferences-routes.ts (preferencesRoutes)
+Title read live for Home, never stored -> apps/api/src/apps/calendar/away-from-calendar.ts (withLiveCalendarTitles) ; apps/api/src/modules/apps/attention-aggregator.ts (aggregateAttentionItems)

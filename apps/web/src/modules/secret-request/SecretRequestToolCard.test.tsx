@@ -256,6 +256,33 @@ describe("SecretRequestToolCard", () => {
     )
   })
 
+  it("a refused key shows the server's own reason, and the app reads by its name, never its ids", async () => {
+    const r = row({
+      kind: "connection_credentials",
+      target: { app: "boxtal", connection: "boxtal" },
+      title: "boxtal boxtal credentials",
+      fields: [{ name: "apiKey", label: "Restricted key", secret: true, required: true }],
+      destination: [
+        { name: "app", value: "boxtal" },
+        { name: "connection", value: "boxtal" },
+      ],
+    })
+    mount(r)
+    await screen.findByTestId("secret-request-field-apiKey")
+    expect(screen.queryByTestId("secret-request-destination-connection")).toBeNull()
+    expect(screen.getByTestId("secret-request-destination-app").textContent).not.toBe("boxtal")
+    apiMocks.post.mockRejectedValue(
+      new ApiError(
+        "That is your secret key, so I did not keep it. Paste a restricted key: it starts with rk_.",
+        400,
+        "secret_key_refused",
+      ),
+    )
+    fireEvent.input(input("secret-request-field-apiKey"), { target: { value: "sk_test_x" } })
+    fireEvent.click(screen.getByTestId("secret-request-save"))
+    expect(await screen.findByTestId("secret-request-error")).toHaveTextContent("starts with rk_")
+  })
+
   it("a mailbox the request names: its address is sent as is, never asked for", async () => {
     const r = row({
       kind: "connection_credentials",

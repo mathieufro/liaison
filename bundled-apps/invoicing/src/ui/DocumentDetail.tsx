@@ -56,6 +56,7 @@ import {
   StatusBadge,
   TypeLabel,
 } from "./kit"
+import { type EinvoiceFacts, einvoiceStatusWord } from "./RecurringStates"
 import { rememberDocumentLabel } from "./tab-labels"
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -524,6 +525,16 @@ export function shopifyOrderUrl(refs: Record<string, unknown> | undefined): stri
   return `https://${host}/admin/orders/${orderId}`
 }
 
+/** The payment processor's records an invoice it collects names, or null for any other invoice. */
+export function stripeCollection(
+  refs: Record<string, unknown> | undefined,
+): { invoiceId: string; customerId: string | null } | null {
+  const invoiceId = refs?.stripe_invoice_id
+  if (typeof invoiceId !== "string" || !invoiceId) return null
+  const customerId = refs?.stripe_customer_id
+  return { invoiceId, customerId: typeof customerId === "string" && customerId ? customerId : null }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Payment-status badge. `payment_status` is a separate axis from the
 // lifecycle `status` (an "issued" invoice can be paid/partial/refunded
@@ -533,6 +544,75 @@ export function shopifyOrderUrl(refs: Record<string, unknown> | undefined): stri
 // once the customer had paid. Credit notes are never payable, so they never
 // render this badge (mirrors the header's mark-paid gate).
 // ─────────────────────────────────────────────────────────────────────────
+/** What the header chips read: who issued an invoice and who took its payment. */
+export interface MoneyChipFacts {
+  status: string
+  type: string
+  stream: "card" | "transfer" | null
+  payment_status: string | null
+}
+
+/**
+ * "Issued by Liaison" on an issued invoice from a Stripe payment or a recurring schedule, and
+ * "Collected by Stripe" once a card payment through Stripe is in. Nothing on drafts or other types.
+ */
+export function moneyChips(f: MoneyChipFacts): string[] {
+  if (f.type !== "invoice" || f.status === "draft" || !f.stream) return []
+  const chips = ["Issued by Liaison"]
+  if (f.stream === "card" && f.payment_status === "paid") chips.push("Collected by Stripe")
+  return chips
+}
+
+/** The header's quiet chips and the e-invoice status word, from the transmission read. */
+function MoneyChips(p: { documentId: string; status: string; type: string }): JSX.Element {
+  const [facts] = createResource(
+    () => (p.type === "invoice" && p.status !== "draft" ? p.documentId : null),
+    async (id) => {
+      try {
+        return await app.invokeTool<
+          EinvoiceFacts & { status?: string; stream?: "card" | "transfer" | null }
+        >("einvoice_transmission_get", { document_id: id })
+      } catch {
+        return null
+      }
+    },
+  )
+  // Read only once settled: a pending read here would take the page's Suspense, and with it the
+  // whole detail (tab strip included), back to "Loading…" until the chips' read returns.
+  return (
+    <Show when={facts.state === "ready" ? facts() : undefined}>
+      {(f) => (
+        <>
+          <For
+            each={moneyChips({
+              status: p.status,
+              type: p.type,
+              stream: f().stream ?? null,
+              payment_status: f().payment_status ?? null,
+            })}
+          >
+            {(chip) => (
+              <Badge
+                tone="neutral"
+                testid={`document-detail-chip-${chip.toLowerCase().replace(/\s+/g, "-")}`}
+              >
+                {tr(chip)}
+              </Badge>
+            )}
+          </For>
+          <Show when={einvoiceStatusWord(f())}>
+            {(word) => (
+              <Badge tone="neutral" testid="document-detail-einvoice-word">
+                {tr("E-invoice: {{word}}", { word: tr(word()) })}
+              </Badge>
+            )}
+          </Show>
+        </>
+      )}
+    </Show>
+  )
+}
+
 const PAYMENT_TONE: Record<string, BadgeTone> = {
   paid: "success",
   partial: "warning",
@@ -843,8 +923,10 @@ function PdfBody(p: {
     () => (p.doc.pdf_file_id ? { id: p.doc.id, fileId: p.doc.pdf_file_id } : null),
     (key) => fetchPdfBlobUrl(key.id),
   )
+  // Read only once settled: a pending read would hold back the PDF tab's own status and buttons.
+  const embedUrl = () => (embed.state === "ready" ? embed() : undefined)
   createEffect(() => {
-    const url = embed()
+    const url = embedUrl()
     onCleanup(() => {
       if (url) URL.revokeObjectURL(url)
     })
@@ -912,7 +994,7 @@ function PdfBody(p: {
           {tr("Long-term archival metadata absent (PDF/A-3 normalization skipped).")}
         </div>
       </Show>
-      <Show when={embed()}>
+      <Show when={embedUrl()}>
         {(url) => (
           <Show
             when={hasPdfViewer()}
@@ -981,10 +1063,16 @@ function LifecycleBody(p: { doc: DocumentSummary }): JSX.Element {
 export const DocumentDetail: Component<DocumentDetailProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<string>("overview")
   const [data, { refetch }] = createResource(() => props.documentId, loadDocument)
+  // The document once it has loaded, kept on screen while a refetch runs. Everything outside the
+  // detail's own <Suspense> reads it through this, never through `data()`: a pending read there
+  // would suspend the host's tab boundary instead, leaving a blank pane (no "Loading…") on a cold
+  // open and blanking the whole detail, tab strip included, on every refetch.
+  const loaded = () =>
+    data.state === "ready" || data.state === "refreshing" ? data.latest : undefined
 
-  const tabs = createMemo(() => mergeTabs(data()?.externalTabs ?? []))
+  const tabs = createMemo(() => mergeTabs(loaded()?.externalTabs ?? []))
   const affordance = createMemo(() =>
-    pdfStatusAffordance(data()?.document?.pdf_status ?? undefined),
+    pdfStatusAffordance(loaded()?.document?.pdf_status ?? undefined),
   )
   // The active external (non-built-in) tab, if any. Carries the contributing
   // `app` needed to resolve the cross-app body via the host bridge.
@@ -1126,8 +1214,10 @@ export const DocumentDetail: Component<DocumentDetailProps> = (props) => {
         </div>
       }
     >
+      {/* `data()` is read here, under the detail's own boundary, for the first load only; a
+          refetch keeps the loaded document on screen (`loaded()`) instead of going back to it. */}
       <Show
-        when={data()}
+        when={loaded() ?? data()}
         fallback={
           <Show when={data.state === "ready"}>
             <div
@@ -1170,6 +1260,10 @@ export const DocumentDetail: Component<DocumentDetailProps> = (props) => {
                     <Show when={doc().type !== "credit_note" && doc().payment_status}>
                       {(paymentStatus) => <PaymentBadge paymentStatus={paymentStatus()} />}
                     </Show>
+                    {/* Its own boundary: a secondary read can only hold back these chips. */}
+                    <Suspense>
+                      <MoneyChips documentId={doc().id} status={doc().status} type={doc().type} />
+                    </Suspense>
                   </div>
                   {/* Actions — spec §12. Pinned to the top of the panel: the chat dock
                       floats over the panel's bottom-right corner, so a bottom action row
@@ -1221,8 +1315,10 @@ export const DocumentDetail: Component<DocumentDetailProps> = (props) => {
                         </span>
                       </Show>
                     </Show>
-                    {/* Credit notes are never payable — no mark-paid. */}
-                    <Show when={doc().type !== "credit_note"}>
+                    {/* Credit notes are never payable, and Stripe settles an invoice it collects: no mark-paid. */}
+                    <Show
+                      when={doc().type !== "credit_note" && !stripeCollection(doc().external_refs)}
+                    >
                       <Button
                         variant="ghost"
                         testid="document-detail-action-mark-paid"
@@ -1304,6 +1400,53 @@ export const DocumentDetail: Component<DocumentDetailProps> = (props) => {
                       <span data-testid="document-detail-draft-order-ref">
                         {tr("Shopify draft order")}{" "}
                         <span class="text-text-secondary">{draftOrderName()}</span>
+                      </span>
+                    )}
+                  </Show>
+                  {/* The hops out: the customer's contact (their company is on it), and the Stripe
+                      customer whose invoice this one is, when Stripe collects it. */}
+                  <Show when={doc().counterparty_contact_id}>
+                    {(contactId) => (
+                      <a
+                        data-testid="document-detail-open-contact"
+                        class="inline-flex items-center gap-1 text-accent hover:underline"
+                        href={`/contacts/${encodeURIComponent(contactId())}`}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          navigate(`/contacts/${encodeURIComponent(contactId())}`)
+                        }}
+                      >
+                        {tr("Open the customer")}
+                      </a>
+                    )}
+                  </Show>
+                  <Show when={stripeCollection(doc().external_refs)}>
+                    {(stripe) => (
+                      <span
+                        data-testid="document-detail-stripe"
+                        class="inline-flex items-center gap-1"
+                      >
+                        {tr("Collected by Stripe")}{" "}
+                        <Show
+                          when={stripe().customerId}
+                          fallback={
+                            <span class="font-mono text-text-secondary">{stripe().invoiceId}</span>
+                          }
+                        >
+                          {(customerId) => (
+                            <a
+                              data-testid="document-detail-open-stripe"
+                              class="font-mono text-accent hover:underline"
+                              href={`/stripe/customers/${encodeURIComponent(customerId())}`}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                navigate(`/stripe/customers/${encodeURIComponent(customerId())}`)
+                              }}
+                            >
+                              {stripe().invoiceId}
+                            </a>
+                          )}
+                        </Show>
                       </span>
                     )}
                   </Show>
@@ -1399,61 +1542,73 @@ export const DocumentDetail: Component<DocumentDetailProps> = (props) => {
                 </For>
               </nav>
 
-              {/* Tab body */}
+              {/* Tab body, under its own boundary: a panel's pending read (the PDF preview, the
+                  regime line, the e-invoice panel, a contributed tab) can only hold back the body,
+                  never the header and tab strip above it. */}
               <div class="flex-1 overflow-y-auto">
-                <Show when={activeTab() === "overview"}>
-                  <OverviewBody doc={doc()} lines={lines()} />
-                </Show>
-                <Show when={activeTab() === "customs"}>
-                  <CustomsBody doc={doc()} lines={lines()} />
-                </Show>
-                <Show when={activeTab() === "pdf"}>
-                  <PdfBody
-                    doc={doc()}
-                    affordance={affordance()}
-                    onRetry={retryPdf}
-                    onPreview={previewPdf}
-                    onDownload={downloadPdf}
-                  />
-                </Show>
-                <Show when={activeTab() === "lifecycle"}>
-                  <LifecycleBody doc={doc()} />
-                </Show>
-                {/* External (slot-host) tab body. The host bridge resolves the
+                <Suspense
+                  fallback={
+                    <div data-testid="document-detail-body-loading" class="p-4 text-text-tertiary">
+                      {tr("Loading…")}
+                    </div>
+                  }
+                >
+                  <Show when={activeTab() === "overview"}>
+                    <OverviewBody doc={doc()} lines={lines()} />
+                  </Show>
+                  <Show when={activeTab() === "customs"}>
+                    <CustomsBody doc={doc()} lines={lines()} />
+                  </Show>
+                  <Show when={activeTab() === "pdf"}>
+                    <PdfBody
+                      doc={doc()}
+                      affordance={affordance()}
+                      onRetry={retryPdf}
+                      onPreview={previewPdf}
+                      onDownload={downloadPdf}
+                    />
+                  </Show>
+                  <Show when={activeTab() === "lifecycle"}>
+                    <LifecycleBody doc={doc()} />
+                  </Show>
+                  {/* External (slot-host) tab body. The host bridge resolves the
                     contributing app's registered component and mounts it into
                     the anchor — invoicing never imports the contributor's
                     component (portable to the future iframe boundary). On a
                     genuine resolution miss (bundle-load failure) the K5
                     "Tab unavailable" fallback is preserved. */}
-                <Show when={activeExternalTab()}>
-                  {(tab) => {
-                    let anchor!: HTMLDivElement
-                    const [resolved, setResolved] = createSignal(true)
-                    createEffect(() => {
-                      const ext = tab()
-                      const handle = app.mountSlot(anchor, {
-                        slot: "invoicing.document_detail.tabs",
-                        app: ext.app as string,
-                        id: ext.id,
-                        entityId: props.documentId,
+                  <Show when={activeExternalTab()}>
+                    {(tab) => {
+                      let anchor!: HTMLDivElement
+                      const [resolved, setResolved] = createSignal(true)
+                      createEffect(() => {
+                        const ext = tab()
+                        const handle = app.mountSlot(anchor, {
+                          slot: "invoicing.document_detail.tabs",
+                          app: ext.app as string,
+                          id: ext.id,
+                          entityId: props.documentId,
+                        })
+                        setResolved(handle.resolved)
+                        onCleanup(() => handle.dispose())
                       })
-                      setResolved(handle.resolved)
-                      onCleanup(() => handle.dispose())
-                    })
-                    return (
-                      <div data-testid={`document-detail-tab-body-${tab().id}`} class="h-full">
-                        <div ref={anchor} class="h-full" />
-                        <Show when={!resolved()}>
-                          {/* K5 contract: agreed copy when the contributing app's
+                      return (
+                        <div data-testid={`document-detail-tab-body-${tab().id}`} class="h-full">
+                          <div ref={anchor} class="h-full" />
+                          <Show when={!resolved()}>
+                            {/* K5 contract: agreed copy when the contributing app's
                               component fails to resolve (genuine bundle-load failure). */}
-                          <div class="px-4 py-3 text-[12.5px] text-text-tertiary">
-                            {tr("Tab unavailable: the contributing app's component is not loaded.")}
-                          </div>
-                        </Show>
-                      </div>
-                    )
-                  }}
-                </Show>
+                            <div class="px-4 py-3 text-[12.5px] text-text-tertiary">
+                              {tr(
+                                "Tab unavailable: the contributing app's component is not loaded.",
+                              )}
+                            </div>
+                          </Show>
+                        </div>
+                      )
+                    }}
+                  </Show>
+                </Suspense>
               </div>
 
               <ConfirmDialog

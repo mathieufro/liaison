@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test"
 import {
   guideCoversLoaded,
   normalizeAppGuide,
+  parseGuideMarkdown,
   renderAppGuideBlock,
   selectAppGuideParts,
 } from "~/modules/agent/context/app-guide"
@@ -52,5 +53,54 @@ describe("app guide parts", () => {
     expect(guideCoversLoaded(g, [])).toBe(false)
     expect(guideCoversLoaded("plain", ["kernel__config_mail"])).toBe(false)
     expect(guideCoversLoaded({ core: "c" }, ["kernel__config_mail"])).toBe(false)
+  })
+})
+
+describe("a markdown guide's sections", () => {
+  const md = [
+    "Core rule for every call.",
+    "",
+    "<!-- tools: kernel__create_role -->",
+    "ROLE SECTION",
+    "",
+    "<!-- tools: kernel__run_on_my_computer, kernel__computer_session_read -->",
+    "COMPUTER SECTION",
+  ].join("\n")
+
+  it("the text before the first marker is the core, and each marker opens a section about its tools", () => {
+    expect(parseGuideMarkdown(md)).toEqual({
+      core: "Core rule for every call.",
+      sections: [
+        { tools: ["kernel__create_role"], text: "ROLE SECTION" },
+        {
+          tools: ["kernel__run_on_my_computer", "kernel__computer_session_read"],
+          text: "COMPUTER SECTION",
+        },
+      ],
+    })
+  })
+
+  it("a file with no marker and no named tools stays a plain string guide", () => {
+    expect(parseGuideMarkdown("Just a core.")).toBe("Just a core.")
+  })
+
+  it("a guide that names its tools also covers its sections' tools", () => {
+    const parsed = parseGuideMarkdown(md, ["kernel__roles_list"])
+    expect(typeof parsed === "string" ? [] : parsed.coveredTools).toEqual([
+      "kernel__roles_list",
+      "kernel__create_role",
+      "kernel__run_on_my_computer",
+      "kernel__computer_session_read",
+    ])
+    expect(guideCoversLoaded(parsed, ["kernel__create_role"])).toBe(true)
+    expect(guideCoversLoaded(parsed, ["kernel__users_list"])).toBe(false)
+  })
+
+  it("a kernel tool's section renders with that tool loaded and not with another", () => {
+    const guide = normalizeAppGuide(parseGuideMarkdown(md))
+    const one = selectAppGuideParts("kernel", guide, new Set(["kernel__create_role"]))
+    expect(one.sections.map((s) => s.text)).toEqual(["ROLE SECTION"])
+    const other = selectAppGuideParts("kernel", guide, new Set(["kernel__threads_list"]))
+    expect(other.sections).toEqual([])
   })
 })

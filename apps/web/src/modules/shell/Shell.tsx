@@ -13,12 +13,11 @@ import {
 import { Dynamic } from "solid-js/web"
 import {
   areManifestAppsSettled,
+  dispatchKeybinding,
   dispatchWsEventMessage,
   dispatchWsMessage,
-  getKeybindings,
   getPanel,
   getTabType,
-  matchesKey,
   namespaceRegistryKey,
   registerCommand,
   registerKeybinding,
@@ -832,18 +831,7 @@ export const Shell: Component = () => {
 
     // Registry-driven keybinding dispatch
     const handleKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName
-      const isInput =
-        tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable
-
-      for (const binding of getKeybindings()) {
-        if (!binding.activeInInput && isInput) continue
-        if (matchesKey(e, binding.key)) {
-          e.preventDefault()
-          binding.handler(e)
-          return
-        }
-      }
+      dispatchKeybinding(e)
     }
     window.addEventListener("keydown", handleKey)
 

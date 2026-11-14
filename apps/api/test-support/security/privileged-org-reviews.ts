@@ -71,8 +71,6 @@ export const TRUSTED_SOURCES: Record<string, string> = {
     "the pooled org the demo pool's refill itself just created (createVisitorOrgShell on a slug the pool generated, demo-pool.ts createPooledShell)",
   acquireVisitorWorkspace:
     "the workspace this request just made the visitor's (demo/routes.ts acquireVisitorWorkspace): a ready pooled org claimPooledOrg handed over in one locked transaction, or the shell createVisitorOrgShell just created; reached from a signup and from POST /start-over, whose own org is requireVisitorOrg's",
-  pooledRows:
-    "the demo pool's own visitor orgs: kernel.organizations rows its marker names as pooled (demo-pool.ts pooledRows)",
   provisionOrgShell:
     "the org the seed engine's org factory just created, or found under the slug its caller chose, through the provisioning CLI's org provisioner (seed/factories/org/org.ts); the demo tier writes into it only once it carries the demo marker or this run created it (seed/tiers/demo/seed-org.ts demoMarkRefusal)",
   requireVisitorOrg:
@@ -256,6 +254,16 @@ export const REVIEWED_OUTSIDE_ROUTES: Record<string, string> = {
 }
 
 /**
+ * Entries above reviewed for having no product caller: the product files that use each function,
+ * pinned. src/db/privileged-org-source.test.ts fails on a new caller, so no caller can pass
+ * unreviewed: rewrite the entry for that caller's org id, then add it here.
+ */
+export const REVIEWED_CALLERS: Record<string, readonly string[]> = {
+  "apps/api/src/modules/agent/runtime/tool-card-store.ts#clearToolCardsByKey": [],
+  "apps/api/src/modules/apps/org-features.ts#setOrgAppFeature": [],
+}
+
+/**
  * Functions whose calls hand on an org id that was reviewed here (a boot or job sweep over
  * every org, an operator command, a row the function just claimed): `file#enclosing` → why.
  * The caller trace stops at a call made from one of them.
@@ -315,8 +323,6 @@ export const REVIEWED_ORIGINS: Record<string, string> = {
     "the demo tier's commerce layer: every write goes to opts.org.orgId, the org seedDemoOrg (a reviewed origin) returned after provisioning it and stamping its demo marker; the commerce factories receive it through the layer's SeedContext",
   "apps/api/src/seed/tiers/demo/seed-org.ts#seedDemoOrg":
     "the demo tier's org entry: an org already under the caller's slug is only read (its demo marker, fresh) to refuse it unless it is a demo org (demoMarkRefusal); every write uses the org the org factory's provisioning pass returns (provisionOrgShell), stamped with the demo marker before any account exists",
-  "apps/api/src/seed/tiers/lively/seed-lively.ts#replaceLivelyOrg":
-    "an operator's `liaison seed --tier lively --replace` (a private box, refused in demo mode): the org under the slug the operator named is purged only when its row carries the demo marker, re-read fresh before the purge and again by purgeOrg's assertAllowed before every destructive step",
   "apps/api/src/seed/tiers/lively/seed-lively.ts#seedLivelyLayers":
     "the lively tier's entry: every activity write goes to world.orgId, the org seedDemoWorld (whose seedDemoOrg is a reviewed origin) just provisioned or adopted under the caller's slug and stamped with the demo marker",
   "apps/api/src/seed/tiers/standard/seed-standard.ts#seedStandardWorld":

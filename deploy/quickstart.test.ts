@@ -40,6 +40,7 @@ echo "$*" >> "${log}"
 case "$*" in
   info*) [ -z "\${HAS_RUNSC:-}" ] || echo '{"runc":{},"runsc":{}}' ;;
   pull*) [ -z "\${FAIL_PULL:-}" ] || exit 1 ;;
+  ps*) [ -z "\${PROJECT_FILES:-}" ] || echo "\${PROJECT_FILES}" ;;
   *logs*) echo "Liaison setup token: the-token" ;;
 esac
 exit 0
@@ -106,6 +107,22 @@ describe("quickstart.sh --channel", () => {
     const r = s.run(["--channel", "beta"])
     expect(r.code).not.toBe(0)
     expect(r.stderr).toContain("unknown channel: beta")
+  })
+})
+
+describe("quickstart.sh and a project name already in use", () => {
+  it("refuses to start under a project that runs a source checkout's dev compose", () => {
+    const s = sandbox()
+    const r = s.run([], { PROJECT_FILES: "/home/me/liaison/docker-compose.yml" })
+    expect(r.code).not.toBe(0)
+    expect(r.stderr).toContain("--project <another name>")
+    expect(s.docker()).not.toContain(" up -d")
+  })
+
+  it("starts over its own earlier stack, and under another name", () => {
+    const s = sandbox()
+    expect(s.run([], { PROJECT_FILES: "/srv/liaison/deploy/docker-compose.yml" }).code).toBe(0)
+    expect(s.docker()).toContain(" up -d")
   })
 })
 

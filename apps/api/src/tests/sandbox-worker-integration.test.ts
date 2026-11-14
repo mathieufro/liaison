@@ -137,7 +137,9 @@ const MANIFEST = {
       },
     },
     // Declares the `market` dimension `externalSearch` filters its response on.
+    // Read under the scope its search tool requires (`untrusted-test:external:read`).
     external_records: {
+      rlsScope: "external",
       fields: { name: "string", market: "string" },
       dimensions: { market: { type: "membership" } },
     },

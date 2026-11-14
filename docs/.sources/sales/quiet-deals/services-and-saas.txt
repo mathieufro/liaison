@@ -1,0 +1,8 @@
+Quiet for N days, Active today; quietest first, no colour -> packages/shared/src/i18n/locales/en/projects.json (deals.quietMany) ; packages/shared/src/i18n/locales/en/projects.json (deals.activeToday) ; apps/web/src/modules/projects/ProjectKanbanView.tsx (ProjectKanbanView) ; apps/api/src/apps/projects/service/deals.ts (BoardColumn)
+Silence is whole days since the last inbound mail from the contact or anyone at the company; not automatic replies, bounces or bulk mail; none counts from creation; no person gives no entry -> apps/api/src/apps/projects/service/deals.ts (DealQuiet)
+No quiet line without mail read access -> apps/api/src/apps/projects/service/deals.ts (readDealQuiet)
+Mail not yet imported is not seen -> docs/apps/mail.md (The check before an agent's mail goes out)
+deals_followup_candidates names the reason -> apps/api/src/apps/projects/app.manifest.json (tools.deals_followup_candidates) ; apps/api/src/apps/projects/service/deals.ts (FollowupSkip)
+A task past its due date assigned to the caller shows as overdue on Home -> apps/api/src/apps/projects/attention.ts (computeAttentionItems)
+A deal is a task with an assignee -> apps/api/src/apps/projects/service/deals.ts (listDeals)
+Routine template deal-followups -> apps/api/src/modules/agent/routines/kernel-routine-templates.ts (DEAL_FOLLOWUPS_TEMPLATE_KEY)

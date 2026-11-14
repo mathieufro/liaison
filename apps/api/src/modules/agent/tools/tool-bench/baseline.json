@@ -1,0 +1,3594 @@
+{
+  "tools": {
+    "ads__account_info": {
+      "desc": 233,
+      "schema": 9
+    },
+    "ads__ad_preview": {
+      "desc": 362,
+      "schema": 134
+    },
+    "ads__add_users_to_audience": {
+      "desc": 588,
+      "schema": 174
+    },
+    "ads__ads_list": {
+      "desc": 472,
+      "schema": 226
+    },
+    "ads__adsets_list": {
+      "desc": 468,
+      "schema": 67
+    },
+    "ads__audience_erasure_sweep": {
+      "desc": 943,
+      "schema": 62
+    },
+    "ads__audiences_list": {
+      "desc": 463,
+      "schema": 24
+    },
+    "ads__campaigns_list": {
+      "desc": 479,
+      "schema": 55
+    },
+    "ads__counts": {
+      "desc": 195,
+      "schema": 9
+    },
+    "ads__create_ad": {
+      "desc": 113,
+      "schema": 100
+    },
+    "ads__create_adset": {
+      "desc": 368,
+      "schema": 820
+    },
+    "ads__create_campaign": {
+      "desc": 320,
+      "schema": 426
+    },
+    "ads__create_creative": {
+      "desc": 269,
+      "schema": 582
+    },
+    "ads__create_custom_audience": {
+      "desc": 709,
+      "schema": 478
+    },
+    "ads__create_lookalike_audience": {
+      "desc": 372,
+      "schema": 142
+    },
+    "ads__creative_get": {
+      "desc": 273,
+      "schema": 61
+    },
+    "ads__dealer_profile_upsert": {
+      "desc": 401,
+      "schema": 176
+    },
+    "ads__dealer_profiles_list": {
+      "desc": 71,
+      "schema": 43
+    },
+    "ads__experiment_close": {
+      "desc": 324,
+      "schema": 87
+    },
+    "ads__experiment_list": {
+      "desc": 168,
+      "schema": 60
+    },
+    "ads__experiment_open": {
+      "desc": 628,
+      "schema": 280
+    },
+    "ads__experiment_update": {
+      "desc": 131,
+      "schema": 235
+    },
+    "ads__google_account_info": {
+      "desc": 285,
+      "schema": 9
+    },
+    "ads__google_add_negative_keywords": {
+      "desc": 278,
+      "schema": 130
+    },
+    "ads__google_adgroups_list": {
+      "desc": 137,
+      "schema": 34
+    },
+    "ads__google_ads_list": {
+      "desc": 168,
+      "schema": 57
+    },
+    "ads__google_campaigns_list": {
+      "desc": 318,
+      "schema": 54
+    },
+    "ads__google_create_ad": {
+      "desc": 118,
+      "schema": 149
+    },
+    "ads__google_create_adgroup": {
+      "desc": 99,
+      "schema": 156
+    },
+    "ads__google_create_campaign": {
+      "desc": 341,
+      "schema": 539
+    },
+    "ads__google_create_conversion_action": {
+      "desc": 132,
+      "schema": 77
+    },
+    "ads__google_insights_query": {
+      "desc": 680,
+      "schema": 101
+    },
+    "ads__google_pause": {
+      "desc": 879,
+      "schema": 280
+    },
+    "ads__google_recommendations_list": {
+      "desc": 176,
+      "schema": 9
+    },
+    "ads__google_search_terms": {
+      "desc": 241,
+      "schema": 9
+    },
+    "ads__google_set_status": {
+      "desc": 303,
+      "schema": 363
+    },
+    "ads__google_update_budget": {
+      "desc": 227,
+      "schema": 194
+    },
+    "ads__graph_get": {
+      "desc": 291,
+      "schema": 56
+    },
+    "ads__insights_query": {
+      "desc": 476,
+      "schema": 292
+    },
+    "ads__manual_spend_add": {
+      "desc": 301,
+      "schema": 160
+    },
+    "ads__manual_spend_list": {
+      "desc": 235,
+      "schema": 41
+    },
+    "ads__media_list": {
+      "desc": 202,
+      "schema": 50
+    },
+    "ads__merchant_feed_status": {
+      "desc": 423,
+      "schema": 9
+    },
+    "ads__merchant_product_issues": {
+      "desc": 597,
+      "schema": 27
+    },
+    "ads__metrics_list": {
+      "desc": 434,
+      "schema": 9
+    },
+    "ads__metrics_run": {
+      "desc": 563,
+      "schema": 104
+    },
+    "ads__pages_list": {
+      "desc": 148,
+      "schema": 9
+    },
+    "ads__pause": {
+      "desc": 751,
+      "schema": 87
+    },
+    "ads__pending_approvals_list": {
+      "desc": 474,
+      "schema": 31
+    },
+    "ads__set_status": {
+      "desc": 518,
+      "schema": 261
+    },
+    "ads__targeting_search": {
+      "desc": 349,
+      "schema": 99
+    },
+    "ads__update_budget": {
+      "desc": 415,
+      "schema": 388
+    },
+    "ads__upload_image": {
+      "desc": 299,
+      "schema": 70
+    },
+    "api-connector__connector_adapter_get": {
+      "desc": 317,
+      "schema": 84
+    },
+    "api-connector__connector_adapter_reference": {
+      "desc": 447,
+      "schema": 56
+    },
+    "api-connector__connector_adapter_restore": {
+      "desc": 183,
+      "schema": 0
+    },
+    "api-connector__connector_adapter_save": {
+      "desc": 237,
+      "schema": 0
+    },
+    "api-connector__connector_adapter_test": {
+      "desc": 363,
+      "schema": 102
+    },
+    "api-connector__connector_adapter_versions": {
+      "desc": 269,
+      "schema": 52
+    },
+    "api-connector__connector_list_operations": {
+      "desc": 339,
+      "schema": 28
+    },
+    "api-connector__connector_read": {
+      "desc": 477,
+      "schema": 105
+    },
+    "api-connector__connector_write": {
+      "desc": 1285,
+      "schema": 190
+    },
+    "api-connector__customer_lookup": {
+      "desc": 139,
+      "schema": 57
+    },
+    "api-connector__settings_adapter_delete": {
+      "desc": 69,
+      "schema": 38
+    },
+    "api-connector__settings_adapter_restore": {
+      "desc": 79,
+      "schema": 59
+    },
+    "api-connector__settings_adapter_save": {
+      "desc": 87,
+      "schema": 103
+    },
+    "api-connector__settings_adapter_test": {
+      "desc": 96,
+      "schema": 59
+    },
+    "api-connector__settings_connections": {
+      "desc": 104,
+      "schema": 9
+    },
+    "boxtal__attention_rule_delete": {
+      "desc": 174,
+      "schema": 19
+    },
+    "boxtal__attention_rule_upsert": {
+      "desc": 527,
+      "schema": 320
+    },
+    "boxtal__attention_rules_list": {
+      "desc": 374,
+      "schema": 9
+    },
+    "boxtal__cancel_shipment": {
+      "desc": 508,
+      "schema": 19
+    },
+    "boxtal__claim_open": {
+      "desc": 826,
+      "schema": 126
+    },
+    "boxtal__create_shipment": {
+      "desc": 494,
+      "schema": 1148
+    },
+    "boxtal__exceptions_list": {
+      "desc": 1055,
+      "schema": 9
+    },
+    "boxtal__get_documents": {
+      "desc": 53,
+      "schema": 61
+    },
+    "boxtal__get_shipment": {
+      "desc": 81,
+      "schema": 61
+    },
+    "boxtal__import_label_document": {
+      "desc": 1053,
+      "schema": 48
+    },
+    "boxtal__import_shipments": {
+      "desc": 342,
+      "schema": 51
+    },
+    "boxtal__list_content_categories": {
+      "desc": 56,
+      "schema": 9
+    },
+    "boxtal__local_product_upsert": {
+      "desc": 54,
+      "schema": 28
+    },
+    "boxtal__order_print_record_get": {
+      "desc": 1000,
+      "schema": 54
+    },
+    "boxtal__pack_delete": {
+      "desc": 33,
+      "schema": 19
+    },
+    "boxtal__pack_upsert": {
+      "desc": 1620,
+      "schema": 445
+    },
+    "boxtal__packages_list": {
+      "desc": 57,
+      "schema": 9
+    },
+    "boxtal__prep_add_shipment": {
+      "desc": 883,
+      "schema": 616
+    },
+    "boxtal__prep_document_pdf": {
+      "desc": 288,
+      "schema": 65
+    },
+    "boxtal__prep_exclude": {
+      "desc": 327,
+      "schema": 91
+    },
+    "boxtal__prep_list": {
+      "desc": 596,
+      "schema": 323
+    },
+    "boxtal__prep_order_prefill": {
+      "desc": 339,
+      "schema": 85
+    },
+    "boxtal__prep_restore": {
+      "desc": 96,
+      "schema": 56
+    },
+    "boxtal__prep_select_offer": {
+      "desc": 794,
+      "schema": 102
+    },
+    "boxtal__prep_set_address_choice": {
+      "desc": 600,
+      "schema": 162
+    },
+    "boxtal__prep_set_category": {
+      "desc": 835,
+      "schema": 132
+    },
+    "boxtal__prep_set_note": {
+      "desc": 616,
+      "schema": 105
+    },
+    "boxtal__prep_set_status": {
+      "desc": 611,
+      "schema": 140
+    },
+    "boxtal__prep_set_validated": {
+      "desc": 290,
+      "schema": 98
+    },
+    "boxtal__prep_sync": {
+      "desc": 1201,
+      "schema": 148
+    },
+    "boxtal__prep_unlinked_list": {
+      "desc": 856,
+      "schema": 39
+    },
+    "boxtal__print_pack": {
+      "desc": 936,
+      "schema": 47
+    },
+    "boxtal__print_pack_batch": {
+      "desc": 376,
+      "schema": 30
+    },
+    "boxtal__print_record_get": {
+      "desc": 772,
+      "schema": 38
+    },
+    "boxtal__product_profile_delete": {
+      "desc": 144,
+      "schema": 23
+    },
+    "boxtal__product_profile_link": {
+      "desc": 487,
+      "schema": 145
+    },
+    "boxtal__product_profile_merge": {
+      "desc": 374,
+      "schema": 106
+    },
+    "boxtal__product_profile_unlink": {
+      "desc": 154,
+      "schema": 36
+    },
+    "boxtal__product_profile_upsert": {
+      "desc": 634,
+      "schema": 388
+    },
+    "boxtal__queue_counts": {
+      "desc": 972,
+      "schema": 9
+    },
+    "boxtal__quote": {
+      "desc": 501,
+      "schema": 1070
+    },
+    "boxtal__quote_batch": {
+      "desc": 257,
+      "schema": 224
+    },
+    "boxtal__ready_list": {
+      "desc": 590,
+      "schema": 9
+    },
+    "boxtal__ready_set_packed": {
+      "desc": 980,
+      "schema": 236
+    },
+    "boxtal__returns_list": {
+      "desc": 1523,
+      "schema": 9
+    },
+    "boxtal__search": {
+      "desc": 494,
+      "schema": 28
+    },
+    "boxtal__settings_carrier_allowlist_get": {
+      "desc": 1086,
+      "schema": 9
+    },
+    "boxtal__settings_carrier_allowlist_set": {
+      "desc": 917,
+      "schema": 152
+    },
+    "boxtal__settings_form_get": {
+      "desc": 201,
+      "schema": 16
+    },
+    "boxtal__settings_form_set": {
+      "desc": 289,
+      "schema": 44
+    },
+    "boxtal__settings_label_format_get": {
+      "desc": 275,
+      "schema": 12
+    },
+    "boxtal__settings_label_format_set": {
+      "desc": 312,
+      "schema": 46
+    },
+    "boxtal__settings_packaging_policy_get": {
+      "desc": 1483,
+      "schema": 12
+    },
+    "boxtal__settings_packaging_policy_set": {
+      "desc": 574,
+      "schema": 645
+    },
+    "boxtal__settings_product_codes_get": {
+      "desc": 832,
+      "schema": 12
+    },
+    "boxtal__settings_product_codes_set": {
+      "desc": 739,
+      "schema": 344
+    },
+    "boxtal__settings_sender_address_get": {
+      "desc": 76,
+      "schema": 9
+    },
+    "boxtal__settings_sender_address_set": {
+      "desc": 471,
+      "schema": 64
+    },
+    "boxtal__settings_sender_form_get": {
+      "desc": 176,
+      "schema": 16
+    },
+    "boxtal__settle_orphan_create": {
+      "desc": 992,
+      "schema": 146
+    },
+    "boxtal__shipment_draft_create": {
+      "desc": 721,
+      "schema": 195
+    },
+    "boxtal__shipment_draft_get": {
+      "desc": 558,
+      "schema": 43
+    },
+    "boxtal__shipment_draft_set_customs": {
+      "desc": 435,
+      "schema": 224
+    },
+    "boxtal__shipment_draft_set_package": {
+      "desc": 1288,
+      "schema": 655
+    },
+    "boxtal__stuck_list": {
+      "desc": 210,
+      "schema": 9
+    },
+    "boxtal__to_prepare_list": {
+      "desc": 566,
+      "schema": 9
+    },
+    "boxtal__track": {
+      "desc": 1624,
+      "schema": 61
+    },
+    "boxtal__webhooks_repair": {
+      "desc": 667,
+      "schema": 16
+    },
+    "calendar__create_event": {
+      "desc": 632,
+      "schema": 147
+    },
+    "calendar__delete_event": {
+      "desc": 376,
+      "schema": 166
+    },
+    "calendar__list_accounts": {
+      "desc": 298,
+      "schema": 9
+    },
+    "calendar__list_calendars": {
+      "desc": 187,
+      "schema": 9
+    },
+    "calendar__list_events": {
+      "desc": 136,
+      "schema": 63
+    },
+    "calendar__retry_import": {
+      "desc": 361,
+      "schema": 22
+    },
+    "calendar__search_events": {
+      "desc": 60,
+      "schema": 27
+    },
+    "calendar__set_selected": {
+      "desc": 320,
+      "schema": 33
+    },
+    "calendar__update_event": {
+      "desc": 1227,
+      "schema": 282
+    },
+    "calls__calls_list": {
+      "desc": 272,
+      "schema": 26
+    },
+    "calls__calls_segments_since": {
+      "desc": 518,
+      "schema": 91
+    },
+    "calls__calls_set_links": {
+      "desc": 657,
+      "schema": 127
+    },
+    "calls__webhook_info": {
+      "desc": 259,
+      "schema": 9
+    },
+    "database__db_describe": {
+      "desc": 196,
+      "schema": 155
+    },
+    "database__db_list_reads": {
+      "desc": 118,
+      "schema": 9
+    },
+    "database__db_probe": {
+      "desc": 187,
+      "schema": 65
+    },
+    "database__db_query": {
+      "desc": 275,
+      "schema": 103
+    },
+    "database__db_read": {
+      "desc": 140,
+      "schema": 50
+    },
+    "database__report_access_find_people": {
+      "desc": 82,
+      "schema": 39
+    },
+    "database__report_access_get": {
+      "desc": 166,
+      "schema": 9
+    },
+    "database__report_access_set": {
+      "desc": 93,
+      "schema": 51
+    },
+    "gitlab__gitlab_get_commit": {
+      "desc": 56,
+      "schema": 62
+    },
+    "gitlab__gitlab_get_merge_request": {
+      "desc": 85,
+      "schema": 71
+    },
+    "gitlab__gitlab_list_commits": {
+      "desc": 81,
+      "schema": 118
+    },
+    "gitlab__gitlab_list_issues": {
+      "desc": 84,
+      "schema": 135
+    },
+    "gitlab__gitlab_list_labels": {
+      "desc": 59,
+      "schema": 32
+    },
+    "gitlab__gitlab_list_merge_requests": {
+      "desc": 87,
+      "schema": 135
+    },
+    "gitlab__gitlab_list_milestones": {
+      "desc": 99,
+      "schema": 53
+    },
+    "gitlab__gitlab_list_projects": {
+      "desc": 96,
+      "schema": 9
+    },
+    "gitlab__gitlab_list_releases": {
+      "desc": 257,
+      "schema": 32
+    },
+    "gitlab__gitlab_list_tags": {
+      "desc": 34,
+      "schema": 32
+    },
+    "gitlab__gitlab_list_tree": {
+      "desc": 63,
+      "schema": 93
+    },
+    "gitlab__gitlab_read_file": {
+      "desc": 136,
+      "schema": 113
+    },
+    "gitlab__gitlab_search": {
+      "desc": 103,
+      "schema": 99
+    },
+    "google-drive__choose_shared_drives": {
+      "desc": 416,
+      "schema": 34
+    },
+    "google-drive__drive_picker": {
+      "desc": 477,
+      "schema": 15
+    },
+    "google-drive__import": {
+      "desc": 1263,
+      "schema": 23
+    },
+    "google-drive__picker_remove": {
+      "desc": 111,
+      "schema": 30
+    },
+    "google-drive__picker_state": {
+      "desc": 128,
+      "schema": 9
+    },
+    "google-drive__read": {
+      "desc": 878,
+      "schema": 23
+    },
+    "google-drive__search": {
+      "desc": 374,
+      "schema": 27
+    },
+    "google-drive__shared_drives": {
+      "desc": 551,
+      "schema": 15
+    },
+    "google-drive__shared_drives_save": {
+      "desc": 168,
+      "schema": 34
+    },
+    "google-drive__upload": {
+      "desc": 1620,
+      "schema": 44
+    },
+    "invoicing__contact_relationships_get": {
+      "desc": 72,
+      "schema": 23
+    },
+    "invoicing__contact_relationships_set": {
+      "desc": 73,
+      "schema": 46
+    },
+    "invoicing__counterparty_identity_get": {
+      "desc": 432,
+      "schema": 29
+    },
+    "invoicing__counterparty_identity_lookup": {
+      "desc": 617,
+      "schema": 74
+    },
+    "invoicing__counterparty_identity_set": {
+      "desc": 962,
+      "schema": 202
+    },
+    "invoicing__counterparty_territory_set": {
+      "desc": 228,
+      "schema": 50
+    },
+    "invoicing__credit_note_create_and_issue": {
+      "desc": 375,
+      "schema": 1449
+    },
+    "invoicing__credit_note_issue": {
+      "desc": 474,
+      "schema": 22
+    },
+    "invoicing__customer_history": {
+      "desc": 302,
+      "schema": 131
+    },
+    "invoicing__deferred_list": {
+      "desc": 1031,
+      "schema": 15
+    },
+    "invoicing__deferred_tax_override": {
+      "desc": 548,
+      "schema": 91
+    },
+    "invoicing__documents_convert_to_invoice": {
+      "desc": 957,
+      "schema": 179
+    },
+    "invoicing__documents_download_pdf": {
+      "desc": 61,
+      "schema": 19
+    },
+    "invoicing__documents_for_orders": {
+      "desc": 586,
+      "schema": 27
+    },
+    "invoicing__documents_get": {
+      "desc": 50,
+      "schema": 19
+    },
+    "invoicing__documents_issue_preview": {
+      "desc": 232,
+      "schema": 136
+    },
+    "invoicing__documents_mark_paid": {
+      "desc": 48,
+      "schema": 39
+    },
+    "invoicing__documents_preview_pdf": {
+      "desc": 67,
+      "schema": 19
+    },
+    "invoicing__documents_record_refund": {
+      "desc": 482,
+      "schema": 57
+    },
+    "invoicing__documents_retry_pdf": {
+      "desc": 55,
+      "schema": 19
+    },
+    "invoicing__documents_search": {
+      "desc": 729,
+      "schema": 472
+    },
+    "invoicing__documents_send_to_customer": {
+      "desc": 496,
+      "schema": 64
+    },
+    "invoicing__documents_update": {
+      "desc": 330,
+      "schema": 1163
+    },
+    "invoicing__documents_update_preview": {
+      "desc": 169,
+      "schema": 217
+    },
+    "invoicing__draft_issue_preview": {
+      "desc": 132,
+      "schema": 37
+    },
+    "invoicing__drafts_create": {
+      "desc": 290,
+      "schema": 1523
+    },
+    "invoicing__drafts_discard": {
+      "desc": 179,
+      "schema": 45
+    },
+    "invoicing__drafts_update": {
+      "desc": 118,
+      "schema": 1362
+    },
+    "invoicing__einvoice_book_batch": {
+      "desc": 269,
+      "schema": 29
+    },
+    "invoicing__einvoice_send": {
+      "desc": 408,
+      "schema": 81
+    },
+    "invoicing__einvoice_send_request": {
+      "desc": 468,
+      "schema": 41
+    },
+    "invoicing__einvoice_status_refresh": {
+      "desc": 244,
+      "schema": 39
+    },
+    "invoicing__einvoice_transmission_get": {
+      "desc": 220,
+      "schema": 30
+    },
+    "invoicing__einvoicing_backfill_identities": {
+      "desc": 754,
+      "schema": 81
+    },
+    "invoicing__einvoicing_backfill_legacy_originals": {
+      "desc": 837,
+      "schema": 130
+    },
+    "invoicing__einvoicing_classify": {
+      "desc": 501,
+      "schema": 73
+    },
+    "invoicing__einvoicing_provider_options": {
+      "desc": 169,
+      "schema": 16
+    },
+    "invoicing__einvoicing_readiness": {
+      "desc": 781,
+      "schema": 39
+    },
+    "invoicing__einvoicing_settings_get": {
+      "desc": 259,
+      "schema": 16
+    },
+    "invoicing__einvoicing_settings_set": {
+      "desc": 454,
+      "schema": 121
+    },
+    "invoicing__einvoicing_settings_values": {
+      "desc": 207,
+      "schema": 16
+    },
+    "invoicing__hs_codes_assign": {
+      "desc": 341,
+      "schema": 72
+    },
+    "invoicing__hs_codes_library_delete": {
+      "desc": 342,
+      "schema": 48
+    },
+    "invoicing__hs_codes_library_upsert": {
+      "desc": 440,
+      "schema": 28
+    },
+    "invoicing__hs_codes_lookup": {
+      "desc": 62,
+      "schema": 31
+    },
+    "invoicing__hs_codes_unassign": {
+      "desc": 386,
+      "schema": 98
+    },
+    "invoicing__invoice_create_and_issue": {
+      "desc": 477,
+      "schema": 1090
+    },
+    "invoicing__invoice_issue": {
+      "desc": 777,
+      "schema": 116
+    },
+    "invoicing__legal_originals_verify": {
+      "desc": 460,
+      "schema": 91
+    },
+    "invoicing__order_reissue_apply": {
+      "desc": 1371,
+      "schema": 484
+    },
+    "invoicing__orders_invoiceability_check": {
+      "desc": 439,
+      "schema": 230
+    },
+    "invoicing__pending_approvals_list": {
+      "desc": 760,
+      "schema": 9
+    },
+    "invoicing__po_create_and_issue": {
+      "desc": 316,
+      "schema": 831
+    },
+    "invoicing__po_issue": {
+      "desc": 162,
+      "schema": 22
+    },
+    "invoicing__proforma_create_and_issue": {
+      "desc": 818,
+      "schema": 1161
+    },
+    "invoicing__proforma_issue": {
+      "desc": 45,
+      "schema": 22
+    },
+    "invoicing__quote_create_and_issue": {
+      "desc": 1588,
+      "schema": 1096
+    },
+    "invoicing__quote_issue": {
+      "desc": 235,
+      "schema": 22
+    },
+    "invoicing__received_einvoice_action_request": {
+      "desc": 626,
+      "schema": 108
+    },
+    "invoicing__received_einvoice_set_status": {
+      "desc": 339,
+      "schema": 86
+    },
+    "invoicing__received_einvoices_get": {
+      "desc": 297,
+      "schema": 49
+    },
+    "invoicing__received_einvoices_list": {
+      "desc": 294,
+      "schema": 61
+    },
+    "invoicing__received_einvoices_refresh": {
+      "desc": 269,
+      "schema": 42
+    },
+    "invoicing__settings_hs_code_list": {
+      "desc": 39,
+      "schema": 15
+    },
+    "invoicing__settings_issuer_profile_create": {
+      "desc": 194,
+      "schema": 579
+    },
+    "invoicing__settings_issuer_profile_delete": {
+      "desc": 114,
+      "schema": 19
+    },
+    "invoicing__settings_issuer_profile_list": {
+      "desc": 871,
+      "schema": 9
+    },
+    "invoicing__settings_issuer_profile_update": {
+      "desc": 254,
+      "schema": 590
+    },
+    "invoicing__settings_shop_mapping_list": {
+      "desc": 1401,
+      "schema": 9
+    },
+    "invoicing__settings_tax_regime_list": {
+      "desc": 36,
+      "schema": 9
+    },
+    "invoicing__vat_lookup": {
+      "desc": 334,
+      "schema": 128
+    },
+    "invoicing__vat_validate": {
+      "desc": 544,
+      "schema": 90
+    },
+    "invoicing__viewer_access": {
+      "desc": 172,
+      "schema": 9
+    },
+    "kernel__agents_ask": {
+      "desc": 234,
+      "schema": 85
+    },
+    "kernel__agents_invite": {
+      "desc": 444,
+      "schema": 28
+    },
+    "kernel__ai_models_get": {
+      "desc": 322,
+      "schema": 55
+    },
+    "kernel__ai_models_set": {
+      "desc": 538,
+      "schema": 5
+    },
+    "kernel__analyze_media": {
+      "desc": 395,
+      "schema": 32
+    },
+    "kernel__approval_policy_get": {
+      "desc": 206,
+      "schema": 3
+    },
+    "kernel__approval_policy_set": {
+      "desc": 310,
+      "schema": 8
+    },
+    "kernel__approval_update_payload": {
+      "desc": 728,
+      "schema": 26
+    },
+    "kernel__approval_withdraw": {
+      "desc": 375,
+      "schema": 86
+    },
+    "kernel__approvals_list": {
+      "desc": 203,
+      "schema": 27
+    },
+    "kernel__apps_build_check": {
+      "desc": 165,
+      "schema": 12
+    },
+    "kernel__apps_build_create": {
+      "desc": 370,
+      "schema": 79
+    },
+    "kernel__apps_build_discard": {
+      "desc": 126,
+      "schema": 6
+    },
+    "kernel__apps_build_get": {
+      "desc": 93,
+      "schema": 12
+    },
+    "kernel__apps_build_list": {
+      "desc": 56,
+      "schema": 14
+    },
+    "kernel__apps_build_logs": {
+      "desc": 135,
+      "schema": 102
+    },
+    "kernel__apps_build_preview": {
+      "desc": 495,
+      "schema": 75
+    },
+    "kernel__apps_build_publish": {
+      "desc": 384,
+      "schema": 48
+    },
+    "kernel__apps_build_restore": {
+      "desc": 148,
+      "schema": 9
+    },
+    "kernel__apps_build_update": {
+      "desc": 189,
+      "schema": 61
+    },
+    "kernel__apps_build_versions": {
+      "desc": 80,
+      "schema": 6
+    },
+    "kernel__apps_set_access": {
+      "desc": 365,
+      "schema": 101
+    },
+    "kernel__apps_set_enabled": {
+      "desc": 559,
+      "schema": 46
+    },
+    "kernel__assign_role": {
+      "desc": 255,
+      "schema": 17
+    },
+    "kernel__audit_search": {
+      "desc": 1215,
+      "schema": 56
+    },
+    "kernel__bulkDeactivateUsers": {
+      "desc": 21,
+      "schema": 0
+    },
+    "kernel__call_tool": {
+      "desc": 210,
+      "schema": 65
+    },
+    "kernel__capture_business_knowledge": {
+      "desc": 474,
+      "schema": 112
+    },
+    "kernel__clone_repo_on_my_computer": {
+      "desc": 957,
+      "schema": 114
+    },
+    "kernel__computer_session_answer": {
+      "desc": 827,
+      "schema": 197
+    },
+    "kernel__computer_session_import": {
+      "desc": 475,
+      "schema": 83
+    },
+    "kernel__computer_session_import_list": {
+      "desc": 1729,
+      "schema": 156
+    },
+    "kernel__computer_session_list": {
+      "desc": 524,
+      "schema": 43
+    },
+    "kernel__computer_session_read": {
+      "desc": 710,
+      "schema": 6
+    },
+    "kernel__computer_session_send": {
+      "desc": 402,
+      "schema": 49
+    },
+    "kernel__computer_session_settings": {
+      "desc": 982,
+      "schema": 195
+    },
+    "kernel__computer_session_stop": {
+      "desc": 340,
+      "schema": 6
+    },
+    "kernel__config_agents": {
+      "desc": 175,
+      "schema": 7
+    },
+    "kernel__config_apps": {
+      "desc": 206,
+      "schema": 7
+    },
+    "kernel__config_email": {
+      "desc": 188,
+      "schema": 7
+    },
+    "kernel__config_export": {
+      "desc": 217,
+      "schema": 3
+    },
+    "kernel__config_invoicing": {
+      "desc": 211,
+      "schema": 7
+    },
+    "kernel__config_knowledge": {
+      "desc": 202,
+      "schema": 7
+    },
+    "kernel__config_liaisonTeam": {
+      "desc": 211,
+      "schema": 7
+    },
+    "kernel__config_mail": {
+      "desc": 180,
+      "schema": 7
+    },
+    "kernel__config_plan": {
+      "desc": 140,
+      "schema": 37
+    },
+    "kernel__config_roles": {
+      "desc": 185,
+      "schema": 7
+    },
+    "kernel__config_setup": {
+      "desc": 164,
+      "schema": 7
+    },
+    "kernel__config_tickets": {
+      "desc": 199,
+      "schema": 7
+    },
+    "kernel__config_users": {
+      "desc": 188,
+      "schema": 7
+    },
+    "kernel__connect_link_send": {
+      "desc": 756,
+      "schema": 72
+    },
+    "kernel__connection_disconnect": {
+      "desc": 817,
+      "schema": 109
+    },
+    "kernel__contacts_address_upsert": {
+      "desc": 560,
+      "schema": 32
+    },
+    "kernel__contacts_address_verify": {
+      "desc": 722,
+      "schema": 93
+    },
+    "kernel__contacts_addresses_list": {
+      "desc": 416,
+      "schema": 41
+    },
+    "kernel__contacts_export": {
+      "desc": 290,
+      "schema": 36
+    },
+    "kernel__contacts_find_duplicates": {
+      "desc": 1904,
+      "schema": 33
+    },
+    "kernel__contacts_group_add": {
+      "desc": 223,
+      "schema": 16
+    },
+    "kernel__contacts_group_create": {
+      "desc": 290,
+      "schema": 12
+    },
+    "kernel__contacts_group_delete": {
+      "desc": 172,
+      "schema": 9
+    },
+    "kernel__contacts_group_members": {
+      "desc": 171,
+      "schema": 49
+    },
+    "kernel__contacts_group_remove": {
+      "desc": 176,
+      "schema": 16
+    },
+    "kernel__contacts_group_rename": {
+      "desc": 50,
+      "schema": 17
+    },
+    "kernel__contacts_groups_list": {
+      "desc": 257,
+      "schema": 3
+    },
+    "kernel__contacts_merge": {
+      "desc": 1669,
+      "schema": 130
+    },
+    "kernel__contacts_read": {
+      "desc": 144,
+      "schema": 53
+    },
+    "kernel__contacts_search": {
+      "desc": 217,
+      "schema": 389
+    },
+    "kernel__contacts_share": {
+      "desc": 894,
+      "schema": 100
+    },
+    "kernel__contacts_write": {
+      "desc": 594,
+      "schema": 209
+    },
+    "kernel__create_pinned_thread": {
+      "desc": 88,
+      "schema": 17
+    },
+    "kernel__create_role": {
+      "desc": 469,
+      "schema": 35
+    },
+    "kernel__create_routine": {
+      "desc": 283,
+      "schema": 6
+    },
+    "kernel__create_skill": {
+      "desc": 369,
+      "schema": 763
+    },
+    "kernel__dashboards_create": {
+      "desc": 359,
+      "schema": 36
+    },
+    "kernel__dashboards_delete": {
+      "desc": 99,
+      "schema": 9
+    },
+    "kernel__dashboards_edit": {
+      "desc": 1043,
+      "schema": 281
+    },
+    "kernel__dashboards_get": {
+      "desc": 139,
+      "schema": 9
+    },
+    "kernel__dashboards_history": {
+      "desc": 178,
+      "schema": 9
+    },
+    "kernel__dashboards_list": {
+      "desc": 93,
+      "schema": 3
+    },
+    "kernel__dashboards_pdf": {
+      "desc": 417,
+      "schema": 15
+    },
+    "kernel__dashboards_preview_block": {
+      "desc": 272,
+      "schema": 317
+    },
+    "kernel__dashboards_share": {
+      "desc": 528,
+      "schema": 3
+    },
+    "kernel__dashboards_snapshot": {
+      "desc": 647,
+      "schema": 20
+    },
+    "kernel__dashboards_sources": {
+      "desc": 257,
+      "schema": 13
+    },
+    "kernel__dashboards_update": {
+      "desc": 472,
+      "schema": 60
+    },
+    "kernel__data_collections_list": {
+      "desc": 185,
+      "schema": 8
+    },
+    "kernel__data_delete": {
+      "desc": 75,
+      "schema": 6
+    },
+    "kernel__data_get": {
+      "desc": 117,
+      "schema": 5
+    },
+    "kernel__data_query": {
+      "desc": 181,
+      "schema": 5
+    },
+    "kernel__data_set": {
+      "desc": 232,
+      "schema": 5
+    },
+    "kernel__data_subject_export": {
+      "desc": 314,
+      "schema": 183
+    },
+    "kernel__data_update": {
+      "desc": 102,
+      "schema": 6
+    },
+    "kernel__deactivateUser": {
+      "desc": 85,
+      "schema": 36
+    },
+    "kernel__delete_role": {
+      "desc": 1265,
+      "schema": 10
+    },
+    "kernel__delete_routine": {
+      "desc": 47,
+      "schema": 9
+    },
+    "kernel__delete_skill": {
+      "desc": 56,
+      "schema": 9
+    },
+    "kernel__describe_user_access": {
+      "desc": 500,
+      "schema": 21
+    },
+    "kernel__document_record_types_list": {
+      "desc": 388,
+      "schema": 9
+    },
+    "kernel__document_rules_delete": {
+      "desc": 405,
+      "schema": 9
+    },
+    "kernel__document_rules_list": {
+      "desc": 573,
+      "schema": 17
+    },
+    "kernel__document_rules_match": {
+      "desc": 585,
+      "schema": 104
+    },
+    "kernel__document_rules_upsert": {
+      "desc": 1106,
+      "schema": 158
+    },
+    "kernel__document_template_archive": {
+      "desc": 256,
+      "schema": 8
+    },
+    "kernel__document_template_create": {
+      "desc": 876,
+      "schema": 8
+    },
+    "kernel__document_template_get": {
+      "desc": 254,
+      "schema": 7
+    },
+    "kernel__document_template_preview": {
+      "desc": 552,
+      "schema": 8
+    },
+    "kernel__document_template_update": {
+      "desc": 526,
+      "schema": 8
+    },
+    "kernel__document_templates_list": {
+      "desc": 289,
+      "schema": 8
+    },
+    "kernel__documents_print": {
+      "desc": 514,
+      "schema": 8
+    },
+    "kernel__edit_role": {
+      "desc": 1636,
+      "schema": 142
+    },
+    "kernel__enable_app": {
+      "desc": 506,
+      "schema": 9
+    },
+    "kernel__enable_routine_template": {
+      "desc": 409,
+      "schema": 240
+    },
+    "kernel__export": {
+      "desc": 797,
+      "schema": 64
+    },
+    "kernel__files_list": {
+      "desc": 149,
+      "schema": 30
+    },
+    "kernel__files_merge_pdfs": {
+      "desc": 432,
+      "schema": 28
+    },
+    "kernel__files_read": {
+      "desc": 221,
+      "schema": 29
+    },
+    "kernel__files_upload_confirm": {
+      "desc": 306,
+      "schema": 30
+    },
+    "kernel__files_upload_url": {
+      "desc": 333,
+      "schema": 208
+    },
+    "kernel__find_repos_on_my_computer": {
+      "desc": 832,
+      "schema": 9
+    },
+    "kernel__get_role": {
+      "desc": 763,
+      "schema": 10
+    },
+    "kernel__google_setup": {
+      "desc": 221,
+      "schema": 295
+    },
+    "kernel__grant_dimension_value": {
+      "desc": 861,
+      "schema": 34
+    },
+    "kernel__grant_user_scope": {
+      "desc": 1050,
+      "schema": 39
+    },
+    "kernel__import_cancel": {
+      "desc": 111,
+      "schema": 3
+    },
+    "kernel__import_kinds": {
+      "desc": 211,
+      "schema": 3
+    },
+    "kernel__import_preview": {
+      "desc": 200,
+      "schema": 4
+    },
+    "kernel__import_reference": {
+      "desc": 214,
+      "schema": 4
+    },
+    "kernel__import_sample": {
+      "desc": 182,
+      "schema": 3
+    },
+    "kernel__import_start": {
+      "desc": 203,
+      "schema": 3
+    },
+    "kernel__import_status": {
+      "desc": 86,
+      "schema": 3
+    },
+    "kernel__import_transform_save": {
+      "desc": 210,
+      "schema": 3
+    },
+    "kernel__import_undo": {
+      "desc": 144,
+      "schema": 3
+    },
+    "kernel__invite_user": {
+      "desc": 885,
+      "schema": 87
+    },
+    "kernel__list_dimensions": {
+      "desc": 601,
+      "schema": 0
+    },
+    "kernel__list_locked_capabilities": {
+      "desc": 217,
+      "schema": 11
+    },
+    "kernel__list_my_remote_repos": {
+      "desc": 1022,
+      "schema": 9
+    },
+    "kernel__list_routine_events": {
+      "desc": 264,
+      "schema": 18
+    },
+    "kernel__list_routines": {
+      "desc": 304,
+      "schema": 16
+    },
+    "kernel__list_scopes": {
+      "desc": 932,
+      "schema": 10
+    },
+    "kernel__list_skills": {
+      "desc": 215,
+      "schema": 45
+    },
+    "kernel__mail_attachment_read": {
+      "desc": 193,
+      "schema": 156
+    },
+    "kernel__mailbox_setup": {
+      "desc": 216,
+      "schema": 95
+    },
+    "kernel__memory_create": {
+      "desc": 239,
+      "schema": 6
+    },
+    "kernel__memory_delete": {
+      "desc": 214,
+      "schema": 6
+    },
+    "kernel__memory_episode": {
+      "desc": 417,
+      "schema": 7
+    },
+    "kernel__memory_insert": {
+      "desc": 236,
+      "schema": 6
+    },
+    "kernel__memory_open": {
+      "desc": 206,
+      "schema": 6
+    },
+    "kernel__memory_rename": {
+      "desc": 213,
+      "schema": 6
+    },
+    "kernel__memory_search": {
+      "desc": 235,
+      "schema": 6
+    },
+    "kernel__memory_str_replace": {
+      "desc": 220,
+      "schema": 7
+    },
+    "kernel__memory_view": {
+      "desc": 208,
+      "schema": 121
+    },
+    "kernel__merge_imported_user": {
+      "desc": 442,
+      "schema": 3
+    },
+    "kernel__merge_imported_user_preview": {
+      "desc": 453,
+      "schema": 3
+    },
+    "kernel__notification_rules_set": {
+      "desc": 279,
+      "schema": 7
+    },
+    "kernel__notifications_get": {
+      "desc": 277,
+      "schema": 6
+    },
+    "kernel__notifications_set": {
+      "desc": 562,
+      "schema": 6
+    },
+    "kernel__notify_user": {
+      "desc": 195,
+      "schema": 52
+    },
+    "kernel__open_app": {
+      "desc": 216,
+      "schema": 65
+    },
+    "kernel__outside_text_clear": {
+      "desc": 518,
+      "schema": 3
+    },
+    "kernel__outside_text_sources": {
+      "desc": 502,
+      "schema": 3
+    },
+    "kernel__policy_get": {
+      "desc": 90,
+      "schema": 3
+    },
+    "kernel__policy_set": {
+      "desc": 429,
+      "schema": 6
+    },
+    "kernel__product_attributes_list": {
+      "desc": 435,
+      "schema": 77
+    },
+    "kernel__product_attributes_upsert": {
+      "desc": 488,
+      "schema": 68
+    },
+    "kernel__remove_user_from_role": {
+      "desc": 968,
+      "schema": 17
+    },
+    "kernel__report_bug": {
+      "desc": 716,
+      "schema": 4
+    },
+    "kernel__request_scope": {
+      "desc": 239,
+      "schema": 80
+    },
+    "kernel__request_secret": {
+      "desc": 593,
+      "schema": 5
+    },
+    "kernel__reset_routine_to_template": {
+      "desc": 78,
+      "schema": 9
+    },
+    "kernel__roles_list": {
+      "desc": 1358,
+      "schema": 29
+    },
+    "kernel__routine_tool_scopes": {
+      "desc": 547,
+      "schema": 18
+    },
+    "kernel__run_on_my_computer": {
+      "desc": 585,
+      "schema": 482
+    },
+    "kernel__run_routine_now": {
+      "desc": 231,
+      "schema": 126
+    },
+    "kernel__setup_state": {
+      "desc": 178,
+      "schema": 3
+    },
+    "kernel__share_folder_on_my_computer": {
+      "desc": 830,
+      "schema": 94
+    },
+    "kernel__shopify_app_toml": {
+      "desc": 214,
+      "schema": 67
+    },
+    "kernel__shopify_setup": {
+      "desc": 207,
+      "schema": 3
+    },
+    "kernel__sidebar_apps_get": {
+      "desc": 368,
+      "schema": 5
+    },
+    "kernel__sidebar_apps_set": {
+      "desc": 576,
+      "schema": 5
+    },
+    "kernel__skill_read": {
+      "desc": 202,
+      "schema": 10
+    },
+    "kernel__skill_search": {
+      "desc": 197,
+      "schema": 88
+    },
+    "kernel__spawn_agent": {
+      "desc": 498,
+      "schema": 309
+    },
+    "kernel__subagent_create": {
+      "desc": 1450,
+      "schema": 200
+    },
+    "kernel__subagent_delete": {
+      "desc": 203,
+      "schema": 11
+    },
+    "kernel__subagent_get": {
+      "desc": 174,
+      "schema": 11
+    },
+    "kernel__subagent_list": {
+      "desc": 364,
+      "schema": 11
+    },
+    "kernel__tables_edit": {
+      "desc": 1228,
+      "schema": 3
+    },
+    "kernel__tables_get": {
+      "desc": 135,
+      "schema": 10
+    },
+    "kernel__tables_list": {
+      "desc": 154,
+      "schema": 3
+    },
+    "kernel__tables_query": {
+      "desc": 401,
+      "schema": 98
+    },
+    "kernel__tables_rows_write": {
+      "desc": 663,
+      "schema": 27
+    },
+    "kernel__thread_mute_set": {
+      "desc": 153,
+      "schema": 5
+    },
+    "kernel__threads_create": {
+      "desc": 238,
+      "schema": 268
+    },
+    "kernel__threads_list": {
+      "desc": 277,
+      "schema": 38
+    },
+    "kernel__threads_read": {
+      "desc": 205,
+      "schema": 140
+    },
+    "kernel__threads_reply": {
+      "desc": 214,
+      "schema": 423
+    },
+    "kernel__threads_search": {
+      "desc": 197,
+      "schema": 24
+    },
+    "kernel__toggle_app_skill": {
+      "desc": 91,
+      "schema": 32
+    },
+    "kernel__tool_search": {
+      "desc": 417,
+      "schema": 25
+    },
+    "kernel__update_routine": {
+      "desc": 524,
+      "schema": 6
+    },
+    "kernel__update_skill": {
+      "desc": 246,
+      "schema": 231
+    },
+    "kernel__user_memory_delete": {
+      "desc": 270,
+      "schema": 36
+    },
+    "kernel__user_memory_get": {
+      "desc": 377,
+      "schema": 48
+    },
+    "kernel__user_memory_set": {
+      "desc": 436,
+      "schema": 162
+    },
+    "kernel__users_list": {
+      "desc": 169,
+      "schema": 29
+    },
+    "kernel__users_search": {
+      "desc": 181,
+      "schema": 26
+    },
+    "kernel__watch_state": {
+      "desc": 421,
+      "schema": 17
+    },
+    "kernel__web_fetch": {
+      "desc": 217,
+      "schema": 195
+    },
+    "kernel__web_search": {
+      "desc": 201,
+      "schema": 100
+    },
+    "kernel__web_watch": {
+      "desc": 467,
+      "schema": 111
+    },
+    "knowledge__add_folder_source": {
+      "desc": 914,
+      "schema": 345
+    },
+    "knowledge__add_to_collection": {
+      "desc": 41,
+      "schema": 35
+    },
+    "knowledge__archive": {
+      "desc": 315,
+      "schema": 19
+    },
+    "knowledge__collection_create": {
+      "desc": 39,
+      "schema": 42
+    },
+    "knowledge__collection_delete": {
+      "desc": 65,
+      "schema": 19
+    },
+    "knowledge__collection_update": {
+      "desc": 61,
+      "schema": 47
+    },
+    "knowledge__create": {
+      "desc": 501,
+      "schema": 765
+    },
+    "knowledge__find_by_title": {
+      "desc": 599,
+      "schema": 67
+    },
+    "knowledge__get": {
+      "desc": 562,
+      "schema": 149
+    },
+    "knowledge__remove_from_collection": {
+      "desc": 46,
+      "schema": 35
+    },
+    "knowledge__restore": {
+      "desc": 167,
+      "schema": 19
+    },
+    "knowledge__review_queue": {
+      "desc": 246,
+      "schema": 33
+    },
+    "knowledge__search": {
+      "desc": 60,
+      "schema": 189
+    },
+    "knowledge__source_link_create": {
+      "desc": 1351,
+      "schema": 238
+    },
+    "knowledge__synced_sources_archive": {
+      "desc": 219,
+      "schema": 30
+    },
+    "knowledge__synced_sources_list": {
+      "desc": 151,
+      "schema": 9
+    },
+    "knowledge__synced_sources_run_now": {
+      "desc": 184,
+      "schema": 30
+    },
+    "knowledge__update": {
+      "desc": 203,
+      "schema": 385
+    },
+    "knowledge__verify": {
+      "desc": 282,
+      "schema": 59
+    },
+    "mail__appendInboundMessage": {
+      "desc": 142,
+      "schema": 43
+    },
+    "mail__archive": {
+      "desc": 312,
+      "schema": 56
+    },
+    "mail__compose": {
+      "desc": 1769,
+      "schema": 927
+    },
+    "mail__composeForApp": {
+      "desc": 153,
+      "schema": 274
+    },
+    "mail__convertToTicket": {
+      "desc": 134,
+      "schema": 816
+    },
+    "mail__createFromTicket": {
+      "desc": 95,
+      "schema": 64
+    },
+    "mail__disconnectAccount": {
+      "desc": 405,
+      "schema": 22
+    },
+    "mail__export_conversations": {
+      "desc": 1656,
+      "schema": 368
+    },
+    "mail__forward": {
+      "desc": 1679,
+      "schema": 554
+    },
+    "mail__getAccount": {
+      "desc": 35,
+      "schema": 22
+    },
+    "mail__getSyncStatus": {
+      "desc": 45,
+      "schema": 22
+    },
+    "mail__listAccounts": {
+      "desc": 312,
+      "schema": 19
+    },
+    "mail__providers_get": {
+      "desc": 137,
+      "schema": 9
+    },
+    "mail__providers_set": {
+      "desc": 201,
+      "schema": 30
+    },
+    "mail__read": {
+      "desc": 1375,
+      "schema": 58
+    },
+    "mail__reply": {
+      "desc": 1062,
+      "schema": 892
+    },
+    "mail__search": {
+      "desc": 1691,
+      "schema": 486
+    },
+    "mail__setLabels": {
+      "desc": 255,
+      "schema": 126
+    },
+    "mcp-manager__add_connection": {
+      "desc": 235,
+      "schema": 559
+    },
+    "mcp-manager__list_connections": {
+      "desc": 130,
+      "schema": 9
+    },
+    "monitoring__incidents_ack": {
+      "desc": 287,
+      "schema": 78
+    },
+    "monitoring__incidents_comment": {
+      "desc": 354,
+      "schema": 31
+    },
+    "monitoring__incidents_get": {
+      "desc": 324,
+      "schema": 23
+    },
+    "monitoring__incidents_list": {
+      "desc": 480,
+      "schema": 65
+    },
+    "monitoring__incidents_resolve": {
+      "desc": 255,
+      "schema": 31
+    },
+    "monitoring__incidents_summary": {
+      "desc": 435,
+      "schema": 9
+    },
+    "monitoring__webhook_info": {
+      "desc": 249,
+      "schema": 9
+    },
+    "pennylane__cash_position": {
+      "desc": 199,
+      "schema": 9
+    },
+    "pennylane__customer_invoices_list": {
+      "desc": 616,
+      "schema": 82
+    },
+    "pennylane__home_load": {
+      "desc": 103,
+      "schema": 9
+    },
+    "pennylane__pnl_summary": {
+      "desc": 506,
+      "schema": 60
+    },
+    "pennylane__runway_estimate": {
+      "desc": 238,
+      "schema": 9
+    },
+    "pennylane__spend_by_category": {
+      "desc": 198,
+      "schema": 60
+    },
+    "pennylane__supplier_invoice_get": {
+      "desc": 78,
+      "schema": 19
+    },
+    "pennylane__supplier_invoice_upload": {
+      "desc": 780,
+      "schema": 230
+    },
+    "pennylane__supplier_invoices_list": {
+      "desc": 570,
+      "schema": 148
+    },
+    "pennylane__transactions_list": {
+      "desc": 98,
+      "schema": 82
+    },
+    "pennylane__trial_balance_get": {
+      "desc": 305,
+      "schema": 60
+    },
+    "pennylane__webhooks_setup": {
+      "desc": 291,
+      "schema": 54
+    },
+    "projects__add_dependency": {
+      "desc": 146,
+      "schema": 107
+    },
+    "projects__attentionItems": {
+      "desc": 512,
+      "schema": 9
+    },
+    "projects__bulkUpdate": {
+      "desc": 27,
+      "schema": 0
+    },
+    "projects__checklist_add_items": {
+      "desc": 241,
+      "schema": 134
+    },
+    "projects__checklist_get": {
+      "desc": 282,
+      "schema": 40
+    },
+    "projects__checklist_remove_item": {
+      "desc": 80,
+      "schema": 67
+    },
+    "projects__checklist_set_validation": {
+      "desc": 490,
+      "schema": 244
+    },
+    "projects__checklist_update_item": {
+      "desc": 191,
+      "schema": 135
+    },
+    "projects__comment": {
+      "desc": 639,
+      "schema": 62
+    },
+    "projects__comments": {
+      "desc": 448,
+      "schema": 64
+    },
+    "projects__create": {
+      "desc": 1277,
+      "schema": 854
+    },
+    "projects__createProject": {
+      "desc": 523,
+      "schema": 956
+    },
+    "projects__delete": {
+      "desc": 164,
+      "schema": 51
+    },
+    "projects__fields_set": {
+      "desc": 767,
+      "schema": 262
+    },
+    "projects__get": {
+      "desc": 921,
+      "schema": 86
+    },
+    "projects__instantiate_template": {
+      "desc": 296,
+      "schema": 88
+    },
+    "projects__labels_archive": {
+      "desc": 292,
+      "schema": 53
+    },
+    "projects__labels_create": {
+      "desc": 212,
+      "schema": 76
+    },
+    "projects__labels_list": {
+      "desc": 299,
+      "schema": 36
+    },
+    "projects__labels_reorder": {
+      "desc": 362,
+      "schema": 143
+    },
+    "projects__labels_tree": {
+      "desc": 157,
+      "schema": 9
+    },
+    "projects__labels_update": {
+      "desc": 134,
+      "schema": 93
+    },
+    "projects__merge": {
+      "desc": 187,
+      "schema": 88
+    },
+    "projects__move": {
+      "desc": 795,
+      "schema": 203
+    },
+    "projects__portfolio_rollup": {
+      "desc": 1185,
+      "schema": 98
+    },
+    "projects__search": {
+      "desc": 643,
+      "schema": 330
+    },
+    "projects__status_add": {
+      "desc": 432,
+      "schema": 194
+    },
+    "projects__status_delete": {
+      "desc": 297,
+      "schema": 127
+    },
+    "projects__status_update": {
+      "desc": 277,
+      "schema": 192
+    },
+    "projects__tasks_aggregate": {
+      "desc": 1128,
+      "schema": 488
+    },
+    "projects__tasks_byAssignee": {
+      "desc": 782,
+      "schema": 262
+    },
+    "projects__tasks_byProject": {
+      "desc": 454,
+      "schema": 766
+    },
+    "projects__template_save": {
+      "desc": 643,
+      "schema": 245
+    },
+    "projects__templates_list": {
+      "desc": 204,
+      "schema": 9
+    },
+    "projects__update": {
+      "desc": 404,
+      "schema": 413
+    },
+    "projects__update_project": {
+      "desc": 638,
+      "schema": 298
+    },
+    "projects__webhook_info": {
+      "desc": 285,
+      "schema": 9
+    },
+    "shopify__abandoned_checkouts_list": {
+      "desc": 847,
+      "schema": 37
+    },
+    "shopify__analytics_query": {
+      "desc": 1387,
+      "schema": 135
+    },
+    "shopify__apply_seed_suggestion": {
+      "desc": 118,
+      "schema": 39
+    },
+    "shopify__companies_get": {
+      "desc": 174,
+      "schema": 40
+    },
+    "shopify__companies_search": {
+      "desc": 672,
+      "schema": 88
+    },
+    "shopify__connection_disconnect": {
+      "desc": 118,
+      "schema": 9
+    },
+    "shopify__customers_email_marketing_consent_update": {
+      "desc": 54,
+      "schema": 146
+    },
+    "shopify__customers_get": {
+      "desc": 631,
+      "schema": 19
+    },
+    "shopify__customers_get_by_external_id": {
+      "desc": 72,
+      "schema": 23
+    },
+    "shopify__customers_search": {
+      "desc": 504,
+      "schema": 86
+    },
+    "shopify__customers_segment_search": {
+      "desc": 362,
+      "schema": 79
+    },
+    "shopify__customers_sms_marketing_consent_update": {
+      "desc": 52,
+      "schema": 144
+    },
+    "shopify__customers_tag": {
+      "desc": 40,
+      "schema": 53
+    },
+    "shopify__customers_update": {
+      "desc": 32,
+      "schema": 144
+    },
+    "shopify__discounts_bulk_create": {
+      "desc": 774,
+      "schema": 328
+    },
+    "shopify__discounts_create": {
+      "desc": 356,
+      "schema": 315
+    },
+    "shopify__discounts_delete": {
+      "desc": 30,
+      "schema": 19
+    },
+    "shopify__discounts_search": {
+      "desc": 348,
+      "schema": 38
+    },
+    "shopify__discounts_update": {
+      "desc": 171,
+      "schema": 254
+    },
+    "shopify__draft_orders_complete": {
+      "desc": 1125,
+      "schema": 28
+    },
+    "shopify__draft_orders_create": {
+      "desc": 3107,
+      "schema": 1386
+    },
+    "shopify__draft_orders_delete": {
+      "desc": 155,
+      "schema": 19
+    },
+    "shopify__draft_orders_get": {
+      "desc": 386,
+      "schema": 19
+    },
+    "shopify__draft_orders_list": {
+      "desc": 25,
+      "schema": 38
+    },
+    "shopify__draft_orders_send": {
+      "desc": 642,
+      "schema": 153
+    },
+    "shopify__draft_orders_update": {
+      "desc": 463,
+      "schema": 741
+    },
+    "shopify__fulfillment_orders_get": {
+      "desc": 516,
+      "schema": 34
+    },
+    "shopify__fulfillments_cancel": {
+      "desc": 28,
+      "schema": 19
+    },
+    "shopify__fulfillments_create": {
+      "desc": 1303,
+      "schema": 393
+    },
+    "shopify__fulfillments_get": {
+      "desc": 54,
+      "schema": 19
+    },
+    "shopify__fulfillments_update_tracking": {
+      "desc": 68,
+      "schema": 140
+    },
+    "shopify__home_load": {
+      "desc": 465,
+      "schema": 43
+    },
+    "shopify__inventory_adjust": {
+      "desc": 254,
+      "schema": 174
+    },
+    "shopify__inventory_levels_list": {
+      "desc": 390,
+      "schema": 48
+    },
+    "shopify__inventory_set_on_hand": {
+      "desc": 306,
+      "schema": 203
+    },
+    "shopify__inventory_value": {
+      "desc": 559,
+      "schema": 9
+    },
+    "shopify__locations_list": {
+      "desc": 34,
+      "schema": 32
+    },
+    "shopify__markets_get": {
+      "desc": 28,
+      "schema": 19
+    },
+    "shopify__markets_list": {
+      "desc": 43,
+      "schema": 32
+    },
+    "shopify__metafields_delete": {
+      "desc": 39,
+      "schema": 91
+    },
+    "shopify__metafields_list": {
+      "desc": 68,
+      "schema": 74
+    },
+    "shopify__metafields_set": {
+      "desc": 61,
+      "schema": 154
+    },
+    "shopify__order_cancel": {
+      "desc": 225,
+      "schema": 51
+    },
+    "shopify__order_note_set": {
+      "desc": 769,
+      "schema": 119
+    },
+    "shopify__order_update": {
+      "desc": 363,
+      "schema": 202
+    },
+    "shopify__orders_get": {
+      "desc": 1692,
+      "schema": 65
+    },
+    "shopify__orders_invoice_links": {
+      "desc": 351,
+      "schema": 22
+    },
+    "shopify__orders_search": {
+      "desc": 1036,
+      "schema": 680
+    },
+    "shopify__products_create": {
+      "desc": 24,
+      "schema": 164
+    },
+    "shopify__products_delete": {
+      "desc": 24,
+      "schema": 19
+    },
+    "shopify__products_get": {
+      "desc": 45,
+      "schema": 19
+    },
+    "shopify__products_merge": {
+      "desc": 1014,
+      "schema": 182
+    },
+    "shopify__products_publication_targets": {
+      "desc": 252,
+      "schema": 77
+    },
+    "shopify__products_publish": {
+      "desc": 1430,
+      "schema": 124
+    },
+    "shopify__products_search": {
+      "desc": 23,
+      "schema": 38
+    },
+    "shopify__products_short_codes": {
+      "desc": 429,
+      "schema": 30
+    },
+    "shopify__products_unpublish": {
+      "desc": 458,
+      "schema": 125
+    },
+    "shopify__products_update": {
+      "desc": 24,
+      "schema": 233
+    },
+    "shopify__refunds_create": {
+      "desc": 806,
+      "schema": 491
+    },
+    "shopify__refunds_get": {
+      "desc": 28,
+      "schema": 19
+    },
+    "shopify__repeat_rate": {
+      "desc": 695,
+      "schema": 9
+    },
+    "shopify__returns_approve": {
+      "desc": 306,
+      "schema": 19
+    },
+    "shopify__returns_close": {
+      "desc": 22,
+      "schema": 19
+    },
+    "shopify__returns_decline": {
+      "desc": 721,
+      "schema": 67
+    },
+    "shopify__returns_refund": {
+      "desc": 66,
+      "schema": 153
+    },
+    "shopify__returns_request": {
+      "desc": 904,
+      "schema": 198
+    },
+    "shopify__returns_search": {
+      "desc": 22,
+      "schema": 110
+    },
+    "shopify__settings_load": {
+      "desc": 165,
+      "schema": 9
+    },
+    "shopify__staff_overrides_delete": {
+      "desc": 40,
+      "schema": 23
+    },
+    "shopify__staff_overrides_upsert": {
+      "desc": 63,
+      "schema": 48
+    },
+    "shopify__variants_brief": {
+      "desc": 302,
+      "schema": 88
+    },
+    "shopify__variants_create": {
+      "desc": 34,
+      "schema": 150
+    },
+    "shopify__variants_delete": {
+      "desc": 32,
+      "schema": 57
+    },
+    "shopify__variants_get": {
+      "desc": 37,
+      "schema": 19
+    },
+    "shopify__variants_market_price": {
+      "desc": 587,
+      "schema": 100
+    },
+    "shopify__variants_search": {
+      "desc": 405,
+      "schema": 315
+    },
+    "shopify__variants_update": {
+      "desc": 32,
+      "schema": 182
+    },
+    "shopify__webhooks_repair": {
+      "desc": 253,
+      "schema": 18
+    },
+    "social__connections_status": {
+      "desc": 191,
+      "schema": 9
+    },
+    "social__correct_triage": {
+      "desc": 114,
+      "schema": 73
+    },
+    "social__counts": {
+      "desc": 64,
+      "schema": 9
+    },
+    "social__dismiss_finding": {
+      "desc": 61,
+      "schema": 23
+    },
+    "social__dm_get": {
+      "desc": 431,
+      "schema": 25
+    },
+    "social__dm_list": {
+      "desc": 567,
+      "schema": 40
+    },
+    "social__findings_get": {
+      "desc": 29,
+      "schema": 23
+    },
+    "social__findings_list": {
+      "desc": 61,
+      "schema": 57
+    },
+    "social__like_item": {
+      "desc": 683,
+      "schema": 23
+    },
+    "social__monitor_terms_add": {
+      "desc": 314,
+      "schema": 65
+    },
+    "social__monitor_terms_list": {
+      "desc": 25,
+      "schema": 9
+    },
+    "social__monitor_terms_remove": {
+      "desc": 80,
+      "schema": 54
+    },
+    "social__quota_status": {
+      "desc": 197,
+      "schema": 9
+    },
+    "social__reply_to_finding": {
+      "desc": 117,
+      "schema": 34
+    },
+    "social__send_dm": {
+      "desc": 834,
+      "schema": 33
+    },
+    "social__set_triage": {
+      "desc": 153,
+      "schema": 73
+    },
+    "social__unwatch_object": {
+      "desc": 24,
+      "schema": 44
+    },
+    "social__watch_object": {
+      "desc": 502,
+      "schema": 94
+    },
+    "social__watched_list": {
+      "desc": 319,
+      "schema": 15
+    },
+    "social__webhooks_setup": {
+      "desc": 773,
+      "schema": 56
+    },
+    "tickets__addNote": {
+      "desc": 1184,
+      "schema": 242
+    },
+    "tickets__apiKeys_create": {
+      "desc": 17,
+      "schema": 134
+    },
+    "tickets__apiKeys_list": {
+      "desc": 61,
+      "schema": 9
+    },
+    "tickets__apiKeys_revoke": {
+      "desc": 17,
+      "schema": 31
+    },
+    "tickets__approveFromHome_get": {
+      "desc": 361,
+      "schema": 9
+    },
+    "tickets__approveFromHome_set": {
+      "desc": 651,
+      "schema": 62
+    },
+    "tickets__assign": {
+      "desc": 561,
+      "schema": 309
+    },
+    "tickets__backlogHealth": {
+      "desc": 1659,
+      "schema": 74
+    },
+    "tickets__bulkAssign": {
+      "desc": 12,
+      "schema": 0
+    },
+    "tickets__bulkClose": {
+      "desc": 19,
+      "schema": 0
+    },
+    "tickets__bulkSetAudience": {
+      "desc": 19,
+      "schema": 0
+    },
+    "tickets__bulkSetTeam": {
+      "desc": 17,
+      "schema": 0
+    },
+    "tickets__categories_archive": {
+      "desc": 18,
+      "schema": 31
+    },
+    "tickets__categories_create": {
+      "desc": 17,
+      "schema": 71
+    },
+    "tickets__categories_list": {
+      "desc": 15,
+      "schema": 9
+    },
+    "tickets__categories_reorder": {
+      "desc": 345,
+      "schema": 145
+    },
+    "tickets__categories_tree": {
+      "desc": 167,
+      "schema": 9
+    },
+    "tickets__categories_update": {
+      "desc": 17,
+      "schema": 86
+    },
+    "tickets__clearFollowup": {
+      "desc": 25,
+      "schema": 37
+    },
+    "tickets__close": {
+      "desc": 88,
+      "schema": 58
+    },
+    "tickets__convertToMail": {
+      "desc": 451,
+      "schema": 233
+    },
+    "tickets__create": {
+      "desc": 1066,
+      "schema": 705
+    },
+    "tickets__createFromMail": {
+      "desc": 97,
+      "schema": 104
+    },
+    "tickets__csat_list": {
+      "desc": 162,
+      "schema": 36
+    },
+    "tickets__csat_request": {
+      "desc": 655,
+      "schema": 58
+    },
+    "tickets__csat_summary": {
+      "desc": 607,
+      "schema": 9
+    },
+    "tickets__deleteIfUnreferenced": {
+      "desc": 119,
+      "schema": 30
+    },
+    "tickets__deleteNote": {
+      "desc": 394,
+      "schema": 93
+    },
+    "tickets__editNote": {
+      "desc": 512,
+      "schema": 120
+    },
+    "tickets__ensureSummary": {
+      "desc": 61,
+      "schema": 22
+    },
+    "tickets__get": {
+      "desc": 1114,
+      "schema": 229
+    },
+    "tickets__idSegment_get": {
+      "desc": 390,
+      "schema": 9
+    },
+    "tickets__idSegment_set": {
+      "desc": 903,
+      "schema": 139
+    },
+    "tickets__inboxCounts": {
+      "desc": 572,
+      "schema": 44
+    },
+    "tickets__inboxes_create": {
+      "desc": 15,
+      "schema": 797
+    },
+    "tickets__inboxes_disconnect": {
+      "desc": 19,
+      "schema": 31
+    },
+    "tickets__inboxes_list": {
+      "desc": 12,
+      "schema": 9
+    },
+    "tickets__inboxes_update": {
+      "desc": 15,
+      "schema": 962
+    },
+    "tickets__listForContact": {
+      "desc": 33,
+      "schema": 58
+    },
+    "tickets__markRead": {
+      "desc": 71,
+      "schema": 60
+    },
+    "tickets__merge": {
+      "desc": 27,
+      "schema": 98
+    },
+    "tickets__nudge": {
+      "desc": 77,
+      "schema": 36
+    },
+    "tickets__pullMailReply": {
+      "desc": 85,
+      "schema": 43
+    },
+    "tickets__pullMailReplyFromBanner": {
+      "desc": 80,
+      "schema": 43
+    },
+    "tickets__regenerateSummary": {
+      "desc": 41,
+      "schema": 22
+    },
+    "tickets__reopen": {
+      "desc": 22,
+      "schema": 34
+    },
+    "tickets__reply": {
+      "desc": 1671,
+      "schema": 316
+    },
+    "tickets__search": {
+      "desc": 475,
+      "schema": 1736
+    },
+    "tickets__setAudience": {
+      "desc": 702,
+      "schema": 77
+    },
+    "tickets__setCategory": {
+      "desc": 480,
+      "schema": 102
+    },
+    "tickets__setFollowup": {
+      "desc": 20,
+      "schema": 99
+    },
+    "tickets__setLanguage": {
+      "desc": 365,
+      "schema": 68
+    },
+    "tickets__setPriority": {
+      "desc": 22,
+      "schema": 42
+    },
+    "tickets__setStatus": {
+      "desc": 20,
+      "schema": 63
+    },
+    "tickets__setTeam": {
+      "desc": 540,
+      "schema": 79
+    },
+    "tickets__slaReport": {
+      "desc": 1443,
+      "schema": 57
+    },
+    "tickets__teams_list": {
+      "desc": 607,
+      "schema": 9
+    },
+    "tickets__teams_rename": {
+      "desc": 545,
+      "schema": 115
+    },
+    "tickets__templates_create": {
+      "desc": 1093,
+      "schema": 90
+    },
+    "tickets__templates_delete": {
+      "desc": 102,
+      "schema": 33
+    },
+    "tickets__templates_list": {
+      "desc": 180,
+      "schema": 37
+    },
+    "tickets__templates_update": {
+      "desc": 133,
+      "schema": 92
+    },
+    "tickets__ticketsMove": {
+      "desc": 223,
+      "schema": 93
+    }
+  },
+  "forms": {
+    "A001|fermer ticket": "15tl",
+    "A002|attribuer ticket": "15tl",
+    "A003|send email": "5t",
+    "A004|répondre mail": "15tl",
+    "A005|find email": "15tl",
+    "A006|invoice list": "5t",
+    "A007|find invoice": "5t",
+    "A008|paid invoice": "15tl",
+    "A009|download invoice": "15tl",
+    "A010|shipping label": "15tl",
+    "A011|update price": "15tl",
+    "A012|mark fulfilled": "15tl",
+    "A013|add task": "5tl",
+    "A014|project status": "15tl",
+    "A015|grant role": "15tl",
+    "A016|set priority": "15tl",
+    "A017|schedule meeting": "15tl",
+    "A018|stop ad": "15tl",
+    "A019|customer satisfaction": "15tl",
+    "A020|colis bloqué": "15tl",
+    "A021|réclamation transporteur": "15tl",
+    "A022|avoir": "15tl",
+    "A023|devis en facture": "15tl",
+    "A024|factures fournisseurs": "15tl",
+    "A025|facture du mois": "5",
+    "A026|la facture": "5tl",
+    "A027|search invoices": "5t",
+    "A028|where is the parcel": "15tl",
+    "A029|what's left to ship": "15tl",
+    "A030|rembourse": "15tl",
+    "A031|add a note on the order": "5t",
+    "A032|require approval": "15tl",
+    "A033|auto approve": "5tl",
+    "A034|active l'application": "15tl",
+    "A035|imprime étiquettes": "15tl",
+    "C01|annuler abonnement mois": "",
+    "C01|end schedule": "",
+    "C01|enlever facture du mois": "5t",
+    "C01|recurring schedule": "",
+    "C01|remove from month end run": "",
+    "C02|account manager": "15tl",
+    "C02|company account manager": "15tl",
+    "C02|company owner": "15tl",
+    "C02|who handles company": "5t",
+    "C03|cancel subscription": "15tl",
+    "C03|stripe subscription": "15tl",
+    "C03|subscription cancelled": "15t",
+    "C04|away": "15tl",
+    "C04|holiday": "15tl",
+    "C04|next in line": "15tl",
+    "C04|out of office": "15t",
+    "C04|set away": "15tl",
+    "C05|absence": "15tl",
+    "C05|absent": "15tl",
+    "C05|congés": "15tl",
+    "C05|remplaçant": "15tl",
+    "C05|vacances": "15tl",
+    "C08|account manager": "",
+    "C08|company owner": "5t",
+    "C08|modifier société": "",
+    "C08|set account manager": "",
+    "C09|bulk change account manager": "",
+    "C09|hand over accounts": "",
+    "C09|reassign accounts": "",
+    "C09|transfer companies": "",
+    "C10|hours project": "",
+    "C10|project budget": "15tl",
+    "C10|time spent project": "",
+    "C11|log time": "",
+    "C11|task time": "5tl",
+    "C11|temps passé": "15tl",
+    "C11|took": "5tl",
+    "C11|track hours": "5t",
+    "C12|bill the month": "",
+    "C12|invoice project month": "15tl",
+    "C12|month end billing": "",
+    "C12|reconcile": "15tl",
+    "C13|clôture mensuelle": "",
+    "C13|facture du mois": "",
+    "C13|facturer projet": "",
+    "C13|rapprochement": "15tl",
+    "C14|refund": "5tl",
+    "C14|refund charge": "15tl",
+    "C14|refund payment": "",
+    "C14|stripe refund": "15tl",
+    "C15|refund order": "15tl",
+    "C15|rembourser commande": "15tl",
+    "C15|shopify refund": "15tl",
+    "C16|failed payment": "15tl",
+    "C16|overdue invoices": "15tl",
+    "C16|past due": "15t",
+    "C16|unpaid invoice": "5t",
+    "C17|factures impayées": "15tl",
+    "C17|impayé": "15tl",
+    "C17|relance paiement": "15tl",
+    "C18|monthly recurring revenue": "5t",
+    "C18|mrr": "15tl",
+    "C18|revenue": "5t",
+    "C19|card update link": "15tl",
+    "C19|payment method link": "",
+    "C19|update card": "15tl",
+    "C20|affaire": "",
+    "C20|create deal": "5t",
+    "C20|new deal": "",
+    "C20|nouvelle opportunité": "5t",
+    "C21|close deal": "5t",
+    "C21|deal won": "15tl",
+    "C21|mark won": "15t",
+    "C22|deals by stage": "5t",
+    "C22|pipeline": "5t",
+    "C22|sales forecast": "15t",
+    "C23|follow up": "15t",
+    "C23|quiet deals": "15tl",
+    "C23|relance": "5tl",
+    "C23|relancer prospects": "15tl",
+    "C24|do not contact": "",
+    "C24|opt out": "",
+    "C24|suppress email": "",
+    "C24|unsubscribe": "15tl",
+    "C25|désabonner": "15tl",
+    "C25|désinscrire": "15tl",
+    "C25|opposition": "15tl",
+    "C31|days off": "15tl",
+    "C31|jours fériés": "15t",
+    "C31|office closed": "",
+    "C31|public holidays": "5t",
+    "C32|capacity": "15tl",
+    "C32|charge équipe": "",
+    "C32|disponibilité": "15tl",
+    "C32|who is free": "15tl",
+    "C33|marge": "5tl",
+    "C33|margin": "15tl",
+    "C33|profit project": "15tl",
+    "C33|rentabilité": "5tl",
+    "C34|feuille de temps": "15t",
+    "C34|hours report pdf": "5t",
+    "C34|timesheet export": "15tl",
+    "C37|facture récurrente": "",
+    "C37|monthly invoice": "15tl",
+    "C37|recurring invoice": "15tl",
+    "C37|retainer": "15tl",
+    "C37|schedule invoice": "15tl",
+    "C38|month end": "5t",
+    "C38|pending recurring": "15",
+    "C38|recurring run": "15tl",
+    "C38|run of invoices": "5",
+    "C39|answer customer": "15tl",
+    "C39|reply ticket": "15tl",
+    "C39|tickets reply": "15tl",
+    "C40|répondre client": "15tl",
+    "C40|répondre ticket": "15tl",
+    "C41|create task": "15tl",
+    "C41|new task": "15tl",
+    "C41|projects create": "5t",
+    "C42|créer tâche": "15tl",
+    "C42|nouvelle tâche": "15tl",
+    "C42|tâche": "5l",
+    "C43|compose mail": "15tl",
+    "C43|mail compose": "15tl",
+    "C43|send email": "5t",
+    "C44|courriel": "15tl",
+    "C44|envoyer email": "5tl",
+    "C44|envoyer mail": "5tl",
+    "C45|find invoice": "5t",
+    "C45|invoice number": "15tl",
+    "C45|search invoices": "5t",
+    "C46|chercher facture": "15tl",
+    "C46|facture": "5tl",
+    "C46|rechercher facture": "15tl",
+    "C47|invoice issue": "5tl",
+    "C47|issue invoice": "5tl",
+    "C48|avoir": "15tl",
+    "C48|credit note": "15tl",
+    "C48|note de crédit": "15tl",
+    "C49|contact write": "15tl",
+    "C49|edit contact": "15tl",
+    "C49|update contact": "15tl",
+    "C50|create document": "5t",
+    "C50|knowledge create": "5tl",
+    "C50|new doc": "15tl",
+    "C50|write policy": "15tl",
+    "C51|knowledge search": "15tl",
+    "C51|politique remboursement": "5t",
+    "C51|refund policy": "",
+    "C52|calendar event": "15tl",
+    "C52|create event": "15tl",
+    "C52|rendez-vous": "15tl",
+    "C52|réunion": "15l",
+    "C53|cancel order": "15tl",
+    "C53|order cancel": "15tl",
+    "C54|create shipment": "15tl",
+    "C54|expédier colis": "15tl",
+    "C54|label": "",
+    "C54|ship parcel": "15tl",
+    "C55|a valider": "15tl",
+    "C55|approvals": "15tl",
+    "C55|en attente validation": "15tl",
+    "C55|pending approvals": "15tl",
+    "C56|create routine": "15tl",
+    "C56|routine weekly": "15tl",
+    "C56|schedule recurring task": "5t",
+    "C57|invoce search": "15tl",
+    "C57|invocie": "",
+    "C58|subscripton": "5tl",
+    "C58|subscrition": "5tl",
+    "C60|comapny": "5t",
+    "C60|compnay": "5t",
+    "C61|company merge": "15tl",
+    "C61|duplicate companies": "15tl",
+    "C61|merge companies": "15tl",
+    "C62|activity company": "15tl",
+    "C62|company timeline": "15tl",
+    "C62|customer history": "",
+    "C62|history with client": "5t",
+    "C63|fil d'activité": "15t",
+    "C63|historique client": "5",
+    "C63|historique société": "15tl",
+    "C64|end schedule": "",
+    "C64|remove from month end run": "15t",
+    "C64|take out of this month's run": "5t",
+    "C65|end the monthly invoice": "",
+    "C65|pause schedule": "15tl",
+    "C65|stop recurring invoice": "15t",
+    "C66|add a line to the draft": "15tl",
+    "C66|edit draft": "15tl",
+    "C66|month end run add row": "15tl",
+    "C67|change monthly amount": "15t",
+    "C67|modifier abonnement": "15tl",
+    "C67|update recurring price": "15t",
+    "C68|approuver factures du mois": "5t",
+    "C68|approve month-end invoices": "5t",
+    "C68|month-end run": "15tl",
+    "C69|billing terms": "15tl",
+    "C69|day rate": "5t",
+    "C69|fixed price": "",
+    "C69|project rate": "15tl",
+    "C70|correct time entry": "15tl",
+    "C70|corriger temps": "15tl",
+    "C73|month close": "",
+    "C73|planned done project": "",
+    "C73|planned vs done": "5",
+    "C74|a pris": "0",
+    "C74|durée tâche": "",
+    "C74|took": "5tl",
+    "C75|4 jours par semaine": "15t",
+    "C75|capacity person": "5t",
+    "C75|days per week": "5t",
+    "C75|part time": "15tl",
+    "C75|temps partiel": "5tl",
+    "C76|create routine": "15tl",
+    "C76|relancer heures": "",
+    "C76|reminder hours": "",
+    "C76|routine weekly": "15tl",
+    "C77|my time on task": "5tl",
+    "C77|temps saisi": "5t",
+    "C77|time logged": "15tl",
+    "C77|took entries": "15tl",
+    "C78|billing basis": "",
+    "C78|dated hours": "5t",
+    "C78|heures datées": "",
+    "C78|project plan": "15tl",
+    "C79|forfait mensuel": "",
+    "C79|heures du mois": "5t",
+    "C79|period timebox": "15tl",
+    "C79|retainer hours": "5t",
+    "C80|remove day off": "15tl",
+    "C80|remove holiday": "15tl",
+    "C80|supprimer jour férié": "15tl",
+    "C81|heures par jour": "",
+    "C81|hours per day": "15tl",
+    "C81|time settings": "15tl",
+    "C82|invoiced minus cost": "15tl",
+    "C82|marge projet": "5t",
+    "C82|profit project": "15tl",
+    "C82|project margin": "15tl",
+    "C83|cost rates": "15tl",
+    "C83|coût horaire": "5tl",
+    "C83|taux de coût": "5tl",
+    "C84|cost per hour": "15tl",
+    "C84|set cost rate": "15tl",
+    "C84|taux de coût": "15tl",
+    "C90|bill line": "15tl",
+    "C90|change reconcile line": "15tl",
+    "C90|reconcile card line": "15tl",
+    "C91|carte rapprochement": "15tl",
+    "C91|rapprochement enregistré": "15t",
+    "C92|dated sheet": "15tl",
+    "C92|hours by day": "",
+    "C92|timesheet": "5tl",
+    "C93|open reconcile card": "15t",
+    "C93|reconcile for client last month": "5t",
+    "C93|saved reconcile": "5t",
+    "C94|change reconcile line": "15tl",
+    "C94|corriger ligne rapprochement": "5t",
+    "C94|modifier ligne carte": "5t",
+    "DS1|dashboard access viewer": "15tl",
+    "DS1|share dashboard": "15tl",
+    "GH01|github repositories": "5tl",
+    "GH01|list github repos": "15tl",
+    "GH02|commits github": "15tl",
+    "GH02|historique github": "5",
+    "GH03|get github commit": "15tl",
+    "GH03|github commit diff": "15tl",
+    "GH04|github pull requests": "15tl",
+    "GH04|list pull requests": "15tl",
+    "GH05|get pull request": "15tl",
+    "GH05|github pull request files": "15tl",
+    "GH06|bugs github": "15tl",
+    "GH06|github issues": "15tl",
+    "GH07|github milestones": "15tl",
+    "GH07|jalons github": "15tl",
+    "GH08|github labels": "15tl",
+    "GH08|list github labels": "15tl",
+    "GH09|github release notes": "15t",
+    "GH09|github releases": "15tl",
+    "GH10|github tags": "15tl",
+    "GH10|list github tags": "15tl",
+    "GH11|github read file": "15tl",
+    "GH11|lire fichier github": "15t",
+    "GH12|github folder files": "5t",
+    "GH12|github repository tree": "15tl",
+    "GH13|github search": "15tl",
+    "GH13|search github code": "15tl",
+    "H001|modifier un rôle": "15tl",
+    "H002|créer un rôle": "15tl",
+    "H003|supprimer un rôle": "15tl",
+    "H004|attribuer un rôle": "15tl",
+    "H005|retirer un utilisateur d'un rôle": "15tl",
+    "H006|accorder un droit à un utilisateur": "15tl",
+    "H007|accorder un accès restreint": "15tl",
+    "H008|inviter un utilisateur": "15tl",
+    "H009|désactiver un utilisateur": "15tl",
+    "H010|désactiver des utilisateurs": "5t",
+    "H011|créer une compétence": "15tl",
+    "H012|modifier une compétence": "15tl",
+    "H013|supprimer une compétence": "15tl",
+    "H014|activer ou désactiver une compétence d'application": "15tl",
+    "H015|créer une routine": "15tl",
+    "H016|modifier une routine": "15tl",
+    "H017|supprimer une routine": "15tl",
+    "H018|lancer une routine maintenant": "15tl",
+    "H019|activer un modèle de routine": "15tl",
+    "H020|réinitialiser une routine selon le modèle": "15tl",
+    "H021|définir une règle d'approbation automatique": "15tl",
+    "H022|renforcer une règle d'approbation": "5tl",
+    "H023|fusionner des contacts": "15tl",
+    "H024|modifier un contact": "5tl",
+    "H025|activer une application": "5tl",
+    "H026|exporter les données d'une personne": "15tl",
+    "H027|créer un sous-agent": "15tl",
+    "H028|supprimer un sous-agent": "5t",
+    "H029|répondre": "15tl",
+    "H030|relancer": "5tl",
+    "H031|clôturer": "15tl",
+    "H032|modifier une note interne": "5t",
+    "H033|supprimer une note interne": "5t",
+    "H034|fusionner des tickets": "15tl",
+    "H035|créer un ticket": "15tl",
+    "H036|attribuer": "5tl",
+    "H037|changer le statut": "15tl",
+    "H038|convertir en mail": "15tl",
+    "H039|transférer": "15tl",
+    "H040|écrire un mail": "15tl",
+    "H041|archiver": "5tl",
+    "H042|convertir en ticket": "15tl",
+    "H043|créer un document": "5t",
+    "H044|modifier un document": "5t",
+    "H045|archiver un document": "5t",
+    "H046|restaurer un document": "15tl",
+    "H047|vérifier un document": "5t",
+    "H048|créer une collection": "15tl",
+    "H049|modifier une collection": "15tl",
+    "H050|supprimer une collection": "15tl",
+    "H051|créer une tâche": "15tl",
+    "H052|modifier une tâche": "15tl",
+    "H053|supprimer une tâche": "15tl",
+    "H054|fusionner des tâches": "15tl",
+    "H055|déplacer une tâche": "15tl",
+    "H056|modifier des tâches en lot": "",
+    "H057|créer un projet": "15tl",
+    "H058|ajouter une colonne de statut": "15tl",
+    "H059|modifier une colonne de statut": "15tl",
+    "H060|supprimer une colonne de statut": "15tl",
+    "H061|émettre une facture": "5t",
+    "H062|créer et émettre une facture": "15tl",
+    "H063|émettre un devis": "15tl",
+    "H064|créer et émettre un devis": "15tl",
+    "H065|émettre une facture proforma": "15t",
+    "H066|créer et émettre une facture proforma": "5t",
+    "H067|émettre un bon de commande": "15tl",
+    "H068|créer et émettre un bon de commande": "15tl",
+    "H069|émettre un avoir": "5tl",
+    "H070|créer et émettre un avoir": "15tl",
+    "H071|envoyer un document au client": "15tl",
+    "H072|marquer un document comme payé": "15t",
+    "H073|enregistrer un remboursement": "15tl",
+    "H074|convertir un document en facture": "15tl",
+    "H075|réémettre les documents d'une commande": "15tl",
+    "H076|connecter un serveur MCP": "15tl",
+    "H077|créer un événement": "15tl",
+    "H078|modifier un événement": "15tl",
+    "H079|supprimer un événement": "15tl",
+    "H080|déposer un fichier": "15tl",
+    "H081|importer un fichier": "15tl",
+    "H082|créer une expédition": "15tl",
+    "H083|annuler une expédition": "15tl",
+    "H084|ouvrir une réclamation": "15tl",
+    "H085|déposer une facture fournisseur": "15tl",
+    "H086|répondre à une publication": "5t",
+    "H087|envoyer un message privé": "15tl",
+    "H088|aimer une publication": "15t",
+    "H089|edit role": "15tl",
+    "H090|create role": "15tl",
+    "H091|delete role": "15tl",
+    "H092|assign role": "15tl",
+    "H093|remove user from role": "15tl",
+    "H094|grant user scope": "15tl",
+    "H095|grant dimension value": "15tl",
+    "H096|invite user": "15tl",
+    "H097|deactivate user": "5tl",
+    "H098|deactivate users": "15tl",
+    "H099|create skill": "15tl",
+    "H100|update skill": "15tl",
+    "H101|delete skill": "15tl",
+    "H102|toggle app skill": "15tl",
+    "H103|create routine": "15tl",
+    "H104|update routine": "15tl",
+    "H105|delete routine": "15tl",
+    "H106|run routine now": "15tl",
+    "H107|enable routine template": "15tl",
+    "H108|reset routine to template": "15tl",
+    "H109|set auto-approve policy": "15tl",
+    "H110|tighten approval policy": "15tl",
+    "H111|merge contacts": "15tl",
+    "H112|edit contact": "15tl",
+    "H113|enable app": "15tl",
+    "H114|export a person's data": "15t",
+    "H115|create sub-agent": "15tl",
+    "H116|delete sub-agent": "15tl",
+    "H117|reply": "15tl",
+    "H118|nudge": "15tl",
+    "H119|close": "5tl",
+    "H120|edit note": "15tl",
+    "H121|delete note": "15tl",
+    "H122|merge tickets": "15tl",
+    "H123|create ticket": "15tl",
+    "H124|assign": "5tl",
+    "H125|set status": "5tl",
+    "H126|convert to mail": "15tl",
+    "H127|forward": "15tl",
+    "H128|compose": "15tl",
+    "H129|archive": "5tl",
+    "H130|convert to ticket": "15tl",
+    "H131|create document": "5t",
+    "H132|update document": "5t",
+    "H133|archive document": "5t",
+    "H134|restore document": "15tl",
+    "H135|verify document": "15tl",
+    "H136|create collection": "15tl",
+    "H137|update collection": "15tl",
+    "H138|delete collection": "15tl",
+    "H139|create task": "15tl",
+    "H140|update task": "15tl",
+    "H141|delete task": "15tl",
+    "H142|merge tasks": "15tl",
+    "H143|move task": "15tl",
+    "H144|update tasks": "",
+    "H145|create project": "15tl",
+    "H146|add status column": "15tl",
+    "H147|update status column": "15tl",
+    "H148|delete status column": "15tl",
+    "H149|issue invoice": "5tl",
+    "H150|create and issue invoice": "15tl",
+    "H151|issue quote": "5tl",
+    "H152|create and issue quote": "15tl",
+    "H153|issue proforma": "5tl",
+    "H154|create and issue proforma": "15tl",
+    "H155|issue purchase order": "5tl",
+    "H156|create and issue purchase order": "15tl",
+    "H157|issue credit note": "5tl",
+    "H158|create and issue credit note": "15tl",
+    "H159|send document to customer": "15tl",
+    "H160|mark document paid": "15tl",
+    "H161|record document refund": "15tl",
+    "H162|convert document to invoice": "15tl",
+    "H163|reissue order documents": "15tl",
+    "H164|connect MCP server": "15tl",
+    "H165|create event": "15tl",
+    "H166|update event": "15tl",
+    "H167|delete event": "15tl",
+    "H168|upload file": "5t",
+    "H169|import file": "15tl",
+    "H170|create shipment": "15tl",
+    "H171|cancel shipment": "15tl",
+    "H172|open claim": "15tl",
+    "H173|upload supplier invoice": "15tl",
+    "H174|reply to post": "15tl",
+    "H175|send direct message": "15tl",
+    "H176|like post": "15t",
+    "H177|suggest next steps": "15tl",
+    "H178|absent remplaçant": "15tl",
+    "H178|congés semaine prochaine": "15tl",
+    "K01|add people to company": "",
+    "K01|contacts company": "15tl",
+    "K01|link contacts to company": "15tl",
+    "K02|créer sociétés": "",
+    "K02|regrouper contacts par société": "15tl",
+    "K02|sociétés depuis contacts": "5tl",
+    "K03|different companies": "5",
+    "K03|not a duplicate": "5t",
+    "K03|not the same company": "15tl",
+    "K04|create pipeline": "15tl",
+    "K04|new pipeline": "15tl",
+    "K04|sales pipeline": "15tl",
+    "K05|désinscrire": "15tl",
+    "K05|ne plus recevoir": "",
+    "K05|unsubscribe": "15tl",
+    "K06|check opt-out": "15tl",
+    "K06|opted out": "5t",
+    "K06|unsubscribed": "15tl",
+    "K07|opt back in": "",
+    "K07|remove opt-out": "15tl",
+    "K07|resubscribe": "15tl",
+    "K08|combine companies": "15tl",
+    "K08|duplicate company": "5t",
+    "K08|merge companies": "15tl",
+    "K09|doublon société": "5tl",
+    "K09|fusionner sociétés": "15tl",
+    "K09|même entreprise": "",
+    "K10|duplicate companies": "15tl",
+    "K10|find duplicates": "15tl",
+    "K10|same company twice": "5t",
+    "K11|ajouter à la société": "",
+    "K11|lier contact entreprise": "15tl",
+    "K11|rattacher contact société": "15tl",
+    "K12|pas la même société": "",
+    "K12|pas un doublon": "",
+    "K12|société différente": "",
+    "K13|companies from contacts": "5tl",
+    "K13|create companies from contacts": "5t",
+    "K13|group contacts by company": "",
+    "K14|détail société": "5t",
+    "K14|fiche société": "",
+    "K14|société": "5tl",
+    "K15|désinscrit": "15tl",
+    "K15|opposition": "",
+    "K15|vérifier désinscription": "15tl",
+    "K16|lever opposition": "",
+    "K16|réabonner": "15tl",
+    "K16|réinscrire": "15tl",
+    "K17|chase": "15tl",
+    "K17|follow up": "15t",
+    "K17|no reply deals": "15tl",
+    "K17|quiet deals": "15tl",
+    "K18|créer pipeline": "15tl",
+    "K18|nouveau pipeline": "15tl",
+    "K18|pipeline ventes": "15tl",
+    "K19|pipeline": "5t",
+    "K19|prévision ventes": "15t",
+    "K19|total affaires": "5t",
+    "K20|affaires": "15tl",
+    "K20|chercher affaire": "15tl",
+    "K20|deals société": "5",
+    "K21|affaire perdue": "15tl",
+    "K21|deal lost": "15tl",
+    "K21|perdu": "5tl",
+    "K22|list deals": "5t",
+    "K22|open deals": "5t",
+    "K22|search deals": "15tl",
+    "K23|forecast": "15tl",
+    "K23|pipeline forecast": "5t",
+    "K23|sales forecast": "15t",
+    "K24|create companies": "5t",
+    "K24|group contacts under companies": "",
+    "K24|put people in companies": "15",
+    "L036|Marquer comme payé": "15t",
+    "L037|Programmer une relance": "15tl",
+    "L038|Créer une tâche": "15tl",
+    "L039|Nouvelle tâche": "15tl",
+    "L040|Supprimer la tâche": "15tl",
+    "L041|Rechercher des tâches": "15tl",
+    "L042|Créer un projet": "15tl",
+    "L043|Archiver le projet": "15tl",
+    "L044|Clôturer le ticket": "15tl",
+    "L045|Rouvrir le ticket": "15tl",
+    "L046|Changer la priorité": "15tl",
+    "L047|Changer la catégorie": "5t",
+    "L048|Changer le statut": "15tl",
+    "L049|Fusionner les tickets": "15tl",
+    "L050|Convertir en mail": "15tl",
+    "L051|Convertir en ticket": "15tl",
+    "L052|Ajouter une note": "15tl",
+    "L053|Envoyer une relance": "15tl",
+    "L054|Supprimer la relance": "15tl",
+    "L055|Rechercher des tickets": "15tl",
+    "L056|Nouveau ticket": "15tl",
+    "L057|Nouveau mail": "15tl",
+    "L058|Répondre à tous": "15tl",
+    "L059|Archiver": "15tl",
+    "L060|Connecter Gmail": "15tl",
+    "L061|Nouvel événement": "15tl",
+    "L062|Modifier l'événement": "15tl",
+    "L063|Mes agendas": "5tl",
+    "L064|Nouveau document": "5t",
+    "L065|Convert to invoice": "15tl",
+    "L066|Télécharger le PDF": "15tl",
+    "L067|Download PDF": "15tl",
+    "L068|Envoyer au client": "15tl",
+    "L069|New quote": "15tl",
+    "L070|Credit note": "15tl",
+    "L071|Contester cette facture": "15tl",
+    "L072|Facturation électronique": "15tl",
+    "L073|Prendre en compte": "15tl",
+    "L074|Résoudre": "15tl",
+    "L075|Incidents en cours": "15tl",
+    "M01|monthly billing list": "",
+    "M01|recurring invoices": "5",
+    "M01|subscriptions we invoice": "",
+    "M02|facturation fin de mois": "",
+    "M02|factures mensuelles à valider": "",
+    "M02|month-end invoices": "",
+    "M03|approve month-end invoices": "5t",
+    "M03|month-end run": "5tl",
+    "M03|send monthly invoices": "",
+    "M04|annuler validation factures du mois": "",
+    "M04|revenir en arrière": "",
+    "M04|undo month-end approval": "15tl",
+    "M05|facture récurrente": "",
+    "M05|facturer chaque mois": "",
+    "M05|nouvel abonnement": "5",
+    "M06|pause billing": "15tl",
+    "M06|stop invoicing for now": "15t",
+    "M06|suspend monthly invoice": "",
+    "M07|changer montant mensuel": "15t",
+    "M07|modifier abonnement": "15tl",
+    "M07|update monthly price": "",
+    "M08|check stripe key": "15tl",
+    "M08|tester connexion stripe": "15t",
+    "M08|vérifier clé stripe": "15tl",
+    "M09|reopen month-end run": "5t",
+    "M09|undo month-end approval": "15tl",
+    "M10|échéancier de facturation": "5t",
+    "M10|factures récurrentes": "",
+    "N01|next steps": "15tl",
+    "N01|propose follow-up actions": "15tl",
+    "N01|suggest next steps": "15tl",
+    "N01|what next": "15tl",
+    "N02|memory insert": "15tl",
+    "N02|remember": "15tl",
+    "N02|remember that": "15tl",
+    "N02|save a note to memory": "15tl",
+    "N03|ajouter à la mémoire": "15tl",
+    "N03|mémoriser": "15tl",
+    "N03|retenir": "15tl",
+    "N03|se souvenir": "15tl",
+    "N03|souviens-toi": "15tl",
+    "WI1|invoice issuer Stripe or Liaison": "5t",
+    "WI1|who issues card subscription invoices": "15tl",
+    "WI10|create invoice from payment": "15t",
+    "WI10|invoice a Stripe payment": "15tl",
+    "WI2|changer l'émetteur des abonnements carte": "15t",
+    "WI2|Stripe émet les factures": "5tl",
+    "WI3|confirm Stripe customer emails off": "15tl",
+    "WI3|Stripe emails are off": "15tl",
+    "WI4|créer la facture du paiement": "5t",
+    "WI4|facturer un paiement Stripe orphelin": "15tl",
+    "WI5|link a Stripe payment to an invoice": "15tl",
+    "WI5|reconcile the payment with its invoice": "15tl",
+    "WI6|flux de facturation émetteur": "15t",
+    "WI6|who issues the invoices": "5t",
+    "WI7|set issuer stream": "15tl",
+    "WI7|switch invoice stream to Liaison": "5t",
+    "WI8|confirm Stripe emails are off": "15tl",
+    "WI8|Stripe receipts disabled": "15t",
+    "WI9|lettrer un paiement": "15tl",
+    "WI9|rapprocher paiement facture": "15tl",
+    "Y01|check the Stripe key": "15tl",
+    "Y01|vérifier la clé Stripe": "15tl",
+    "Y02|clients Stripe non liés": "5t",
+    "Y02|Stripe customers not linked": "5t",
+    "Y03|customer subscriptions": "5t",
+    "Y03|Stripe customer": "5tl",
+    "Y04|lier un client Stripe": "15tl",
+    "Y04|link Stripe customer to company": "15tl",
+    "Y05|abonnements en retard": "",
+    "Y05|past due subscriptions": "15t",
+    "Y06|factures Stripe ouvertes": "5t",
+    "Y06|open Stripe invoices": "5t",
+    "Y07|failed payments": "5t",
+    "Y07|paiements échoués": "5tl",
+    "Y08|litiges Stripe": "15tl",
+    "Y08|Stripe disputes": "15tl",
+    "Y09|monthly recurring revenue": "5t",
+    "Y09|revenu récurrent mensuel": "5t",
+    "Y10|refund a Stripe charge": "15tl",
+    "Y10|rembourser un paiement Stripe": "5t",
+    "Y11|cancel Stripe subscription": "15tl",
+    "Y11|résilier l'abonnement Stripe": "15tl",
+    "Y12|card update link": "15tl",
+    "Y12|lien pour changer de carte": "15tl",
+    "Y13|Stripe customers on trial": "15tl",
+    "Y13|trial customers": "5t",
+    "Y14|fiche client Stripe": "5t",
+    "Y14|Stripe customer record": "5t",
+    "Y15|associate Stripe customer": "15tl",
+    "Y15|link Stripe customer to company": "15tl",
+    "Y16|open Stripe invoices": "5t",
+    "Y16|unpaid Stripe invoices": "",
+    "Y17|failed card payments": "5t",
+    "Y17|paiements échoués": "5tl",
+    "Y18|chargebacks": "15tl",
+    "Y18|open disputes": "15t"
+  }
+}

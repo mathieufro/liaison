@@ -1,0 +1,21 @@
+{
+  "entry": "tool:customer_link",
+  "params": {
+    "stripeCustomerId": "cus_contract_1",
+    "contactId": "00000000-0000-4000-8000-0000000000c1"
+  },
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)",
+  "unrecorded": {
+    "reason": "hand-written, not recorded: a recording needs a restricted Stripe key, which the recording run does not have yet. Awaiting a recording against a Stripe test account."
+  },
+  "expectError": {
+    "reason": "the replayed mirror holds no rows, so the entry refuses the unknown id; the working path waits for a recording against a Stripe test account"
+  },
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": ["stripe_customers", "{\"where\":{\"stripe_id\":\"cus_contract_1\"},\"limit\":1}"],
+      "reply": "[]"
+    }
+  ]
+}

@@ -713,6 +713,7 @@ export class CapturedDemoMailProvider implements EmailProvider {
 
 let _demoCapture: CapturedDemoMailProvider | null = null
 let _demoResend: ResendEmailProvider | null = null
+let _demoSmtp: SmtpEmailProvider | null = null
 let _demoSystemOverride: EmailProvider | null | undefined
 
 /** The capture sender, created on first use. Read by tests. */
@@ -741,12 +742,30 @@ export function getDemoSystemMailProvider(): EmailProvider | null {
     return capturedDemoMail()
   }
   const apiKey = env.LIAISON_DEMO_MAIL_RESEND_API_KEY || env.SYSTEM_RESEND_API_KEY
-  if (!apiKey) return null
-  if (!_demoResend) {
-    _demoResend = new ResendEmailProvider({ apiKey, from: systemEmailFrom() })
-    log.info("Demo system mail channel: resend")
+  if (apiKey) {
+    if (!_demoResend) {
+      _demoResend = new ResendEmailProvider({ apiKey, from: systemEmailFrom() })
+      log.info("Demo system mail channel: resend")
+    }
+    return _demoResend
   }
-  return _demoResend
+  // A box that sends its mail over SMTP has a channel too (demoMailConfigured counts SMTP_HOST):
+  // without it, an SMTP-only demo box could never turn visitor agents on.
+  if (env.SMTP_HOST) {
+    if (!_demoSmtp) {
+      _demoSmtp = new SmtpEmailProvider({
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT,
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+        from: systemEmailFrom(),
+        secure: env.SMTP_SECURE,
+      })
+      log.info({ host: env.SMTP_HOST, port: env.SMTP_PORT }, "Demo system mail channel: SMTP")
+    }
+    return _demoSmtp
+  }
+  return null
 }
 
 /** Does this box have a demo system mail channel at all? Never throws. */

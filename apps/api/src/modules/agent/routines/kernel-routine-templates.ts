@@ -11,6 +11,7 @@ import { routineTemplateRegistry } from "~/modules/apps/app-registries"
 export const KERNEL_TEMPLATE_APP = "kernel"
 
 export const MORNING_BRIEF_TEMPLATE_KEY = "morning-brief"
+export const DEAL_FOLLOWUPS_TEMPLATE_KEY = "deal-followups"
 
 /**
  * Template keys of routines an app's own job acts through (an "app-run"
@@ -65,6 +66,72 @@ const MORNING_BRIEF_PROMPT = [
   "Post the brief as your reply here. Then call kernel__notify_user exactly once with a one-line summary of the counts (for example: 3 new emails, 2 drafts to approve, 1 task due), so I get it on my phone.",
 ].join("\n")
 
+/** Days of silence before a deal gets a follow-up, when the person names none. */
+export const DEAL_FOLLOWUPS_DEFAULT_QUIET_DAYS = 7
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** What a Deal follow-ups routine covers: how quiet a deal must be, and one pipeline or all. */
+export interface DealFollowupOptions {
+  quietDays: number
+  pipelineId: string | null
+}
+
+/**
+ * Deal follow-ups: every weekday, a draft per open deal gone quiet, for
+ * the deal's owner to approve. What may be drafted is decided by the server
+ * (`deals_followup_candidates`: quiet, opted out, basis, sender mailbox, a
+ * draft already waiting) and checked again at send by the send guard, so the
+ * prompt only says what to write and where.
+ */
+function dealFollowupsPrompt(o: DealFollowupOptions): string {
+  const args = JSON.stringify({
+    quietDays: o.quietDays,
+    ...(o.pipelineId ? { projectId: o.pipelineId } : {}),
+  })
+  return [
+    "Draft follow-ups for open deals that went quiet. You only draft: each mail waits for a person's approval.",
+    "",
+    `1. Call projects__deals_followup_candidates with ${args}.`,
+    '2. For each row with skip null, write a short, friendly follow-up to the row\'s contact about the deal, in the language of their last message, signed as the deal\'s owner. Call mail__compose with the row\'s accountId, to the row\'s address, and followUp {"refs": [{"kind": "projects:deal", "id": <taskId>}]}. Never pass sendGuard. Then set the deal\'s next step with projects__deals_update {taskId, nextStep}.',
+    "3. Never draft a row that has a skip, and never write to anyone else.",
+    "4. Reply with a short summary: the drafts made (deal and person), then the skipped deals counted by reason, with their titles.",
+  ].join("\n")
+}
+
+/** The options of a Deal follow-ups prompt, read back from its call line; null for any other prompt. */
+export function dealFollowupOptionsOf(
+  prompt: string | null | undefined,
+): DealFollowupOptions | null {
+  const m = /projects__deals_followup_candidates with (\{[^\n}]*\})/.exec(prompt ?? "")
+  if (!m) return null
+  try {
+    const v = JSON.parse(m[1]!) as { quietDays?: unknown; projectId?: unknown }
+    if (!Number.isInteger(v.quietDays) || (v.quietDays as number) < 1) return null
+    return {
+      quietDays: v.quietDays as number,
+      pipelineId: typeof v.projectId === "string" && UUID_RE.test(v.projectId) ? v.projectId : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Check the options a person chose; an error is said in one plain sentence. */
+export function dealFollowupOptions(raw: {
+  quietDays?: unknown
+  pipelineId?: unknown
+}): DealFollowupOptions | { error: string } {
+  const quietDays = raw.quietDays ?? DEAL_FOLLOWUPS_DEFAULT_QUIET_DAYS
+  if (!Number.isInteger(quietDays) || (quietDays as number) < 1 || (quietDays as number) > 365) {
+    return { error: "quietDays is a whole number of days, from 1 to 365." }
+  }
+  const pipelineId = raw.pipelineId ?? null
+  if (pipelineId !== null && (typeof pipelineId !== "string" || !UUID_RE.test(pipelineId))) {
+    return { error: "pipelineId is the id of a pipeline project." }
+  }
+  return { quietDays: quietDays as number, pipelineId: pipelineId as string | null }
+}
+
 export function registerKernelRoutineTemplates(orgId: string): void {
   routineTemplateRegistry.set([orgId, KERNEL_TEMPLATE_APP, MORNING_BRIEF_TEMPLATE_KEY], {
     description:
@@ -80,6 +147,32 @@ export function registerKernelRoutineTemplates(orgId: string): void {
       // kernel__notify_user.
       "kernel:agent:memory",
     ],
+    enabledByDefault: false,
+    visibility: "personal",
+    sourceKind: "kernel",
+  })
+  routineTemplateRegistry.set([orgId, KERNEL_TEMPLATE_APP, DEAL_FOLLOWUPS_TEMPLATE_KEY], {
+    description:
+      "Deal follow-ups: every weekday, a follow-up draft for each open deal gone quiet, for the deal's owner to approve.",
+    kind: "recurring",
+    cron: "0 8 * * 1-5",
+    // No timezone: the owner's own applies.
+    promptTemplate: dealFollowupsPrompt({
+      quietDays: DEAL_FOLLOWUPS_DEFAULT_QUIET_DAYS,
+      pipelineId: null,
+    }),
+    renderPrompt: (raw) => {
+      const o = dealFollowupOptions(raw)
+      return "error" in o ? o : { prompt: dealFollowupsPrompt(o) }
+    },
+    optionsOf: (prompt) => dealFollowupOptionsOf(prompt) ?? undefined,
+    scopes: [
+      "projects:projects:read",
+      "projects:tasks:write",
+      "mail:conversations:read",
+      "mail:conversations:write",
+    ],
+    followUp: true,
     enabledByDefault: false,
     visibility: "personal",
     sourceKind: "kernel",

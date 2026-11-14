@@ -1047,6 +1047,42 @@ export const INVOICING_RECORDING_PLAN: InvoicingPlanStep[] = [
     }),
   },
 
+  {
+    // A monthly schedule for the contact the relationship steps made a customer.
+    entry: "import:recurring-schedule",
+    input: (s) => ({
+      params: {
+        runId: "00000000-0000-4000-8000-0000000a1002",
+        kind: "recurring-schedule",
+        sourceLabel: "Previous billing tool (CSV)",
+        records: [
+          {
+            dedupValue: "legacy:SUB-0007",
+            record: {
+              externalRef: "legacy:SUB-0007",
+              contactId: s.values.contactId,
+              issuerProfileId: s.values.issuerId,
+              repeats: "month",
+              billingDay: "1",
+              covers: "period_ended",
+              paidBy: "transfer",
+              dueRule: "days_30",
+              lines: [
+                {
+                  description: "Support plan, monthly",
+                  quantity: 1,
+                  unitPriceMinor: 12000,
+                  taxRateBp: 2000,
+                  lineKind: "service",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+  },
+
   // ── Issuer deletion last: a spare profile no document uses ─────────────────────
   {
     entry: "tool:settings_issuer_profile_create",

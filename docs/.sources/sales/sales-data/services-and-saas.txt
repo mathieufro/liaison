@@ -1,0 +1,2 @@
+Deals live on a pipeline in Projects with an amount, a company and a contact -> apps/api/src/apps/projects/service/deals.ts (DealValue)
+deals_search and deals_rollup -> apps/api/src/apps/projects/app.manifest.json (tools.deals_search) ; apps/api/src/apps/projects/app.manifest.json (tools.deals_rollup)

@@ -634,11 +634,6 @@ describe("db import enforcement", () => {
     // upserts the caller as a participant under a privileged, org-scoped tx so a
     // non-creator caller is visible under threads_select before posting.
     "modules/threads/contact-primary.ts",
-    // A contact's discussion drops its enrolled people when the contact's
-    // sharing changes (they re-enrol by opening it, which proves visibility),
-    // and is deleted with the contact: removing other people's participant rows
-    // and messages needs the privileged, org-scoped tx.
-    "modules/contacts/discussion.ts",
     // Knowledge content-cache downgrade invalidates cache entries under a
     // privileged, org-scoped tx (the curator role lacks knowledge:cache:manage).
     "apps/knowledge/sources.ts",

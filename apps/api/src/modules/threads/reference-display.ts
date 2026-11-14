@@ -13,7 +13,9 @@ import {
   threads,
 } from "~/db/schema/kernel"
 import { approvalRequests } from "~/db/schema/kernel/agent-memory"
+import { companies } from "~/db/schema/kernel/companies"
 import { contacts } from "~/db/schema/kernel/contacts"
+import { schemaRef } from "~/db/schema-ref"
 import { entityRegistry, type SearchIndexFields, viewRegistry } from "~/modules/apps/app-registries"
 import { isMailEntitySuppressed } from "~/modules/mailbox-crypto/content-suppression"
 
@@ -39,6 +41,7 @@ interface ManifestMeta {
 const KERNEL_FALLBACK: Record<string, ManifestMeta> = {
   thread: { tabType: "kernel:thread", label: "Thread", icon: "MessageSquare" },
   contact: { tabType: "kernel:contact", label: "Contact", icon: "User" },
+  company: { tabType: "kernel:company", label: "Company", icon: "Building2" },
   approval_request: {
     tabType: "kernel:approval_request",
     label: "Approval",
@@ -188,7 +191,8 @@ async function loadAppEntityLabelAndSnippet(
   if (handleField && !SAFE_IDENT.test(handleField)) return null
   if (!SAFE_IDENT.test(app)) return null
 
-  const schema = `app_${app}`
+  // The app's schema as the database names it: a run namespace prefixes every schema.
+  const schema = schemaRef(`app_${app}`)
   // An external entity may have no local table at all, and a failed read would
   // abort the caller's transaction.
   if (decl.external) {
@@ -240,6 +244,20 @@ async function loadAppEntityLabelAndSnippet(
   }
 }
 
+/** Longest value a view line quotes; the rest is cut. */
+const LINE_VALUE_MAX = 120
+
+/**
+ * A value as it goes into a line the agent reads: cut to 120 characters, then
+ * JSON-encoded, so a quote or a line break in a name cannot end the value and
+ * start an instruction of its own.
+ */
+export function lineValue(value: string): string {
+  return JSON.stringify(
+    value.length > LINE_VALUE_MAX ? `${value.slice(0, LINE_VALUE_MAX)}…` : value,
+  )
+}
+
 async function loadKnownEntityLabelAndSnippet(
   tx: LabelReader,
   params: { orgId: string; app: string; entityType: string; entityId: string },
@@ -272,7 +290,28 @@ async function loadKnownEntityLabelAndSnippet(
       const label = row.name ?? row.email ?? "(unnamed)"
       return {
         label,
-        snippet: `[Entity: kernel:contact, id: ${entityId}] { name: "${row.name ?? "(unnamed)"}", email: "${row.email ?? ""}" }`,
+        snippet: `[Entity: kernel:contact, id: ${entityId}] { name: ${lineValue(row.name ?? "(unnamed)")}, email: ${lineValue(row.email ?? "")} }`,
+      }
+    }
+    if (app === "kernel" && entityType === "company") {
+      const [row] = await tx
+        .select({ name: companies.name, domain: companies.domain, owner: companies.ownerUserId })
+        .from(companies)
+        .where(and(eq(companies.id, entityId), eq(companies.orgId, orgId)))
+        .limit(1)
+      if (!row) return null
+      // The account manager and their away date, so "who looks after this" needs no tool step.
+      const { companyAccountManager } = await import("~/modules/contacts/companies")
+      const manager = await companyAccountManager(orgId, row.owner)
+      const fields = [
+        `name: ${lineValue(row.name)}`,
+        ...(row.domain ? [`domain: ${lineValue(row.domain)}`] : []),
+        `accountManager: ${manager ? lineValue(manager.name) : "none"}`,
+        ...(manager?.away ? [`away: ${lineValue(`until ${manager.away.until}`)}`] : []),
+      ]
+      return {
+        label: row.name,
+        snippet: `[Entity: kernel:company, id: ${entityId}] { ${fields.join(", ")} }`,
       }
     }
     if (app === "kernel" && entityType === "approval_request") {

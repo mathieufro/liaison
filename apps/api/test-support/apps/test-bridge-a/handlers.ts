@@ -119,6 +119,7 @@ async function outcomesVerify(request: any): Promise<unknown> {
   return {
     valid: true,
     replayKey: `${Date.now()}-${Math.random()}`,
-    scopes: ["test-bridge-a:audit:write", "test-bridge-a:webhook:write"],
+    // The audit table the handler writes is governed by the `thing` scope.
+    scopes: ["test-bridge-a:thing:write", "test-bridge-a:webhook:write"],
   }
 }

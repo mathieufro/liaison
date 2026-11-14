@@ -138,6 +138,87 @@ describe("the lively tier", () => {
     }
   })
 
+  it("a seeded lively org has companies with people and deals on a pipeline", async () => {
+    const orgId = first.world.orgId
+    const rows = (q: ReturnType<typeof sql>) =>
+      withSystemDb("lively-test-crm", async (tx) =>
+        typedRows<Record<string, unknown>>(await tx.execute(q)),
+      )
+    const [companies] = await rows(
+      sql`SELECT count(*)::int AS n,
+                 count(*) FILTER (WHERE EXISTS (
+                   SELECT 1 FROM kernel.contacts c WHERE c.company_id = k.id))::int AS with_people
+          FROM kernel.companies k WHERE k.org_id = ${orgId}::uuid`,
+    )
+    expect(Number(companies?.n)).toBeGreaterThanOrEqual(10)
+    expect(Number(companies?.with_people)).toBe(Number(companies?.n))
+    const stages = await rows(
+      sql`SELECT s.label AS stage, count(*)::int AS n
+          FROM app_projects.deals d
+          JOIN app_projects.tasks t ON t.id = d.task_id
+          JOIN app_projects.project_statuses s ON s.id = t.status_id
+          JOIN app_projects.projects p ON p.id = t.project_id AND p.kind = 'pipeline'
+          WHERE d.org_id = ${orgId}::uuid AND d.company_id IS NOT NULL
+          GROUP BY s.label`,
+    )
+    expect(stages.map((r) => r.stage).sort()).toEqual(
+      ["Demo", "Lead", "Lost", "Proposal", "Qualified", "Won"].sort(),
+    )
+    const [amounts] = await rows(
+      sql`SELECT count(*)::int AS n FROM app_projects.deal_values
+          WHERE org_id = ${orgId}::uuid AND amount_minor > 0 AND currency IS NOT NULL`,
+    )
+    expect(Number(amounts?.n)).toBe(9)
+  })
+
+  it("records the country its world gives a contact as that contact's recipient country", async () => {
+    // Mutation caught: no seeded contact had a recipient country, so the send check never knew one.
+    const orgId = first.world.orgId
+    const [row] = await withSystemDb("lively-test-contact-country", async (tx) =>
+      typedRows<{ named: number; recorded: number }>(
+        await tx.execute(
+          sql`SELECT count(*) FILTER (WHERE metadata->>'country' IS NOT NULL)::int AS named,
+                     count(*) FILTER (WHERE metadata->>'country' IS NOT NULL
+                       AND recipient_country = upper(metadata->>'country'))::int AS recorded
+              FROM kernel.contacts WHERE org_id = ${orgId}::uuid`,
+        ),
+      ),
+    )
+    expect(Number(row?.named)).toBeGreaterThanOrEqual(30)
+    expect(Number(row?.recorded)).toBe(Number(row?.named))
+  })
+
+  it("puts each dealer's sales address on its dealer's company", async () => {
+    const orgId = first.world.orgId
+    const dealers = await withSystemDb("lively-test-dealer-contacts", async (tx) =>
+      typedRows<{ company: string; on_company: number; sales: number }>(
+        await tx.execute(
+          sql`SELECT k.name AS company,
+                     count(c.id) FILTER (WHERE c.company_id = k.id)::int AS on_company,
+                     count(c.id)::int AS sales
+              FROM kernel.companies k
+              JOIN kernel.contacts c ON c.org_id = k.org_id AND c.email LIKE 'sales@%' AND c.name = k.name
+              WHERE k.org_id = ${orgId}::uuid AND 'dealer' = ANY(k.tags)
+              GROUP BY k.name`,
+        ),
+      ),
+    )
+    expect(dealers.length).toBeGreaterThan(0)
+    expect(dealers.filter((d) => d.on_company !== d.sales)).toEqual([])
+  })
+
+  it("seeds no API connection on a box that does not answer its fixture origin", async () => {
+    const [row] = await withSystemDb("lively-test-api-connector", async (tx) =>
+      typedRows<{ n: number }>(
+        await tx.execute(
+          sql`SELECT count(*)::int AS n FROM kernel.connected_accounts
+              WHERE org_id = ${first.world.orgId}::uuid AND app_name = 'api-connector'`,
+        ),
+      ),
+    )
+    expect(Number(row?.n)).toBe(0)
+  })
+
   it("leaves each person a few unread attention items and reads the rest", async () => {
     const [row] = rowsOf(
       await withSystemDb("lively-test-unread", (tx) =>

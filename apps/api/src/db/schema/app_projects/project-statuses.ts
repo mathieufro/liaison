@@ -14,6 +14,9 @@ export const projectStatuses = appProjects.table(
     color: text("color"),
     order: integer("order").notNull(),
     terminal: boolean("terminal").notNull().default(false),
+    // On a pipeline, the outcome a deal reaching this status gets (0295). Only
+    // on a terminal status (check status_outcome_terminal).
+    dealOutcome: text("deal_outcome", { enum: ["won", "lost"] }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

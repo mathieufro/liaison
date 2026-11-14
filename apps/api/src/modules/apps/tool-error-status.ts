@@ -131,6 +131,34 @@ export const APP_TOOL_ERROR_STATUS: Readonly<Record<string, number>> = {
   shopify_draft_order_id: 400,
   draft_order_id_missing: 400,
   issuer_not_found: 404,
+  // Who issues what: a customer a live card subscription bills, a payment mirror that cannot say
+  // yet, a card stream's issuer left unpicked, a stream with no choice, no card stream connected.
+  subscription_stream_conflict: 409,
+  subscription_check_unavailable: 503,
+  issuer_required: 400,
+  stream_not_choosable: 400,
+  card_stream_not_connected: 409,
+  issuer_unknown: 503,
+  // Card payments from the payments app: what waits in the queue, how to name it, the rate a
+  // bare charge needs.
+  payment_ref_missing: 400,
+  nothing_waiting: 404,
+  vat_rate_required: 400,
+  invoice_not_found: 404,
+  einvoice_gate: 422,
+  // Month-end run rows: a required argument is missing, the row changed under the caller, the run
+  // no longer takes changes, or "from now on" has no schedule to change.
+  applies_required: 400,
+  ends_on_required: 400,
+  if_unchanged_since_required: 400,
+  draft_changed: 409,
+  already_in_run: 409,
+  run_closed: 409,
+  schedule_issues_by_itself: 409,
+  // No row of the run is ready to issue, so approving it would issue nothing: fix a row first.
+  nothing_ready: 409,
+  no_schedule: 422,
+  schedule_has_no_currency: 422,
   draft_order_not_found: 404,
   issued_document_immutable: 409,
   // A create-and-issue keyed onto an existing document asked for different content: edit that
@@ -204,8 +232,21 @@ export const APP_TOOL_ERROR_STATUS: Readonly<Record<string, number>> = {
   einvoice_approval_stale: 409,
   einvoice_already_sent: 409,
   einvoice_send_disabled: 409,
+  // Standing authorization asked for before an e-invoicing platform is chosen.
+  einvoicing_platform_not_set: 409,
   einvoice_before_cutover: 409,
   einvoice_retry_not_allowed: 409,
+  // A send prepared under a stream's standing grant or a month-end row's grant whose document is no
+  // longer that stream's or that row's; a standing authorization asked for a stream that has none;
+  // a collection the platform did not take.
+  stream_mismatch: 409,
+  run_item_mismatch: 409,
+  stream_not_authorizable: 400,
+  not_reported: 502,
+  // A payment reminder about an invoice already settled: the send guard's stop codes.
+  invoice_paid: 409,
+  invoice_credited: 409,
+  invoice_voided: 409,
   not_transmitted: 409,
   approval_unavailable: 409,
   booking_disabled: 409,
@@ -271,6 +312,40 @@ export const APP_TOOL_ERROR_STATUS: Readonly<Record<string, number>> = {
   // The `code` an attention event carries when it RESOLVES an e-invoicing item (Factur-X built
   // after a failure); never a tool error, classified so the source scan stays exhaustive.
   resolved: 409,
+  // Recurring schedules: a schedule that does not exist, has ended or has not started, a repeat
+  // or end date it cannot take, and issuing by itself asked for at creation (it is set by an update).
+  // A change made from an older version than the schedule now holds is refused, never written over.
+  schedule_not_found: 404,
+  schedule_ended: 409,
+  schedule_changed: 409,
+  schedule_not_started: 409,
+  invalid_schedule: 422,
+  invalid_until: 422,
+  auto_needs_update: 422,
+  // The month-end run: a run or row that does not exist, a run not in the state the step needs,
+  // a run's draft reached outside its run, a row not approved or already issued, and a draft
+  // changed after its approval (it waits for a new one). The caller's state to act on.
+  run_not_found: 404,
+  item_not_found: 404,
+  run_not_drafted: 409,
+  run_not_approved: 409,
+  run_already_issuing: 409,
+  run_item_draft: 409,
+  item_not_approved: 409,
+  already_issued: 409,
+  changed_since_approval: 409,
+  // A row asked to issue outside its run's issue window, and a run draft written without its key.
+  outside_issue_window: 409,
+  not_a_run_draft: 422,
+  // A row whose run stopped issuing, whose draft is gone, or whose draft lost its period key
+  // between its approval and its issue: nothing was written and no number was used.
+  run_not_issuing: 409,
+  draft_missing: 409,
+  draft_without_key: 409,
+  // A Shopify-linked quote sent to the local convert (it converts by completing its draft order).
+  shopify_linked: 409,
+  // The local convert step failed; the quote is unchanged and no number was used.
+  convert_failed: 502,
   // Upstream (mail, Shopify, the PDF renderer, another app) failed.
   send_dispatch_failed: 502,
   send_failed: 502,

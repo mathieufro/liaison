@@ -23,6 +23,7 @@ import { appName } from "~/modules/approvals/approval-copy"
 import { decideErrorToast } from "~/modules/approvals/decide-error"
 import {
   isDecisionInFlight,
+  isDecisionNotSent,
   isDecisionUndone,
   queueDecision,
 } from "~/modules/approvals/decision-queue"
@@ -172,6 +173,12 @@ const AccessRequestRow: Component<{ item: AttentionItem; facts: AccessRequestFac
       : []),
   ]
 
+  // A decision this device stored too long ago was dropped at boot, unsent (decision-queue.ts).
+  const notSentLine = (): string | null =>
+    isDecisionNotSent("scope-request", props.item.entityId)
+      ? t("kernel.decisionToast.notSent")
+      : null
+
   return (
     // A decision waiting out its Undo window hides the row; Undo brings it back.
     <Show when={!isDecisionInFlight("scope-request", props.item.entityId)}>
@@ -182,8 +189,8 @@ const AccessRequestRow: Component<{ item: AttentionItem; facts: AccessRequestFac
         icon={KeyRound}
         pill={pill()}
         title={title()}
-        lines={[allowsLine(), whyLine()].filter((l): l is string => l !== null)}
-        compactLine={allowsLine()}
+        lines={[notSentLine(), allowsLine(), whyLine()].filter((l): l is string => l !== null)}
+        compactLine={notSentLine() ?? allowsLine()}
         meta={[t("kernel.shellUi.byName", { name: requester() }), age()]}
         primary={grant()}
         secondary={deny()}

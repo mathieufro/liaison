@@ -57,6 +57,23 @@ export function customAppsEnabled(): boolean {
   return isManagedEdition()
 }
 
+/**
+ * Whether tool search ranks by meaning as well as by words. The local
+ * embedding model runs in one shared embedding process per host (about
+ * 1.1 GB loaded, 1.4 GB at peak), which the API processes ask over a Unix
+ * socket; it adds nothing to each API process. `LIAISON_TOOL_MEANING`
+ * (`on` | `off`) decides; unset, it follows the edition (on when managed, off
+ * when self-hosted), so a small self-hosted server never runs the embedding
+ * process unless its operator turns it on. Keyword ranking is the fallback
+ * either way, and while the embedding process is down or slow.
+ */
+export function toolMeaningEnabled(): boolean {
+  const v = env.LIAISON_TOOL_MEANING
+  if (v === "on") return true
+  if (v === "off") return false
+  return isManagedEdition()
+}
+
 /** Test helper — force the edition. Pass `null` to restore env detection. */
 export function _setEdition(mode: Edition | null): void {
   override = mode

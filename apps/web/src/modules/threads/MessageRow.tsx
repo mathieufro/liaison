@@ -7,7 +7,7 @@ import { type Component, createSignal, For, Show } from "solid-js"
 import { getModelLabel } from "~/lib/model-groups"
 import AgentActivity from "~/modules/agent/AgentActivity"
 import ThinkingBlock from "~/modules/agent/ThinkingBlock"
-import ToolCallRow from "~/modules/agent/ToolCallRow"
+import ToolCallRow, { splitCardCalls } from "~/modules/agent/ToolCallRow"
 import ApprovalCard from "~/modules/approvals/ApprovalCard"
 import { AttachmentStrip } from "~/modules/files/AttachmentStrip"
 import { downloadFile } from "~/modules/files/file-service"
@@ -421,6 +421,8 @@ function AgentMessageRow(
     }
   }
   const toolCalls = () => props.message.metadata?.toolCalls ?? []
+  const cardCalls = () => splitCardCalls(toolCalls()).cards
+  const foldedCalls = () => splitCardCalls(toolCalls()).folded
   const timeline = () => props.message.metadata?.timeline
   const hasTimeline = () => (timeline()?.length ?? 0) > 0
   /**
@@ -587,7 +589,9 @@ function AgentMessageRow(
                 tokenCount={props.message.metadata?.usage?.reasoningTokens}
               />
 
-              <Show when={toolCalls().length > 0}>
+              {/* A call that drew a result card stands under the message, as it does live;
+                  only the others fold under the "Used N tools" line. */}
+              <Show when={foldedCalls().length > 0}>
                 <button
                   type="button"
                   data-testid="message-row-tools-toggle"
@@ -597,17 +601,17 @@ function AgentMessageRow(
                   <span>{toolsExpanded() ? "▾" : "▸"}</span>
                   <span>
                     {toolsExpanded()
-                      ? toolCalls().length === 1
+                      ? foldedCalls().length === 1
                         ? tNow("kernel.agentUi.oneTool")
-                        : tNow("kernel.agentUi.toolsCount", { count: toolCalls().length })
-                      : toolCalls().length === 1
+                        : tNow("kernel.agentUi.toolsCount", { count: foldedCalls().length })
+                      : foldedCalls().length === 1
                         ? tNow("kernel.agentUi.usedOneTool")
-                        : tNow("kernel.agentUi.usedTools", { count: toolCalls().length })}
+                        : tNow("kernel.agentUi.usedTools", { count: foldedCalls().length })}
                   </span>
                 </button>
                 <Show when={toolsExpanded()}>
                   <div class="ml-2 mt-1">
-                    <For each={toolCalls()}>
+                    <For each={foldedCalls()}>
                       {(tc) => (
                         <ToolCallRow
                           toolCall={tc}
@@ -619,6 +623,15 @@ function AgentMessageRow(
                   </div>
                 </Show>
               </Show>
+              <For each={cardCalls()}>
+                {(tc) => (
+                  <ToolCallRow
+                    toolCall={tc}
+                    turnId={props.message.metadata?.turnId}
+                    askId={props.message.metadata?.askId}
+                  />
+                )}
+              </For>
             </>
           }
         >
@@ -1014,6 +1027,14 @@ const MessageRow: Component<MessageRowProps> = (props) => {
     const text = (): string => {
       const run = props.message.metadata?.routineRun ?? routineRun
       const name = run.routineName
+      if (run.status === "succeeded" && run.draftsWaiting === 1)
+        return i18n.t("kernel.threadsUi.routineRunSucceededDraftWaiting", { name })
+      const draftsWaiting = run.draftsWaiting ?? 0
+      if (run.status === "succeeded" && draftsWaiting > 1)
+        return i18n.t("kernel.threadsUi.routineRunSucceededDraftsWaiting", {
+          name,
+          count: draftsWaiting,
+        })
       if (run.status === "succeeded")
         return i18n.t("kernel.threadsUi.routineRunSucceeded", { name })
       if (run.status === "failed") return i18n.t("kernel.threadsUi.routineRunFailed", { name })

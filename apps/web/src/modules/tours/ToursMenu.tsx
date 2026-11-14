@@ -20,14 +20,20 @@ export function tourStatusLabel(item: TourListItem, t: T): string {
   const p = item.progress
   if (!p) return t("tours.engine.statusNew")
   if (p.status === "abandoned") return t("tours.engine.statusStopped")
-  if (p.status === "completed") return t("tours.engine.statusDone")
+  // A single-run scenario is played, not done: only the whole demo starts over.
+  if (p.status === "completed") {
+    return t(item.singleRun ? "tours.engine.statusPlayed" : "tours.engine.statusDone")
+  }
   const k = Math.min(p.beatIndex + 1, p.beatCount)
   return t("tours.engine.statusInProgress", { k, n: p.beatCount })
 }
 
-/** "Start", "Resume", "Play again" or "Start again". */
+/** "Start", "Resume", "Play again" or "Start again"; "Start over" for a played single-run tour. */
 export function tourActionLabel(item: TourListItem, t: T): string {
   const p = item.progress
+  if (item.singleRun && (p?.status === "completed" || p?.status === "abandoned")) {
+    return t("tours.engine.welcome.startOver")
+  }
   if (p?.status === "active" || p?.status === "paused") return t("tours.engine.resume")
   if (p?.status === "completed") return t("tours.engine.playAgain")
   if (p?.status === "abandoned") return t("tours.engine.startAgain")

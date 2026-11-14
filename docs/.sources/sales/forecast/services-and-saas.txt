@@ -1,0 +1,7 @@
+deals_rollup groups by stage, owner or month, one sum per currency; weighted multiplies by probability -> apps/api/src/apps/projects/app.manifest.json (tools.deals_rollup) ; apps/api/src/apps/projects/service/deals.ts (DealRollupArgs)
+Optional pipeline and close-date window -> apps/api/src/apps/projects/service/deals.ts (DealRollupArgs)
+Month of a closed deal is its close month, else its creation month, in the org timezone -> apps/api/src/apps/projects/service/deals.ts (monthIn) ; apps/api/src/apps/projects/service/deals.ts (orgTimeZone)
+A deal with no probability counts 0 -> apps/api/src/apps/projects/service/deals.ts (dealsRollup)
+At most 500 deals, truncated flag -> apps/api/src/apps/projects/service/deals.ts (BOARD_DEALS_MAX) ; apps/api/src/apps/projects/service/deals.ts (dealsRollup)
+Probability is a whole percent -> apps/api/src/apps/projects/service/deals.ts (writeDealFields)
+Needs projects:deals:read; roles sales and lead -> apps/api/src/apps/projects/app.manifest.json (tools.deals_rollup) ; apps/api/src/apps/projects/app.manifest.json (roles.sales) ; apps/api/src/apps/projects/app.manifest.json (roles.lead)

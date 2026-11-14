@@ -704,7 +704,7 @@ describe("Tickets Scenario", () => {
       [approvalId],
     )
     expect(approval.status).toBe("cancelled")
-    expect(approval.reason).toBe("ticket_merged")
+    expect(approval.reason).toBe("Cancelled: the ticket was merged into another")
 
     // Poll the WS for the 3 ticket:merged events instead of a single fixed-sleep
     // sample: under parallel e2e load the merge round-trip + 100ms outbox poll +

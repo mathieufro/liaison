@@ -1,0 +1,9 @@
+{
+  "key": {
+    "projects.time.ratePerDay": "{{amount}} par jour",
+    "projects.time.ratePerHour": "{{amount}} de l'heure",
+    "projects.timesheet.datedOff": "Les heures datées sont désactivées sur ce projet : le temps de chacun reste à chacun et il n'y a pas de feuille. On les active avec l'interrupteur Heures datées du panneau de budget du projet.",
+    "projects.timesheet.planningOff": "Ce projet n'utilise pas le temps et les budgets, il n'a donc pas de feuille datée.",
+    "projects.time.budgetRate": "Taux"
+  }
+}

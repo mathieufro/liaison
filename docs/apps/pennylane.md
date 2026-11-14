@@ -49,6 +49,8 @@ The supplier must match exactly one Pennylane supplier, or the call is refused a
 
 Pennylane implements Liaison's e-invoicing platform contract. Pick it as **E-invoicing platform** in **Settings › Invoicing › E-invoicing**, then ask an agent to run `webhooks_setup` so status changes and received supplier e-invoices reach Liaison. That call waits for approval.
 
+Pennylane does not take collections (payments received) from Liaison: an invoice paid where VAT is due on receipt shows "To report at your platform", and a Home line asks you to enter the collection in Pennylane.
+
 ## Scopes
 
 | Scope | What it allows |
@@ -73,7 +75,6 @@ Pennylane implements Liaison's e-invoicing platform contract. Pick it as **E-inv
 | `transactions_list` | Bank transactions | No |
 | `spend_by_category` | Spend per P&L class for a period | No |
 | `runway_estimate` | Runway in whole months | No |
-| `home_load` | Cached P&L and cash snapshot | No |
 | `supplier_invoice_upload` | Book a received supplier bill into Pennylane | Always |
 | `webhooks_setup` | Subscribe Pennylane's e-invoicing events | Always |
 

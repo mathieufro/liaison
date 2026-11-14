@@ -3,6 +3,8 @@
 // Invoicing mutations: documents.mark_paid and documents.record_refund.
 
 import { readMinorAmount } from "@liaison/app-sdk"
+import { reportCollection } from "../einvoicing/collection"
+import type { EinvCtx } from "../einvoicing/transmit"
 import { civilDateOf } from "../issue-date"
 import { transition } from "../state"
 import { findDocumentSummary, findIssuerProfile, sumPriorRefundedMinor } from "./db-helpers"
@@ -19,6 +21,25 @@ import {
 } from "./shared"
 
 // ── documents.mark_paid ───────────────────────────────────────────────────
+
+/**
+ * Report a payment or refund to the e-invoicing platform where VAT is due on receipt
+ * (einvoicing/collection.ts). Best effort: the payment is already recorded, and a failure is
+ * stored on the document's collection state, never thrown.
+ */
+async function reportCollectionAfter(
+  ctx: MutationsCtx,
+  documentId: string,
+  event: { kind: "paid" | "refund"; amount_minor: bigint; date: string; ref: string },
+): Promise<void> {
+  const einv = ctx as unknown as EinvCtx
+  if (!einv.contracts) return
+  try {
+    await reportCollection(einv, documentId, event)
+  } catch {
+    // Left as it was: the document panel shows no collection, and the next payment event retries.
+  }
+}
 
 /**
  * Read-only validation shared by `documentsMarkPaid` and its stage-time preflight export: the
@@ -126,6 +147,12 @@ export async function documentsMarkPaid(
   // mark-paid itself, which is already persisted. `link: false` because this handler just updated
   // the documents row in its open tx: the host's privileged link-write (a separate tx) would
   // deadlock on that row lock (same reasoning as documents_update — see ensureDocumentPdf).
+  await reportCollectionAfter(ctx, doc.id, {
+    kind: "paid",
+    amount_minor: doc.grand_total_minor,
+    date: paidAt,
+    ref: `paid:${paidAt}`,
+  })
   await ensureDocumentPdf(ctx, doc.id, { force: true, link: false })
   return { status: "completed", document_id: doc.id }
 }
@@ -317,6 +344,12 @@ export async function documentsRecordRefund(
         },
       ],
     })
+    await reportCollectionAfter(ctx, doc.id, {
+      kind: "refund",
+      amount_minor: input.refund_amount_minor,
+      date: new Date().toISOString().slice(0, 10),
+      ref: `refund:${doc.lifecycle_log.length}`,
+    })
     return { status: "completed", document_id: doc.id }
   }
 
@@ -340,5 +373,11 @@ export async function documentsRecordRefund(
     if (trans.status === "ok") updatePatch.status = trans.next
   }
   await ctx.db.update("documents", doc.id, updatePatch)
+  await reportCollectionAfter(ctx, doc.id, {
+    kind: "refund",
+    amount_minor: input.refund_amount_minor,
+    date: new Date().toISOString().slice(0, 10),
+    ref: `refund:${doc.lifecycle_log.length}`,
+  })
   return { status: "completed", document_id: doc.id }
 }

@@ -8,6 +8,7 @@ import type { ApprovalSummarizer } from "~/modules/apps/app-registries"
 import { listCatalog } from "~/modules/apps/catalog"
 import { isAppRegistered } from "~/modules/apps/enabled-apps"
 import { serverT } from "~/modules/i18n/server-i18n"
+import { dayLabel, isoWeekdayOf } from "~/modules/users/away"
 
 type Params = Record<string, unknown>
 const asParams = (p: unknown): Params =>
@@ -169,6 +170,51 @@ export const summarizeSubagentDelete: ApprovalSummarizer = async (raw, ctx) => {
       "Runs already started keep going.",
     ],
   }
+}
+
+const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+const awayDay = (v: unknown): string | null => {
+  const d = text(v)
+  if (!d) return null
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(isoWeekdayOf(d)) ? dayLabel(d) : d
+}
+
+/** kernel:set_away: parked when the call came from outside text, a routine or an MCP client. */
+export const summarizeSetAway: ApprovalSummarizer = async (raw) => {
+  const p = asParams(raw)
+  const other = text(p.userId) !== null
+  const lines: string[] = []
+  const on = awayDay(p.on)
+  const from = awayDay(p.from)
+  const to = awayDay(p.to)
+  if (on) lines.push(`On ${on}.`)
+  if (from || to) lines.push(`From ${from ?? "today"} to ${to ?? "the same day"}.`)
+  if (typeof p.week === "number")
+    lines.push(`ISO week ${p.week}${typeof p.weekYear === "number" ? ` of ${p.weekYear}` : ""}.`)
+  if (Array.isArray(p.everyWeekday) && p.everyWeekday.length > 0) {
+    const days = p.everyWeekday
+      .map((d) => (typeof d === "number" ? WEEKDAY_NAMES[d - 1] : undefined))
+      .filter((d): d is string => d !== undefined)
+    lines.push(`Every week on ${days.join(", ")}.`)
+  }
+  if (text(p.nextInLineId)) lines.push("Names a next in line.")
+  if (p.end === true) {
+    return {
+      kind: "set_away",
+      title: other
+        ? "End someone else's away days running today"
+        : "End your away days running today",
+      lines,
+    }
+  }
+  if (lines.length === 1 && text(p.nextInLineId)) {
+    return {
+      kind: "set_away",
+      title: other ? "Set someone else's standing next in line" : "Set your standing next in line",
+      lines,
+    }
+  }
+  return { kind: "set_away", title: other ? "Mark someone else away" : "Mark yourself away", lines }
 }
 
 /**

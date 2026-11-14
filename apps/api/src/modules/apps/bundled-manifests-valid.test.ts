@@ -102,6 +102,23 @@ describe("bundled app manifests", () => {
     })
   }
 
+  // The kernel opens an entity's discussion only when the kind has a page: a `views.tabTypes`
+  // entry named for the entity (entity-discussion.ts `isDiscussionEntity`). A kind that declares
+  // `discussion: true` with no such page passes the schema, and every open of its discussion is
+  // refused as `discussion_not_declared`, so the page shows "The discussion could not be opened"
+  // for every record.
+  for (const app of apps) {
+    it(`${app}: every entity with a discussion has a page named for it`, () => {
+      const manifest = JSON.parse(readFileSync(join(BUNDLED_DIR, app, "app.manifest.json"), "utf8"))
+      const entities = (manifest.entities ?? {}) as Record<string, { discussion?: unknown }>
+      const tabTypes = (manifest.views?.tabTypes ?? {}) as Record<string, unknown>
+      const pageless = Object.entries(entities)
+        .filter(([type, decl]) => decl?.discussion === true && !(type in tabTypes))
+        .map(([type]) => type)
+      expect(pageless).toEqual([])
+    })
+  }
+
   // The scope-taint gate reads a declared `writesToTable` FIRST: a tool that declares one is a
   // writer, whatever its `readOnly` says (read-only-run.ts `isReadOnlyTool`, scope-taint.ts
   // `checkToolScopeTaint`). A tool marked readOnly beside a write target is therefore gated as a

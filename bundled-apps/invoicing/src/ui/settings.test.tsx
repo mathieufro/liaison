@@ -69,6 +69,7 @@ describe("InvoicingIssuerProfiles (Phase 17 F6)", () => {
     const blocks = m.settings.sections.flatMap((s) => s.blocks)
     expect(blocks.filter((b) => b.block === "custom").map((b) => b.component)).toEqual([
       "InvoicingIssuerProfiles",
+      "InvoicingIssuerStreams",
       "EinvoicingRegistration",
     ])
     // Read-only lists: a list tool and nothing else.

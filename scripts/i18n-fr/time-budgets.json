@@ -1,0 +1,11 @@
+{
+  "key": {
+    "projects.timeBudgets.label": "Temps et budgets",
+    "projects.timeBudgets.offMessage": "Aucun projet de cet espace n'utilise le temps et les budgets : cet outil n'a pas été exécuté et rien n'a changé.",
+    "projects.timeBudgets.offNext": "Dites qu'aucun projet n'utilise le temps et les budgets. Si la personne le veut sur un projet, proposez update_project avec timeBudgets:true.",
+    "projects.card.budget": "Budget",
+    "projects.card.partial": "partiel",
+    "projects.card.planned": "Prévu",
+    "projects.card.real": "Réel"
+  }
+}

@@ -9,6 +9,7 @@ import { ContextualSaveBar } from "~/modules/shell/save-bar/ContextualSaveBar"
 import { addToast } from "~/modules/shell/toast-store"
 import { Input } from "~/ui/Input"
 import { billingMode } from "./BillingState"
+import CommercialIdentitySection from "./CommercialIdentitySection"
 import EmailSenderSection from "./EmailSenderSection"
 
 interface OrgData {
@@ -150,6 +151,12 @@ const AdminOrgSettings: Component = () => {
               {i18n.t("kernel.common.save")}
             </button>
           </div>
+          {/* What every commercial mail states about its sender: org admins. */}
+          <Show when={canAccessScope("kernel:org:admin")}>
+            <div class="border-t border-border pt-4">
+              <CommercialIdentitySection />
+            </div>
+          </Show>
           {/* The org's own sending domain (S29): managed edition, org admins. */}
           <Show when={billingMode() === "managed" && canAccessScope("kernel:org:admin")}>
             <div class="border-t border-border pt-4">

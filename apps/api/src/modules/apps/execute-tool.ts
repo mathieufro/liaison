@@ -186,6 +186,7 @@ import {
   TAINT_DISCLOSURE_EXTERNAL_CLIENT_KEY,
 } from "~/modules/agent/scopes/post-disclosure"
 import { checkToolScopes, resolveRequiredScopes } from "~/modules/agent/scopes/required-scopes"
+import { resolveRoomFloor } from "~/modules/agent/scopes/room-floor"
 import {
   carriesNoTurnContent,
   contentParamsRetryHint,
@@ -195,6 +196,7 @@ import {
   mcpReadOfOwnServer,
   personClientWriteUnjudged,
   postDisclosureRelay,
+  resultHoldsField,
   returnsToOwnMcpServer,
   SCOPE_TAINT_BLOCKED_MESSAGE,
   SCOPE_TAINT_NO_DECIDER_MESSAGE,
@@ -245,12 +247,14 @@ import {
   taintDisclosureAuthority,
 } from "~/modules/approvals/authority"
 import { buildApprovalSummary, proposingTurnScopesUnionSql } from "~/modules/approvals/event-data"
+import { maskApprovalPayload } from "~/modules/approvals/payload-mask"
 import { humanizeStepSummary } from "~/modules/approvals/ref-provenance"
 import { readApprovalRequester } from "~/modules/approvals/requester"
 import {
   resolveApprovalResourceOwner,
   resolveRoutineOwnerApprover,
 } from "~/modules/approvals/resource-owner"
+import { BACKGROUND_ROUTE_BUDGET_MS, resolveProposeRoute } from "~/modules/approvals/route-world"
 import {
   narrowPendingApprovalForTaint,
   rowTaintMustHold,
@@ -266,7 +270,16 @@ import {
 import { generateApprovalSummary } from "~/modules/apps/approval-summarizers"
 import { ingestionCallerApp } from "~/modules/apps/cross-app-ingestions"
 import { ensureAppsForOrg, getDefaultApps } from "~/modules/apps/init"
-import { APP_STATE_UNAVAILABLE_CODE, isAppActiveForOrgAsync } from "~/modules/apps/org-apps"
+import {
+  APP_STATE_UNAVAILABLE_CODE,
+  FEATURE_OFF_CODE,
+  isAppActiveForOrgAsync,
+  isFeatureOffForTool,
+  orgFeaturesUnreadable,
+  primeOrgApps,
+} from "~/modules/apps/org-apps"
+import { featureOffAnswer } from "~/modules/apps/org-features"
+import type { CandidateCredentials } from "~/modules/apps/sandbox/bridge/context"
 import { sealMailApprovalPayload } from "~/modules/mailbox-crypto/approval-payload"
 import { CapLimitError } from "~/modules/org/caps"
 import {
@@ -371,6 +384,14 @@ interface ExecuteToolParams {
    * request lifetime to observe (jobs, routines, cross-app calls).
    */
   signal?: AbortSignal
+  /**
+   * Credentials not yet stored, which this run's `ctx.fetch({auth})` and
+   * `connections_getCredentials` use for `connection` instead of the stored
+   * ones: the connection's check before a key is kept
+   * (connections/precheck.ts). Host side only; never reaches the sandbox, a
+   * nested call, a result or a log.
+   */
+  candidateCredentials?: CandidateCredentials
   /**
    * The kernel.agents row acting in this dispatch, for a caller that is not
    * inside an agent run frame and so cannot be read from one: the MCP gateway,
@@ -687,6 +708,12 @@ interface CreateApprovalRequestOpts {
   threadId: string
   toolName: string
   toolParams: unknown
+  /**
+   * Set only by host code that knows the request is about a personal resource of this person
+   * (a reply that came into their own mailbox): they alone decide it, as a declared
+   * `resourceOwner` routes it. Never set from a sandbox. Absent: the usual routing answer.
+   */
+  ownerOfResource?: string
   /** A47b: the payload paths the manifest's schema supplied, marked on the card. The agent's
    *  own arguments are this payload minus these paths, which is how the row keeps them. */
   defaultedParams?: string[]
@@ -766,6 +793,12 @@ interface CreateApprovalRequestOpts {
    * any sub-agent it spawns below that run instead of at depth 0.
    */
   originRun?: OriginRun | null
+  /**
+   * Hours until this request expires, set by a handler that knows its own deadline
+   * (`ctx.requestApproval({expiry_hours})`, validated 1 to 720 by `createHandlerApprovalRequest`).
+   * Wins over the tool's `approvalExpiryHours` and the 168-hour default.
+   */
+  expiryHours?: number
 }
 
 /** The proposing agent run of an approval: id, root and nesting depth. */
@@ -1443,11 +1476,13 @@ async function createApprovalRequest(opts: CreateApprovalRequestOpts): Promise<s
     toolParams,
     requestedBy,
     reason,
-    summary,
+    summary: unmaskedSummary,
     appName,
     toolShortName,
     origin,
   } = opts
+  // The card's text is masked like the payload it describes (payload-mask.ts).
+  const summary = maskApprovalPayload(unmaskedSummary)
   // Dimension-constrained approvals: a custom decision scope + optional dimension
   // constraint override the derived default. The derivation is the shared
   // authority answer, so write-time and read-time can never disagree.
@@ -1533,7 +1568,9 @@ async function createApprovalRequest(opts: CreateApprovalRequestOpts): Promise<s
   const dependsOnId = opts.dependsOnId ?? null
   const id = opts.id ?? crypto.randomUUID()
   const expiryHours =
-    approvalExpiryRegistry.get([orgId, appName, toolShortName]) ?? APPROVAL_DEFAULT_EXPIRY_HOURS
+    opts.expiryHours ??
+    approvalExpiryRegistry.get([orgId, appName, toolShortName]) ??
+    APPROVAL_DEFAULT_EXPIRY_HOURS
   const now = new Date()
   const expiresAt = new Date(now.getTime() + expiryHours * 3600 * 1000)
   const editableFields = approvalEditableFieldsRegistry.get([orgId, appName, toolShortName]) ?? []
@@ -1549,7 +1586,8 @@ async function createApprovalRequest(opts: CreateApprovalRequestOpts): Promise<s
     appName,
     toolShortName,
     approvalRequestId: id,
-    toolParams: (toolParams ?? {}) as Record<string, unknown>,
+    // Card numbers and payment keys never reach the row (payload-mask.ts).
+    toolParams: maskApprovalPayload((toolParams ?? {}) as Record<string, unknown>),
   })
   const payloadJson = JSON.parse(JSON.stringify(sealedToolParams))
 
@@ -1565,18 +1603,20 @@ async function createApprovalRequest(opts: CreateApprovalRequestOpts): Promise<s
   // default deciding-scope audience applies.
   // A personal MCP connection's tool (S16): its owner alone decides, like any
   // other personal resource; the org's approvers never see its calls.
-  const resourceOwnerId = await resolveApprovalOwnerRouting({
-    orgId,
-    appName,
-    toolShortName,
-    toolParams,
-    requestedBy,
-    approveScope,
-    dimensionConstraint,
-    mustHold: audienceMustHold,
-    actingAgentId,
-    routeToRequester: opts.routeToRequester === true,
-  })
+  const resourceOwnerId =
+    opts.ownerOfResource ??
+    (await resolveApprovalOwnerRouting({
+      orgId,
+      appName,
+      toolShortName,
+      toolParams,
+      requestedBy,
+      approveScope,
+      dimensionConstraint,
+      mustHold: audienceMustHold,
+      actingAgentId,
+      routeToRequester: opts.routeToRequester === true,
+    }))
   // An N-eyes floor the audience can never meet is refused here, never parked
   // (every caller also checks earlier, before creating any thread).
   await assertApproversAvailable({
@@ -1588,6 +1628,17 @@ async function createApprovalRequest(opts: CreateApprovalRequestOpts): Promise<s
     dimensionConstraint,
     mustHold: audienceMustHold,
   })
+  // Who the request is for, from the record it is about, asked of that record's app outside the
+  // transaction and within a short budget. An owner's own request is theirs alone and asks nothing.
+  const routeColumns = resourceOwnerId
+    ? {}
+    : await resolveProposeRoute({
+        orgId,
+        toolName,
+        summary,
+        requestedBy,
+        ...(origin === "system" ? { budgetMs: BACKGROUND_ROUTE_BUDGET_MS } : {}),
+      })
 
   // When `bundleId` is set, we wrap the tx in a retry loop: concurrent inserts
   // into the same bundle (READ COMMITTED) can both read MAX(bundle_position) =
@@ -1749,6 +1800,7 @@ async function createApprovalRequest(opts: CreateApprovalRequestOpts): Promise<s
           approveScope,
           dimensionConstraint,
           proposingTurnScopes,
+          ...routeColumns,
           // A11: the agent whose turn PROPOSED this gated call, persisted at
           // request time. The approved re-entry happens in another request with
           // that turn's frame long gone, so the identity has to travel on the
@@ -2296,9 +2348,10 @@ export async function createSequencedApprovalStep(args: {
       appName: args.appName,
       toolShortName: args.toolShortName,
       approvalRequestId,
-      toolParams: (args.toolParams ?? {}) as Record<string, unknown>,
+      toolParams: maskApprovalPayload((args.toolParams ?? {}) as Record<string, unknown>),
     })
   const sealedToolParams = await sealStepParams(id)
+  const stepSummary = maskApprovalPayload(args.summary)
   const payloadJson = JSON.parse(JSON.stringify(sealedToolParams))
   // FX4: captured here, in the proposing turn's frame. A deferred step is
   // executed by the same approved re-entry path as a head, so it needs the same
@@ -2372,7 +2425,7 @@ export async function createSequencedApprovalStep(args: {
         UPDATE ${K}.approval_requests
         SET tool_params = ${JSON.stringify(payload)}::jsonb,
             current_payload = ${JSON.stringify(payload)}::jsonb,
-            summary = ${JSON.stringify(args.summary)}::jsonb,
+            summary = ${JSON.stringify(stepSummary)}::jsonb,
             notify_user_ids = (SELECT s.notify_user_ids FROM ${K}.approval_requests s
                                 WHERE s.id = ${args.bundle.dependsOnId}),
             ${
@@ -2464,7 +2517,7 @@ export async function createSequencedApprovalStep(args: {
           requestedBy: args.requestedBy,
           status: "deferred",
           reason: "gated",
-          summary: args.summary,
+          summary: stepSummary,
           bundleId: args.bundle.bundleId,
           bundlePosition,
           dependsOnId: args.bundle.dependsOnId,
@@ -2497,7 +2550,7 @@ export async function createSequencedApprovalStep(args: {
             expires_at: new Date(source.expires_at),
             tool_name: args.toolName,
             approve_scope: args.approveScope ?? null,
-            summary: args.summary,
+            summary: stepSummary,
             current_payload: payloadJson,
             thread_id: source.thread_id,
             originating_thread_id: args.threadId,
@@ -2603,6 +2656,19 @@ export interface HandlerApprovalInput {
    * handler that does not set it always parks for a person.
    */
   auto_approvable?: boolean
+  /**
+   * The scope that decides this request, when the tool's own deciding scope is not the right
+   * audience (a handler that parks a call only some of the app's approvers should see). It must
+   * be the calling app's own scope: the app's name, or a scope under `<app>:`. It decides an
+   * agent's request only; a person's own call is still decided by the tool's own required scopes.
+   */
+  approve_scope?: string
+  /**
+   * Hours until the request expires, for a handler that knows its own deadline (a run that must
+   * issue by a legal date). A whole number from 1 to 720; it wins over the tool's
+   * `approvalExpiryHours` and the 168-hour default. Anything else is refused and nothing is staged.
+   */
+  expiry_hours?: number
 }
 
 export interface HandlerApprovalResult {
@@ -2677,6 +2743,8 @@ export async function createHandlerApprovalRequest(args: {
   personToolRequiredScopes?: readonly string[]
   /** The proposing agent run, captured across the sandbox hop (see CreateApprovalRequestOpts). */
   originRun?: OriginRun | null
+  /** Host callers only: see CreateApprovalRequestOpts. The sandbox paths never pass it. */
+  ownerOfResource?: string
 }): Promise<HandlerApprovalResult> {
   const { input } = args
   const colonIdx = input.tool_name.indexOf(":")
@@ -2690,6 +2758,36 @@ export async function createHandlerApprovalRequest(args: {
     throw new Error(
       `ctx.requestApproval: '${input.tool_name}' is not a tool of '${args.defaultAppName}'; a handler may only request approval for its own app's tools`,
     )
+  }
+  // The deciding scope a handler names must be its own app's: an app cannot route its approvals
+  // to another app's deciders, and a bare wildcard or malformed scope decides nothing sensible.
+  if (input.approve_scope !== undefined) {
+    const scope = input.approve_scope
+    const own =
+      typeof scope === "string" &&
+      /^[a-z0-9_-]+(:[A-Za-z0-9_.-]+)*$/.test(scope) &&
+      (scope === appName || scope.startsWith(`${appName}:`))
+    if (!own) {
+      throw Object.assign(
+        new Error(
+          `approve_scope_not_own: approve_scope ${JSON.stringify(scope)} is not a scope of '${appName}'; it must be '${appName}' or start with '${appName}:'. No approval was created. Omit approve_scope to use the tool's own deciding scope.`,
+        ),
+        { code: "approve_scope_not_own", status: 422 },
+      )
+    }
+  }
+  // A handler's own deadline: a whole number of hours, 1 to 720, as the manifest's
+  // `approvalExpiryHours` takes it. Refused before anything is written.
+  if (input.expiry_hours !== undefined) {
+    const hours = input.expiry_hours
+    if (typeof hours !== "number" || !Number.isInteger(hours) || hours < 1 || hours > 720) {
+      throw Object.assign(
+        new Error(
+          `expiry_hours_invalid: expiry_hours ${JSON.stringify(hours)} must be a whole number of hours from 1 to 720. No approval was created. Omit it to use the tool's own expiry.`,
+        ),
+        { code: "expiry_hours_invalid", status: 422 },
+      )
+    }
   }
   // A tool whose approval binds pinned params gets them from its preflight only
   // (executeTool's stage path). A handler-built payload would put the
@@ -2733,12 +2831,14 @@ export async function createHandlerApprovalRequest(args: {
   // This path previously hardcoded `<app>:approve` and passed no
   // approveScope/dimensionConstraint at all, so rows it created LOST their
   // custom deciding scope and fanned out to the wrong approvers.
-  const { approveScope, dimensionConstraint } = await resolveToolApprovalAuthority({
+  const resolvedAuthority = await resolveToolApprovalAuthority({
     orgId: args.orgId,
     appName,
     toolShortName,
     params: input.current_payload,
   })
+  const { dimensionConstraint } = resolvedAuthority
+  const approveScope = input.approve_scope ?? resolvedAuthority.approveScope
   const requesterCanApprove =
     hasScope(approveScope, args.actorScopes) &&
     (dimensionConstraint === null ||
@@ -2822,16 +2922,18 @@ export async function createHandlerApprovalRequest(args: {
         orgId: args.orgId,
         toolName: input.tool_name,
         minApprovers: tighten.minApprovers,
-        resourceOwnerId: await resolveApprovalOwnerRouting({
-          orgId: args.orgId,
-          appName,
-          toolShortName,
-          toolParams: input.current_payload,
-          requestedBy: args.requestedBy,
-          approveScope,
-          dimensionConstraint,
-          mustHold: [],
-        }),
+        resourceOwnerId:
+          args.ownerOfResource ??
+          (await resolveApprovalOwnerRouting({
+            orgId: args.orgId,
+            appName,
+            toolShortName,
+            toolParams: input.current_payload,
+            requestedBy: args.requestedBy,
+            approveScope,
+            dimensionConstraint,
+            mustHold: [],
+          })),
         approveScope,
         dimensionConstraint,
         mustHold: [],
@@ -2914,6 +3016,8 @@ export async function createHandlerApprovalRequest(args: {
     actingAgentId: args.actingAgentId,
     ...(tighten ? { tighten } : {}),
     ...(args.originRun !== undefined ? { originRun: args.originRun } : {}),
+    ...(args.ownerOfResource ? { ownerOfResource: args.ownerOfResource } : {}),
+    ...(input.expiry_hours !== undefined ? { expiryHours: input.expiry_hours } : {}),
   })
   return { approval_id: approvalRequestId }
 }
@@ -2953,6 +3057,8 @@ export async function executeToolHandler(
   },
   bridgeOptions?: {
     callChain?: string[]
+    /** Credentials not yet stored, for the connection's check (ExecuteToolParams). */
+    candidateCredentials?: CandidateCredentials
     /**
      * The sandbox EXECUTION this dispatch runs inside, as a per-execution id.
      * It is what bounds one handler's `Promise.all` fan-out: every hop that one
@@ -3501,6 +3607,68 @@ export function isNotConnectedToolErrorCode(code: string): boolean {
   return code === "not_connected" || code.endsWith("_not_connected")
 }
 
+export const HUMAN_TURN_ONLY_CODE = "human_turn_only"
+export const DM_ONLY_CODE = "dm_only"
+
+/**
+ * May a `humanTurnOnly` tool run from this call's place? Only on a person's own turn: never in a
+ * routine tick or a sub-run (`routineId`, `background` on the frame, whatever the origin), never
+ * an agent's ask of another agent (`coordinated`), never a job or anything else with no run frame
+ * at all. A person in the app (`human-ui`, which has no frame) and an MCP client (the person's
+ * own, or one bound to an agent, which works for that person) pass. Approvals are not judged
+ * here: a refused call never parks.
+ */
+export function humanTurnOnlyAllows(
+  origin: ToolOrigin,
+  frame: { routineId?: string; background?: boolean; coordinated?: boolean } | undefined,
+): boolean {
+  if (frame?.routineId) return false
+  if (frame?.background === true) return false
+  if (origin === "human-ui" || origin === "mcp") return true
+  if (origin !== "in-app-agent" || frame === undefined) return false
+  return frame.coordinated !== true
+}
+
+/** A `humanTurnOnly` refusal: what did not run, and who can ask for it instead. */
+function humanTurnOnlyRefusal(tool: { appName: string; name: string }) {
+  return {
+    code: HUMAN_TURN_ONLY_CODE,
+    message: `${tool.appName}__${tool.name} did not run and nothing changed: it runs only on a person's own turn, never from a routine, a sub-run or a job.`,
+    retryable: false,
+    status: 409,
+    body: {
+      next: "Tell the person: they ask for it themselves, in their chat with the agent, in the app or from their own coding agent.",
+    },
+  }
+}
+
+/** A `dmOnly` refusal: what did not run, and where to ask instead. */
+function dmOnlyRefusal(tool: { appName: string; name: string }) {
+  return {
+    code: DM_ONLY_CODE,
+    message: `${tool.appName}__${tool.name} did not run and nothing changed: it runs only in a DM with the agent, not in a shared thread.`,
+    retryable: false,
+    status: 409,
+    body: { next: "Continue in a DM: the person asks the same in their DM with the agent." },
+  }
+}
+
+/**
+ * Is the in-app agent's thread its DM with the person? Read with `resolveRoomFloor`, the same
+ * case analysis the room's effective scope uses. A thread it cannot place (gone, a sub-run's
+ * hidden thread, a type with no case) is not a DM: fail closed.
+ */
+async function isAgentDm(orgId: string, threadId: string, requesterUserId: string) {
+  try {
+    const floor = await withPrivilegedDb(orgId, "dm-only-room", (tx) =>
+      resolveRoomFloor(tx, orgId, threadId, requesterUserId),
+    )
+    return floor.kind === "dm"
+  } catch {
+    return false
+  }
+}
+
 export function statusForToolError(code: string): number {
   switch (code) {
     case "invalid_params":
@@ -3554,6 +3722,11 @@ export function statusForToolError(code: string): number {
     // The app is turned Off for the workspace (S19): a conflict with the
     // workspace's state, not a fault and not a missing permission.
     case APP_DISABLED_CODE:
+    case FEATURE_OFF_CODE:
+    // A tool called from the wrong place (manifest `humanTurnOnly` / `dmOnly`): the call is
+    // fine, where it came from is not; the answer says where to ask instead.
+    case HUMAN_TURN_ONLY_CODE:
+    case DM_ONLY_CODE:
       return 409
     case APP_STATE_UNAVAILABLE_CODE:
       return 503
@@ -3577,6 +3750,19 @@ export function statusForToolError(code: string): number {
     // unusable (both credential modes set, a malformed DSN, a bad dialect). An
     // administrator's fix, not a server fault: it must not page the watchdog.
     case "config_error":
+      return 409
+    // A company delete refused while portal accounts or a live recurring invoice schedule still
+    // hold it (contacts/companies.ts): the workspace's state, not a fault.
+    case "company_has_accounts":
+    case "company_has_schedules":
+      return 409
+    // A person delete refused while a live recurring invoice schedule bills them
+    // (contacts/service.ts): the workspace's state, not a fault.
+    case "contact_has_schedules":
+      return 409
+    // A project's documents in more than one currency (invoicing project_invoiced_get): they are
+    // not summed into one amount, the data's state, not a fault.
+    case "mixed_currencies":
       return 409
     // A connection with no stored credentials: the person reconnects it.
     case CONNECTION_CREDENTIALS_MISSING:
@@ -3634,7 +3820,8 @@ export function dashboardSourceRefusal(
   if (tool.contractOnly) return "it is reached only through a provider contract"
   // Hidden from agents (`agentVisible: false`) is a catalog choice, not a reason: a settings
   // page's own read runs as the viewer, under its scopes, like any other read.
-  if (tool.requiresHumanTurn) return "it runs only on a person's own turn"
+  if (tool.requiresHumanTurn || tool.humanTurnOnly) return "it runs only on a person's own turn"
+  if (tool.dmOnly) return "it runs only in a DM with the agent"
   // A "user" boundary is a read people and agents both call (taint-checked inside a
   // thread): a view may show it like any other read. Internal and agent-only tools
   // are not a viewer's to call.
@@ -4556,11 +4743,16 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
 
   // Cross-app callers may invoke an internal tool either via an approved
   // `cross_app_calls` capability, or (legacy) when they declared the dependency
-  // and the target sets `deferLoading: true`.
+  // and the target sets `deferLoading: true`. The app's own code (a job, an
+  // event handler or another of its tools calling `ctx.executeTool`) may call
+  // its own internal tool. A person (the REST tool route), an agent or an MCP
+  // client never reaches it directly: those calls carry no `internalCall`.
   if (tool.trustBoundary === "internal") {
     const callerDeps =
       callerApp != null ? (appDependenciesRegistry.get([opts.orgId, callerApp])?.tools ?? []) : []
+    const ownAppCall = callerApp === appName
     const allowed =
+      ownAppCall ||
       approvedCrossAppCall ||
       approvedContractCall ||
       (callerApp != null && callerDeps.includes(opts.toolName) && tool.deferLoading === true)
@@ -4595,15 +4787,17 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
       },
     }
   }
+  // Hidden from agents holds for a coding agent over MCP too: its actor is the person's, but a
+  // model chose the call. A dashboard source, a settings page and the app itself still read it.
   if (
     tool.agentVisible === false &&
-    (opts.actor as { actorType?: string }).actorType === "agent" &&
+    ((opts.actor as { actorType?: string }).actorType === "agent" || opts.origin === "mcp") &&
     !opts.internalCall
   ) {
     return {
       error: {
         code: "forbidden",
-        message: `tool ${opts.toolName} not callable by agent`,
+        message: hiddenToolRefusal(opts.toolName, appName, tool.useInstead),
         retryable: false,
       },
     }
@@ -4668,6 +4862,39 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
         },
         opts.toolName,
       ),
+    }
+  }
+
+  // A FEATURE SWITCHED OFF INSIDE THE APP runs nothing, for an admin holding `*` as
+  // for anyone: its tool is gone from every catalog, so a call that still names it
+  // comes from an old schema or a stale list, and it is told what happened in the
+  // feature's own words. Before anything can park an approval for it.
+  if (isFeatureOffForTool(opts.orgId, tool)) {
+    const { code, message, feature, next, retryable } = featureOffAnswer(opts.orgId, tool)
+    return { error: { code, message, retryable, status: 409, body: { feature, next } } }
+  }
+
+  // WHERE THE CALL COMES FROM (manifest `humanTurnOnly`, `dmOnly`, first-party apps only): a tool
+  // called from the wrong place is refused with where to ask instead, before anything can park
+  // an approval for it. Another app's call is never the person's own turn or their DM, declared
+  // or not, inside an approved action or not: the person decided the outer action, not this.
+  const fromAnotherApp =
+    opts.internalCall?.callerApp != null && opts.internalCall.callerApp !== appName
+  if (tool.humanTurnOnly === true) {
+    if (fromAnotherApp || !humanTurnOnlyAllows(opts.origin, currentRunContext())) {
+      return { error: markRefusedBeforeRun(humanTurnOnlyRefusal(tool), opts.toolName) }
+    }
+  }
+  if (tool.dmOnly === true) {
+    if (fromAnotherApp) {
+      return { error: markRefusedBeforeRun(dmOnlyRefusal(tool), opts.toolName) }
+    }
+    // An in-app agent's call with no thread is in no DM.
+    if (opts.origin === "in-app-agent") {
+      const requester = (opts.actor as { userId?: string }).userId ?? ""
+      if (!opts.threadId || !(await isAgentDm(opts.orgId, opts.threadId, requester))) {
+        return { error: markRefusedBeforeRun(dmOnlyRefusal(tool), opts.toolName) }
+      }
     }
   }
 
@@ -4920,7 +5147,13 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
   const paramsCarryRefTokens = findRefTokens(validatedParams).length > 0
   // A token-bearing call skips the preflight (below), so a tool whose approval binds pinned
   // values would be staged with none: refused at stage time instead. Nothing is staged.
-  if ((tool.gated || tool.conditionalGate) && pinnedKeys.length > 0 && paramsCarryRefTokens) {
+  // A tool may build the value at execute instead (`pinnedOptionalOnRefs`): such a call stages unpinned.
+  if (
+    (tool.gated || tool.conditionalGate) &&
+    pinnedKeys.length > 0 &&
+    paramsCarryRefTokens &&
+    tool.pinnedOptionalOnRefs !== true
+  ) {
     return {
       error: {
         code: "ref_not_allowed",
@@ -5916,6 +6149,9 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
             priority: opts.priority, // propagate worker-pool scheduling class (main handler site)
             nested: isNestedDispatch, // reentrancy admission (main handler site)
             signal: opts.signal,
+            ...(opts.candidateCredentials
+              ? { candidateCredentials: opts.candidateCredentials }
+              : {}),
             actingAgentId, // FX3-1: the agent this dispatch acts as (main handler site)
             turnTaintScopes: handlerTurnTaint,
           },
@@ -5951,6 +6187,8 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
           opts.orgId,
           [opts.threadId, opts.alsoJudgeTaintOnThreadId],
           opts.toolName,
+          // The rows the caller is handed: a `taintSourceWhen` row condition reads them.
+          { result: envelope.data },
         )
       } catch (err) {
         // Fail closed: untrusted text that reaches the model without the turn being marked would
@@ -6467,6 +6705,13 @@ export async function executeToolCore(opts: ExecuteToolCoreOptions): Promise<Exe
     const readOrigin = taintOriginOf(tool, validatedParams, envelope.data)
     if (readOrigin) taintOriginStore.recordOriginRows(readOrigin.table, readOrigin.rowIds)
   }
+  // A result that carries a part classified by a narrower read scope (a project's money in its
+  // budget) adds that scope to the turn's taint, so a later write or post is judged against it as
+  // it is against the tool's own scopes. Filed from what the call RETURNED, like the origin above.
+  if ("data" in envelope && tool.resultTaintWhen && taintOriginStore) {
+    const { fields, scopes } = tool.resultTaintWhen
+    if (resultHoldsField(envelope.data, fields)) taintOriginStore.recordResultScopes([...scopes])
+  }
 
   return envelope
 }
@@ -6626,6 +6871,26 @@ export async function executeApprovedToolHandlerInternal(args: {
    */
   threadId?: string
 }): Promise<unknown> {
+  // The feature went off while this waited for a person. Approving the same request
+  // again cannot pass, so the answer is final and closes it with the feature's words
+  // (`revertToPending`, approvals/decide.ts), rather than re-pending it forever.
+  await primeOrgApps(args.orgId)
+  if (isFeatureOffForTool(args.orgId, args.tool)) {
+    // The feature rows could not be read: the call does not run now, but nothing
+    // says the feature is off, so the request stays pending and can be approved again.
+    if (orgFeaturesUnreadable(args.orgId)) {
+      return {
+        error: {
+          code: APP_STATE_UNAVAILABLE_CODE,
+          message: `${args.tool.appName}__${args.tool.name} did not run and nothing changed: the workspace's feature settings could not be read. The request is still pending; approve it again in a moment.`,
+          retryable: true,
+        },
+      }
+    }
+    const { code, message, feature, next } = featureOffAnswer(args.orgId, args.tool)
+    // The closing notice carries the message alone, so the next step travels in it.
+    return { error: { code, message: `${message} ${next}`, feature, next, final: true } }
+  }
   const validated = validateParamsForTool(
     args.tool,
     args.orgId,
@@ -6771,4 +7036,19 @@ export async function widenSequencedStepHeads(args: {
     }
     return { ok: true }
   })
+}
+
+/**
+ * The refusal an agent gets for a tool hidden from it. A stored routine or approval policy can
+ * still name the tool, so the message says which visible tool does the job now: `useInstead` is
+ * a tool of the same app, or `app__tool` for another app's.
+ */
+export function hiddenToolRefusal(
+  toolName: string,
+  appName: string,
+  useInstead: string | undefined,
+): string {
+  if (!useInstead) return `tool ${toolName} not callable by agent`
+  const visible = useInstead.includes("__") ? useInstead : `${appName}__${useInstead}`
+  return `tool ${toolName} is not callable by an agent. Use ${visible} instead.`
 }

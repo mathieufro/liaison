@@ -13,6 +13,8 @@
  * one: it keys timeline entries by the id each event carries.
  */
 
+import type { CardLabel, ResolvedCard } from "@liaison/shared"
+
 export interface LiveToolCall {
   toolCallId: string
   toolName: string
@@ -21,6 +23,14 @@ export interface LiveToolCall {
   status: "running" | "completed" | "error"
   /** A step's one-line summary (a node chat step: the command or file it acts on). */
   summary?: string
+  /** What the registry says of the tool, as the stored call keeps it. */
+  readOnly?: boolean
+  appLabel?: string
+  runningLabel?: string
+  runningLabelKey?: string
+  /** The call's result card, as the stored call keeps it. */
+  card?: ResolvedCard
+  cardError?: { pill: CardLabel }
 }
 
 /** Ordered reasoning/tool interleave (mirrors TurnTimelineEntry) so a late joiner
@@ -273,6 +283,12 @@ export function applyEntry(snap: LiveAgentStreamSnapshot, entry: TurnEntry): voi
         args: data.args,
         status: "running",
         ...(typeof data.summary === "string" && data.summary ? { summary: data.summary } : {}),
+        ...(typeof data.readOnly === "boolean" ? { readOnly: data.readOnly } : {}),
+        ...(typeof data.appLabel === "string" ? { appLabel: data.appLabel } : {}),
+        ...(typeof data.runningLabel === "string" ? { runningLabel: data.runningLabel } : {}),
+        ...(typeof data.runningLabelKey === "string"
+          ? { runningLabelKey: data.runningLabelKey }
+          : {}),
       })
       snap.timeline.push({ kind: "tool", toolCallId, itemId: itemId || toolCallId })
       return
@@ -285,6 +301,8 @@ export function applyEntry(snap: LiveAgentStreamSnapshot, entry: TurnEntry): voi
           typeof data.result === "object" && data.result !== null && "error" in data.result
             ? "error"
             : "completed"
+        if (data.card) call.card = data.card as ResolvedCard
+        if (data.cardError) call.cardError = data.cardError as { pill: CardLabel }
       }
       return
     }

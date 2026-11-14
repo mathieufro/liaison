@@ -3314,7 +3314,9 @@ export const MAIL_CONVERSATIONS: MailConversationSpec[] = [
         fromEmail: "editor@soundonstage.example",
         toName: "Resonant Audio Labs",
         toEmail: "support@resonantaudiolabs.example",
-        hoursAgo: 11,
+        // Before the loan reply approved 40 h ago, and before the runtime answer staged
+        // 16 h ago: a mail from this address after a staged draft stops that draft's send.
+        hoursAgo: 52,
         body:
           "Hello,\n\nWe are running a feature on location sound recorders next month and would like to " +
           "include the Kestrel 10. Could you loan us a review unit for four weeks?\n\n" +

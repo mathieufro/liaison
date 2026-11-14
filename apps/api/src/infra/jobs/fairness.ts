@@ -519,6 +519,17 @@ for _, m in ipairs(others) do
     redis.call('ZREM', KEYS[4], m)
   end
 end
+-- A full window of stale orgs, all pruned above, must not hide an org behind
+-- it: any other org still due was never checked, so it counts as waiting.
+if contention == 0 and #others == 4 then
+  local rest = redis.call('ZRANGEBYSCORE', KEYS[4], '-inf', now, 'LIMIT', 0, 2)
+  for _, m in ipairs(rest) do
+    if m ~= ARGV[3] then
+      contention = 1
+      break
+    end
+  end
+end
 local limit = C
 if contention == 1 then limit = cap end
 local nested = 0

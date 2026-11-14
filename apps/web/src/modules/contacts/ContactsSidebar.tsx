@@ -10,6 +10,15 @@ import { openTab, tabStore } from "~/modules/shell/tab-store"
 import { Skeleton } from "~/ui/Skeleton"
 import { ContactAvatar } from "./ContactAvatar"
 import {
+  listLoaded as companiesLoaded,
+  listLoading as companiesLoading,
+  listTotal as companiesTotal,
+  companyListStore,
+  loadCompanies,
+  setCompanyListQuery,
+} from "./company-store"
+import { openCompanyList, openCompanyTab } from "./company-visuals"
+import {
   createGroup,
   groups,
   groupsLoaded,
@@ -104,6 +113,7 @@ export const ContactsSidebar: Component = () => {
         </label>
       </div>
 
+      <ContactsModeNav />
       <ContactGroupsSection />
 
       {/* List */}
@@ -331,7 +341,156 @@ export const ContactListSidebar: Component = () => {
         <h2 class="text-[12.5px] font-semibold text-text">{i18n.t("contacts.contacts")}</h2>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto">
+        <ContactsModeNav />
         <ContactGroupsSection />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * People or companies: the two directories of Contacts, side by side in every
+ * contacts sidebar. The one whose page is open is marked.
+ */
+export const ContactsModeNav: Component = () => {
+  const i18n = useI18n()
+  const activeType = createMemo(
+    () => tabStore.tabs.find((t) => t.id === tabStore.activeTabId)?.type,
+  )
+  const onCompanies = () => {
+    const type = activeType()
+    return (
+      type === (resolveRegisteredTabType("company-list") ?? "contacts:company-list") ||
+      type === (resolveRegisteredTabType("company-detail") ?? "contacts:company-detail")
+    )
+  }
+  const row = (active: boolean) =>
+    cn(
+      "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12.5px] transition-colors",
+      active
+        ? "bg-surface-active font-medium text-text"
+        : "text-text-secondary hover:bg-surface-hover hover:text-text",
+    )
+  return (
+    <nav class="px-1.5 pb-2" data-testid="contacts-sidebar-modes">
+      <button
+        type="button"
+        data-testid="contacts-sidebar-mode-people"
+        aria-current={onCompanies() ? undefined : "page"}
+        class={row(!onCompanies())}
+        onClick={() => openTab({ type: "contact-list", entityId: "list", label: "Contacts" })}
+      >
+        <span class="min-w-0 flex-1 truncate">{i18n.t("contacts.companies.people")}</span>
+      </button>
+      <button
+        type="button"
+        data-testid="contacts-sidebar-mode-companies"
+        aria-current={onCompanies() ? "page" : undefined}
+        class={row(onCompanies())}
+        onClick={openCompanyList}
+      >
+        <span class="min-w-0 flex-1 truncate">{i18n.t("contacts.companies.title")}</span>
+        <Show when={companiesLoaded()}>
+          <span class="font-mono text-[10.5px] tabular-nums text-text-tertiary">
+            {companiesTotal()}
+          </span>
+        </Show>
+      </button>
+    </nav>
+  )
+}
+
+/**
+ * Sidebar of a company page: the two directories, a company search and the
+ * companies, so the reader moves from one company to the next in place.
+ */
+export const CompaniesSidebar: Component = () => {
+  const i18n = useI18n()
+  const api = useApi()
+  let debounceTimer: number | undefined
+
+  onMount(() => {
+    if (companyListStore.ids.length === 0) void loadCompanies(api as never)
+  })
+
+  const activeCompanyId = createMemo(() => {
+    const tab = tabStore.tabs.find((t) => t.id === tabStore.activeTabId)
+    const type = resolveRegisteredTabType("company-detail") ?? "contacts:company-detail"
+    return tab?.type === type ? tab.entityId : null
+  })
+
+  function handleSearch(value: string): void {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = window.setTimeout(() => {
+      setCompanyListQuery(value)
+      void loadCompanies(api as never)
+    }, 300)
+  }
+
+  return (
+    <div class="flex h-full min-h-0 flex-col" data-testid="companies-sidebar">
+      <div class="flex items-center justify-between gap-2 px-3 pt-3 pb-2">
+        <h2 class="text-[12.5px] font-semibold text-text">{i18n.t("contacts.contacts")}</h2>
+      </div>
+      <div class="px-3 pb-2">
+        <label class="flex items-center gap-2 rounded-md border border-border-subtle bg-bg px-2 py-1 transition-colors focus-within:border-border focus-within:bg-elevated">
+          <Search size={12} class="shrink-0 text-text-tertiary" />
+          <input
+            data-testid="companies-sidebar-search"
+            type="text"
+            placeholder={i18n.t("contacts.companies.search")}
+            class="w-full bg-transparent text-[12px] text-text outline-none placeholder:text-text-tertiary"
+            onInput={(event) => handleSearch(event.currentTarget.value)}
+          />
+        </label>
+      </div>
+      <ContactsModeNav />
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <Show when={companiesLoading() && companyListStore.ids.length === 0}>
+          <div class="space-y-1 px-2 py-1">
+            <For each={[0, 1, 2, 3]}>
+              {() => (
+                <div class="flex items-center gap-2 px-1.5 py-1.5">
+                  <Skeleton class="h-6 w-6 rounded-full" />
+                  <Skeleton class="h-2.5 flex-1" />
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+        <ul class="px-1.5 pb-3">
+          <For each={companyListStore.ids}>
+            {(id) => {
+              const company = () => companyListStore.byId[id]
+              const isActive = () => activeCompanyId() === id
+              return (
+                <Show when={company()}>
+                  {(c) => (
+                    <li>
+                      <button
+                        type="button"
+                        data-testid={`companies-sidebar-row-${id}`}
+                        aria-current={isActive() ? "page" : undefined}
+                        class={cn(
+                          "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors",
+                          isActive()
+                            ? "bg-surface-active font-medium text-text"
+                            : "text-text-secondary hover:bg-surface-hover hover:text-text",
+                        )}
+                        onClick={() => openCompanyTab(id, c().name)}
+                      >
+                        <ContactAvatar id={id} name={c().name} size="sm" />
+                        <span class="min-w-0 flex-1 truncate text-[12.5px]" title={c().name}>
+                          {c().name}
+                        </span>
+                      </button>
+                    </li>
+                  )}
+                </Show>
+              )
+            }}
+          </For>
+        </ul>
       </div>
     </div>
   )

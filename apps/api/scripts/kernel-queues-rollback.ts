@@ -44,8 +44,8 @@ export interface RollbackReport {
 
 const STATES = ["wait", "prioritized", "delayed", "paused"] as const
 
-function openQueue(name: string): Queue {
-  return new Queue(name, { connection: redisBullMQ, prefix: bullPrefix })
+function openQueue(name: string, prefix: string): Queue {
+  return new Queue(name, { connection: redisBullMQ, prefix })
 }
 
 async function moveJob(job: Job, legacy: Queue, now: number): Promise<void> {
@@ -65,10 +65,13 @@ async function moveJob(job: Job, legacy: Queue, now: number): Promise<void> {
 export async function rollbackKernelQueues(opts: {
   apply: boolean
   now?: number
+  /** The BullMQ key prefix; the process's own by default. A test passes a private one. */
+  prefix?: string
 }): Promise<RollbackReport> {
   const now = opts.now ?? Date.now()
-  const legacy = openQueue(LEGACY_KERNEL_QUEUE)
-  const classQueues = Object.values(KERNEL_QUEUE_CLASSES).map((c) => openQueue(c.queueName))
+  const prefix = opts.prefix ?? bullPrefix
+  const legacy = openQueue(LEGACY_KERNEL_QUEUE, prefix)
+  const classQueues = Object.values(KERNEL_QUEUE_CLASSES).map((c) => openQueue(c.queueName, prefix))
   const report: RollbackReport = {
     schedulersMoved: 0,
     jobsMoved: 0,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
 import { Search, X } from "lucide-solid"
-import { type Component, createMemo, For, onMount, Show } from "solid-js"
+import { type Component, createEffect, createMemo, For, onMount, Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { appLabel, entityTypeLabel } from "~/lib/app-label"
 import { entityIcon } from "~/lib/entity-icon"
@@ -20,6 +20,7 @@ import {
 import { useApi } from "~/modules/shell/ApiContext"
 import { openEntity } from "~/modules/shell/entity-opener"
 import { shellTier } from "~/modules/shell/shell-tier"
+import { useTabIsActive } from "~/modules/shell/TabVisibilityContext"
 import { openSearchMessageHit } from "~/modules/threads/reply-panel-store"
 
 interface SearchTabProps {
@@ -39,6 +40,17 @@ const SearchTab: Component<SearchTabProps> = () => {
   const i18n = useI18n()
   const api = useApi()
   const phone = () => shellTier() === "phone"
+  const tabActive = useTabIsActive()
+  let inputEl: HTMLInputElement | undefined
+
+  // Opening Search puts the cursor in its box, so what the viewer types next is
+  // the query: keys typed into a field never reach the shell's one-letter
+  // shortcuts. The tab stays mounted while hidden, so this runs each time it is
+  // shown again, not only on its first mount.
+  createEffect(() => {
+    if (!tabActive()) return
+    queueMicrotask(() => inputEl?.focus())
+  })
 
   // Honor /search?q=<initial query> when the tab is opened via URL.
   onMount(() => {
@@ -114,6 +126,7 @@ const SearchTab: Component<SearchTabProps> = () => {
         <label class="flex items-center gap-2.5 rounded-sm border border-border bg-surface px-3 py-2">
           <Search size={16} class="shrink-0 text-text-tertiary" />
           <input
+            ref={inputEl}
             data-testid="search-input"
             type="text"
             placeholder={i18n.t("kernel.searchEverything")}

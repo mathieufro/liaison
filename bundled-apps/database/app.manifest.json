@@ -1,6 +1,6 @@
 {
   "name": "database",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "kind": "connector",
   "iconName": "database",
   "description": "Read-only connector for a deployment's own database, for troubleshooting and support: licenses/subscriptions, moderation surfaces (tickets/knowledge/mail), instance health.",
@@ -12,6 +12,7 @@
     "sourceRepository": "https://github.com/liaison-sh/liaison/tree/main/bundled-apps/database"
   },
   "packageFormat": 1,
+  "outsideTextFields": ["rows"],
   "license": "FSL-1.1-ALv2",
   "host": "^1",
   "scopes": [

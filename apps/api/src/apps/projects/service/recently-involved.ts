@@ -27,6 +27,7 @@ import { releaseFilterSql } from "./release-filter"
 import { ProjectsServiceError } from "./statuses"
 import { formatTaskKey } from "./task-key"
 import { labelFilterCondition } from "./task-labels"
+import { attachTaskTimeKeys } from "./task-time-keys"
 
 export const INVOLVED_DEFAULT_DAYS = 14
 export const INVOLVED_MAX_DAYS = 90
@@ -112,6 +113,10 @@ export interface InvolvedTask {
   involvement: Involvement
   /** Every kind of involvement in the window, most recent first. */
   involvementKinds: InvolvementKind[]
+  /** Time keys, only on a task of a project using time and budgets (task-time-keys.ts). */
+  timeboxMinutes?: number | null
+  realTotalMinutes?: number
+  isMilestone?: boolean
 }
 
 export interface ListRecentlyInvolvedArgs {
@@ -463,6 +468,7 @@ export async function listRecentlyInvolvedTasks(
       involvementKinds: kinds,
     }
   })
+  await attachTaskTimeKeys(args.tx, args.orgId, items)
   const first = rows[0]
   return { items, totalCount: first ? Number(first.total_count) : 0, days }
 }

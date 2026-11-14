@@ -25,6 +25,10 @@ const ALLOWED: Record<string, number> = {
   // A test factory's follow-up: the snooze service refuses a past time, so a
   // follow-up already due is moved an hour past the wall clock.
   "factories/support/ticket.ts": 2,
+  // The timeline speed test's large customer: its history is laid out from the
+  // database clock in SQL, and its people go through the contact factory at the
+  // same wall clock.
+  "factories/timeline/activity-scale-world.ts": 1,
   // A test factory's default billing period end, 20 days past the wall clock
   // as a fresh billing push would set it; tiers pass their own.
   "factories/billing/billing.ts": 1,

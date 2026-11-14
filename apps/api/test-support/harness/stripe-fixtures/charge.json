@@ -1,0 +1,46 @@
+{
+  "id": "ch_FIXTURE0001",
+  "object": "charge",
+  "amount": 17640,
+  "amount_captured": 17640,
+  "amount_refunded": 3000,
+  "captured": true,
+  "created": 1767229300,
+  "currency": "eur",
+  "customer": "cus_FIXTURE0001",
+  "description": null,
+  "disputed": false,
+  "failure_code": null,
+  "failure_message": null,
+  "livemode": false,
+  "metadata": {},
+  "outcome": {
+    "network_status": "approved_by_network",
+    "reason": null,
+    "risk_level": "normal",
+    "seller_message": "Payment complete.",
+    "type": "authorized"
+  },
+  "paid": true,
+  "payment_intent": "pi_FIXTURE0001",
+  "payment_method": "pm_FIXTURE0001",
+  "payment_method_details": {
+    "card": {
+      "brand": "visa",
+      "country": "FR",
+      "exp_month": 12,
+      "exp_year": 2030,
+      "funding": "credit",
+      "last4": "4242"
+    },
+    "type": "card"
+  },
+  "refunded": false,
+  "refunds": {
+    "object": "list",
+    "data": [],
+    "has_more": false,
+    "url": "/v1/charges/ch_FIXTURE0001/refunds"
+  },
+  "status": "succeeded"
+}

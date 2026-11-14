@@ -9,6 +9,7 @@ import { installFakeBridge, liveSession, uninstallFakeBridge } from "~/modules/d
 import { editorOf, typeInto } from "~/modules/editor/test-helpers"
 import type { FileRow } from "~/modules/files/file-service"
 import { ApiProvider } from "~/modules/shell/ApiContext"
+import { pendingPrefill, prefillThread, resetDockPrefill } from "~/modules/shell/dock-prefill"
 import { mentionMarked } from "~/modules/shell/markdown-content"
 import { WsProvider } from "~/modules/shell/WsContext"
 import { type WsStatus, WsStatusContext } from "~/modules/shell/ws-status-context"
@@ -338,6 +339,27 @@ describe("ComposeBar", () => {
         </Router>
       ))
       expect(screen.queryByTestId("compose-offline-banner")).toBeNull()
+    })
+  })
+
+  describe("a prefill from the dock", () => {
+    it("lands in its own conversation's field once and is never sent", async () => {
+      prefillThread("thread-prefill", "Maison Delorme: Does the rest still fit?")
+      const { editor, onSend } = await renderCompose({ threadId: "thread-prefill" })
+      await waitFor(() =>
+        expect(editor.textContent).toBe("Maison Delorme: Does the rest still fit?"),
+      )
+      expect(onSend).not.toHaveBeenCalled()
+      expect(pendingPrefill("thread-prefill")).toBeNull()
+    })
+
+    it("another conversation's composer does not take it", async () => {
+      prefillThread("thread-elsewhere", "Not for this one")
+      const { editor } = await renderCompose({ threadId: "thread-here" })
+      await new Promise((r) => setTimeout(r, 20))
+      expect(editor.textContent).toBe("")
+      expect(pendingPrefill("thread-elsewhere")?.text).toBe("Not for this one")
+      resetDockPrefill()
     })
   })
 

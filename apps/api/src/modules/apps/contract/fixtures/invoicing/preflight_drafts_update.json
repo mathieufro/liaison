@@ -1,0 +1,28 @@
+{
+  "entry": "preflight:drafts_update",
+  "params": {
+    "draft_id": "00000000-0000-4000-8000-000000000105",
+    "patch": {
+      "notes": "Net 30"
+    }
+  },
+  "expectError": {
+    "reason": "recorded on a contract install with no rows, so the replay pins the not_found refusal a caller gets when the record it names does not exist (nothing written); the working path is still to record"
+  },
+  "calls": [
+    {
+      "method": "db_findOne",
+      "args": ["documents", "00000000-0000-4000-8000-000000000105"],
+      "reply": "null"
+    },
+    {
+      "method": "db_findMany",
+      "args": [
+        "documents",
+        "{\"where\":{\"id\":\"00000000-0000-4000-8000-000000000105\"},\"limit\":1}"
+      ],
+      "reply": "[]"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

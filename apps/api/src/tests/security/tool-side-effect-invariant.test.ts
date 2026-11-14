@@ -57,6 +57,9 @@ const SELF_GUARDING = new Set([
   // Looks a contact up and returns it unchanged on a read-only run: no link, no enrichment,
   // no create, and `clear` refuses (bridge/db.ts resolveContact, contacts/service.ts lookupOnly).
   "resolveContact",
+  // Opt-outs: both refuse on a read-only run, naming kernel.suppressions (bridge/mail.ts).
+  "mail_suppressionAdd",
+  "mail_suppressionRemove",
 ])
 
 /**
@@ -73,6 +76,12 @@ const REVIEWED_NOT_REFUSED: Record<string, string> = {
   bulk_iterateJsonl_next: "read",
   calendar_findCalendarsForPollFallback: "read",
   mail_providersGet: "read",
+  // A timeline source's rows, inside a read-only savepoint that is rolled back (contacts/activity.ts).
+  mail_activityRead: "read (withReadOnlySource)",
+  calendar_activityRead: "read (withReadOnlySource)",
+  projects_activityRead: "read (withReadOnlySource)",
+  tickets_activityRead: "read (withReadOnlySource)",
+  mail_suppressionCheck: "read",
   calendar_findCalendarsForWatchRenewal: "read",
   calendar_findStalePendingPushes: "read",
   calendar_getAccount: "read",
@@ -88,6 +97,8 @@ const REVIEWED_NOT_REFUSED: Record<string, string> = {
   crypto_hmacSha256Base64ForConfig: "read",
   crypto_verifyHmacForConfig: "read",
   time_civil: "read",
+  // The calling turn's agent and whether a person is behind it, from the captured frame.
+  turn_get: "read",
   // A provider throttle signal (connection-limiter.ts): delays later calls, writes no data.
   limiter_pause: "throttle signal, no data written",
   connections_describe: "read",
@@ -138,11 +149,18 @@ const REVIEWED_NOT_REFUSED: Record<string, string> = {
   log_info: "read",
   log_warn: "read",
   mail_conversion_readConversation: "read",
+  mail_buildSendGuard: "read (computes the send check value; stores nothing)",
+  mail_checkSendGuard: "read (evaluates the send check at send; stores nothing)",
   mail_search: "read",
   mcp_checkConnectionWrite: "read",
   mcp_listConnections: "read",
   projects_attentionItems: "read",
   projects_checklistGet: "read",
+  projects_companyProjects: "read",
+  projects_dealSendState: "read",
+  projects_dealsFollowupCandidates: "read",
+  projects_dealsRollup: "read",
+  projects_dealsSearch: "read",
   projects_get: "read",
   projects_labelsList: "read",
   projects_labelsTree: "read",
@@ -152,6 +170,17 @@ const REVIEWED_NOT_REFUSED: Record<string, string> = {
   projects_tasksAggregate: "read",
   projects_resolveAssignee: "read",
   projects_search: "read",
+  projects_taskTimeGet: "read",
+  projects_budgetGet: "read",
+  projects_marginCost: "read",
+  projects_costRatesList: "read",
+  projects_capacityGet: "read",
+  projects_timesheetGet: "read",
+  projects_timesheetExport:
+    "read (stages one file only the caller reads, like a dashboard PDF; writes no record)",
+  projects_daysOffList: "read",
+  projects_timeSettingsGet: "read",
+  projects_reconcileFacts: "read",
   projects_tasksByAssignee: "read",
   projects_tasksByProject: "read",
   pubsub_verifyGoogleOidcJwt: "read",
@@ -574,14 +603,26 @@ const REVIEWED_UNGATED_OUTWARD: Record<string, string> = {
     "gated: parks via the handler's ctx.requestApproval (conditionalGate; execute-tool.ts:2767-2900), person shortcut only for origin human-ui (:2879)",
   "invoicing:credit_note_issue":
     "gated: parks via the handler's ctx.requestApproval (conditionalGate; execute-tool.ts:2767-2900), person shortcut only for origin human-ui (:2879)",
+  "invoicing:drafts_create":
+    "local draft row, or a row added to a month-end run: nothing is issued, numbered or sent; a draft with an outside-text taint parks after outside text (execute-tool.ts taint escalation); an agent's run-row add also lands on the run's gated card",
+  "invoicing:drafts_discard":
+    "externalEffect: parks after outside text (execute-tool.ts taint escalation); an agent's take-out or end-schedule of a month-end row parks for a person (conditionalGate, handler's ctx.requestApproval); a draft discard takes no number and sends nothing",
+  "invoicing:drafts_update":
+    "local draft row, or a month-end row change: nothing is issued or sent; externalEffect parks after outside text (execute-tool.ts taint escalation); an agent's run-row edit restages the run's gated card",
   "invoicing:einvoice_send_request":
     "stages the send approval (einvoicing/transmit.ts einvoiceSendRequest); the PA submit needs the approval's dispatch grant",
   "invoicing:po_create_and_issue":
     "gated: parks via the handler's ctx.requestApproval (conditionalGate; execute-tool.ts:2767-2900), person shortcut only for origin human-ui (:2879)",
+  "invoicing:issuer_emails_confirm":
+    "an agent's call always parks via the handler's ctx.requestApproval (conditionalGate); only a person's own click records the statement, which sends nothing and changes no document",
   "invoicing:po_issue":
     "gated: parks via the handler's ctx.requestApproval (conditionalGate; execute-tool.ts:2767-2900), person shortcut only for origin human-ui (:2879)",
   "invoicing:quote_create_and_issue":
     "gated: parks via the handler's ctx.requestApproval (conditionalGate; execute-tool.ts:2767-2900), person shortcut only for origin human-ui (:2879)",
+  "invoicing:recurring_run_unapprove":
+    "externalEffect: parks after outside text (execute-tool.ts taint escalation); an undo returns the run to drafted, takes no number, sends nothing, and restages the run's gated card",
+  "invoicing:recurring_schedule_pause":
+    "externalEffect: parks after outside text (execute-tool.ts taint escalation); a pause only stops drafts, bills nothing and sends nothing",
   "kernel:approval_update_payload":
     "edits a pending approval; the decision is bound to the payload hash the person saw (decide.ts:262-275, cascade lock)",
   "kernel:bulkDeactivateUsers":
@@ -598,13 +639,21 @@ const REVIEWED_UNGATED_OUTWARD: Record<string, string> = {
   "kernel:notify_user": "internal notification to an org member; scope-taint sinkReadersSelf",
   "kernel:run_on_my_computer":
     "requiresHumanTurn: parks unless a typed, unmarked turn (execute-tool.ts); replayed outside text keeps the mark (untrusted-text-across-turns.test.ts)",
+  "kernel:set_away":
+    "conditionalGate + requiresHumanTurn + noAutoApprove (kernel-tools.ts): runs at once only on the person's own untainted turn, or a holder of kernel:users:admin or projects:capacity:write for someone else; any other call parks to the requester alone (requesterAlways); it writes dates and person ids only (set-away.test.ts)",
   "kernel:threads_reply": "internal thread post; scope-taint judged on the room's readers",
   "kernel:web_fetch":
     "a read that never parks (outboundWebRead, scope-taint.ts rule 9): its URL is bounded inline by the web-read guardrails (length, query string, userinfo, opaque or personal data on a turn that read org data, per-turn and per-thread rate; web-read-guardrails.ts), plus the org allow/blocklist and the SSRF guard",
   "mail:disconnectAccount": "internal, the person's own account row",
   "mail:export_conversations": "file for the requester from rows they can read; nothing sent",
+  "mail:suppression_add":
+    "externalEffect: parks after outside text, so outside text cannot silence an address; it only stops commercial mail and sends nothing",
+  "projects:time_plan_set":
+    "a project's own plan row; externalEffect only so a tainted turn parks turning dated hours on, which shows the lead and finance dated entries from that day; nothing leaves Liaison",
   "shopify:webhooks_repair":
     "re-registers the org's own Shopify webhooks; admin identity-map scope",
+  "stripe:customer_link":
+    "links a mirrored customer to a company or contact the person can read, in Liaison only; nothing reaches the provider, and it parks after outside text",
   "tickets:convertToMail": "internal conversion; sending is the gated mail compose",
   "tickets:csat.request": "externalEffect: parks after outside text (owner verdict AGM-2)",
   "tickets:inboxes.disconnect": "admin-scoped, internal",

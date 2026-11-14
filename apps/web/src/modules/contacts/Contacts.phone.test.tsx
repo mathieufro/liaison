@@ -25,8 +25,7 @@ const mocks = vi.hoisted(() => ({
   listStore: { byId: {} as Record<string, any>, ids: [] as string[] },
   detailStore: {
     contacts: {} as Record<string, any>,
-    backlinks: {} as Record<string, any>,
-    ticketBacklinks: {} as Record<string, any[]>,
+    optOuts: {} as Record<string, any>,
     discussions: { c1: "t-c1" } as Record<string, string>,
   },
   openTab: vi.fn(),
@@ -64,8 +63,7 @@ vi.mock("~/modules/contacts/contact-list-store", () => ({
 vi.mock("~/modules/contacts/contact-detail-store", () => ({
   contactDetailStore: mocks.detailStore,
   loadContact: vi.fn(async () => undefined),
-  loadBacklinks: vi.fn(async () => undefined),
-  loadTicketBacklinks: vi.fn(),
+  loadOptOut: vi.fn(async () => undefined),
   openContactDiscussion: vi.fn(async () => "t-c1"),
   updateContact: vi.fn(),
   deleteContact: vi.fn(),
@@ -79,6 +77,7 @@ vi.mock("~/modules/contacts/contact-merge-store", () => ({
   mergeStore: { open: false, step: "search", targetCandidates: [], resolvedFields: {} },
   openMerge: vi.fn(),
   closeMerge: vi.fn(),
+  loadSourceConversations: vi.fn(),
   searchTargets: vi.fn(),
   selectTarget: vi.fn(),
   setFieldChoice: vi.fn(),
@@ -95,8 +94,7 @@ describe("Contacts at phone width", () => {
     mocks.listStore.byId = { c1: { ...ALICE } }
     mocks.listStore.ids = ["c1"]
     mocks.detailStore.contacts = { c1: { ...ALICE } }
-    mocks.detailStore.backlinks = {}
-    mocks.detailStore.ticketBacklinks = {}
+    mocks.detailStore.optOuts = {}
   })
 
   afterEach(() => {

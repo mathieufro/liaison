@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-import { MENTION_SEAT_ORIGIN, normalizeChannelTitle } from "@liaison/shared"
+import { MENTION_SEAT_ORIGIN, maskWithNote, normalizeChannelTitle } from "@liaison/shared"
 import { and, asc, desc, sql as drizzleSql, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import { HTTPException } from "hono/http-exception"
 import type { PrivilegedDb, RlsClient, RlsTx } from "~/db"
@@ -411,7 +411,8 @@ export async function insertThreadWithParticipants(
         authorId: userId,
         authorType: initialAuthorType,
         authorAgentId: initialAuthorType === "agent" ? initialAuthorAgentId : null,
-        content: initialMessage.content,
+        // Masked before the row and the thread-created event read it.
+        content: maskWithNote(initialMessage.content).text,
         mentions: mentionsList.length > 0 ? mentionsList : null,
         metadata: agentPostMetadata(
           initialAuthorType,

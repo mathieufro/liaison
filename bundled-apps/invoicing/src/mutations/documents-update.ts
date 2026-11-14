@@ -13,6 +13,7 @@ import {
 import { issueDateParts } from "../issue-date"
 import { documentRollup, lineSubtotal, lineTax, lineTotal } from "../money"
 import { type DocumentFull, documentsGet, isUuid, type ReadsCtx } from "../reads"
+import { runItemDraftRefusal } from "../recurring/run-card"
 import { type ClassifyInput, classify } from "../tax"
 import { dateOnly, FOREIGN_ID_CHARS, findIssuerProfile, isCalendarDate } from "./db-helpers"
 import { liftMisplacedCountry, netLinesForIssuer, normaliseDraftLine } from "./lines"
@@ -478,6 +479,10 @@ async function documentsUpdateRun(
   // From here on, always operate on the RESOLVED uuid — never the raw (possibly non-uuid) input.
   const id = String(doc.id)
   const currentStatus = String(doc.status ?? "draft")
+  if (currentStatus === "draft") {
+    const runRefusal = await runItemDraftRefusal(ctx, doc, "documents_update")
+    if (runRefusal) return runRefusal
+  }
   if (NOT_EDITABLE_STATUSES.has(currentStatus)) {
     return {
       status: "error",

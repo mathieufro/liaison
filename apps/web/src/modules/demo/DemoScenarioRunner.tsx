@@ -51,6 +51,8 @@ export interface DemoScenarioItem {
   status: TourStatus | "new"
   beatIndex: number
   beatCount: number
+  /** Played once: it offers "Start over" once played, never to start it again. */
+  singleRun?: true
 }
 
 type ApiClient = NonNullable<ReturnType<typeof useOptionalApi>>

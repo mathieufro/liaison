@@ -1,0 +1,19 @@
+{
+  "id": "evt_FIXTURE0001",
+  "object": "event",
+  "api_version": "2026-10-28.endive",
+  "created": 1767229300,
+  "data": {
+    "object": {
+      "id": "in_FIXTURE0001",
+      "object": "invoice"
+    }
+  },
+  "livemode": false,
+  "pending_webhooks": 1,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "invoice.paid"
+}

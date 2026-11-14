@@ -172,12 +172,17 @@ export function buildAdjustmentReversalItems(
   remainingGrossMinor: bigint,
   scope: string | null,
 ): Array<Record<string, unknown>> {
-  // A reversal of nothing but carriage is a shipping refund: label it as one. Otherwise the scope
-  // decides, as before (the services document of a split order is scope "software").
+  // A reversal of nothing but carriage is a shipping refund: label it as one. Otherwise the kind
+  // the original's other lines share (a services invoice credits services), and when they mix,
+  // the scope decides (the services document of a split order is scope "software").
   const allShipping =
     originalLines.length > 0 && originalLines.every((l) => l.line_kind === "shipping")
+  const kinds = new Set(
+    originalLines.filter((l) => l.line_kind !== "shipping").map((l) => l.line_kind),
+  )
+  const shared = kinds.size === 1 ? [...kinds][0] : undefined
   const lineKind = (
-    allShipping ? "shipping" : scope === "software" ? "software" : "goods"
+    allShipping ? "shipping" : (shared ?? (scope === "software" ? "software" : "goods"))
   ) as LineKind
   const refundLabel = allShipping ? "Shipping refund" : "Refund"
   const item = (unitPriceMinor: bigint, rateBp: number, description: string) => ({

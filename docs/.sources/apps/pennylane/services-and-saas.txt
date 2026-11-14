@@ -1,0 +1,1 @@
+Pennylane takes no collections: To report at your platform and a Home line -> bundled-apps/pennylane/app.manifest.json (implements) ; bundled-apps/invoicing/src/einvoicing/collection.ts (reportCollection)

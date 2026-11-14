@@ -46,6 +46,7 @@ import {
   claimsPendingApproval,
 } from "~/modules/agent/runtime/false-approval-claim"
 import { threadHasSecretRequest } from "~/modules/agent/runtime/open-cards"
+import { replyTextOfSteps } from "~/modules/agent/runtime/reply-flatten"
 import { isParkedForApproval } from "~/modules/agent/tools/tool-bridge"
 import {
   approvalHandlesRequestedSince,
@@ -484,12 +485,17 @@ export function retractFromText(text: string, r: Retraction): string {
   return text.slice(0, start) + text.slice(r.end)
 }
 
-/** The timeline without the retracted characters of its text entries. */
+/**
+ * The timeline without the retracted characters of its text entries, or
+ * unchanged when its text does not hold them where expected (as `retractFromText`).
+ */
 export function retractFromTimeline(
   timeline: TurnTimelineEntry[],
   r: Retraction,
 ): TurnTimelineEntry[] {
   const start = r.end - r.text.length
+  const streamed = timeline.map((e) => (e.kind === "text" ? e.text : "")).join("")
+  if (start < 0 || streamed.slice(start, r.end) !== r.text) return timeline
   let offset = 0
   const out: TurnTimelineEntry[] = []
   for (const entry of timeline) {
@@ -512,24 +518,60 @@ export function retractFromTimeline(
   return out
 }
 
+/** Each step's text without the retracted characters, counted on their concatenation. */
+export function retractFromSteps(steps: readonly string[], r: Retraction): string[] {
+  const start = r.end - r.text.length
+  if (start < 0 || steps.join("").slice(start, r.end) !== r.text) return [...steps]
+  let offset = 0
+  const out: string[] = []
+  for (const step of steps) {
+    const from = offset
+    offset += step.length
+    const cutFrom = Math.max(from, start)
+    const cutTo = Math.min(offset, r.end)
+    out.push(cutFrom >= cutTo ? step : step.slice(0, cutFrom - from) + step.slice(cutTo - from))
+  }
+  return out
+}
+
 /**
  * The turn's output without the retracted false text: the whole text, the
  * timeline, and the caller's final-step text (a suffix of the whole text).
+ * A retraction counts the text as streamed. When the caller joined its steps
+ * as paragraphs (`stepTexts`, reply-flatten.ts), the cut is made in the steps
+ * and the reply joined again from them.
  */
 export function retractTurnOutput(
-  out: { text: string; timeline?: TurnTimelineEntry[]; finalStepText?: string },
+  out: {
+    text: string
+    stepTexts?: readonly string[]
+    timeline?: TurnTimelineEntry[]
+    finalStepText?: string
+  },
   r: Retraction,
-): { text: string; timeline?: TurnTimelineEntry[]; finalStepText?: string } {
+): {
+  text: string
+  stepTexts?: readonly string[]
+  timeline?: TurnTimelineEntry[]
+  finalStepText?: string
+} {
+  const streamed = out.stepTexts ? out.stepTexts.join("") : out.text
   let finalStepText = out.finalStepText
-  if (finalStepText !== undefined && out.text.endsWith(finalStepText)) {
-    const suffixStart = out.text.length - finalStepText.length
+  if (finalStepText !== undefined && streamed.endsWith(finalStepText)) {
+    const suffixStart = streamed.length - finalStepText.length
     finalStepText = retractFromText(finalStepText, {
       end: r.end - suffixStart,
       text: r.text,
     })
   }
+  const stepTexts = out.stepTexts ? retractFromSteps(out.stepTexts, r) : undefined
   return {
-    text: retractFromText(out.text, r),
+    text: stepTexts
+      ? stepTexts.join("") === streamed
+        ? out.text
+        : replyTextOfSteps(stepTexts)
+      : retractFromText(out.text, r),
+    ...(stepTexts ? { stepTexts } : {}),
     ...(out.timeline ? { timeline: retractFromTimeline(out.timeline, r) } : {}),
     ...(finalStepText !== undefined ? { finalStepText } : {}),
   }

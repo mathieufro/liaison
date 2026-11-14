@@ -1,0 +1,5 @@
+{
+  "privileged": {
+    "apps/projects/service/time-feature.ts": "Time and budgets: the org's feature row is derived from every work project of the org, which the person's own transaction cannot see; it is recomputed after the commit under one advisory lock per org, and the first project on tells the admins once on Home. Reads projects' switch, active member count and admin holders only."
+  }
+}

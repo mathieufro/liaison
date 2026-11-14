@@ -89,6 +89,16 @@ describe("ci-scope testScope", () => {
     expect(pr("packages/shared/src/csv.ts")).toMatchObject({ unit: true, web: true })
   })
 
+  it("runs the relation cells for a path a relation link names, and on a merge group", () => {
+    const t = pr("apps/api/src/tests/relations/classes.ts")
+    expect(t).toMatchObject({ unit: false, web: false, relations: true })
+    expect(testOutputs(t)).toMatchObject({ unit: "false", relations: "true", unit_parts: "[1]" })
+    expect(pr("apps/api/src/apps/tickets/merge.ts")).toMatchObject({ unit: true, relations: true })
+    expect(pr("apps/web/src/ui/Button.tsx")).toMatchObject({ relations: false })
+    expect(testScope("merge_group", [], undefined)).toMatchObject({ relations: true })
+    expect(testScope("push", [], undefined)).toMatchObject({ relations: false })
+  })
+
   it("runs nothing for a docs-only change", () => {
     expect(pr("docs/agents/models.md", "README.md")).toMatchObject({ unit: false, web: false })
   })

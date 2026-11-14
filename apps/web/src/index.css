@@ -705,6 +705,22 @@
   height: 22px;
 }
 
+/* A result card's own targets that the floor above does not list: its
+   disclosures (a number's "How this number is worked out") and its links. In a
+   card they stand alone on their line, not inside a sentence, so they take the
+   same 44px floor. The summary keeps its native marker: padding, not flex,
+   centres its single line. */
+:is([data-shell-tier="tablet"], [data-shell-tier="phone"]) [data-tool-card] summary {
+  min-height: 44px;
+  padding-block: 14px;
+  box-sizing: border-box;
+}
+:is([data-shell-tier="tablet"], [data-shell-tier="phone"]) [data-tool-card] a[href] {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
 /*
  * The iOS text field zoom floor.
  *

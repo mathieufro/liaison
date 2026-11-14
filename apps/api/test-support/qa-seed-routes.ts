@@ -14,6 +14,7 @@ export async function mountQaSeedRoutes(app: Hono<any>): Promise<void> {
     { invoicingTestInstallRoutes },
     { boxtalTestInstallRoutes },
     { pennylaneTestInstallRoutes },
+    { stripeTestInstallRoutes },
     { adsTestInstallRoutes },
     { monitoringTestInstallRoutes },
     { socialTestInstallRoutes },
@@ -38,6 +39,7 @@ export async function mountQaSeedRoutes(app: Hono<any>): Promise<void> {
     import("./harness/invoicing-install-routes"),
     import("./harness/boxtal-install-routes"),
     import("./harness/pennylane-install-routes"),
+    import("./harness/stripe-install-routes"),
     import("./harness/ads-install-routes"),
     import("./harness/monitoring-install-routes"),
     import("./harness/social-install-routes"),
@@ -64,6 +66,8 @@ export async function mountQaSeedRoutes(app: Hono<any>): Promise<void> {
   app.route("/api/_test/boxtal", boxtalTestInstallRoutes)
   // Pennylane install + external-API mock-control routes (deep-week-sim finance).
   app.route("/api/_test/pennylane", pennylaneTestInstallRoutes)
+  // Payments connector install + API mock-control routes.
+  app.route("/api/_test/stripe", stripeTestInstallRoutes)
   // ads install + meta credentials connection (deep-week-sim ads e2e).
   app.route("/api/_test/ads", adsTestInstallRoutes)
   // monitoring install + incident seed (the incident board has no other driver).

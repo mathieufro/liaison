@@ -143,3 +143,4 @@ summarizerContext: an ungated read of the same app, run as the requester before 
 pick params and tableBacking declaration -> apps/api/src/modules/apps/manifest-schema.ts:1343
 tableBacking parent is another entity -> apps/api/src/modules/apps/contract.ts:708
 tableBacking registered for core apps only -> apps/api/src/modules/apps/runtime.ts:4121
+A stored list older than 30 minutes is not shown; the refresh reloads the person's feed -> apps/api/src/modules/apps/attention-store.ts:102 ; apps/api/src/modules/apps/attention-store.ts:880 ; apps/api/src/modules/apps/attention-store.ts:506

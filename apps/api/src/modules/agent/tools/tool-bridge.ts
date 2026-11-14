@@ -35,6 +35,8 @@ import {
 import { watchTaintMarks } from "~/modules/agent/scopes/taint"
 import { isHostOnlyParam, stripHostOnlyParams } from "~/modules/agent/tools/host-only-params"
 import { toJsonValue, toolFailureModelOutput } from "~/modules/agent/tools/tool-failure-output"
+import { rememberHeldToolSet } from "~/modules/agent/tools/tool-name-resolve"
+import { hiddenToolAliases } from "~/modules/agent/tools/tool-rank"
 import { repeatFetchResult } from "~/modules/agent/tools/web-fetch-repeat"
 import {
   approvalActionRequiredClause,
@@ -44,7 +46,7 @@ import {
 import { resolveApprovalRef } from "~/modules/approvals/resolve-ref"
 import { orgHasCapability, toolRegistry } from "~/modules/apps/app-registries"
 import { executeTool } from "~/modules/apps/execute-tool"
-import { isAppOffForOrg, isAppUnavailableFor } from "~/modules/apps/org-apps"
+import { isAppOffForOrg, isAppUnavailableFor, isFeatureOffForTool } from "~/modules/apps/org-apps"
 import { getHealthGate } from "~/modules/mcp-client/health-gate"
 import { slugIndex } from "~/modules/mcp-client/slug-index"
 import { hasScope } from "~/modules/permissions/permissions"
@@ -434,6 +436,19 @@ function repeatedFailurePrefix(toolName: string, args: unknown, stepKey: string)
 const TERMINAL_FAILURE_LIMIT = 3
 
 /**
+ * A refusal because someone else moved the record on (two people editing one row):
+ * the next call, made from a fresh read, can pass. Whatever the tool's envelope says,
+ * it counts as retryable, so it never opens the breaker for the turn.
+ */
+const STALE_STATE_CODES: ReadonlySet<string> = new Set([
+  "REVISION_CONFLICT",
+  "stale_revision",
+  "stale_run_hash",
+])
+const STALE_STATE_NEXT =
+  " The record changed since you read it, so nothing was written. Read it again, then repeat the call with what you read."
+
+/**
  * The step a tool call belongs to. The AI SDK passes every call of one step the
  * same `messages` (what the model was sent for that step), and each later step
  * sends a longer list, so its length names the step. A caller without it (the
@@ -695,8 +710,9 @@ async function executeWrapper(
     // circuit breaker above can open, and tell the model explicitly that
     // repeating the call is pointless — the cause is config/state, not args.
     const retryableFlag = (err as { details?: { retryable?: boolean } })?.details?.retryable
-    let terminalSuffix = ""
-    if (retryableFlag === false) {
+    const stale = code !== undefined && STALE_STATE_CODES.has(code)
+    let terminalSuffix = stale ? STALE_STATE_NEXT : ""
+    if (retryableFlag === false && !stale) {
       const frame = runContextStore.getStore()
       if (frame) {
         frame.toolTerminalFailures ??= new Map()
@@ -815,6 +831,10 @@ export function buildToolSet(
     // tool to any audience. The caller primed the per-org state (primeOrgApps)
     // before this walk; dispatch re-checks it (executeToolCore).
     if (isAppOffForOrg(orgId, key[1])) continue
+    // A feature switched off takes its tools from every set the same way, here
+    // as in the catalog: a tool held here and missing from the catalog would
+    // count as not deferred and reach the provider on every step.
+    if (isFeatureOffForTool(orgId, toolDef)) continue
 
     // `kernel:spawn_agent` gate — always passes now that `agent.spawn` is
     // kernel-universal (see above).
@@ -855,6 +875,8 @@ export function buildToolSet(
     // missing frame would strip the tool from every MCP client, agent bound
     // ones included.
     if (audience === "agent" && toolDef.agentBoundOnly && !runFrame?.agentId) continue
+    // A tool that reads the person's own computer, for a person with none.
+    if (audience === "agent" && toolDef.needsOwnComputer && runFrame?.noOwnComputer) continue
 
     // Outbound MCP server: gateway-hidden tools are invisible
     if (audience === "gateway" && toolDef.gatewayHidden) continue
@@ -1246,6 +1268,7 @@ export function buildToolSet(
   // from position 0. Sort by SDK name so the serialized catalog is stable.
   const sorted: Record<string, any> = {}
   for (const name of Object.keys(tools).sort()) sorted[name] = tools[name]
+  rememberHeldToolSet(sorted, { orgId, scopes: actorScopes })
   return sorted
 }
 
@@ -1355,6 +1378,7 @@ export function buildScopedToolSet(
     if (allowSet && !allowSet.has(canonical)) continue
     out[sdkName] = baseTools[sdkName]
   }
+  rememberHeldToolSet(out, { orgId, scopes: opts.effectiveScopes })
   return out
 }
 
@@ -1384,6 +1408,8 @@ export function listLockedCapabilities(
     // restricted away from, are not "lockable": no scope request brings them
     // back (S19, S20, A12).
     if (isAppUnavailableFor(orgId, key[1], actorUserId)) continue
+    // No scope brings back a tool whose feature is off either.
+    if (isFeatureOffForTool(orgId, toolDef)) continue
     if (key[1] === "kernel" && key[2] === "spawn_agent" && !hasSpawnCapableApp) continue
     // Only tools the actor is missing a scope for. A tool that declares no
     // scope is refused to everyone, so no grant unlocks it: never list it.
@@ -1447,8 +1473,14 @@ export function listDeferredTools(
   actor?: ActorContext,
   audience: "agent" | "gateway" = "agent",
   includeLocked = false,
+  // Whether the person has no computer set up for Liaison: tools that read
+  // it are then left out. Defaults to the running turn's frame (tool_search);
+  // the system prompt, assembled outside it, passes its own read.
+  turn: { noOwnComputer?: boolean } = {
+    noOwnComputer: runContextStore.getStore()?.noOwnComputer,
+  },
 ): ReturnType<typeof listCatalogTools> {
-  return listCatalogTools(orgId, actor, audience, includeLocked, true)
+  return listCatalogTools(orgId, actor, audience, includeLocked, true, turn.noOwnComputer === true)
 }
 
 /**
@@ -1514,12 +1546,15 @@ function listCatalogTools(
   // When true, keep only tools gated behind discovery (`listDeferredTools`).
   // When false, return every tool the audience can see (`listGatewayTools`).
   onlyDeferred = true,
+  // When true, tools marked `needsOwnComputer` are left out (agent audience).
+  noOwnComputer = false,
 ): Array<{
   sdkName: string
   appName: string
   toolName: string
   description: string
   keywords?: readonly string[]
+  aliases?: readonly string[]
   locked?: boolean
   requiredScope?: string
   routineOnly?: boolean
@@ -1530,16 +1565,29 @@ function listCatalogTools(
     toolName: string
     description: string
     keywords?: readonly string[]
+    aliases?: readonly string[]
     locked?: boolean
     requiredScope?: string
     routineOnly?: boolean
   }> = []
   const actorScopes = actor?.scopes ?? []
+  // A hidden tool's name still finds the visible tool it sends an agent to.
+  const aliases = hiddenToolAliases(
+    [...toolRegistry.entriesOf(orgId)]
+      .filter(([key]) => key[0] === orgId)
+      .map(([key, def]) => ({
+        appName: key[1],
+        toolName: key[2],
+        agentVisible: def.agentVisible,
+        useInstead: def.useInstead,
+      })),
+  )
 
   for (const [key, toolDef] of toolRegistry.entriesOf(orgId)) {
     if (key[0] !== orgId) continue
     // An Off app (S19) is in no catalog, deferred, gateway or locked.
     if (isAppOffForOrg(orgId, key[1])) continue
+    if (isFeatureOffForTool(orgId, toolDef)) continue
     // Surface deferred (app) tools AND routine-only kernel tools (web_watch /
     // watch_state). The latter are NOT deferLoading — they are core tools merely
     // execution-gated to routine ticks — but they MUST be discoverable so the
@@ -1558,6 +1606,7 @@ function listCatalogTools(
     if (toolDef.agentVisible === false) continue
     if (audience === "gateway" && toolDef.gatewayHidden) continue
     if (audience === "gateway" && toolDef.requiresAgentExecutionThread) continue
+    if (audience === "agent" && noOwnComputer && toolDef.needsOwnComputer) continue
 
     // Unreachable MCP tools — hidden from the deferred catalog too. Personal
     // tools also hidden from non-owners (review B6). These are NOT RBAC-scope
@@ -1577,12 +1626,15 @@ function listCatalogTools(
       if (locked) continue
     }
 
+    const sdkName = `${key[1]}__${key[2].replace(/[^a-zA-Z0-9_-]/g, "_")}`
+    const aliasNames = aliases.get(sdkName)
     results.push({
-      sdkName: `${key[1]}__${key[2].replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+      sdkName,
       appName: key[1],
       toolName: key[2],
       description: toolDef.description,
       ...(toolDef.searchKeywords?.length ? { keywords: toolDef.searchKeywords } : {}),
+      ...(aliasNames ? { aliases: aliasNames } : {}),
       ...(locked ? { locked: true, requiredScope: scopeCheck.missing.join(", ") } : {}),
       ...(toolDef.routineOnly ? { routineOnly: true } : {}),
     })

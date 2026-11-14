@@ -1,0 +1,4 @@
+A cited meeting or document the asker cannot open is dropped and listed as not seen -> apps/api/src/apps/projects/service/reconcile.ts (readableProofRefs, RECORD_NOT_YOURS)
+A line of one task for another client offers Move it to that project -> apps/api/src/apps/projects/service/reconcile-card.ts (reconcileCardFields) ; apps/api/src/apps/projects/app.manifest.json (tools.reconcile_propose.resultCard)
+The other project is read under the asker; one they cannot open is refused -> apps/api/src/apps/projects/service/reconcile.ts (resolveOtherProjects)
+The line keeps the project it names -> apps/api/src/db/migrations/0324_projects_reconcile_line_other_project.sql (other_project_id)

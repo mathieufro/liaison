@@ -41,7 +41,7 @@ import { formatDay, relativeTime } from "~/lib/relative-time"
 import { ComposerAssist } from "~/modules/assist/ComposerAssist"
 import { DictationMic, RecorderRow } from "~/modules/assist/RecorderBar"
 import { useDictation } from "~/modules/assist/useDictation"
-import { userFromToken } from "~/modules/auth/auth-store"
+import { hasScope, userFromToken } from "~/modules/auth/auth-store"
 import { RichEditor, type RichEditorHandle } from "~/modules/editor"
 import { pastedFiles } from "~/modules/files/composer-attachments"
 import { uploadFile } from "~/modules/files/file-service"
@@ -49,6 +49,7 @@ import { useI18n } from "~/modules/i18n/i18n-context"
 import { AssigneeListStatus, AssigneeSearchField } from "~/modules/members/AssigneeSearch"
 import { createAssignableMembers } from "~/modules/members/assignable-members"
 import { Checklist } from "~/modules/projects/Checklist"
+import { DealPanel } from "~/modules/projects/DealPanel"
 import { TaskLabelChips, taskLabelGroupIds } from "~/modules/projects/LabelChip"
 import { LinkedDocuments } from "~/modules/projects/LinkedDocuments"
 import { ensureLabelCatalog } from "~/modules/projects/label-catalog-store"
@@ -62,12 +63,17 @@ import {
   TaskStatusSince,
   TaskTimeStrip,
 } from "~/modules/projects/TaskTimeInStatus"
+import { TimeboxChip } from "~/modules/projects/TimeboxChip"
+import { TookField } from "~/modules/projects/TookField"
 import type { TaskLabel } from "~/modules/projects/task-labels"
 import { type EntityRun, taskDeadline } from "~/modules/projects/task-time"
+import { budgetFor, loadBudget, timeOn } from "~/modules/projects/time-budgets"
 import { useApi } from "~/modules/shell/ApiContext"
 import { copyLink, entityRoute } from "~/modules/shell/entity-link"
 import { MarkdownContent } from "~/modules/shell/markdown-content"
 import { BacklinksPanel } from "~/modules/shell/references/BacklinksPanel"
+import { awayLabel } from "~/modules/shell/route-line"
+import { SlotPanels } from "~/modules/shell/SlotPanels"
 import { closeTab, makeTabId, openTab } from "~/modules/shell/tab-store"
 import { addToast } from "~/modules/shell/toast-store"
 import { DISCUSSION_RAIL_BOTTOM_PAD } from "~/modules/threads/discussion-rail"
@@ -108,6 +114,10 @@ interface TaskWithProject {
   createdAt: string
   updatedAt: string
   childCount: number
+  /** Time keys: only on a task of a project using time and budgets. */
+  timeboxMinutes?: number | null
+  realTotalMinutes?: number
+  isMilestone?: boolean
   /** Values of the project's task fields, {fieldKey: value}. */
   fields?: Record<string, unknown>
   /** When the task entered its current status. */
@@ -249,6 +259,40 @@ export const TaskDetail: Component<TaskDetailProps> = (props) => {
     return projectId ? projectStore.tasksFor(projectId) : []
   }
   const isArchived = () => !!project()?.archivedAt
+
+  // Time and budgets: the Timebox chip and the Took field exist only on a project using it.
+  const timeActive = () => timeOn(project())
+  const timeTurnedOff = () => {
+    const projectId = liveTask()?.projectId
+    if (projectId) void projectStore.refresh(api, projectId)
+  }
+  // The task's time keys come with the task itself; a save holds its answer until the task is
+  // read again.
+  const [savedTimebox, setSavedTimebox] = createSignal<{ taskId: string; minutes: number | null }>()
+  const [savedTotal, setSavedTotal] = createSignal<{ taskId: string; minutes: number }>()
+  const timebox = (): number | null => {
+    const t = liveTask()
+    if (!t) return null
+    const saved = savedTimebox()
+    return saved?.taskId === t.id ? saved.minutes : (t.timeboxMinutes ?? null)
+  }
+  const totalMinutes = (): number => {
+    const t = liveTask()
+    if (!t) return 0
+    const saved = savedTotal()
+    return saved?.taskId === t.id ? saved.minutes : (t.realTotalMinutes ?? 0)
+  }
+  createEffect(() => {
+    const projectId = liveTask()?.projectId
+    if (projectId && timeActive() && !budgetFor(projectId)) {
+      void loadBudget(api, projectId, { onOff: timeTurnedOff })
+    }
+  })
+  const datedHours = () => {
+    const state = budgetFor(liveTask()?.projectId ?? "")
+    return state?.status === "ready" && state.data.datedHours
+  }
+  const canWriteTime = () => !isArchived() && hasScope("projects:tasks:write")
 
   const currentStatus = () => {
     const t = liveTask()
@@ -630,6 +674,34 @@ export const TaskDetail: Component<TaskDetailProps> = (props) => {
                     onChange={(v) => patch({ release: v })}
                     disabled={isArchived()}
                   />
+                  <Show when={timeActive()}>
+                    <MetaSeparator />
+                    <TimeboxChip
+                      api={api}
+                      taskId={t().id}
+                      minutes={timebox()}
+                      disabled={!canWriteTime()}
+                      onSaved={(m) => {
+                        setSavedTimebox({ taskId: t().id, minutes: m })
+                        const projectId = t().projectId
+                        void loadBudget(api, projectId, { onOff: timeTurnedOff })
+                      }}
+                      onOff={timeTurnedOff}
+                    />
+                    <MetaSeparator />
+                    <TookField
+                      api={api}
+                      taskId={t().id}
+                      datedHours={datedHours()}
+                      editable={canWriteTime()}
+                      totalMinutes={totalMinutes()}
+                      onOff={timeTurnedOff}
+                      onChanged={(total) => {
+                        setSavedTotal({ taskId: t().id, minutes: total })
+                        void loadBudget(api, t().projectId, { onOff: timeTurnedOff })
+                      }}
+                    />
+                  </Show>
                   <MetaSeparator />
                   {/* No label group and no label: no chip, so no separator either. */}
                   <Show when={taskLabelGroupIds(t().labels).length > 0}>
@@ -645,8 +717,21 @@ export const TaskDetail: Component<TaskDetailProps> = (props) => {
                     onChange={(v) => patch({ blocked: v })}
                     disabled={isArchived()}
                   />
+                  {/* Actions other apps add to the task. */}
+                  <SlotPanels slot="project:task:actions" entityId={t().id} position="actions" />
                 </div>
 
+                {/* A deal (a top-level task of a sales pipeline): its own panel,
+                    which fails on its own without touching the task page. */}
+                <Show when={project()?.kind === "pipeline" && !t().parentTaskId}>
+                  <DealPanel
+                    api={api}
+                    taskId={t().id}
+                    ownerName={t().assignee?.name ?? null}
+                    disabled={isArchived()}
+                    onChanged={() => void refetch()}
+                  />
+                </Show>
                 {/* Time in status + status history: one quiet line under the meta row. */}
                 {/* Where the time went: a segment per status, in the statuses' colours. */}
                 <TaskTimeStrip transitions={t().transitions} statuses={project()?.statuses ?? []} />
@@ -708,6 +793,9 @@ export const TaskDetail: Component<TaskDetailProps> = (props) => {
                     </ul>
                   </section>
                 </Show>
+
+                {/* Tabs other apps add to the task, above its discussion. */}
+                <SlotPanels slot="project:task:tabs" entityId={t().id} position="tabs" />
 
                 {/* Provenance footer — sits just below the metadata blocks,
                     above the discussion timeline. */}
@@ -1043,6 +1131,16 @@ const AssigneeChip: Component<{
                 >
                   <Avatar user={{ id: m.id, name: m.name, avatarUrl: null }} size="sm" />
                   {disambiguatedLabel(m.name, m.email, isAmbiguous)}
+                  <Show when={awayLabel(m.away, i18n.t, i18n.locale())}>
+                    {(away) => (
+                      <span
+                        data-testid={`task-detail.assign-away-${m.id}`}
+                        class="text-[11px] text-text-tertiary"
+                      >
+                        {away()}
+                      </span>
+                    )}
+                  </Show>
                 </span>
               </PopupMenu.Item>
             )}

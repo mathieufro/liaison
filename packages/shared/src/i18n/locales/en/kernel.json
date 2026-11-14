@@ -495,6 +495,10 @@
       "remove": "Remove",
       "quota": "API quota"
     },
+    "github": {
+      "connectionTitle": "Connection",
+      "connectionDescription": "The read-only token and the organization or user Liaison reads GitHub with."
+    },
     "pennylane": {
       "connectionTitle": "Connection",
       "connectionDescription": "The API token and scope (company or firm) Liaison reads Pennylane with."
@@ -509,6 +513,7 @@
   "approvalDenySubmit": "Reject",
   "approvalDenyTitle": "Why are you rejecting this?",
   "approvalEdit": "Edit",
+  "approvalExpiryHint": "If nobody decides by then, it lapses and nothing is done.",
   "approvalExpired": "Expired",
   "approvalExpiredLine": "{{handle}} expired without decision.",
   "approvalMessageShowLess": "Show less",
@@ -608,6 +613,7 @@
       "contacts": "Contacts",
       "database": "Database",
       "files": "Files",
+      "github": "GitHub",
       "gitlab": "GitLab",
       "google-drive": "Google Drive",
       "invoicing": "Invoicing",
@@ -617,6 +623,7 @@
       "mcp-manager": "Connected services",
       "monitoring": "Monitoring",
       "pennylane": "Pennylane",
+      "stripe": "Stripe",
       "projects": "Projects",
       "shopify": "Shopify",
       "social": "Social",
@@ -713,6 +720,7 @@
       "kernel": "Full kernel access",
       "kernel:users:admin": "Manage users, roles, and invitations",
       "kernel:users:read": "Read user list",
+      "kernel:portal:admin": "See and manage clients' portal accounts",
       "kernel:org:admin": "Edit org settings",
       "kernel:threads:read": "Read threads",
       "kernel:threads:write": "Write threads",
@@ -878,6 +886,8 @@
   "composeAddAttachment": "Add attachment",
   "composeAttach": "Attach",
   "composeEmoji": "Emoji",
+  "composerKeyBlocked": "That looks like a Stripe key, so it was not sent.",
+  "stripeSecretKeyRefused": "That is your secret key, so I did not keep it. Create a restricted key in Stripe (Developers, API keys, Create restricted key: it starts with rk_) and paste that one.",
   "configureOidcProvidersForSingleSign": "Configure OIDC providers for single sign-on.",
   "confirmSetup": "Confirm setup",
   "connect": "Connect",
@@ -934,6 +944,7 @@
     "mediaAnalysisOff": "This is the App Review demo workspace, which runs on a fixed daily budget, so it does not analyse images, audio, video or documents. Everything else in the demo works without it.",
     "signupRateLimited": "Too many demo workspaces from this address. Try again later.",
     "shopifyUnsupported": "This is a demo instance, so the demo store does not model that part of Shopify. Try orders, customers, products, quotes or returns.",
+    "paymentsUnsupported": "This is a demo instance, so the card-payments stand-in does not model {{what}}. Customers, subscriptions, invoices, payments, refunds and disputes can be read, and refunds and cancellations at the period's end act on the stand-in only.",
     "shopifyWriteBlocked": "This is a demo instance, so that change cannot be made to the demo store. Tagging, notes, fulfilment, refunds and completing a quote all work.",
     "signupInProgress": "Your demo workspace is being prepared. Try again in a moment.",
     "workspaceExpired": "This demo workspace has expired. Start a new demo to continue.",
@@ -1004,7 +1015,9 @@
       "sales": "Agentic sales & CRM",
       "commerce": "Agentic commerce operations",
       "dev": "Agentic dev sessions",
-      "knowledge": "Agentic company knowledge"
+      "knowledge": "Agentic company knowledge",
+      "money": "Agentic subscriptions & payments",
+      "client": "Agentic client work"
     },
     "needShort": {
       "support": "Customer support",
@@ -1013,7 +1026,9 @@
       "sales": "Sales & CRM",
       "commerce": "Orders & shipping",
       "dev": "Dev sessions",
-      "knowledge": "Company knowledge"
+      "knowledge": "Company knowledge",
+      "money": "Subscriptions & payments",
+      "client": "Client work"
     },
     "needDesc": {
       "support": "A customer writes in: a routine drafts the reply, you approve it.",
@@ -1023,12 +1038,15 @@
       "commerce": "An order arrives: its invoice is issued, your agent prepares the shipment.",
       "dev": "A coding agent works on a laptop, and you approve what it asks.",
       "knowledge": "Manuals, finance and playbooks in one place: each agent reads only what the person asking may open.",
-      "everything": "All seven, one after the other."
+      "everything": "All seven, one after the other.",
+      "money": "A card payment fails: a routine drafts the note to the customer, you approve it.",
+      "client": "A client asks for more: your agent checks the agreement, then drafts the answer."
     },
     "needEverything": "Everything",
     "errTurnstile": "We could not confirm this browser. Reload the page and try again.",
     "errDisposable": "That address is a throwaway inbox. Use an address you keep.",
     "errDomainCap": "Enough demos have been confirmed from that email domain today. Try again tomorrow, or use another address.",
+    "needsNotInWorld": "None of the picked topics is in this company's demo. Pick at least one of the topics shown.",
     "verifyTitle": "Confirm your email so the agents can run",
     "verifyBody": "We sent a 6-digit code to {{email}}. Paste it here, or open the link in that email.",
     "verifyYourAddress": "your address",
@@ -1182,6 +1200,57 @@
       "continue": "Keep exploring",
       "close": "Close",
       "bannerLink": "Want this for your company?"
+    },
+    "world": {
+      "saas": {
+        "companyFacts": "Fictional company · Paris · 14 people",
+        "companyExample": "This is an example company: Tideform, which makes rota software for hospitality groups. Your own workspace would hold your data.",
+        "companyAbout": "Tideform makes rota and shift planning software for hotels, restaurants and canteens, sold by subscription from €149 to €1,450 a month. 169 customers pay by card through Stripe, and a few larger groups pay by bank transfer.",
+        "companyOps": {
+          "payments": {
+            "title": "Subscriptions and payments",
+            "body": "169 customers pay by card through Stripe. The Finance Desk agent watches failed payments and drafts the note; Sara approves it."
+          },
+          "invoicing": {
+            "title": "Invoicing",
+            "body": "Liaison issues every invoice, with no gaps, including for the groups that pay by bank transfer."
+          },
+          "support": {
+            "title": "Support",
+            "body": "Customer mail lands in Tickets. The Support Desk agent drafts each reply."
+          },
+          "sales": {
+            "title": "Sales",
+            "body": "Tom's deals live on a board. A routine drafts the follow-ups."
+          },
+          "product": {
+            "title": "Product and chat",
+            "body": "The team plans product work in Projects and talks in Chat."
+          },
+          "knowledge": {
+            "title": "Company knowledge",
+            "body": "Each agent reads only what its person may open."
+          }
+        },
+        "companyYou": "You run it as the CEO, with your own agent. Ask it what you'd ask to run the company, and watch the desks work.",
+        "companySimulated": "Only the outside world is simulated: no mail leaves, and the Stripe account and its payments are stand-ins.",
+        "teamRole": {
+          "tom": "Sales",
+          "elodie": "Account Manager",
+          "ines": "Support Lead",
+          "yann": "CTO",
+          "sara": "Finance",
+          "lucie": "Product Manager",
+          "baptiste": "Developer",
+          "amel": "Developer",
+          "jonas": "Developer",
+          "clemence": "Support",
+          "nolan": "Support",
+          "maxime": "Sales",
+          "rose": "Office Manager"
+        },
+        "limitConnectors": "The Stripe account and its payments are stand-ins. Connecting a real account is refused. Refunds and cancellations act on the stand-in only."
+      }
     }
   },
   "deny": "Deny",
@@ -1340,8 +1409,6 @@
   "hiIMLiaison": "Hi, I'm Liaison",
   "home": "Home",
   "homeAlso": "also",
-  "homeApprovalsHidePeers": "Hide requests from colleagues who can approve their own",
-  "homeApprovalsShowPeers": "Show {{count}} more, from colleagues who can approve their own requests",
   "homeCardActivity": "Activity",
   "homeCardAlertsMessages": "Alerts & messages",
   "homeCardApprovals": "Approvals",
@@ -1386,8 +1453,49 @@
   "homeGroupOrders": "Orders",
   "homeGroupSupport": "Support",
   "homeGroupTasks": "Tasks",
+  "homeGroupTime": "Time and budgets",
   "homeGroupTeam": "Team",
   "homeKind": {
+    "issuer_switched": {
+      "one": "card invoicing changed with unpaid invoices",
+      "other": "card invoicing changes with unpaid invoices"
+    },
+    "issuer_undecided": {
+      "one": "Stripe invoice waiting for an issuer decision",
+      "other": "Stripe invoices waiting for an issuer decision"
+    },
+    "undecided_listed": {
+      "one": "Stripe invoices to issue after the decision",
+      "other": "Stripe invoices to issue after the decision"
+    },
+    "needs_person": {
+      "one": "Stripe invoice needing a person",
+      "other": "Stripe invoices needing a person"
+    },
+    "payment_failed": {
+      "one": "failed card payment",
+      "other": "failed card payments"
+    },
+    "voided": {
+      "one": "Stripe invoice voided",
+      "other": "Stripe invoices voided"
+    },
+    "uncollectible": {
+      "one": "Stripe invoice uncollectible",
+      "other": "Stripe invoices uncollectible"
+    },
+    "refund_failed": {
+      "one": "failed Stripe refund",
+      "other": "failed Stripe refunds"
+    },
+    "refund_waiting": {
+      "one": "Stripe refund waiting for its invoice",
+      "other": "Stripe refunds waiting for their invoice"
+    },
+    "unmatched": {
+      "one": "Stripe payment with no invoice",
+      "other": "Stripe payments with no invoice"
+    },
     "awaiting_agent": {
       "one": "awaiting reply",
       "other": "awaiting reply"
@@ -1556,6 +1664,26 @@
       "one": "missing e-invoicing identity",
       "other": "missing e-invoicing identities"
     },
+    "partial": {
+      "one": "month-end invoice not issued",
+      "other": "month-end invoices not issued"
+    },
+    "due": {
+      "one": "month-end run to approve",
+      "other": "month-end runs to approve"
+    },
+    "held": {
+      "one": "invoicing held by the day limit",
+      "other": "invoicing held by the day limit"
+    },
+    "late": {
+      "one": "month-end run late",
+      "other": "month-end runs late"
+    },
+    "issuer_timezone_unset": {
+      "one": "issuer without a time zone",
+      "other": "issuers without a time zone"
+    },
     "transmission_refused": {
       "one": "e-invoice refused",
       "other": "e-invoices refused"
@@ -1603,6 +1731,46 @@
     "missing": {
       "one": "missing label",
       "other": "missing labels"
+    },
+    "masked": {
+      "one": "card number hidden",
+      "other": "card numbers hidden"
+    },
+    "problem": {
+      "one": "connection problem",
+      "other": "connection problems"
+    },
+    "send_waiting": {
+      "one": "e-invoice waiting for the daily send card",
+      "other": "e-invoices waiting for the daily send card"
+    },
+    "standing_lapsed": {
+      "one": "standing e-invoice authorization ended",
+      "other": "standing e-invoice authorizations ended"
+    },
+    "collection_manual": {
+      "one": "collection to enter at your e-invoicing platform",
+      "other": "collections to enter at your e-invoicing platform"
+    },
+    "first_on": {
+      "one": "project now using time and budgets",
+      "other": "projects now using time and budgets"
+    },
+    "dated_on": {
+      "one": "project now using dated hours",
+      "other": "projects now using dated hours"
+    },
+    "capacity_over": {
+      "one": "person with more planned than fits",
+      "other": "people with more planned than fits"
+    },
+    "month_close": {
+      "one": "project to reconcile this month",
+      "other": "projects to reconcile this month"
+    },
+    "calendar_ended": {
+      "one": "shared days-off calendar to choose again",
+      "other": "shared days-off calendars to choose again"
     }
   },
   "homeMarkAllRead": "Mark all read",
@@ -1622,6 +1790,24 @@
   "homeMarkingRead": "Clearing…",
   "homeMetric": {
     "dueToday": "due today",
+    "expiresIn": {
+      "seconds": {
+        "one": "Expires in {{count}} second",
+        "other": "Expires in {{count}} seconds"
+      },
+      "minutes": {
+        "one": "Expires in {{count}} minute",
+        "other": "Expires in {{count}} minutes"
+      },
+      "hours": {
+        "one": "Expires in {{count}} hour",
+        "other": "Expires in {{count}} hours"
+      },
+      "days": {
+        "one": "Expires in {{count}} day",
+        "other": "Expires in {{count}} days"
+      }
+    },
     "daysOver": {
       "one": "{{count}}d over",
       "other": "{{count}}d over"
@@ -1653,8 +1839,6 @@
     "needsYou": "Needs you",
     "nothingNeedsYou": "Nothing needs you",
     "minutesLeft": "{{count}} min",
-    "peersShow": "Show {{count}} from peers",
-    "peersHide": "Hide peers' requests",
     "accessRequests": "Access requests",
     "yourQueues": "Your queues",
     "queuesChip": "Queues",
@@ -1698,7 +1882,7 @@
   "homeStatusAreaOne": "AREA",
   "homeStatusNeedYouNowMany": "NEED YOU NOW",
   "homeStatusNeedYouNowOne": "NEEDS YOU NOW",
-  "homeStatusNothingUrgent": "NOTHING URGENT",
+  "homeStatusNothingUrgent": "NOTHING NEEDS YOU NOW",
   "homeStatusQueuedIn": "QUEUED IN",
   "homeStatusUpdated": "UPDATED",
   "homeTimeJustNow": "just now",
@@ -1871,9 +2055,11 @@
     "connectionStatus": "Connection status: {{status}}",
     "app": {
       "database": "Database",
+      "github": "GitHub",
       "gitlab": "GitLab",
       "google-drive": "Google Drive",
       "pennylane": "Pennylane",
+      "stripe": "Stripe",
       "api-connector": "API connector",
       "calls": "Calls"
     },
@@ -1888,6 +2074,7 @@
       "syncedSources": "Synced sources",
       "calendarConnections": "Calendar Connections",
       "database": "Database",
+      "github": "GitHub",
       "gitlab": "GitLab",
       "googleDrive": "Google Drive",
       "profile": "Profile",
@@ -1989,7 +2176,6 @@
   "noTeammatesYet": "No teammates yet",
   "noThreadsMatch": "No conversations match",
   "notYetSupported": "Not yet supported",
-  "nothingNeedsYouRightNow": "Nothing needs you right now",
   "serverPause": {
     "updating": "Liaison is updating. This usually takes less than a minute.",
     "stillUpdating": "Still updating. If this lasts, check your connection.",
@@ -2110,7 +2296,36 @@
       "localeEs": "Spanish",
       "localePtBr": "Portuguese (Brazil)",
       "localeJa": "Japanese",
-      "localeZhCn": "Chinese (Simplified)"
+      "localeZhCn": "Chinese (Simplified)",
+      "away": {
+        "title": "Away",
+        "hint": "Say when you are away and who stands in. Only the dates are kept, never why.",
+        "from": "First day",
+        "to": "Last day",
+        "nextInLine": "Next in line",
+        "nobody": "Nobody",
+        "standing": "Next in line by default",
+        "standingHint": "Saved as soon as you pick. Used for any away dates that name nobody.",
+        "standInGets": "While you are away, what needs you also shows on {{name}}'s Home. {{name}} gets no new rights. Your personal mail, direct conversations and personal agent stay private.",
+        "save": "Set away",
+        "question": "Your calendar has an event {{dates}} that looks like time off. Count it as away?",
+        "yes": "Yes",
+        "no": "No",
+        "fromCalendar": "From your calendar",
+        "endEarly": "End early",
+        "undo": "Undo",
+        "range": "{{from}} to {{to}}",
+        "weekly": "Every {{days}} from {{from}}",
+        "oneDay": "{{day}}",
+        "setBy": "Set by {{name}}",
+        "nextInLineIs": "Next in line: {{name}}",
+        "awayToo": "{{name}} is away too, until {{until}}.",
+        "hasLeft": "{{name}} has left, choose someone.",
+        "awayUntilOption": "{{name}} (away until {{until}})",
+        "none": "You have no away dates.",
+        "failed": "Could not save your away dates.",
+        "endFailed": "Could not end it."
+      }
     },
     "languageOrgDefault": "Organization default ({{language}})",
     "sections": {
@@ -2374,6 +2589,12 @@
     "expired": "Expired",
     "withdrawn": "Withdrawn",
     "lastAttemptFailed": "Last attempt failed:",
+    "cancelledWhy": {
+      "ticketMerged": "Cancelled: the ticket was merged into another",
+      "requesterDeleted": "Cancelled: the requester deleted their account",
+      "soleApproverDeleted": "Cancelled: the only approver deleted their account",
+      "taskDeleted": "Cancelled: the task it would change was deleted"
+    },
     "message": "Message",
     "approvalRequestNoLongerExists": "Approval request no longer exists.",
     "requestedBy": "Requested by",
@@ -2432,7 +2653,8 @@
       "handlerError": "handler error",
       "toolRunFailed": "Tool run failed: {{cause}}. The request needs operator review.",
       "outcomeUnclear": "Tool outcome is unclear; refresh before retrying.",
-      "nobodyMayRun": "Neither the requester nor you have permission to run this tool."
+      "nobodyMayRun": "Neither the requester nor you have permission to run this tool.",
+      "sendGuardNotHeld": "This draft is no longer held: a reply came in, or the hold ended. Nothing was sent. The card now shows what the check says."
     },
     "copyIdHint": "Click to copy id",
     "copiedId": "Copied {{id}}",
@@ -2528,7 +2750,33 @@
     },
     "stepSequence": "What happens, in order",
     "agentInviteAdd": "Add",
-    "agentInviteDecline": "Don't add"
+    "agentInviteDecline": "Don't add",
+    "sendGuard": {
+      "theOtherSide": "The other side",
+      "held": "Held: {{who}} sent an automatic reply. It waits until {{until}}, then comes back to Home by itself.",
+      "replied": "Not sent: {{who}} replied after this was drafted.",
+      "repliedElsewhere": "Not sent: a reply came in to another mailbox.",
+      "bounced": "Not sent: a delivery failure came back for this address.",
+      "optedOut": "Cannot send: {{who}} opted out of commercial mail. Remove them from the recipients, or leave it unsent.",
+      "refStop": "Not sent: the record this mail is about says not to send it.",
+      "refStopLabel": "Not sent: {{label}}",
+      "unavailable": "The check before sending could not run. Try again shortly.",
+      "sendNow": "Send now",
+      "repliedOnTicket": "Not sent: a reply came in on a ticket.",
+      "badgeStopped": "Not sent",
+      "badgeOptedOut": "Cannot send",
+      "badgeHeld": "Held",
+      "redraft": "Draft a new reply from their message",
+      "redraftMessage": "Draft a new reply to the message {{who}} sent after this draft: {{title}}",
+      "redraftFailed": "Could not reach your agent. Try again.",
+      "openConversation": "Open conversation",
+      "openTicket": "Open ticket",
+      "dismiss": "Dismiss",
+      "keepHolding": "Keep holding until {{until}}",
+      "heldFolded": "Held until {{until}}. It comes back to Home that morning.",
+      "discard": "Discard",
+      "holdDate": "Until {{until}}"
+    }
   },
   "agentUi": {
     "knowledge": "Knowledge",
@@ -2703,6 +2951,10 @@
     "areYouSureYouWantTo2": "Are you sure you want to deactivate",
     "thisUser": "this user",
     "theyWillLoseAccessToThe": "? They will lose access to the workspace immediately.",
+    "accountsToQuestion": "{{name}} is the account manager of {{count}} companies. Who takes them over?",
+    "accountsToGiveTo": "Give them to",
+    "accountsToChoose": "Choose a person",
+    "accountsToNobody": "Leave them without an account manager",
     "reactivateUser": "Reactivate user",
     "areYouSureYouWantTo3": "Are you sure you want to reactivate",
     "theyWillRegainAccessToThe": "? They will regain access to the workspace.",
@@ -3044,11 +3296,8 @@
     "filterApprovalsByAction": "Filter approvals by action",
     "noMessagesYet": "No messages yet",
     "projects": "Projects",
-    "openProjects": "Open Projects",
     "tickets": "Tickets",
-    "openTickets": "Open Tickets",
     "mail": "Mail",
-    "openMail": "Open Mail",
     "listOfAvailableKeyboardShortcuts": "List of available keyboard shortcuts",
     "tryAgain": "Try again",
     "unknownTabType": "Unknown tab type \"",
@@ -3159,6 +3408,8 @@
     "routineReportRunLink": "See the full run",
     "routineRunRunning": "Routine {{name}} is running",
     "routineRunSucceeded": "Routine {{name}} finished",
+    "routineRunSucceededDraftWaiting": "Routine {{name}} finished: 1 draft waits for a person",
+    "routineRunSucceededDraftsWaiting": "Routine {{name}} finished: {{count}} drafts wait for a person",
     "routineRunFailed": "Routine {{name}} did not finish",
     "routineRunWaitingApproval": "Routine {{name}} is waiting for an approval",
     "reactWith": "React with {{emoji}}",
@@ -3701,6 +3952,8 @@
     "calendar__admin": "Calendar administrator: manage org-wide Google Calendar connections and calendar selection",
     "database__member": "Database connector reader: curated reads only",
     "database__admin": "Database connector administrator: curated reads plus raw query (when the deployment opts in)",
+    "github__member": "GitHub repository reader: read access to repositories, commits, pull requests, issues",
+    "github__admin": "GitHub connection administrator: manage the GitHub connection",
     "gitlab__member": "GitLab repository reader: read access to projects, commits, issues, MRs",
     "gitlab__admin": "GitLab connection administrator: manage GitLab connections",
     "google-drive__member": "Google Drive connection viewer: read connected Drive accounts, upload new files to the app-owned reports folder",
@@ -3715,6 +3968,9 @@
     "projects__member": "Project contributor: read projects, read and write tasks",
     "projects__lead": "Project lead: create and edit projects in addition to member rights",
     "projects__admin": "Projects app administrator: full settings control",
+    "stripe__member": "Stripe reader: customers, subscriptions, invoices, payments, refunds and disputes",
+    "stripe__billing": "Stripe billing: link customers to companies and contacts, request refunds and cancellations through approvals",
+    "stripe__admin": "Stripe administrator: connect the account and manage its key and webhook",
     "tickets__support": "Standard support agent",
     "tickets__support_lead": "Team lead: manages inboxes, categories, accounts; can close tickets",
     "tickets__admin": "Tickets app administrator: full settings and account control",
@@ -3728,11 +3984,13 @@
     "kpi": "MCP surface over the deployment's deterministic KPI service: versioned formula registry, provisional gate badging, full lineage on every number, and human-approved (gated) definition edits with server-side dry-run validation and non-destructive version history",
     "monitoring": "Production-alert ingestion: a signed webhook turns external monitoring alerts into deduplicated incidents with attention-feed surfacing and an ack/resolve triage lifecycle",
     "pennylane": "Pennylane accounting connector: supplier/customer invoices, trial balance, derived P&L, cash position, transactions, spend-by-category, runway",
+    "stripe": "Stripe connector: a read mirror of customers, subscriptions, invoices, payments, refunds and disputes, kept current by a signed webhook.",
     "shopify": "Shopify integration: orders, customers, products, markets, draft orders, refunds, fulfillments, returns",
     "social": "Social 'Ground Control': monitors Facebook, Instagram and YouTube for brand-relevant activity, drafts human-approved replies, and manages DMs.",
     "calendar": "Calendar app: month/week UI backed by a bidirectional Google Calendar connector for org-wide and personal calendars.",
     "contacts": "Contact registry: kernel-owned, manifest-registered UI surface",
     "database": "Read-only connector for a deployment's own database, for troubleshooting and support: licenses/subscriptions, moderation surfaces (tickets/knowledge/mail), instance health.",
+    "github": "GitHub connector: read-only access to an organization's or a user's repositories, commits, pull requests, issues, releases and code.",
     "gitlab": "GitLab connector: sync group manuals into the knowledge base and provide read-only access to projects, commits, MRs, issues, releases, and more.",
     "google-drive": "Google Drive connector: a Knowledge federated-search source and a headless agent-tool surface (search + read + import Drive files, plus upload of NEW files into an app-owned 'Liaison Reports' folder under the drive.file scope; existing Drive files are never modified or deleted).",
     "knowledge": "Knowledge workspace for local documents and curated source links",
@@ -3752,6 +4010,16 @@
     "approvalDecided": {
       "approved": "Approval {{handle}} approved",
       "rejected": "Approval {{handle}} rejected"
+    },
+    "awayNamed": "{{name}} marked you away {{dates}}",
+    "routedReminder": "Waiting more than {{hours}} hours for a decision: {{title}}",
+    "awayCalendar": {
+      "set": "Your calendar marks you away {{dates}}. {{next}}",
+      "moved": "Your away moved: {{dates}}. {{next}}",
+      "asked": "Is “{{title}}” time off, {{dates}}? It counts for nothing until you say Yes.",
+      "askedNoTitle": "Is this calendar event time off, {{dates}}? It counts for nothing until you say Yes.",
+      "next": "Next in line: {{name}}.",
+      "nobody": "Nobody is next in line, so items for you stay with the usual approvers."
     }
   },
   "approvalDecisionLine": {
@@ -4592,6 +4860,9 @@
     "pennylane": {
       "pennylane": "Pennylane account"
     },
+    "stripe": {
+      "stripe": "Stripe account"
+    },
     "shopify": {
       "shop": "Shopify store"
     },
@@ -4607,6 +4878,9 @@
     "database": {
       "database": "Operational database",
       "warehouse": "Read-only warehouse"
+    },
+    "github": {
+      "github": "GitHub owner"
     },
     "gitlab": {
       "gitlab": "GitLab group"
@@ -5662,6 +5936,7 @@
     "saveFailed": "Couldn't save the agent safety setting. Please try again."
   },
   "decisionToast": {
+    "notSent": "Not sent: this decision was more than 15 minutes old. Decide again.",
     "approvingIn": "Approving in {{seconds}}s",
     "rejectingIn": "Rejecting in {{seconds}}s",
     "approving": "Approving…",
@@ -5684,7 +5959,10 @@
     "show": "Show decisions",
     "approvalFallback": "Approval request",
     "scopeRequestFallback": "Access request",
-    "sequenceSteps": "{{count}} steps"
+    "sequenceSteps": "{{count}} steps",
+    "dismissingIn": "Dismissing in {{seconds}}s",
+    "dismissing": "Dismissing…",
+    "dismissed": "Dismissed"
   },
   "aiModels": {
     "title": "AI models",
@@ -6439,6 +6717,90 @@
     },
     "hiddenTitle": "New message in a thread",
     "gone": "Its app is switched off, so it cannot be opened"
+  },
+  "toolCard": {
+    "actionUnreachable": "Nothing ran: the server could not be reached.",
+    "answeredOnRetry": "It answered this time. Ask again to see the result here.",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "didNotAnswer": "{{app}} did not answer",
+    "errorTitle": "Could not run {{tool}}",
+    "howWorkedOut": "How this number is worked out",
+    "noReason": "The tool gave no reason.",
+    "notSaved": "Not saved: the server could not be reached. Your text is kept.",
+    "readApps": "Read {{count}} apps",
+    "readOneApp": "Read 1 app",
+    "readSomeApps": "Read {{count}} of {{total}} apps",
+    "reading": "Reading {{app}}",
+    "retry": "Retry",
+    "source": "Source: {{source}}",
+    "suggestionNotSent": "Not sent: the server could not be reached.",
+    "suggestions": "Suggested next steps",
+    "superseded": "Replaced by a newer card",
+    "unreachable": "Nothing ran: this card cannot reach the server here.",
+    "waitingApproval": "Waiting for approval. Nothing ran yet.",
+    "working": "Working…"
+  },
+  "entityDiscussion": {
+    "empty": "No messages yet.",
+    "placeholder": "Write about this, or @ an agent",
+    "send": "Send",
+    "unavailable": "The discussion could not be opened.",
+    "retry": "Retry",
+    "loading": "Opening the discussion…"
+  },
+  "homeStatusOtherWork": "IN YOUR OTHER WORK",
+  "homeDecisions": {
+    "notNow": "Not now",
+    "setAside": "Set aside until Monday. It comes back then.",
+    "setAsideFailed": "Could not set this aside. Try again.",
+    "askDraft": "Ask agent to draft",
+    "askDraftMessage": "Draft what this needs: {{summary}}",
+    "askDraftFailed": "Could not reach your agent. Try again.",
+    "askReassign": "Ask agent to reassign",
+    "askReassignMessage": "Help me give these companies a new account manager. {{summary}}. Companies: {{companyIds}}",
+    "dismiss": "Dismiss",
+    "guardClear": "Will not go out if they reply first, even after you approve.",
+    "needsYouTitle": "Needs you",
+    "everythingForNow": "That is everything for now. Your agents will bring the next one here.",
+    "sourceFailedTitle": "Could not load what {{app}} has for you",
+    "sourceFailedBody": "{{app}} did not answer. Anything waiting there is safe and still waiting.",
+    "feedFailedTitle": "Could not load what needs you",
+    "feedFailedBody": "Home did not answer. Anything waiting is safe and still waiting.",
+    "retry": "Retry",
+    "briefTitle": "Today's brief",
+    "briefNone": "No brief set up. Ask your agent for one each morning, and say what you want in it.",
+    "briefSetUp": "Set up a morning brief",
+    "briefOpen": "Open",
+    "backToFiveDays": "Back to 5 days",
+    "backToFiveDaysFailed": "Could not change your days per week. Nothing was changed."
+  },
+  "homeRouting": {
+    "othersGroup": "For others, you can also approve",
+    "heldGroup": "Held until they come back",
+    "someone": "a colleague",
+    "standingIn": "For {{name}}, away until {{date}}. You are next in line.",
+    "othersAsked": "For {{name}}, who asked for it and can approve it. You can too: you hold the approval right.",
+    "othersOnItem": "For {{name}}, who it is assigned to. You can approve it too: you hold the approval right.",
+    "othersManager": "For {{name}}, who manages this account. You can approve it too: you hold the approval right.",
+    "blocked": "For you: {{blocked}} cannot approve this while {{name}} is away",
+    "mineAsked": "You asked for this",
+    "mineOnItem": "For you: assigned to you",
+    "mineManager": "For you: you manage this account",
+    "recapApproved": "Approved by {{name}}, for {{forName}}: {{title}}",
+    "recapApprovedStandIn": "Approved by {{name}}, next in line for {{forName}}: {{title}}",
+    "recapDenied": "Rejected by {{name}}, for {{forName}}: {{title}}",
+    "recapDeniedStandIn": "Rejected by {{name}}, next in line for {{forName}}: {{title}}",
+    "you": "you",
+    "recapMore": "and {{count}} more",
+    "dismissFailed": "Could not dismiss this. Try again.",
+    "awayUntil": "away until {{date}}",
+    "awayToday": "away today",
+    "awayTodayBack": "away today, back {{day}}",
+    "recapTitle": "While you were away",
+    "standingInFor": "{{name}} is away until {{date}}. You are next in line.",
+    "showCovering": "Show what you cover",
+    "coveringTitle": "What you cover"
   },
   "dashboards": {
     "visibilityPersonal": "Personal",

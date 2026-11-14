@@ -25,7 +25,7 @@
 //     irreversible merge anyway.
 import { randomUUID } from "node:crypto"
 import { api } from "@liaison/test-helpers"
-import { openAgentConversation, sendInConversation } from "./agent-bootstrap"
+import { expandToolRollups, openAgentConversation, sendInConversation } from "./agent-bootstrap"
 import { agentDmThreadId, scriptAgentTurn, waitForTurnEnd } from "./agent-turn"
 import { expect, loginAs, test } from "./fixtures/test"
 import { seedModelPricingAndCredits } from "./helpers/agent-seed"
@@ -92,6 +92,8 @@ test("agent contact tools merge Sofia duplicate pair", async ({ page, env, world
   await waitForTurnEnd(env, { threadId, token, contains: PROPOSAL })
 
   // The read tools ran through the bridge and are rendered in the turn.
+  await expect(conversation.getByText(PROPOSAL).first()).toBeVisible({ timeout: 30_000 })
+  await expandToolRollups(conversation)
   for (const toolName of [
     "kernel__tool_search",
     "kernel__contacts_search",

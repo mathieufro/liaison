@@ -1,0 +1,670 @@
+{
+  "ines": {
+    "feed": [
+      {
+        "id": "kernel:approval_pending:<row:bundle>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:bundle>",
+        "kind": "approval_pending",
+        "summary": "Bundle head",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:bundle>",
+          "payloadHash": "8f33834d6887be0b2dd611db4146b025b8218bb2faf449f8b40d017d2f166a55"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture sara",
+          "requestedById": "<sara>",
+          "peerSelfApprovable": true,
+          "approvalImpact": "external",
+          "baseTitle": "Bundle head",
+          "titleKind": "summary",
+          "bundleSteps": 2
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:bundleStep>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:bundleStep>",
+        "kind": "approval_pending",
+        "summary": "Bundle outcome",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:bundleStep>",
+          "payloadHash": "86cb8820896c4e4e92f3895243fa5b07ad74c5637cbaed641204ccd633595247"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture sara",
+          "requestedById": "<sara>",
+          "peerSelfApprovable": true,
+          "approvalImpact": "external",
+          "baseTitle": "Bundle outcome",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:peer>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:peer>",
+        "kind": "approval_pending",
+        "summary": "Peer row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:peer>",
+          "payloadHash": "204fd8a6b47d2b7ef0d9a3e56cf3c6957c5c93b2aa1748e5361e158f945cb7a0"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture tom",
+          "requestedById": "<tom>",
+          "peerSelfApprovable": true,
+          "approvalImpact": "external",
+          "baseTitle": "Peer row",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:routine>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:routine>",
+        "kind": "approval_pending",
+        "summary": "Routine row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:routine>",
+          "payloadHash": "fb1e535e5e536c4ec69d5421dc3c4677177d37c2571273bc3d7484d1fb91ab9a"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Routine",
+          "requestedById": "<ines>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Routine row",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:twoApprovers>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:twoApprovers>",
+        "kind": "approval_pending",
+        "summary": "Two approver row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:twoApprovers>",
+          "payloadHash": "b5d8debded43475e36325c350ef6663fe5b26e274d3624b93898e4da674c3cc2"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture sara",
+          "requestedById": "<sara>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Two approver row",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:wedged>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:wedged>",
+        "kind": "approval_pending",
+        "summary": "Stalled: Wedged row",
+        "urgency": 95,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:wedged>",
+          "payloadHash": "6ae56d7015dc4db28a1500150453f4a7ef028635ea7037c7d863209a4a9186b7"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture ines",
+          "requestedById": "<ines>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "wedged": true,
+          "baseTitle": "Wedged row",
+          "titleKind": "summary"
+        }
+      }
+    ],
+    "badgeItems": [
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:bundle>",
+        "metadata": {
+          "peerSelfApprovable": true
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:bundleStep>",
+        "metadata": {
+          "peerSelfApprovable": true
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:peer>",
+        "metadata": {
+          "peerSelfApprovable": true
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:routine>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:twoApprovers>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:wedged>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      }
+    ],
+    "feedCount": 3,
+    "badgeCount": 3
+  },
+  "tom": {
+    "feed": [
+      {
+        "id": "kernel:approval_pending:<row:bundle>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:bundle>",
+        "kind": "approval_pending",
+        "summary": "Bundle head",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:bundle>",
+          "payloadHash": "8f33834d6887be0b2dd611db4146b025b8218bb2faf449f8b40d017d2f166a55"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture sara",
+          "requestedById": "<sara>",
+          "peerSelfApprovable": true,
+          "approvalImpact": "external",
+          "baseTitle": "Bundle head",
+          "titleKind": "summary",
+          "bundleSteps": 2
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:bundleStep>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:bundleStep>",
+        "kind": "approval_pending",
+        "summary": "Bundle outcome",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:bundleStep>",
+          "payloadHash": "86cb8820896c4e4e92f3895243fa5b07ad74c5637cbaed641204ccd633595247"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture sara",
+          "requestedById": "<sara>",
+          "peerSelfApprovable": true,
+          "approvalImpact": "external",
+          "baseTitle": "Bundle outcome",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:peer>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:peer>",
+        "kind": "approval_pending",
+        "summary": "Peer row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:peer>",
+          "payloadHash": "204fd8a6b47d2b7ef0d9a3e56cf3c6957c5c93b2aa1748e5361e158f945cb7a0"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture tom",
+          "requestedById": "<tom>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Peer row",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:routine>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:routine>",
+        "kind": "approval_pending",
+        "summary": "Routine row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:routine>",
+          "payloadHash": "fb1e535e5e536c4ec69d5421dc3c4677177d37c2571273bc3d7484d1fb91ab9a"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Routine",
+          "requestedById": "<ines>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Routine row",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:wedged>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:wedged>",
+        "kind": "approval_pending",
+        "summary": "Stalled: Wedged row",
+        "urgency": 95,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:wedged>",
+          "payloadHash": "6ae56d7015dc4db28a1500150453f4a7ef028635ea7037c7d863209a4a9186b7"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture ines",
+          "requestedById": "<ines>",
+          "peerSelfApprovable": true,
+          "approvalImpact": "external",
+          "wedged": true,
+          "baseTitle": "Wedged row",
+          "titleKind": "summary"
+        }
+      }
+    ],
+    "badgeItems": [
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:bundle>",
+        "metadata": {
+          "peerSelfApprovable": true
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:bundleStep>",
+        "metadata": {
+          "peerSelfApprovable": true
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:peer>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:routine>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:wedged>",
+        "metadata": {
+          "peerSelfApprovable": true
+        }
+      }
+    ],
+    "feedCount": 2,
+    "badgeCount": 2
+  },
+  "sara": {
+    "feed": [
+      {
+        "id": "kernel:approval_pending:<row:bundle>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:bundle>",
+        "kind": "approval_pending",
+        "summary": "Bundle head",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:bundle>",
+          "payloadHash": "8f33834d6887be0b2dd611db4146b025b8218bb2faf449f8b40d017d2f166a55"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture sara",
+          "requestedById": "<sara>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Bundle head",
+          "titleKind": "summary",
+          "bundleSteps": 2
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:bundleStep>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:bundleStep>",
+        "kind": "approval_pending",
+        "summary": "Bundle outcome",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:bundleStep>",
+          "payloadHash": "86cb8820896c4e4e92f3895243fa5b07ad74c5637cbaed641204ccd633595247"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture sara",
+          "requestedById": "<sara>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Bundle outcome",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:peer>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:peer>",
+        "kind": "approval_pending",
+        "summary": "Peer row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:peer>",
+          "payloadHash": "204fd8a6b47d2b7ef0d9a3e56cf3c6957c5c93b2aa1748e5361e158f945cb7a0"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture tom",
+          "requestedById": "<tom>",
+          "peerSelfApprovable": true,
+          "approvalImpact": "external",
+          "baseTitle": "Peer row",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:routine>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:routine>",
+        "kind": "approval_pending",
+        "summary": "Routine row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:routine>",
+          "payloadHash": "fb1e535e5e536c4ec69d5421dc3c4677177d37c2571273bc3d7484d1fb91ab9a"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Routine",
+          "requestedById": "<ines>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Routine row",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:twoApprovers>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:twoApprovers>",
+        "kind": "approval_pending",
+        "summary": "Two approver row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:twoApprovers>",
+          "payloadHash": "b5d8debded43475e36325c350ef6663fe5b26e274d3624b93898e4da674c3cc2"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture sara",
+          "requestedById": "<sara>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Two approver row",
+          "titleKind": "summary"
+        }
+      },
+      {
+        "id": "kernel:approval_pending:<row:wedged>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:wedged>",
+        "kind": "approval_pending",
+        "summary": "Stalled: Wedged row",
+        "urgency": 95,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:wedged>",
+          "payloadHash": "6ae56d7015dc4db28a1500150453f4a7ef028635ea7037c7d863209a4a9186b7"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture ines",
+          "requestedById": "<ines>",
+          "peerSelfApprovable": true,
+          "approvalImpact": "external",
+          "wedged": true,
+          "baseTitle": "Wedged row",
+          "titleKind": "summary"
+        }
+      }
+    ],
+    "badgeItems": [
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:bundle>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:bundleStep>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:peer>",
+        "metadata": {
+          "peerSelfApprovable": true
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:routine>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:twoApprovers>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      },
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:wedged>",
+        "metadata": {
+          "peerSelfApprovable": true
+        }
+      }
+    ],
+    "feedCount": 4,
+    "badgeCount": 4
+  },
+  "owner": {
+    "feed": [
+      {
+        "id": "kernel:approval_pending:<row:owner>",
+        "app": "kernel",
+        "entity": "approval_request",
+        "entityId": "<row:owner>",
+        "kind": "approval_pending",
+        "summary": "Owner row",
+        "urgency": 60,
+        "action": {
+          "type": "decide_approval",
+          "approvalId": "<row:owner>",
+          "payloadHash": "9a98cc0bfff07c71308fcf42a29a46ac417f776cf6a6b27eda055e81f9254910"
+        },
+        "metadata": {
+          "toolName": "projects:createTask",
+          "appName": "projects",
+          "requestHandle": "<handle>",
+          "originatingThreadId": "<thread>",
+          "actionLabel": "Projects: createtask",
+          "requesterName": "Fixture owner",
+          "requestedById": "<owner>",
+          "peerSelfApprovable": false,
+          "approvalImpact": "external",
+          "baseTitle": "Owner row",
+          "titleKind": "summary"
+        }
+      }
+    ],
+    "badgeItems": [
+      {
+        "kind": "approval_pending",
+        "entity": "approval_request",
+        "entityId": "<row:owner>",
+        "metadata": {
+          "peerSelfApprovable": false
+        }
+      }
+    ],
+    "feedCount": 1,
+    "badgeCount": 1
+  }
+}

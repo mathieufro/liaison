@@ -1,0 +1,6 @@
+[
+  { "word": "fermer", "tool": "tickets__close" },
+  { "word": "rôle", "tool": "kernel__assign_role" },
+  { "word": "next in line", "tool": "kernel__set_away" },
+  { "word": "away", "tool": "kernel__set_away" }
+]

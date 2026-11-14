@@ -29,25 +29,37 @@
 // the visitor meets it. `?entry=software` presets the answer the way `?needs=`
 // presets the picks; a link's `needs` win over the entry's.
 import {
-  DEMO_ENTRY_NEEDS,
-  DEMO_NEEDS,
+  DEMO_WORLD_NEEDS,
   type DemoEntry as DemoEntryAnswer,
   type DemoEntryId,
   type DemoNeed,
+  type DemoWorldId,
+  demoWorldOfEntry,
   isDemoEntryId,
   isDemoNeed,
+  presetNeeds,
 } from "@liaison/shared"
 import { useNavigate, useSearchParams } from "@solidjs/router"
-import { BookOpen, FileText, FolderKanban, Mail, ShoppingBag, Ticket } from "lucide-solid"
+import {
+  BookOpen,
+  CreditCard,
+  FileText,
+  FolderKanban,
+  Mail,
+  ShoppingBag,
+  Ticket,
+} from "lucide-solid"
 import { type Component, createSignal, For, Match, onMount, Show, Switch } from "solid-js"
 import { consumeDemoEndedNotice } from "~/lib/demo-expired"
+import { DemoExampleLine } from "~/modules/demo/DemoExampleLine"
 import {
   createDemoWorkspace,
   type DemoSignupError,
   ensureDemoDoorSettings,
   watchDemoWorkspace,
 } from "~/modules/demo/demo-store"
-import { DEMO_COMPANY_NAME, DEMO_DOOR_OPS, DEMO_DOOR_TEAM } from "~/modules/demo/door-company"
+import { doorWorlds, refreshDoorWorlds } from "~/modules/demo/demo-world"
+import { doorCompanyOf } from "~/modules/demo/door-company"
 import { EntryQuestion, needsAfterEntry } from "~/modules/demo/EntryQuestion"
 import { NeedsPicker, needAppId, needsMinutes } from "~/modules/demo/NeedsPicker"
 import { createTurnstile } from "~/modules/demo/Turnstile"
@@ -60,9 +72,9 @@ import { Input } from "~/ui/Input"
 export { DEMO_COMPANY_NAME } from "~/modules/demo/door-company"
 
 /** The icon each operations row wears: its app's, as the product draws it. */
-const OPS_ICON: Readonly<
-  Record<(typeof DEMO_DOOR_OPS)[number]["key"], Component<{ size?: number }>>
-> = {
+const OPS_ICON: Readonly<Record<string, Component<{ size?: number }>>> = {
+  payments: CreditCard,
+  product: FolderKanban,
   support: Ticket,
   orders: ShoppingBag,
   invoicing: FileText,
@@ -78,13 +90,18 @@ const STEPS = ["scenarios", "company", "details"] as const
  * ids, kept in the order given, with unknown and repeated values dropped, or
  * `all` for every need in canonical order.
  */
-export function parseNeedsParam(raw: string | null | undefined): DemoNeed[] {
+export function parseNeedsParam(
+  raw: string | null | undefined,
+  world: DemoWorldId = "products",
+): DemoNeed[] {
   if (!raw) return []
   const values = raw.split(",").map((value) => value.trim().toLowerCase())
-  if (values.includes("all")) return [...DEMO_NEEDS]
+  const shown = DEMO_WORLD_NEEDS[world]
+  if (values.includes("all")) return [...shown]
   const picked: DemoNeed[] = []
   for (const value of values) {
-    if (isDemoNeed(value) && !picked.includes(value)) picked.push(value)
+    // A need the world does not show is dropped, like an unknown one.
+    if (isDemoNeed(value) && shown.includes(value) && !picked.includes(value)) picked.push(value)
   }
   return picked
 }
@@ -94,11 +111,14 @@ export function parseNeedsParam(raw: string | null | undefined): DemoNeed[] {
  * address in `returnTo` (`/login?returnTo=%2F%3Fneeds%3Dsupport`), so the
  * parameter is read there too when the door's own address carries none.
  */
-export function linkedNeeds(params: { needs?: string; returnTo?: string }): DemoNeed[] {
-  const own = parseNeedsParam(params.needs)
+export function linkedNeeds(
+  params: { needs?: string; returnTo?: string },
+  world: DemoWorldId = "products",
+): DemoNeed[] {
+  const own = parseNeedsParam(params.needs, world)
   if (own.length > 0 || !params.returnTo?.startsWith("/")) return own
   const query = params.returnTo.split("?")[1]
-  return query ? parseNeedsParam(new URLSearchParams(query).get("needs")) : []
+  return query ? parseNeedsParam(new URLSearchParams(query).get("needs"), world) : []
 }
 
 function parseEntryParam(raw: string | null | undefined): DemoEntryId | null {
@@ -139,10 +159,19 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
   // Read once: the link only sets where the question and the picker start.
   const returnTo = firstParam(searchParams.returnTo)
   const linkEntry = linkedEntry({ entry: firstParam(searchParams.entry), returnTo })
-  const linkNeeds = linkedNeeds({ needs: firstParam(searchParams.needs), returnTo })
-  const linked =
-    linkNeeds.length > 0 ? linkNeeds : linkEntry ? [...DEMO_ENTRY_NEEDS[linkEntry]] : []
+  /** The picks the link asks for in the worlds the door runs: its `needs` win over its entry's preset. */
+  const linkedPicks = (worlds: readonly DemoWorldId[]): DemoNeed[] => {
+    const own = linkedNeeds(
+      { needs: firstParam(searchParams.needs), returnTo },
+      demoWorldOfEntry(linkEntry, worlds),
+    )
+    return own.length > 0 ? own : presetNeeds(linkEntry, worlds)
+  }
+  const linked = linkedPicks(doorWorlds())
   const [needs, setNeeds] = createSignal<DemoNeed[]>(linked)
+  // The visitor's own hand on the picks or the answer: once there, a late door
+  // read never rewrites them.
+  let touched = false
   const [entry, setEntry] = createSignal<DemoEntryId | null>(linkEntry)
   const [entryText, setEntryText] = createSignal("")
   // 1: what to see. 2: the company the workspace is a copy of. 3: name, email,
@@ -161,11 +190,23 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
   // once, above the door. Read at mount, so a reload no longer shows it.
   const workspaceEnded = consumeDemoEndedNotice()
 
+  /** The world the answer opens among the worlds the deployment runs. */
+  const world = (): DemoWorldId => demoWorldOfEntry(entry(), doorWorlds())
+
   onMount(() => {
     // Best-effort: the flag is usually already loaded (Login asks for it), and
     // this covers a direct hit on /demo.
     void ensureBrandingLoaded()
     void ensureDemoDoorSettings()
+    // Which worlds this box runs lands after the first paint: a link's presets
+    // are read again in them, unless the visitor has already made a choice.
+    void refreshDoorWorlds().then((worlds) => {
+      if (touched) return
+      const picks = linkedPicks(worlds)
+      if (picks.length === 0) return
+      setNeeds(picks)
+      setStep((current) => (current === 1 ? 2 : current))
+    })
   })
 
   function enterProduct(): void {
@@ -209,6 +250,18 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
     setPreparing(false)
     setCreating(true)
     try {
+      // The deployment's worlds may have changed since the door was read: read
+      // them again, and when the company this answer opens is no longer the one
+      // shown, go back to it (with the picks it has) rather than start another.
+      const shown = world()
+      await refreshDoorWorlds()
+      if (world() !== shown) {
+        const shownNow = DEMO_WORLD_NEEDS[world()]
+        const kept = needs().filter((need) => shownNow.includes(need))
+        setNeeds(kept.length > 0 ? kept : presetNeeds(entry(), doorWorlds()))
+        setStep(2)
+        return
+      }
       await createDemoWorkspace({
         name: name(),
         email: email(),
@@ -233,7 +286,9 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
   const startHint = (): string | null =>
     name().trim() === "" || email().trim() === "" ? i18n.t("kernel.demo.startHintDetails") : null
 
-  const everything = () => needs().length === DEMO_NEEDS.length
+  const company = () => doorCompanyOf(world())
+  const copy = () => company().copyKey
+  const everything = () => needs().length === DEMO_WORLD_NEEDS[world()].length
   const pickSummary = (): string =>
     everything()
       ? i18n.t("kernel.demo.needEverything")
@@ -243,8 +298,14 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
   const minutes = () => i18n.t("kernel.demo.pickMinutes", { minutes: needsMinutes(needs()) })
 
   function chooseEntry(next: DemoEntryId | null): void {
-    setNeeds(needsAfterEntry(needs(), entry(), next))
+    touched = true
+    setNeeds(needsAfterEntry(needs(), entry(), next, doorWorlds()))
     setEntry(next)
+  }
+
+  function chooseNeeds(next: DemoNeed[]): void {
+    touched = true
+    setNeeds(next)
   }
 
   /** What the signup records: the answer, with its text for `other`. */
@@ -269,7 +330,8 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
   }
 
   function exploreOnOwn(): void {
-    setNeeds([...DEMO_NEEDS])
+    // Every need of the world the answer opens (a company with none would be nearly empty).
+    setNeeds([...DEMO_WORLD_NEEDS[world()]])
     setExplore(true)
     setStep(2)
   }
@@ -371,6 +433,7 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
           <section data-testid="demo-pick-step" class="flex flex-1 flex-col">
             <div class="mx-auto flex w-full max-w-[1000px] flex-1 flex-col gap-5 px-4 pb-6 pt-2 sm:px-6 lg:gap-5 lg:pt-2">
               <EntryQuestion
+                worlds={doorWorlds()}
                 value={entry()}
                 onChange={chooseEntry}
                 text={entryText()}
@@ -379,7 +442,7 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
               <h2 class="text-[15px] font-semibold leading-snug text-text">
                 {i18n.t("kernel.demo.entryTitle")}
               </h2>
-              <NeedsPicker value={needs()} onChange={setNeeds} />
+              <NeedsPicker world={world()} value={needs()} onChange={chooseNeeds} />
             </div>
             {/* The picks and Continue sit together, so what is missing is said
                 beside the button it stops. Sticky on a phone, under the grid. */}
@@ -450,24 +513,20 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
                   aria-hidden="true"
                   class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] bg-text font-mono text-[15px] font-semibold text-bg"
                 >
-                  RA
+                  {company().initials}
                 </span>
                 <div class="flex min-w-0 flex-col gap-1">
                   <h1 class="text-2xl font-semibold leading-tight text-text sm:text-[26px]">
-                    {DEMO_COMPANY_NAME}
+                    {company().name}
                   </h1>
-                  <p class="text-[13.5px] text-text-tertiary">
-                    {i18n.t("kernel.demo.companyFacts")}
-                  </p>
+                  <p class="text-[13.5px] text-text-tertiary">{i18n.t(`${copy()}.companyFacts`)}</p>
                 </div>
               </div>
-              <p data-testid="demo-company-example" class="text-[13.5px] text-text-secondary">
-                {i18n.t("kernel.demo.companyExample")}
-              </p>
+              <DemoExampleLine world={world()} class="text-[13.5px] text-text-secondary" />
               <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-9">
                 <div data-testid="demo-intro" class="flex min-w-0 flex-col gap-3">
                   <p class="text-[14.5px] leading-relaxed text-text-secondary">
-                    {i18n.t("kernel.demo.companyAbout")}
+                    {i18n.t(`${copy()}.companyAbout`)}
                   </p>
                   <h2 class="text-[11px] font-semibold uppercase tracking-[0.1em] text-text-tertiary">
                     {i18n.t("kernel.demo.companyHow")}
@@ -476,7 +535,7 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
                     data-testid="demo-company-ops"
                     class="grid gap-x-[22px] gap-y-2.5 sm:grid-cols-2"
                   >
-                    <For each={DEMO_DOOR_OPS}>
+                    <For each={company().opsList}>
                       {(op) => {
                         const Icon = OPS_ICON[op.key]
                         return (
@@ -493,10 +552,10 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
                             </span>
                             <span class="min-w-0">
                               <span class="block text-[13px] font-semibold text-text">
-                                {i18n.t(`kernel.demo.companyOps.${op.key}.title`)}
+                                {i18n.t(`${copy()}.companyOps.${op.key}.title`)}
                               </span>
                               <span class="block text-[12.5px] leading-snug text-text-secondary">
-                                {i18n.t(`kernel.demo.companyOps.${op.key}.body`)}
+                                {i18n.t(`${copy()}.companyOps.${op.key}.body`)}
                               </span>
                             </span>
                           </li>
@@ -505,7 +564,7 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
                     </For>
                   </ul>
                   <p class="text-[14px] leading-relaxed text-text-secondary">
-                    {i18n.t("kernel.demo.companyYou")}
+                    {i18n.t(`${copy()}.companyYou`)}
                   </p>
                 </div>
                 <aside
@@ -522,12 +581,12 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
                         {i18n.t("kernel.demo.teamCeo")}
                       </span>
                     </li>
-                    <For each={DEMO_DOOR_TEAM}>
+                    <For each={company().team}>
                       {(person) => (
                         <li class="flex justify-between gap-2.5 text-text">
                           {person.name}
                           <span class="text-right text-text-tertiary">
-                            {i18n.t(`kernel.demo.teamRole.${person.key}`)}
+                            {i18n.t(`${copy()}.teamRole.${person.key}`)}
                           </span>
                         </li>
                       )}
@@ -580,7 +639,7 @@ export const DemoEntry: Component<DemoEntryProps> = (props) => {
                 data-testid="demo-company-simulated"
                 class="border-t border-border pt-3.5 text-[13px] text-text-tertiary"
               >
-                {i18n.t("kernel.demo.companySimulated")}
+                {i18n.t(`${copy()}.companySimulated`)}
               </p>
               <Button
                 type="button"

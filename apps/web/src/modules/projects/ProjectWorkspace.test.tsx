@@ -9,6 +9,7 @@ import { ProjectsSelectionTestAccess, selectedIds } from "./projects-selection-s
 const state = vi.hoisted(() => ({
   api: { get: vi.fn(), post: vi.fn() } as any,
   updateTabRoutePath: vi.fn(),
+  refresh: vi.fn(),
   openTab: vi.fn(),
   handleTaskEvent: vi.fn(),
   archiveProject: vi.fn(async () => {}),
@@ -70,6 +71,7 @@ const state = vi.hoisted(() => ({
 vi.mock("~/modules/auth/auth-store", () => ({
   onAuthCleared: () => () => {},
   userFromToken: () => ({ userId: "u1" }),
+  hasScope: () => true,
 }))
 vi.mock("~/modules/shell/tab-store", () => ({
   openTab: state.openTab,
@@ -98,6 +100,7 @@ vi.mock("~/modules/projects/project-store", async () => {
   return {
     projectStore: {
       load: vi.fn(),
+      refresh: state.refresh,
       project: () => state.project,
       tasksFor: () => {
         tasksVersion()
@@ -202,6 +205,7 @@ vi.mock("~/modules/projects/StatusManager", () => ({ StatusManager: () => <div /
 vi.mock("~/modules/projects/StatusPillPopover", () => ({ StatusPillPopover: () => <button /> }))
 
 import { ProjectWorkspace } from "./ProjectWorkspace"
+import { forgetBudget } from "./time-budgets"
 
 // Open the header's project menu the way a keyboard does (Kobalte's trigger
 // opens on ArrowDown), and wait for the portalled menu.
@@ -252,6 +256,54 @@ describe("ProjectWorkspace", () => {
         updatedAt: "2026-05-01T00:00:00.000Z",
       },
     ]
+  })
+
+  describe("on a sales pipeline", () => {
+    afterEach(() => {
+      delete (state.project as { kind?: string }).kind
+    })
+
+    it("the header says how many deals are open and their sum per currency, and the action is New deal", async () => {
+      ;(state.project as { kind?: string }).kind = "pipeline"
+      state.api.get.mockImplementation(async (path: string) => {
+        if (path === "/projects/p1/deals/board") {
+          return {
+            projectId: "p1",
+            timeZone: "UTC",
+            closedMonth: "2026-11",
+            columns: [
+              {
+                statusId: "s1",
+                label: "todo",
+                dealOutcome: null,
+                count: 2,
+                sums: [{ currency: "EUR", sum_minor: 6_866_000 }],
+                deals: [],
+              },
+              {
+                statusId: "s2",
+                label: "doing",
+                dealOutcome: "won",
+                count: 1,
+                sums: [{ currency: "EUR", sum_minor: 588_000 }],
+                deals: [],
+              },
+            ],
+          }
+        }
+        return {}
+      })
+      render(() => (
+        <ApiContext.Provider value={state.api}>
+          <ProjectWorkspace entityId="p1" />
+        </ApiContext.Provider>
+      ))
+      // Closed columns are not counted as open.
+      expect((await screen.findByTestId("project-workspace.deal-subline")).textContent).toBe(
+        "2 open deals, €68,660.00. Quiet deals come first in each column.",
+      )
+      expect(screen.getByTestId("project-workspace.new-task").textContent).toBe("New deal")
+    })
   })
 
   describe("Edit project (inline, no modal)", () => {
@@ -798,7 +850,9 @@ describe("ProjectWorkspace label filter", () => {
     renderWorkspace()
     expect(screen.getByTestId("project-workspace.showing-count").textContent).toBe("Showing 2 of 2")
     expect(rowIds()).toEqual(["C", "P"])
-    expect(state.api.get).not.toHaveBeenCalled()
+    // No read for the filter: the only one is the project page's slot list.
+    const reads = state.api.get.mock.calls.map(([path]: [string]) => path)
+    expect(reads.filter((p: string) => !p.startsWith("/v1/slots/"))).toEqual([])
   })
 
   it("No label selects tasks with no effective value", () => {
@@ -853,5 +907,92 @@ describe("ProjectWorkspace copy link", () => {
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/projects/p1`),
     )
+  })
+})
+
+describe("ProjectWorkspace time and budgets", () => {
+  const budget = {
+    projectId: "p1",
+    projectName: "Alpha",
+    line: "10 h real of 20 h planned, 10 h left.",
+    timebox: 1200,
+    real: 600,
+    left: 600,
+    partial: false,
+    coverage: { withEntries: 3, total: 3 },
+    milestones: [],
+    notInNumbers: [],
+    datedHours: false,
+  }
+  const mount = () =>
+    render(() => (
+      <ApiContext.Provider value={state.api}>
+        <ProjectWorkspace entityId="p1" />
+      </ApiContext.Provider>
+    ))
+
+  beforeEach(() => {
+    forgetBudget("p1")
+    state.api.post.mockReset()
+    state.api.post.mockResolvedValue(budget)
+    setShellTier("desktop")
+  })
+  afterEach(() => {
+    cleanup()
+    delete (state.project as { timeBudgets?: boolean }).timeBudgets
+  })
+
+  it("a project that does not use time and budgets shows no line, no panel and asks for nothing", async () => {
+    mount()
+    await screen.findByTestId("project-workspace.title")
+    expect(screen.queryByTestId("budget-line")).toBeNull()
+    expect(screen.queryByTestId("budget-panel")).toBeNull()
+    expect(state.api.post).not.toHaveBeenCalled()
+  })
+
+  it("a project that uses it shows its budget line and the panel", async () => {
+    ;(state.project as { timeBudgets?: boolean }).timeBudgets = true
+    mount()
+    expect((await screen.findByTestId("budget-line.text")).textContent).toBe(budget.line)
+    expect(screen.getByTestId("budget-panel")).toBeTruthy()
+    expect(state.api.post).toHaveBeenCalledWith(
+      "/apps/run-tool",
+      { toolName: "projects:budget_get", params: { projectId: "p1" } },
+      expect.anything(),
+    )
+  })
+
+  it("on a phone the panel is a block under the line, not a rail", async () => {
+    setShellTier("phone")
+    ;(state.project as { timeBudgets?: boolean }).timeBudgets = true
+    mount()
+    await screen.findByTestId("budget-line.text")
+    expect(screen.getByTestId("budget-panel").getAttribute("data-layout")).toBe("block")
+  })
+
+  it("the details button closes and reopens the panel", async () => {
+    ;(state.project as { timeBudgets?: boolean }).timeBudgets = true
+    mount()
+    fireEvent.click(await screen.findByTestId("budget-line.toggle"))
+    expect(screen.queryByTestId("budget-panel")).toBeNull()
+    fireEvent.click(screen.getByTestId("budget-line.toggle"))
+    expect(screen.getByTestId("budget-panel")).toBeTruthy()
+  })
+
+  it("a failed read keeps the board and says so on the line", async () => {
+    ;(state.project as { timeBudgets?: boolean }).timeBudgets = true
+    state.api.post.mockRejectedValue(new Error("network"))
+    mount()
+    expect((await screen.findByTestId("budget-line.error")).textContent).toContain(
+      "The board below is not affected",
+    )
+    expect(screen.getByTestId("project-workspace.title")).toBeTruthy()
+  })
+
+  it("planning_off from the budget refetches the project", async () => {
+    ;(state.project as { timeBudgets?: boolean }).timeBudgets = true
+    state.api.post.mockResolvedValue({ code: "planning_off" })
+    mount()
+    await waitFor(() => expect(state.refresh).toHaveBeenCalledWith(state.api, "p1"))
   })
 })

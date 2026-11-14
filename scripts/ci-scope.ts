@@ -14,7 +14,9 @@
 //              (.claude/test-map.ts): the api unit suite and web-unit. A pull
 //              request runs the ones its changed files map to, each in as few
 //              jobs as possible; a path the map does not cover (and that is not
-//              plain docs) runs both. A merge group, or any run without a base,
+//              plain docs) runs both. The relation cells (`relations`) run as a
+//              step of the first `unit` job when the map attributes a change to
+//              them, and on every full run. A merge group, or any run without a base,
 //              runs both split over several runners: it is the full gate before
 //              main. A push to main runs neither, the merge group already tested
 //              that tree. Writes the outputs of `testOutputs` to $GITHUB_OUTPUT.
@@ -136,6 +138,8 @@ export type TestScope = {
   unit: boolean
   /** The web unit suite. */
   web: boolean
+  /** The relation cells: a step of the first `unit` job, which then runs even without `unit`. */
+  relations: boolean
   /**
    * The full gate (a merge group, or any run that is not a pull request): the
    * suites split over several runners for wall clock. A pull request runs each
@@ -156,10 +160,13 @@ export const PR_UNIT_PARTS = 2
 /** The `ci` workflow's view of a {@link TestScope}, written to $GITHUB_OUTPUT. */
 export function testOutputs(t: TestScope): Record<string, string> {
   const parts = (n: number) => JSON.stringify(Array.from({ length: n }, (_, i) => i + 1))
+  // A run for the relation cells alone needs one unit job, not the suite's split.
+  const unitOf = t.gate ? GATE_PARTS.unit : t.unit ? PR_UNIT_PARTS : 1
   return {
     unit: String(t.unit),
-    unit_of: String(t.gate ? GATE_PARTS.unit : PR_UNIT_PARTS),
-    unit_parts: parts(t.gate ? GATE_PARTS.unit : PR_UNIT_PARTS),
+    relations: String(t.relations),
+    unit_of: String(unitOf),
+    unit_parts: parts(unitOf),
     // `shards`: the web-unit jobs; `inline`: a step of the static job.
     web: t.web ? (t.gate ? "shards" : "inline") : "none",
     web_of: String(GATE_PARTS.web),
@@ -181,15 +188,22 @@ export function testScope(
     return {
       unit: false,
       web: false,
+      relations: false,
       gate: false,
       reason: "push: the merge queue tested this tree",
     }
   }
   if (!base) {
     const reason = event === "merge_group" ? "merge group: full gate" : "not a pull request"
-    return { unit: true, web: true, gate: true, reason }
+    return { unit: true, web: true, relations: true, gate: true, reason }
   }
-  const all = (reason: string): TestScope => ({ unit: true, web: true, gate: false, reason })
+  const all = (reason: string): TestScope => ({
+    unit: true,
+    web: true,
+    relations: true,
+    gate: false,
+    reason,
+  })
   const trigger = changed.find((c) => TEST_FULL_RUN_GLOBS.some((g) => match(g, c.path)))
   if (trigger) return all(`${trigger.path} changed`)
   const suites = new Set<string>()
@@ -202,6 +216,7 @@ export function testScope(
   return {
     unit: suites.has("unit"),
     web: suites.has("web-unit"),
+    relations: suites.has("relations"),
     gate: false,
     reason: `${changed.length} changed files mapped to ${[...suites].sort().join(", ") || "no suite"}`,
   }
@@ -339,7 +354,7 @@ async function main(argv: string[]): Promise<number> {
     const t = testScope(process.env.GITHUB_EVENT_NAME, scope.changed, scope.base)
     const out = testOutputs(t)
     console.log(
-      `api unit: ${t.unit ? `runs on ${out.unit_of} runner(s)` : "skipped"}; web unit: ${out.web} (${t.reason})`,
+      `api unit: ${t.unit ? `runs on ${out.unit_of} runner(s)` : "skipped"}; web unit: ${out.web}; relations: ${t.relations ? "runs" : "skipped"} (${t.reason})`,
     )
     if (process.env.GITHUB_OUTPUT) {
       const lines = Object.entries(out).map(([k, v]) => `${k}=${v}\n`)

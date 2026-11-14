@@ -255,6 +255,69 @@ describe("customer_history", () => {
     expect(h.shopify).toBe("not connected")
     expect(h.note).toContain('Nothing found for "Nobody Atall"')
   })
+
+  test("lists the schedules that bill the customer, and says a lasting price change is made on the schedule", async () => {
+    const draft = {
+      ...other,
+      id: "6d1f2c3a-1b2c-4d5e-8f90-0a1b2c3d4e09",
+      status: "draft",
+      number: null,
+      counterparty_name: "Quillmere Studio",
+      counterparty_contact_id: CONTACT_ID,
+    }
+    const schedule = (id: string, status: string) => ({
+      id,
+      contact_id: CONTACT_ID,
+      status,
+      repeats: "month",
+      billing_day: "1",
+      next_issue_on: "2026-12-01",
+      lines: [{ description: "Monthly retainer, {period}", qty: 1, unit_price_minor: 55000 }],
+      version: 1,
+    })
+    const db = createMockDb(
+      {
+        seed: {
+          documents: [draft],
+          document_lines: [],
+          recurring_schedules: [
+            schedule("9a1b2c3d-0000-4000-8000-000000000001", "active"),
+            schedule("9a1b2c3d-0000-4000-8000-000000000002", "ended"),
+          ],
+        },
+      },
+      { bridgeWhereOperators: true },
+    )
+    const ctx: ReadsCtx = {
+      db: {
+        findMany: (e, o) => db.findMany(e, o),
+        findOne: (e, id) => db.findOne(e, id),
+        count: (e, o) => db.count(e, o),
+      },
+      kernel: { listApprovals: async () => [] },
+    }
+    const h = await customerHistory(ctx, { customer: "Quillmere" })
+    expect(h.recurring_schedules).toEqual([
+      {
+        id: "9a1b2c3d-0000-4000-8000-000000000001",
+        status: "active",
+        repeats: "month",
+        next_issue_on: "2026-12-01",
+        lines: [
+          { description: "Monthly retainer, {period}", quantity: "1", unit_price_minor: "55000" },
+        ],
+      },
+    ])
+    expect(h.note).toContain("recurring_schedule_update")
+    expect(h.note).toContain("drafts_update")
+  })
+
+  test("a customer with no schedule gets no schedule note", async () => {
+    const { ctx } = makeCtx()
+    const h = await customerHistory(ctx, { customer: "brenna valdi" })
+    expect(h.recurring_schedules).toEqual([])
+    expect(h.note).not.toContain("recurring_schedule_update")
+  })
 })
 
 describe("manifest", () => {

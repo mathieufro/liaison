@@ -190,6 +190,9 @@ const connectionsBlockSchema = z
 const listBlockSchema = z
   .object({
     block: z.literal("list"),
+    /** A heading over the list, saying what its rows are and what Add adds. */
+    title: z.string().min(1).optional(),
+    titleKey: labelKey.optional(),
     ops: z
       .object({
         list: toolRef,
@@ -290,6 +293,8 @@ export const settingsSectionSchema = z
      * user section.
      */
     adminScope: z.string().min(1).optional(),
+    /** Names a feature the app declares under top-level `features`: off, the section is absent. */
+    feature: z.string().min(1).optional(),
     blocks: z.array(settingsBlockSchema).min(1),
   })
   .strict()

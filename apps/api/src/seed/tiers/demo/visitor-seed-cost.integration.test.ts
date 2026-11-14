@@ -23,18 +23,31 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { DEMO_NEEDS } from "@liaison/shared"
+import { DEMO_WORLD_NEEDS } from "@liaison/shared"
 import { sql } from "drizzle-orm"
 import { startStatementCount } from "~/db/connection"
 import { withPrivilegedDb } from "~/db/privileged"
 import { listOrgQueuedJobs } from "~/infra/jobs/jobs"
 import { DemoModeTestAccess } from "~/modules/demo/demo-mode"
 import { DEMO_COMPANY_NAME, seedDemoOrgData } from "~/modules/demo/demo-seeder"
+import { demoWorldPack } from "~/seed/worlds/index"
 import { installFromDist } from "../../../../test-support/seed/install-dist-apps"
 
 const DB_URL = process.env.DATABASE_URL ?? ""
 /** The demo apps shipped as catalog bundles; the others are in-tree. */
-const CATALOG_DEMO_APPS = ["invoicing", "social", "pennylane", "boxtal", "shopify", "monitoring"]
+const CATALOG_DEMO_APPS = [
+  "invoicing",
+  "social",
+  "pennylane",
+  "boxtal",
+  "shopify",
+  "monitoring",
+  "stripe",
+  // The oracle layer's headless app, a catalog app on a demo box like the others. Installed here
+  // as the demo world test installs it: an app is installed for the whole instance, so a suite run
+  // after that file would otherwise see one app more than this file alone.
+  "database",
+]
 
 /**
  * What one warm visitor seed cost on a Mac mini (M-series, 2026-11), median of
@@ -51,23 +64,125 @@ const CATALOG_DEMO_APPS = ["invoicing", "social", "pennylane", "boxtal", "shopif
  * 2026-11-04 on main 51c8ce2a9: 5 327 round trips in 519 transactions, 281
  * outbox events, statement for statement the same on that main commit itself,
  * so the growth came with the main features merged since the last measure.
- * Re-measured 2026-11-09 (gate, warm) once the dealer quote's school became a
- * seeded contact linked to its store customer: 282 outbox events (its contact
- * create event), 5 356 round trips in 521 transactions.
+ * Re-measured 2026-11-08 on the foundation branch: 5 452 round trips in 541
+ * transactions (cold 5 457 in 542), 281 outbox events: the org's switched-on
+ * features are read in a transaction of their own on each app-state reload, so
+ * a failed feature read cannot abort the app state read (about one per reload).
+ * Re-measured 2026-11-09 on the foundation branch: 5 853 round trips in 543
+ * transactions (cold 5 872 in 544, 5 858 on a Linux runner), 323 outbox events:
+ * the tier now seeds companies and a deals pipeline, each company and deal
+ * written through its product path with its event.
+ * Re-measured 2026-11-09 after main's dealer-quote contact (+1 contact create
+ * event) merged in: 5 867 round trips in 545 transactions (cold 5 881), 324
+ * outbox events; the Linux figure is set 5 above the warm local one, as before.
+ * Re-measured 2026-11-10 once each dealer's sales contact is linked to its
+ * company: 330 outbox events, the six dealer links each emitting one contact
+ * update event (inherent to the links; one write per dealer, nothing per-row
+ * to batch).
+ * Re-measured 2026-11-10 once contacts carry the country the world places
+ * them in: 5 892 round trips in 545 transactions (cold 5 897), 330 outbox
+ * events; the Linux figure is set 5 above the warm local one, as before. The
+ * countries are written in one statement per contacts batch (one per contact
+ * cost 5 926 on Linux), and the round trips also count the dealer links above,
+ * whose re-measure left the statement figure as it was.
+ * Re-measured 2026-11-11 once a seeded org carries the world company's
+ * commercial identity: 5 903 round trips in 547 transactions (cold 5 920 in
+ * 548), 330 outbox events. The identity costs two transactions: its read and
+ * write in one, and the apply's drift record reading it back. The org pass
+ * alone carries the email section; the later passes, which never write it,
+ * read it back four more times when they carried it too (5 932 in 553 on
+ * Linux).
+ * Re-measured 2026-11-11 with the payments app in the demo catalog: 5 923
+ * round trips in 551 transactions (cold 5 942 in 552), 334 outbox events: the
+ * app is installed for the org, with its roles and their events. The figure is
+ * set 5 above the warm local one, as before.
+ * Re-measured 2026-11-11 once the seed stores the apps' attention lists (the
+ * Home feed reads only those and runs no app code): 6 532 round trips in 655
+ * transactions (cold 6 554 in 656, 6 544 in 656 beside four other seeds), 334
+ * outbox events. The lists alone cost 583 round trips in 101 transactions for
+ * the world's 8 people (each person's permissions read once for every app),
+ * the work the first minute tick would otherwise do; they queue no event.
+ * Re-measured 2026-11-14 after main's typed task fields and status transitions
+ * and the move of four apps (database, GitLab, Google Drive, the API
+ * connector) to the catalog: 6 592 round trips in 639 transactions locally,
+ * 6 615 in 644 on a Linux runner, 359 outbox events: one status change event
+ * per seeded task (+36), less the role events of the apps that left the
+ * in-tree set (-11). The pin is the runner's figure.
+ * With the database app installed here as on a demo box (it was only when an
+ * earlier file of the suite had installed it): 362 outbox events, its role
+ * events (+3), on the runner and locally alike.
  */
-const BASELINE = {
-  outboxEvents: 282,
+const PRODUCTS_BASELINE = {
+  outboxEvents: 362,
   queuedJobs: 0,
   attentionEvents: 0,
   notificationDeliveries: 0,
-  statements: 5_356,
-  transactions: 521,
+  statements: 6_615,
+  transactions: 644,
 }
 /**
  * Round trips are deterministic up to a few cache reads (5 251-5 262 across
  * runs, cold or warm, alone or concurrent); transactions did not move at all.
  * One more transaction per seeded ticket already fails both.
  */
+/**
+ * The software world's visitor seed, measured on its own (no concurrent run):
+ * its companies, deals, card mirror, the year's invoices and schedules.
+ */
+const SAAS_BASELINE = {
+  // Measured 2026-11-11: 6 751 round trips in 630 transactions, 466 outbox
+  // events (1.14 times the products world); set 5 above, as products is.
+  // Re-measured the same day at 6 826 in 644, once the card reminder pinned
+  // its own send check (the product's check reads the recipients, their
+  // opt-outs and the invoice it is about) and each card invoice's document
+  // names the processor invoice it was issued for.
+  // Re-measured the same day at 8 172 in 863, 484 outbox events: 6 892 in 644
+  // before the attention lists (the Support handover channel and the merges
+  // since the last figure), and the lists of the world's 14 people 1 280 in 219.
+  // Re-measured 2026-11-14 at 8 049 in 817 locally, 8 102 in 828 on a Linux
+  // runner, 507 outbox events: a status change event per seeded task (+35), less
+  // the role events of the four apps that moved to the catalog (-12).
+  // 510 with the database app installed here as on a demo box (+3 role events).
+  outboxEvents: 510,
+  queuedJobs: 0,
+  attentionEvents: 0,
+  notificationDeliveries: 0,
+  statements: 8_102,
+  transactions: 828,
+}
+/**
+ * The services world's visitor seed, measured on its own: its people and roles,
+ * clients, pipeline, seven projects with their tasks, time, plans, cost rates
+ * and who is away, every row through the product's writers.
+ *
+ * Measured 2026-11-13: 10 870 round trips in 1 048 transactions, 351 outbox
+ * events; set 5 above. The world's own layer is 3 838 of them in 75
+ * transactions (120 tasks through the task writer); the rest is the org,
+ * support and agent layers for its 24 people. That is 1.64 times the products
+ * world in round trips and 1.62 in transactions, so the products ratio below
+ * is not asserted for this world.
+ * Re-measured 2026-11-14 once each person enters their own time through the
+ * time writer, and finance each cost rate through the rate writer, one entry
+ * per transaction, as the product does: 11 540 round trips in 1 106
+ * transactions locally, 11 648 in 1 128 on a Linux runner (the pin), 351
+ * outbox events; 354 with the database app installed here as on a demo box
+ * (+3 role events).
+ */
+const STUDIO_BASELINE = {
+  outboxEvents: 354,
+  queuedJobs: 0,
+  attentionEvents: 0,
+  notificationDeliveries: 0,
+  statements: 11_648,
+  transactions: 1_128,
+}
+const BASELINE = {
+  products: PRODUCTS_BASELINE,
+  saas: SAAS_BASELINE,
+  studio: STUDIO_BASELINE,
+} as const
+/** No world's seed costs more than this many times the products world's. */
+const WORLD_COST_RATIO = 1.5
 const STATEMENT_MARGIN = 1.005
 const TRANSACTION_SLACK = 2
 /**
@@ -97,12 +212,15 @@ async function count(orgId: string, query: ReturnType<typeof sql>): Promise<numb
   })
 }
 
-async function seedVisitorWorld(): Promise<{ ok: boolean; orgId: string; wallMs: number }> {
+async function seedVisitorWorld(
+  world: keyof typeof BASELINE = "products",
+): Promise<{ ok: boolean; orgId: string; wallMs: number }> {
   const slug = `demo-cost-${crypto.randomUUID().slice(0, 8)}`
   const t0 = performance.now()
   const seed = await seedDemoOrgData({
     orgSlug: slug,
-    orgName: DEMO_COMPANY_NAME,
+    orgName: world === "products" ? DEMO_COMPANY_NAME : demoWorldPack(world).orgName,
+    worldId: world,
     variant: "visitor",
     locale: "en",
     owner: {
@@ -110,15 +228,17 @@ async function seedVisitorWorld(): Promise<{ ok: boolean; orgId: string; wallMs:
       name: "Unclaimed",
       password: "VisitorOwner1!Seed",
     },
-    needs: [...DEMO_NEEDS],
+    needs: [...DEMO_WORLD_NEEDS[world]],
   })
   return { ok: seed.ok, orgId: seed.orgId ?? "", wallMs: Math.round(performance.now() - t0) }
 }
 
-async function seedOnce(): Promise<{ orgId: string; cost: SeedCost }> {
+async function seedOnce(
+  world: keyof typeof BASELINE = "products",
+): Promise<{ orgId: string; cost: SeedCost }> {
   const cpu0 = process.cpuUsage()
   const counter = startStatementCount()
-  const { ok, orgId, wallMs } = await seedVisitorWorld()
+  const { ok, orgId, wallMs } = await seedVisitorWorld(world)
   const { statements, transactions } = counter.stop()
   const cpu = process.cpuUsage(cpu0)
   expect(ok).toBe(true)
@@ -200,19 +320,74 @@ describe("the visitor seed's cost", () => {
   }, 2_400_000)
 
   it("makes no more database round trips than the baseline, alone or beside other seeds", () => {
-    expect(warm.statements).toBeLessThanOrEqual(BASELINE.statements * STATEMENT_MARGIN)
-    expect(warm.transactions).toBeLessThanOrEqual(BASELINE.transactions + TRANSACTION_SLACK)
+    expect(warm.statements).toBeLessThanOrEqual(PRODUCTS_BASELINE.statements * STATEMENT_MARGIN)
+    expect(warm.transactions).toBeLessThanOrEqual(
+      PRODUCTS_BASELINE.transactions + TRANSACTION_SLACK,
+    )
     expect(concurrent.ok).toBe(POOL_PARALLELISM)
-    expect(concurrent.statementsPerSeed).toBeLessThanOrEqual(BASELINE.statements * STATEMENT_MARGIN)
+    expect(concurrent.statementsPerSeed).toBeLessThanOrEqual(
+      PRODUCTS_BASELINE.statements * STATEMENT_MARGIN,
+    )
     expect(concurrent.transactionsPerSeed).toBeLessThanOrEqual(
-      BASELINE.transactions + TRANSACTION_SLACK,
+      PRODUCTS_BASELINE.transactions + TRANSACTION_SLACK,
     )
   })
 
   it("queues no more work for the api and worker processes than the baseline", () => {
-    expect(warm.outboxEvents).toBeLessThanOrEqual(BASELINE.outboxEvents)
-    expect(warm.queuedJobs).toBeLessThanOrEqual(BASELINE.queuedJobs)
-    expect(warm.attentionEvents).toBeLessThanOrEqual(BASELINE.attentionEvents)
-    expect(warm.notificationDeliveries).toBeLessThanOrEqual(BASELINE.notificationDeliveries)
+    expect(warm.outboxEvents).toBeLessThanOrEqual(PRODUCTS_BASELINE.outboxEvents)
+    expect(warm.queuedJobs).toBeLessThanOrEqual(PRODUCTS_BASELINE.queuedJobs)
+    expect(warm.attentionEvents).toBeLessThanOrEqual(PRODUCTS_BASELINE.attentionEvents)
+    expect(warm.notificationDeliveries).toBeLessThanOrEqual(
+      PRODUCTS_BASELINE.notificationDeliveries,
+    )
+  })
+})
+
+describe("the software world's visitor seed cost", () => {
+  let products: SeedCost
+  let saas: SeedCost
+
+  beforeAll(async () => {
+    for (const app of CATALOG_DEMO_APPS) await installFromDist(app, crypto.randomUUID())
+    // Warm both, then measure each alone.
+    await seedOnce("saas")
+    products = (await seedOnce("products")).cost
+    saas = (await seedOnce("saas")).cost
+    console.log(`[visitor-seed-cost] ${JSON.stringify({ products, saas })}`)
+  }, 2_400_000)
+
+  it("makes no more round trips than its baseline, and queues no job, attention row or delivery", () => {
+    expect(saas.statements).toBeLessThanOrEqual(SAAS_BASELINE.statements * STATEMENT_MARGIN)
+    expect(saas.transactions).toBeLessThanOrEqual(SAAS_BASELINE.transactions + TRANSACTION_SLACK)
+    expect(saas.outboxEvents).toBeLessThanOrEqual(SAAS_BASELINE.outboxEvents)
+    expect([saas.queuedJobs, saas.attentionEvents, saas.notificationDeliveries]).toEqual([0, 0, 0])
+  })
+
+  it("costs at most one and a half times the products world in statements and transactions", () => {
+    expect(saas.statements).toBeLessThanOrEqual(products.statements * WORLD_COST_RATIO)
+    expect(saas.transactions).toBeLessThanOrEqual(products.transactions * WORLD_COST_RATIO)
+  })
+})
+
+describe("the services world's visitor seed cost", () => {
+  let studio: SeedCost
+
+  beforeAll(async () => {
+    for (const app of CATALOG_DEMO_APPS) await installFromDist(app, crypto.randomUUID())
+    // Warm, then measure.
+    await seedOnce("studio")
+    studio = (await seedOnce("studio")).cost
+    console.log(`[visitor-seed-cost] ${JSON.stringify({ studio })}`)
+  }, 2_400_000)
+
+  it("makes no more round trips than its baseline, and queues no job, attention row or delivery", () => {
+    expect(studio.statements).toBeLessThanOrEqual(STUDIO_BASELINE.statements * STATEMENT_MARGIN)
+    expect(studio.transactions).toBeLessThanOrEqual(
+      STUDIO_BASELINE.transactions + TRANSACTION_SLACK,
+    )
+    expect(studio.outboxEvents).toBeLessThanOrEqual(STUDIO_BASELINE.outboxEvents)
+    expect([studio.queuedJobs, studio.attentionEvents, studio.notificationDeliveries]).toEqual([
+      0, 0, 0,
+    ])
   })
 })

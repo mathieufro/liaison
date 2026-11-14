@@ -17,6 +17,7 @@
 import { type Accessor, createEffect, getOwner, onCleanup } from "solid-js"
 import { onSessionTeardown } from "~/lib/session-lifecycle"
 import { useTabId } from "~/modules/shell/TabVisibilityContext"
+import { tabStore, updateTabLabel } from "~/modules/shell/tab-store"
 
 export interface OpenRecord {
   /** `<app>:<entity>`, the shape a turn's `currentView.tabType` takes. */
@@ -64,4 +65,20 @@ export function trackOpenRecord(
     else clearOwn()
   })
   onCleanup(clearOwn)
+}
+
+/**
+ * From a page's component body: name its tab after the record it shows (a schedule's customer
+ * rather than "Recurring schedule"), following `label()`. A null label keeps the tab's own.
+ * Outside a tab it does nothing.
+ */
+export function trackTabLabel(label: Accessor<string | null | undefined>): void {
+  const tabId = useTabId()
+  if (!tabId || !getOwner()) return
+  createEffect(() => {
+    const next = label()?.trim()
+    if (!next) return
+    const tab = tabStore.tabs.find((t) => t.id === tabId)
+    if (tab && tab.label !== next) updateTabLabel(tabId, next)
+  })
 }

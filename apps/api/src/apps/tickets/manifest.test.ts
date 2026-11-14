@@ -10,6 +10,19 @@ import ticketsManifest from "./app.manifest.json"
 // The app guide is a short core plus sections keyed by the tools they are
 // about (app-guide.ts); these assertions read the whole guide.
 type ManifestGuide = string | { core: string; sections?: Array<{ tools: string[]; text: string }> }
+/** A tool's description, then every guide section naming it: what the model reads while the tool
+ *  is loaded. A description's text past its first 600 characters reads from such a section. */
+const toolText = (m: { tools?: unknown; agentInstructions?: unknown }, tool: string): string => {
+  const def = (m.tools as Record<string, { description?: string }> | undefined)?.[tool]
+  const g = m.agentInstructions as
+    | { sections?: Array<{ tools: string[]; text: string }> }
+    | string
+    | undefined
+  const sections =
+    g && typeof g === "object" ? (g.sections ?? []).filter((s) => s.tools.includes(tool)) : []
+  return [def?.description ?? "", ...sections.map((s) => s.text)].join("\n\n")
+}
+
 const guideText = (m: { agentInstructions?: unknown }): string => {
   const g = m.agentInstructions as ManifestGuide | undefined
   if (!g) return ""
@@ -17,6 +30,34 @@ const guideText = (m: { agentInstructions?: unknown }): string => {
 }
 
 describe("tickets manifest", () => {
+  it("draws a ticket as an entity card and the open backlog as a number card, from fields the tools return", () => {
+    const tools = ticketsManifest.tools as unknown as Record<
+      string,
+      {
+        returns?: { schema?: Record<string, string> }
+        resultCard?: { kind?: string }
+        runningLabel?: string
+        runningLabelKey?: string
+      }
+    >
+    expect(tools.get?.resultCard?.kind).toBe("entity")
+    expect(tools.backlogHealth?.resultCard?.kind).toBe("number")
+    expect(Object.keys(tools.get?.returns?.schema ?? {})).toEqual(["ticket", "messages"])
+    expect(Object.keys(tools.backlogHealth?.returns?.schema ?? {})).toContain("byStatus")
+    expect(tools.get?.runningLabelKey).toBe("tickets.card.runningGet")
+    expect(tools.backlogHealth?.runningLabelKey).toBe("tickets.card.runningBacklog")
+    // 1.2.11: ticket and backlog results draw as cards.
+    expect(ticketsManifest.version).toBe("1.4.0")
+    expect(validateAppManifest(ticketsManifest).success).toBe(true)
+  })
+
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    expect(ticketsManifest.attention.groupLabel).toEqual({
+      label: "Support",
+      labelKey: "kernel.homeGroupSupport",
+    })
+  })
+
   it("gives the email sending tools a send sized budget, not the 5 s production default", () => {
     // A reply with a PDF (fetch from storage, MIME build, SMTP round trip)
     // routinely passes 5 s. Under the default the sandbox reported "App
@@ -64,7 +105,7 @@ describe("tickets manifest", () => {
     }
     expect(result.success).toBe(true)
     expect(ticketsManifest.views.activityBar).toMatchObject({
-      order: 11,
+      order: 12,
       tabAction: { type: "inbox" },
     })
     expect(ticketsManifest.views.tabTypes.inbox).toMatchObject({
@@ -163,12 +204,16 @@ describe("tickets manifest", () => {
     const tools = ticketsManifest.tools as Record<string, { taintSource?: boolean }>
     expect(tools.search.taintSource).toBe(true)
     expect(tools.get.taintSource).toBe(true)
+    // The aggregates and per-contact list name their tickets by subject, which
+    // the customer wrote, so they mark the thread as the search does.
+    for (const id of ["backlogHealth", "slaReport", "listForContact", "csat.list"]) {
+      expect(tools[id]?.taintSource, `${id} must declare taintSource`).toBe(true)
+    }
     for (const id of [
       "reply",
       "create",
       "addNote",
       "setStatus",
-      "backlogHealth",
       // teams.list returns operator-authored routing labels and counts, never
       // customer-authored content — tainting a thread for reading it would
       // contain the agent for no gain.
@@ -219,8 +264,7 @@ describe("tickets manifest", () => {
     // digest to one group (and dropped the DE tickets that lived in those statuses). The fix is a search-
     // description steer teaching that a backlog / status-grouped / awaiting-customer-section request means
     // the whole non-closed set via smartFilter:'all-open'. Pin it so the steer can't silently regress.
-    const tools = ticketsManifest.tools as Record<string, { description?: string }>
-    const desc = tools.search.description ?? ""
+    const desc = toolText(ticketsManifest, "search")
     expect(desc).toContain("all-open")
     // The steer must name the non-closed-set semantics AND warn that status='open' drops the other two.
     expect(desc).toMatch(
@@ -554,7 +598,7 @@ describe("tickets manifest", () => {
   it("the assign tool description carries a triage gate (claim only criterion-passing tickets) (l583)", () => {
     // l583 run 2: the agent self-assigned 3 English tickets in an FR/DE/IT-only claim. Reinforce the gate
     // on the exact surface the agent touches at the moment of the mistake — the assign tool description.
-    const assign = (ticketsManifest.tools as Record<string, { description: string }>).assign
+    const assign = { description: toolText(ticketsManifest, "assign") }
     expect(assign.description).toMatch(/TRIAGE GATE/i)
     expect(assign.description).toMatch(/ONLY on tickets that PASS the criterion/i)
     expect(assign.description).toMatch(/Tagging a ticket's language is NOT a reason to claim it/i)

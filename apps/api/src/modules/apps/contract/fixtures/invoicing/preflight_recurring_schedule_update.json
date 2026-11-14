@@ -1,0 +1,19 @@
+{
+  "entry": "preflight:recurring_schedule_update",
+  "params": {
+    "id": "00000000-0000-4000-8000-000000000103",
+    "expected_version": 1,
+    "status": "active"
+  },
+  "expectError": {
+    "reason": "recorded on a contract install with no rows, so the replay pins the schedule_not_found refusal a caller gets when the record it names does not exist (nothing written); the working path is still to record"
+  },
+  "calls": [
+    {
+      "method": "db_findOne",
+      "args": ["recurring_schedules", "00000000-0000-4000-8000-000000000103"],
+      "reply": "null"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

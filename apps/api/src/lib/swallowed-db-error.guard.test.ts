@@ -215,7 +215,7 @@ const ALLOWLIST: AllowlistEntry[] = [
   },
   {
     file: "apps/projects/service/update-project.ts",
-    function: "updateProject",
+    function: "updateProjectWithOutcome",
     why: "rethrows",
     note: "Maps a key collision to ProjectsServiceError(409) and throws; the caller's tx rolls back.",
   },

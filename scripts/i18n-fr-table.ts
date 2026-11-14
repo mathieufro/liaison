@@ -4860,6 +4860,10 @@ export const FR: Record<string, string> = {
  * and "Désactivée" for a cadence. Keyed `namespace.key.path`.
  */
 export const FR_BY_KEY: Record<string, string> = {
+  // Projects time and capacity: the same English reads differently elsewhere.
+  "projects.settingsPage.time.daysOff": "Jours non travaillés de l'entreprise",
+  "projects.capacity.thisWeek": "Cette semaine",
+  "projects.capacity.nextWeek": "Semaine prochaine",
   "contacts.addresses.role.other": "Autre",
   "contacts.addresses.sourceOption.other": "Autre",
   // The main panel's answer to an address no page owns.

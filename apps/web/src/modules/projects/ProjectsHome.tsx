@@ -35,8 +35,10 @@ import { projectsFilterStore } from "~/modules/projects/projects-filter-store"
 import { type Project, projectsStore } from "~/modules/projects/projects-store"
 import { releaseParam } from "~/modules/projects/release-filter"
 import { prettyStatus } from "~/modules/projects/status-label"
+import { TimeBudgetsSwitch } from "~/modules/projects/TimeBudgetsSwitch"
 import { labelsQueryParam } from "~/modules/projects/task-labels"
 import { taskMatchesQuery } from "~/modules/projects/task-search"
+import { formatMinutes } from "~/modules/projects/time-budgets"
 import { useApi } from "~/modules/shell/ApiContext"
 import { attentionStore } from "~/modules/shell/attention-store"
 import { openTab } from "~/modules/shell/tab-store"
@@ -90,6 +92,7 @@ export const ProjectsHome: Component<{ entityId: string }> = (_props) => {
   const [newColumns, setNewColumns] = createSignal("")
   const [newIcon, setNewIcon] = createSignal(ICON_OPTIONS[0]!.name)
   const [newColor, setNewColor] = createSignal(COLOR_OPTIONS[0]!)
+  const [newTimeOn, setNewTimeOn] = createSignal(false)
   const [creating, setCreating] = createSignal(false)
   const [createError, setCreateError] = createSignal<string | null>(null)
   const crossProjectTasks = crossProjectTasksStore.items
@@ -127,12 +130,14 @@ export const ProjectsHome: Component<{ entityId: string }> = (_props) => {
         icon: newIcon(),
         color: newColor(),
         ...(statuses.length > 0 ? { statuses } : {}),
+        ...(newTimeOn() ? { timeBudgets: true } : {}),
       })
       setNewName("")
       setNewDescription("")
       setNewColumns("")
       setNewIcon(ICON_OPTIONS[0]!.name)
       setNewColor(COLOR_OPTIONS[0]!)
+      setNewTimeOn(false)
       setNewOpen(false)
       await projectsStore.load(api)
       // Just created by the user — open as a permanent tab, not an ephemeral preview.
@@ -212,6 +217,7 @@ export const ProjectsHome: Component<{ entityId: string }> = (_props) => {
               projectName: t.projectName,
               assigneeId: t.assigneeId,
               dueDate: t.dueDate,
+              ...(t.timeboxMinutes !== undefined ? { timeboxMinutes: t.timeboxMinutes } : {}),
               involvement: t.involvement,
             })),
           )
@@ -240,6 +246,7 @@ export const ProjectsHome: Component<{ entityId: string }> = (_props) => {
                 statusId: string
                 assigneeId: string | null
                 dueDate: string | null
+                timeboxMinutes?: number | null
               }>
             }>(`/projects/${p.id}/tasks${query}`),
           ])
@@ -256,6 +263,7 @@ export const ProjectsHome: Component<{ entityId: string }> = (_props) => {
               projectName: p.name,
               assigneeId: t.assigneeId,
               dueDate: t.dueDate,
+              ...(t.timeboxMinutes !== undefined ? { timeboxMinutes: t.timeboxMinutes } : {}),
             })
           }
         } catch {
@@ -452,6 +460,12 @@ export const ProjectsHome: Component<{ entityId: string }> = (_props) => {
                 </For>
               </div>
             </div>
+            <TimeBudgetsSwitch
+              api={api}
+              on={newTimeOn()}
+              onChange={setNewTimeOn}
+              idPrefix="projects-home.new-project"
+            />
             <Show when={createError()}>
               <p class="text-[12px] text-warning">{createError()}</p>
             </Show>
@@ -535,6 +549,16 @@ export const ProjectsHome: Component<{ entityId: string }> = (_props) => {
                       </Show>
                     </span>
                     <span class="text-[11px] text-text-tertiary">{t.projectName}</span>
+                    <Show when={typeof t.timeboxMinutes === "number" ? t.timeboxMinutes : null}>
+                      {(minutes) => (
+                        <span
+                          data-testid={`projects-home.row-planned-${t.id}`}
+                          class="text-[11px] text-text-tertiary"
+                        >
+                          {i18n.t("projects.time.rowPlanned", { time: formatMinutes(minutes()) })}
+                        </span>
+                      )}
+                    </Show>
                     <Show when={t.dueDate}>
                       <span
                         title={i18n.t("projects.dueDateTitle", {

@@ -135,6 +135,7 @@ const RECORDS_INSIDE_A_TAB: Readonly<Record<string, readonly OpenView[]>> = {
 const KERNEL_READ_SCOPES: Readonly<Record<string, string>> = {
   thread: "kernel:threads:read",
   contact: "kernel:contacts:read",
+  company: "kernel:companies:read",
   routine: "kernel:routines:read",
   skill: "kernel:skills:read",
 }

@@ -30,6 +30,7 @@ import {
   type Component,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   For,
   on,
@@ -40,6 +41,10 @@ import {
 import { formatDay } from "~/lib/relative-time"
 import { userFromToken } from "~/modules/auth/auth-store"
 import { useI18n } from "~/modules/i18n/i18n-context"
+import { fetchAssignableMembers } from "~/modules/members/assignable-members"
+import { BudgetLine } from "~/modules/projects/BudgetLine"
+import { BudgetPanel } from "~/modules/projects/BudgetPanel"
+import { formatSums, loadDealBoard, openTotals } from "~/modules/projects/deal-api"
 import { computeDropPosition, dndState } from "~/modules/projects/dnd-state"
 import { dueBucket, dueChipColorClass } from "~/modules/projects/due-status"
 import { FieldsManager } from "~/modules/projects/FieldsManager"
@@ -60,10 +65,12 @@ import { StatusPillPopover } from "~/modules/projects/StatusPillPopover"
 import { TaskTrashDialog } from "~/modules/projects/TaskTrashDialog"
 import { matchesLabelFilter } from "~/modules/projects/task-labels"
 import { taskMatchesQuery } from "~/modules/projects/task-search"
+import { budgetFor, loadBudget, timeOn } from "~/modules/projects/time-budgets"
 import { useApi } from "~/modules/shell/ApiContext"
 import { BulkActionToolbar } from "~/modules/shell/bulk/BulkActionToolbar"
 import { copyLink, entityRoute } from "~/modules/shell/entity-link"
 import { MarkdownContent } from "~/modules/shell/markdown-content"
+import { SlotPanels } from "~/modules/shell/SlotPanels"
 import { shellTier } from "~/modules/shell/shell-tier"
 import { openTab, tabStore, updateTabRoutePath } from "~/modules/shell/tab-store"
 import { addToast } from "~/modules/shell/toast-store"
@@ -135,8 +142,56 @@ export const ProjectWorkspace: Component<ProjectWorkspaceProps> = (props) => {
 
   const project = () => projectStore.project(props.entityId)
   const tasks = () => projectStore.tasksFor(props.entityId)
+
+  // A sales pipeline's board reads the deal board: read again whenever a task
+  // of the project changes (realtime events) or after a move on the board.
+  const isPipeline = () => project()?.kind === "pipeline"
+  const tasksSignature = createMemo(() =>
+    tasks()
+      .map((t) => `${t.id}:${t.statusId}:${t.updatedAt}`)
+      .join("|"),
+  )
+  const [dealBoard, { refetch: refetchDealBoard }] = createResource(
+    () => (isPipeline() ? { id: props.entityId, sig: tasksSignature() } : false),
+    (key) => loadDealBoard(api, key.id),
+  )
+  // Reading an errored resource throws; the board then shows its error state.
+  const board = () => (dealBoard.error ? undefined : dealBoard.latest)
+  const [members] = createResource(
+    () => isPipeline(),
+    async () => {
+      const { items } = await fetchAssignableMembers(api, "")
+      return new Map(items.map((m) => [m.id, m.name]))
+    },
+  )
+  const dealSubline = () => {
+    const current = board()
+    if (!current) return null
+    const { count, sums } = openTotals(current)
+    if (!sums || sums.length === 0) {
+      return count === 1
+        ? i18n.t("projects.deals.sublineNoAmountOne")
+        : i18n.t("projects.deals.sublineNoAmount", { count })
+    }
+    const amount = formatSums(sums, i18n.fmtCurrency)
+    return count === 1
+      ? i18n.t("projects.deals.sublineOne", { amount })
+      : i18n.t("projects.deals.subline", { count, amount })
+  }
   const isSelected = (taskId: string) => selectedIds().includes(taskId)
   const isArchived = () => !!project()?.archivedAt
+  // Time and budgets: the line and the panel exist only while this project uses it. The panel is a
+  // right rail on a wide workspace and a block under the line otherwise, open until closed.
+  // `planning_off` from any call refetches the project and the fields go.
+  const timeActive = () => timeOn(project())
+  const timeTurnedOff = () => void projectStore.refresh(api, props.entityId)
+  const reloadBudget = () => void loadBudget(api, props.entityId, { onOff: timeTurnedOff })
+  const [panelOpen, setPanelOpen] = createSignal<boolean | null>(null)
+  const wideRail = () => !phone() && workspaceWidth() >= 960
+  const panelShown = () => panelOpen() ?? true
+  createEffect(() => {
+    if (timeActive() && !isArchived() && !budgetFor(props.entityId)) reloadBudget()
+  })
   const [newTaskOpen, setNewTaskOpen] = createSignal(false)
   const [statusManagerOpen, setStatusManagerOpen] = createSignal(false)
   const [fieldsManagerOpen, setFieldsManagerOpen] = createSignal(false)
@@ -528,6 +583,14 @@ export const ProjectWorkspace: Component<ProjectWorkspaceProps> = (props) => {
               class="mt-1 line-clamp-1 [&_.prose-thread]:text-[12.5px]! [&_.prose-thread]:text-text-tertiary!"
               data-testid="project-workspace.description"
             />
+            <Show when={isPipeline() && dealSubline()}>
+              <p
+                data-testid="project-workspace.deal-subline"
+                class="mt-1 text-[12.5px] text-text-secondary"
+              >
+                {dealSubline()}
+              </p>
+            </Show>
             <Show when={projectsFilterStore.isActive}>
               <p
                 data-testid="project-workspace.showing-count"
@@ -648,7 +711,9 @@ export const ProjectWorkspace: Component<ProjectWorkspaceProps> = (props) => {
               disabled={isArchived()}
               onClick={() => setNewTaskOpen(true)}
             >
-              <span data-testid="project-workspace.new-task">{i18n.t("projects.newTask")}</span>
+              <span data-testid="project-workspace.new-task">
+                {isPipeline() ? i18n.t("projects.deals.newDeal") : i18n.t("projects.newTask")}
+              </span>
             </Button>
             {/* Project level actions live in their own menu, apart from the
                 view controls: a bare "Archive" beside "Trash" read as "view
@@ -779,99 +844,181 @@ export const ProjectWorkspace: Component<ProjectWorkspaceProps> = (props) => {
             </Button>
           </div>
         </Show>
-        <div class="flex-1 min-h-0 overflow-auto">
-          <Show
-            when={view() === "list"}
-            fallback={
-              <ProjectKanbanView
-                statuses={statusesForKanban()}
-                tasks={tasksForKanban()}
-                workspaceWidth={workspaceWidth()}
-                projectId={props.entityId}
-                api={api}
-                disabled={isArchived()}
-                onTaskClick={openTask}
-              />
-            }
-          >
-            <BulkActionToolbar app="projects" viewId="project" />
-            <ul data-testid="project-list-view" class="divide-y divide-border-subtle">
-              <For each={orderedTasks()}>
-                {({ task: t, depth }) => {
-                  const dndEnabled = () => !isArchived() && !projectsFilterStore.isActive
-                  const isDragging = () => dndState.activeTaskId === t.id
-                  const dropTarget = () => dndState.dropTarget
-                  const isDropTarget = () => dropTarget()?.taskId === t.id
-                  const dropPosition = () => (isDropTarget() ? dropTarget()!.position : null)
-                  const dropInvalid = () =>
-                    isDropTarget() && dropTarget()!.invalidReason !== undefined
-                  return (
-                    <li
-                      data-testid="project-list-view.row"
-                      data-task-id={t.id}
-                      data-parent-task-id={t.parentTaskId ?? ""}
-                      data-depth={depth}
-                      data-drop-position={dropPosition()}
-                      data-dragging={isDragging() ? "true" : undefined}
-                      draggable={dndEnabled()}
-                      onDragStart={(e) => {
-                        if (!dndEnabled()) {
-                          e.preventDefault()
-                          return
-                        }
-                        e.dataTransfer?.setData("text/x-liaison-task", t.id)
-                        e.dataTransfer!.effectAllowed = "move"
-                        dndState.beginDrag(t.id)
-                      }}
-                      onDragEnd={() => dndState.clear()}
-                      onDragOver={(e) => {
-                        if (!dndEnabled() || !dndState.activeTaskId) return
-                        const dragged = dndState.activeTaskId
-                        e.preventDefault()
-                        e.dataTransfer!.dropEffect = "move"
-                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                        const position = computeDropPosition(e, rect, e.shiftKey)
-                        const validity = dropIsValid(dragged, t.id, position)
-                        dndState.setDropTarget({
-                          taskId: t.id,
-                          position,
-                          invalidReason: validity.ok ? undefined : validity.reason,
-                        })
-                      }}
-                      onDragLeave={(e) => {
-                        // Only clear if leaving to outside the row entirely.
-                        const next = e.relatedTarget as Node | null
-                        if (next && (e.currentTarget as HTMLElement).contains(next)) return
-                        if (dndState.dropTarget?.taskId === t.id) {
-                          dndState.setDropTarget(null)
-                        }
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        const dragged = dndState.activeTaskId
-                        const target = dndState.dropTarget
-                        dndState.clear()
-                        if (!dragged || !target) return
-                        if (target.invalidReason) return
-                        void onTaskDrop(dragged, target.taskId, target.position)
-                      }}
-                      style={{ "padding-left": `${(depth - 1) * 20 + 20}px` }}
-                      class={`group relative flex cursor-pointer items-center py-2 text-[13px] ${
-                        phone() ? "gap-2 pr-4" : "gap-3 pr-6"
-                      } ${isDragging() ? "opacity-40" : "hover:bg-surface-hover"}`}
-                      classList={{
-                        "bg-accent-tint ring-1 ring-inset ring-accent-border":
-                          dropPosition() === "into" && !dropInvalid(),
-                        "bg-warning-glow ring-1 ring-inset ring-warning-border":
-                          dropPosition() === "into" && dropInvalid(),
-                      }}
-                      onClick={() => {
-                        if (dndState.activeTaskId) return
-                        openTask(t.id)
-                      }}
+        {/* Panels other apps add to the project. */}
+        <SlotPanels
+          slot="project:detail:panel"
+          entityId={props.entityId}
+          class="flex shrink-0 flex-col gap-3 px-6 pb-3"
+        />
+        {/* Time and budgets: only a project using it shows the line and the panel. */}
+        <Show when={timeActive() && !isArchived()}>
+          <BudgetLine
+            state={budgetFor(props.entityId)}
+            panelOpen={panelShown()}
+            onTogglePanel={() => setPanelOpen(!panelShown())}
+            onRetry={reloadBudget}
+          />
+          <Show when={panelShown() && !wideRail()}>
+            <BudgetPanel
+              api={api}
+              projectId={props.entityId}
+              state={budgetFor(props.entityId)}
+              rail={false}
+              archived={isArchived()}
+              onClose={() => setPanelOpen(false)}
+              onPlanChanged={reloadBudget}
+              onOff={timeTurnedOff}
+            />
+          </Show>
+        </Show>
+        <div class="relative flex min-h-0 flex-1 flex-col">
+          <Show when={timeActive() && !isArchived() && panelShown() && wideRail()}>
+            <BudgetPanel
+              api={api}
+              projectId={props.entityId}
+              state={budgetFor(props.entityId)}
+              rail={true}
+              archived={isArchived()}
+              onClose={() => setPanelOpen(false)}
+              onPlanChanged={reloadBudget}
+              onOff={timeTurnedOff}
+            />
+          </Show>
+          <div class="flex-1 min-h-0 overflow-auto">
+            <Show
+              when={view() === "list"}
+              fallback={
+                <Show
+                  when={!isPipeline() || !dealBoard.error}
+                  fallback={
+                    <div
+                      data-testid="deal-board.error"
+                      class="flex flex-col items-center gap-3 p-8 text-center text-[12.5px] text-text-secondary"
                     >
-                      {/* Tree-line guides — see `rowGuides` for the data model.
+                      {i18n.t("projects.deals.boardFailed")}
+                      <Button variant="outline" size="sm" onClick={() => void refetchDealBoard()}>
+                        {i18n.t("kernel.common.retry2")}
+                      </Button>
+                    </div>
+                  }
+                >
+                  <Show
+                    when={!isPipeline() || board()}
+                    fallback={
+                      <div
+                        data-testid="deal-board.loading"
+                        class="flex gap-2 px-4 py-4"
+                        aria-busy="true"
+                      >
+                        <For each={[0, 1, 2, 3]}>
+                          {() => <div class="h-40 w-[240px] rounded-md bg-surface" />}
+                        </For>
+                      </div>
+                    }
+                  >
+                    <ProjectKanbanView
+                      statuses={statusesForKanban()}
+                      tasks={tasksForKanban()}
+                      workspaceWidth={workspaceWidth()}
+                      projectId={props.entityId}
+                      api={api}
+                      disabled={isArchived()}
+                      onTaskClick={openTask}
+                      pipeline={
+                        isPipeline() && board()
+                          ? {
+                              board: board()!,
+                              memberName: (id) =>
+                                (members.error ? null : members.latest?.get(id)) ?? null,
+                              onChanged: async () => {
+                                await refetchDealBoard()
+                              },
+                            }
+                          : undefined
+                      }
+                    />
+                  </Show>
+                </Show>
+              }
+            >
+              <BulkActionToolbar app="projects" viewId="project" />
+              <ul data-testid="project-list-view" class="divide-y divide-border-subtle">
+                <For each={orderedTasks()}>
+                  {({ task: t, depth }) => {
+                    const dndEnabled = () => !isArchived() && !projectsFilterStore.isActive
+                    const isDragging = () => dndState.activeTaskId === t.id
+                    const dropTarget = () => dndState.dropTarget
+                    const isDropTarget = () => dropTarget()?.taskId === t.id
+                    const dropPosition = () => (isDropTarget() ? dropTarget()!.position : null)
+                    const dropInvalid = () =>
+                      isDropTarget() && dropTarget()!.invalidReason !== undefined
+                    return (
+                      <li
+                        data-testid="project-list-view.row"
+                        data-task-id={t.id}
+                        data-parent-task-id={t.parentTaskId ?? ""}
+                        data-depth={depth}
+                        data-drop-position={dropPosition()}
+                        data-dragging={isDragging() ? "true" : undefined}
+                        draggable={dndEnabled()}
+                        onDragStart={(e) => {
+                          if (!dndEnabled()) {
+                            e.preventDefault()
+                            return
+                          }
+                          e.dataTransfer?.setData("text/x-liaison-task", t.id)
+                          e.dataTransfer!.effectAllowed = "move"
+                          dndState.beginDrag(t.id)
+                        }}
+                        onDragEnd={() => dndState.clear()}
+                        onDragOver={(e) => {
+                          if (!dndEnabled() || !dndState.activeTaskId) return
+                          const dragged = dndState.activeTaskId
+                          e.preventDefault()
+                          e.dataTransfer!.dropEffect = "move"
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                          const position = computeDropPosition(e, rect, e.shiftKey)
+                          const validity = dropIsValid(dragged, t.id, position)
+                          dndState.setDropTarget({
+                            taskId: t.id,
+                            position,
+                            invalidReason: validity.ok ? undefined : validity.reason,
+                          })
+                        }}
+                        onDragLeave={(e) => {
+                          // Only clear if leaving to outside the row entirely.
+                          const next = e.relatedTarget as Node | null
+                          if (next && (e.currentTarget as HTMLElement).contains(next)) return
+                          if (dndState.dropTarget?.taskId === t.id) {
+                            dndState.setDropTarget(null)
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          const dragged = dndState.activeTaskId
+                          const target = dndState.dropTarget
+                          dndState.clear()
+                          if (!dragged || !target) return
+                          if (target.invalidReason) return
+                          void onTaskDrop(dragged, target.taskId, target.position)
+                        }}
+                        style={{ "padding-left": `${(depth - 1) * 20 + 20}px` }}
+                        class={`group relative flex cursor-pointer items-center py-2 text-[13px] ${
+                          phone() ? "gap-2 pr-4" : "gap-3 pr-6"
+                        } ${isDragging() ? "opacity-40" : "hover:bg-surface-hover"}`}
+                        classList={{
+                          "bg-accent-tint ring-1 ring-inset ring-accent-border":
+                            dropPosition() === "into" && !dropInvalid(),
+                          "bg-warning-glow ring-1 ring-inset ring-warning-border":
+                            dropPosition() === "into" && dropInvalid(),
+                        }}
+                        onClick={() => {
+                          if (dndState.activeTaskId) return
+                          openTask(t.id)
+                        }}
+                      >
+                        {/* Tree-line guides — see `rowGuides` for the data model.
                         Three primitives, fully data-driven:
                         - L-corner (curved): own-boundary top-half + arm
                         - Straight top-half: ancestor pass-through
@@ -880,198 +1027,199 @@ export const ProjectWorkspace: Component<ProjectWorkspaceProps> = (props) => {
                         each parent paints the lead-in bottom-half at its
                         children's boundary; each descendant picks up the same
                         line at top-half. Works for arbitrary nesting depth. */}
-                      {(() => {
-                        const guides = rowGuides().get(t.id)
-                        if (!guides) return null
-                        const allBoundaries = Array.from(
-                          new Set([...guides.topHalf, ...guides.bottomHalf]),
-                        ).sort((a, b) => a - b)
-                        return (
-                          <For each={allBoundaries}>
-                            {(k) => {
-                              const x = (k - 2) * 20 + 20
-                              const isOwn = k === guides.ownDepth
-                              const hasTop = guides.topHalf.has(k)
-                              const hasBottom = guides.bottomHalf.has(k)
-                              return (
-                                <>
-                                  <Show when={isOwn && hasTop}>
-                                    <span
-                                      aria-hidden="true"
-                                      data-testid="project-list-view.tree-line.l-corner"
-                                      class="pointer-events-none absolute border-l border-b border-border transition-colors duration-150 group-hover:border-border-strong"
-                                      style={{
-                                        left: `${x}px`,
-                                        top: 0,
-                                        width: "10px",
-                                        height: "calc(50% + 0.5px)",
-                                        "border-bottom-left-radius": "6px",
-                                      }}
-                                    />
-                                  </Show>
-                                  <Show when={!isOwn && hasTop}>
-                                    <span
-                                      aria-hidden="true"
-                                      data-testid="project-list-view.tree-line"
-                                      class="pointer-events-none absolute top-0 w-px bg-border transition-colors duration-150 group-hover:bg-border-strong"
-                                      style={{ left: `${x}px`, height: "50%" }}
-                                    />
-                                  </Show>
-                                  <Show when={hasBottom}>
-                                    <span
-                                      aria-hidden="true"
-                                      data-testid="project-list-view.tree-line"
-                                      class="pointer-events-none absolute w-px bg-border transition-colors duration-150 group-hover:bg-border-strong"
-                                      style={{ left: `${x}px`, top: "50%", bottom: 0 }}
-                                    />
-                                  </Show>
-                                </>
-                              )
-                            }}
-                          </For>
-                        )
-                      })()}
-                      {/* Top drop indicator (sibling-above) */}
-                      <Show when={dropPosition() === "above"}>
-                        <span
-                          aria-hidden="true"
-                          data-testid="project-list-view.drop-line-above"
-                          class={
-                            dropInvalid()
-                              ? "absolute left-0 right-0 top-0 h-0.5 bg-warning"
-                              : "absolute left-0 right-0 top-0 h-0.5 bg-accent"
-                          }
-                          style={{ "margin-left": `${(depth - 1) * 20 + 12}px` }}
-                        />
-                      </Show>
-                      {/* Bottom drop indicator (sibling-below) */}
-                      <Show when={dropPosition() === "below"}>
-                        <span
-                          aria-hidden="true"
-                          data-testid="project-list-view.drop-line-below"
-                          class={
-                            dropInvalid()
-                              ? "absolute left-0 right-0 bottom-0 h-0.5 bg-warning"
-                              : "absolute left-0 right-0 bottom-0 h-0.5 bg-accent"
-                          }
-                          style={{ "margin-left": `${(depth - 1) * 20 + 12}px` }}
-                        />
-                      </Show>
-                      {/* Drag handle — visual affordance only (the whole row is
+                        {(() => {
+                          const guides = rowGuides().get(t.id)
+                          if (!guides) return null
+                          const allBoundaries = Array.from(
+                            new Set([...guides.topHalf, ...guides.bottomHalf]),
+                          ).sort((a, b) => a - b)
+                          return (
+                            <For each={allBoundaries}>
+                              {(k) => {
+                                const x = (k - 2) * 20 + 20
+                                const isOwn = k === guides.ownDepth
+                                const hasTop = guides.topHalf.has(k)
+                                const hasBottom = guides.bottomHalf.has(k)
+                                return (
+                                  <>
+                                    <Show when={isOwn && hasTop}>
+                                      <span
+                                        aria-hidden="true"
+                                        data-testid="project-list-view.tree-line.l-corner"
+                                        class="pointer-events-none absolute border-l border-b border-border transition-colors duration-150 group-hover:border-border-strong"
+                                        style={{
+                                          left: `${x}px`,
+                                          top: 0,
+                                          width: "10px",
+                                          height: "calc(50% + 0.5px)",
+                                          "border-bottom-left-radius": "6px",
+                                        }}
+                                      />
+                                    </Show>
+                                    <Show when={!isOwn && hasTop}>
+                                      <span
+                                        aria-hidden="true"
+                                        data-testid="project-list-view.tree-line"
+                                        class="pointer-events-none absolute top-0 w-px bg-border transition-colors duration-150 group-hover:bg-border-strong"
+                                        style={{ left: `${x}px`, height: "50%" }}
+                                      />
+                                    </Show>
+                                    <Show when={hasBottom}>
+                                      <span
+                                        aria-hidden="true"
+                                        data-testid="project-list-view.tree-line"
+                                        class="pointer-events-none absolute w-px bg-border transition-colors duration-150 group-hover:bg-border-strong"
+                                        style={{ left: `${x}px`, top: "50%", bottom: 0 }}
+                                      />
+                                    </Show>
+                                  </>
+                                )
+                              }}
+                            </For>
+                          )
+                        })()}
+                        {/* Top drop indicator (sibling-above) */}
+                        <Show when={dropPosition() === "above"}>
+                          <span
+                            aria-hidden="true"
+                            data-testid="project-list-view.drop-line-above"
+                            class={
+                              dropInvalid()
+                                ? "absolute left-0 right-0 top-0 h-0.5 bg-warning"
+                                : "absolute left-0 right-0 top-0 h-0.5 bg-accent"
+                            }
+                            style={{ "margin-left": `${(depth - 1) * 20 + 12}px` }}
+                          />
+                        </Show>
+                        {/* Bottom drop indicator (sibling-below) */}
+                        <Show when={dropPosition() === "below"}>
+                          <span
+                            aria-hidden="true"
+                            data-testid="project-list-view.drop-line-below"
+                            class={
+                              dropInvalid()
+                                ? "absolute left-0 right-0 bottom-0 h-0.5 bg-warning"
+                                : "absolute left-0 right-0 bottom-0 h-0.5 bg-accent"
+                            }
+                            style={{ "margin-left": `${(depth - 1) * 20 + 12}px` }}
+                          />
+                        </Show>
+                        {/* Drag handle — visual affordance only (the whole row is
                         draggable). Reveals on row hover; cursor flips to grab
                         on hover so the affordance reads. */}
-                      <input
-                        type="checkbox"
-                        data-testid={`project-list-view.select-${t.id}`}
-                        aria-label={i18n.t("projects.selectTask", { title: t.title })}
-                        checked={isSelected(t.id)}
-                        disabled={isArchived()}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={() => toggleSelection(t.id)}
-                        class="h-3.5 w-3.5 shrink-0 rounded border-border-subtle bg-surface text-accent opacity-0 transition-opacity group-hover:opacity-100 checked:opacity-100 focus:opacity-100 disabled:opacity-40"
-                      />
-                      <Show when={!phone()}>
-                        <span
-                          data-testid="project-list-view.drag-handle"
-                          aria-hidden="true"
-                          class="pointer-events-none flex h-5 w-4 shrink-0 items-center justify-center text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                        >
-                          <GripVertical class="h-3.5 w-3.5" />
-                        </span>
-                      </Show>
-                      <Show when={t.blocked}>
-                        <span
-                          aria-hidden="true"
-                          title={i18n.t("projects.blocked")}
-                          class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                        <input
+                          type="checkbox"
+                          data-testid={`project-list-view.select-${t.id}`}
+                          aria-label={i18n.t("projects.selectTask", { title: t.title })}
+                          checked={isSelected(t.id)}
+                          disabled={isArchived()}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => toggleSelection(t.id)}
+                          class="h-3.5 w-3.5 shrink-0 rounded border-border-subtle bg-surface text-accent opacity-0 transition-opacity group-hover:opacity-100 checked:opacity-100 focus:opacity-100 disabled:opacity-40"
                         />
-                      </Show>
-                      <Show when={t.key}>
-                        <span class="shrink-0 font-mono text-[11px] text-text-tertiary">
-                          {t.key}
-                        </span>
-                      </Show>
-                      <span
-                        data-testid="project-list-view.task-title"
-                        class="min-w-0 flex-1 truncate text-text"
-                      >
-                        {t.title}
-                      </span>
-                      <Show when={!phone() && involvementFor(t.id)}>
-                        {(inv) => (
+                        <Show when={!phone()}>
                           <span
-                            data-testid={`project-list-view.involvement-${t.id}`}
-                            class="max-w-[45%] shrink truncate text-[11px] text-text-tertiary"
+                            data-testid="project-list-view.drag-handle"
+                            aria-hidden="true"
+                            class="pointer-events-none flex h-5 w-4 shrink-0 items-center justify-center text-text-tertiary opacity-0 transition-opacity duration-150 group-hover:opacity-100"
                           >
-                            {involvementLine(inv(), i18n.t, i18n.locale())}
+                            <GripVertical class="h-3.5 w-3.5" />
                           </span>
-                        )}
-                      </Show>
-                      <Show when={t.dueDate}>
-                        <DueDateChip due={t.dueDate!} terminal={isTerminal(t.statusId)} />
-                      </Show>
-                      <Show when={!phone()}>
-                        <span
-                          data-testid="project-list-view.updated-at"
-                          title={i18n.t("projects.lastEdited")}
-                          class="font-mono text-[11px] tabular-nums text-text-tertiary"
-                        >
-                          {formatDay(t.updatedAt, i18n.locale(), {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </span>
-                      </Show>
-                      <Show when={project()}>
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <StatusPillPopover
-                            api={api}
-                            projectId={props.entityId}
-                            taskId={t.id}
-                            current={project()?.statuses.find((s) => s.id === t.statusId) ?? null}
-                            statuses={project()?.statuses ?? []}
-                            disabled={isArchived()}
+                        </Show>
+                        <Show when={t.blocked}>
+                          <span
+                            aria-hidden="true"
+                            title={i18n.t("projects.blocked")}
+                            class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
                           />
+                        </Show>
+                        <Show when={t.key}>
+                          <span class="shrink-0 font-mono text-[11px] text-text-tertiary">
+                            {t.key}
+                          </span>
+                        </Show>
+                        <span
+                          data-testid="project-list-view.task-title"
+                          class="min-w-0 flex-1 truncate text-text"
+                        >
+                          {t.title}
                         </span>
-                      </Show>
-                    </li>
-                  )
-                }}
-              </For>
-              <Show when={!projectsFilterStore.isActive}>
-                <li class="flex items-center gap-3 px-6 py-2 text-[13px] text-text-tertiary">
-                  <input
-                    data-testid="project-list-view.inline-create"
-                    value={inlineDraft()}
-                    disabled={isArchived() || submittingDraft()}
-                    onInput={(e) => setInlineDraft((e.target as HTMLInputElement).value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void submitInline()
-                    }}
-                    placeholder={i18n.t("projects.newTaskEnterToCreate")}
-                    class="w-full bg-transparent text-text outline-none disabled:opacity-50"
-                  />
-                </li>
-              </Show>
-              <Show when={projectsFilterStore.isActive && (matchingTaskIds()?.size ?? 0) === 0}>
-                <li
-                  data-testid="project-list-view.no-matches"
-                  class="flex flex-col items-center gap-2 px-6 py-10 text-center text-[12.5px] text-text-tertiary"
-                >
-                  <span>{i18n.t("projects.noTasksMatchFilters")}</span>
-                  <button
-                    type="button"
-                    data-testid="project-list-view.no-matches-clear"
-                    onClick={() => projectsFilterStore.clearAll()}
-                    class="text-[11px] uppercase tracking-[0.04em] text-text-tertiary hover:text-text-secondary"
+                        <Show when={!phone() && involvementFor(t.id)}>
+                          {(inv) => (
+                            <span
+                              data-testid={`project-list-view.involvement-${t.id}`}
+                              class="max-w-[45%] shrink truncate text-[11px] text-text-tertiary"
+                            >
+                              {involvementLine(inv(), i18n.t, i18n.locale())}
+                            </span>
+                          )}
+                        </Show>
+                        <Show when={t.dueDate}>
+                          <DueDateChip due={t.dueDate!} terminal={isTerminal(t.statusId)} />
+                        </Show>
+                        <Show when={!phone()}>
+                          <span
+                            data-testid="project-list-view.updated-at"
+                            title={i18n.t("projects.lastEdited")}
+                            class="font-mono text-[11px] tabular-nums text-text-tertiary"
+                          >
+                            {formatDay(t.updatedAt, i18n.locale(), {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </span>
+                        </Show>
+                        <Show when={project()}>
+                          <span onClick={(e) => e.stopPropagation()}>
+                            <StatusPillPopover
+                              api={api}
+                              projectId={props.entityId}
+                              taskId={t.id}
+                              current={project()?.statuses.find((s) => s.id === t.statusId) ?? null}
+                              statuses={project()?.statuses ?? []}
+                              disabled={isArchived()}
+                            />
+                          </span>
+                        </Show>
+                      </li>
+                    )
+                  }}
+                </For>
+                <Show when={!projectsFilterStore.isActive}>
+                  <li class="flex items-center gap-3 px-6 py-2 text-[13px] text-text-tertiary">
+                    <input
+                      data-testid="project-list-view.inline-create"
+                      value={inlineDraft()}
+                      disabled={isArchived() || submittingDraft()}
+                      onInput={(e) => setInlineDraft((e.target as HTMLInputElement).value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void submitInline()
+                      }}
+                      placeholder={i18n.t("projects.newTaskEnterToCreate")}
+                      class="w-full bg-transparent text-text outline-none disabled:opacity-50"
+                    />
+                  </li>
+                </Show>
+                <Show when={projectsFilterStore.isActive && (matchingTaskIds()?.size ?? 0) === 0}>
+                  <li
+                    data-testid="project-list-view.no-matches"
+                    class="flex flex-col items-center gap-2 px-6 py-10 text-center text-[12.5px] text-text-tertiary"
                   >
-                    {i18n.t("projects.clearFilters")}
-                  </button>
-                </li>
-              </Show>
-            </ul>
-          </Show>
+                    <span>{i18n.t("projects.noTasksMatchFilters")}</span>
+                    <button
+                      type="button"
+                      data-testid="project-list-view.no-matches-clear"
+                      onClick={() => projectsFilterStore.clearAll()}
+                      class="text-[11px] uppercase tracking-[0.04em] text-text-tertiary hover:text-text-secondary"
+                    >
+                      {i18n.t("projects.clearFilters")}
+                    </button>
+                  </li>
+                </Show>
+              </ul>
+            </Show>
+          </div>
         </div>
         <NewTaskDialog
           open={newTaskOpen()}

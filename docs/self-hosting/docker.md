@@ -126,6 +126,10 @@ Sign-in is passwordless, so people cannot sign in without working mail.
 
 Send from an address on a domain you own, and authorize your mail provider for that domain with SPF, DKIM and DMARC records (your provider gives the exact records). Mail from a domain that is not yours, or not authenticated, is rejected or lands in spam, and then nobody can sign in.
 
+### Commercial mail and the opt-out link
+
+A commercial mail that an agent drafts or you write to a prospect carries a link to stop commercial messages and the `List-Unsubscribe` headers (see [Opt-outs](../sales/opt-outs.md)). The link is built on `BASE_URL`, so the address must be reachable from the recipient's side: a recipient who cannot open it cannot opt out. Both mailbox paths carry the headers, with `List-Unsubscribe-Post: List-Unsubscribe=One-Click`: a Gmail mailbox and an IMAP/SMTP mailbox. No mailbox path sends a commercial mail without them. Set the organization's legal name and postal address in **Settings > Organization > Commercial identity** first: until both are set, no commercial mail goes.
+
 ### Mail encryption
 
 How personal mailboxes are encrypted at rest. See [Mail encryption](../security.md#mail-encryption). Set these in `deploy/.env`; compose passes both to the app.
@@ -146,6 +150,7 @@ Only read when `LIAISON_DEMO_MODE` is on.
 | `LIAISON_DEMO_STEP_OUTPUT_TOKENS` | `16000` | What one step of a visitor's agent may write on the instance's key. What a step reads is not capped |
 | `LIAISON_DEMO_WAREHOUSE` | `false` | `true` seeds the company's read-only warehouse into demo workspaces. Needs `LIAISON_DEMO_WAREHOUSE_DATABASE_URL`, the warehouse's own login; without it every seed fails |
 | `LIAISON_PRIVATE_DEMO_BOX` | `false` | `true` declares a demo-mode box private: a test box reached only through a tunnel, with no visitors. There `liaison seed` may replace its own demo org (`--replace`) and give the seeded people passwords (`--passwords`), which a public demo refuses. It counts only when `BASE_URL` is a loopback address (`localhost`, `127.x.x.x`, `::1`): a box with a public hostname stays public whatever this says. Never set it on a demo visitors use |
+| `LIAISON_TEST_SHOPIFY_ADMIN_URL` | unset | Test boxes only. Sends the Shopify app's Admin API requests (connecting, disconnecting, jobs, reads), with the store's token, to a fake Shopify at this address instead of the store. It must be one bare address on the box itself: a loopback address, a one-word service name or `host.docker.internal`. It works only on a box with `LIAISON_PRIVATE_DEMO_BOX=true` and a loopback `BASE_URL`, never on the managed edition; set anywhere else, the server refuses to start. Never set it on a real instance |
 
 ### Agent web reads
 
@@ -160,6 +165,35 @@ Agents search and fetch the web without an approval. These limits bound what one
 | `LIAISON_WEB_READS_CONSECUTIVE` | `12` | Searches and fetches in a row, with no other tool between |
 | `LIAISON_WEB_FETCH_HOSTS_PER_TURN` | `10` | Different sites fetched in one turn |
 | `LIAISON_WEB_READS_PER_THREAD_HOUR` | `60` | Searches and fetches per conversation in any hour |
+
+### Tool search model
+
+When an agent looks for a tool, it ranks the tools it may use by words. With meaning turned on, it also ranks them by meaning, so "Marc left, cut his access" finds the tool that deactivates a user. A small embedding model, Snowflake arctic-embed-m-v2.0 (Apache-2.0), runs on the CPU in one embedding process per host, the `embedder` service. Every `app`, `api` and `worker` process of the host asks it over a local Unix socket. It has no network port, and no text leaves the server.
+
+Meaning is off by default on a self-hosted server. The managed edition has it on by default.
+
+Turn it on:
+
+1. In `deploy/.env`, set `LIAISON_TOOL_MEANING=on` and `COMPOSE_PROFILES=meaning`.
+2. Run `docker compose up -d`. It starts the `embedder` service and restarts the processes that read the new setting.
+
+What to expect:
+
+- The embedding process uses about 1.1 GB of memory (up to 1.4 GB while it loads), once for the host, however many `api` processes run. Its cap is 2 GB. The other processes use no more memory for it.
+- At its first start it fetches the model's files (about 330 MB) into `LIAISON_MODEL_CACHE_DIR`, at one pinned revision, and checks each file against its pinned SHA-256 before using it. It opens its socket once the model is loaded.
+- Each process computes one vector per tool in the background after its first search, about 15 to 45 seconds.
+- Until then, and whenever the embedding process is not running, is loading or answers slower than `LIAISON_EMBEDDER_DEADLINE_MS`, the search ranks by words alone. The process that searched logs one line when the embedding process stops answering, and one when it answers again.
+- A rolling deploy (`deploy/rolling-deploy.sh`) adds the profiles in `COMPOSE_PROFILES` to its own and starts the `embedder` service when it is not running. It never restarts it: restart it on its own with `docker compose restart embedder`.
+- With no outside network, copy the files of `Snowflake/snowflake-arctic-embed-m-v2.0` at the pinned revision into `LIAISON_MODEL_CACHE_DIR`; they are checked the same way.
+
+Outside Docker, start the embedding process with `bun run embedder` from `apps/api`, with the same environment as the server.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `LIAISON_TOOL_MEANING` | unset: `off` self-hosted, `on` managed | `on` also ranks tools by meaning, through the `embedder` service; `off` ranks by words alone and asks no embedding process |
+| `LIAISON_MODEL_CACHE_DIR` | `/var/lib/liaison/models` (host `./data/models`) | Where the model's files are fetched, checked and read |
+| `LIAISON_EMBEDDER_SOCKET` | `/var/lib/liaison/run/embedder.sock` (host `./data/run`) | The embedding process's Unix socket. Outside Docker, unset: `liaison/embedder.sock` under `XDG_RUNTIME_DIR`, else under the temporary folder |
+| `LIAISON_EMBEDDER_DEADLINE_MS` | `150` | How long a search waits for the embedding process before it ranks by words alone |
 
 ### Model keys
 

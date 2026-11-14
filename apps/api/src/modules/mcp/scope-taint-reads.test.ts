@@ -358,6 +358,34 @@ describe("mcp scope taint: reads, gated writes and the per-scope window", () => 
     expect(persisted).toEqual(["test:items:read"])
   }, 30_000)
 
+  it("a scope a read's result carried is stamped too, so it ages out like the read's own", async () => {
+    const { seed, agentId, post } = await seedAgentBound()
+    orgs.push(seed.orgId)
+    // A read whose result holds a part classified by a narrower scope (`resultTaintWhen`).
+    toolRegistry.set([seed.orgId, "test", "priced_read"], {
+      appName: "test",
+      name: "priced_read",
+      description: "priced_read",
+      requiredScopes: ["test:items:read"],
+      readOnly: true,
+      resultTaintWhen: { fields: ["amount"], scopes: ["test:money:read"] },
+      params: z.object({}).passthrough(),
+      handler: async () => ({ amount: 5 }),
+    } as never)
+
+    await handleToolCall(post(), "test__priced_read", {})
+    expect(await taintWindow(seed.orgId, agentId)).toContain("test:money:read")
+    const touchedKey = mcpTurnTaintTouchedKey(seed.orgId, agentId)
+    const stamps = await redis.hgetall(touchedKey)
+    expect(Object.keys(stamps).sort()).toEqual(["test:items:read", "test:money:read"])
+
+    // A window after its last read, while the runtime keeps calling other tools, it is gone.
+    const stale = String(Date.now() - (MCP_ACCESS_TOKEN_TTL_SECONDS + 60) * 1000)
+    for (const scope of Object.keys(stamps)) await redis.hset(touchedKey, scope, stale)
+    await handleToolCall(post(), "kpi__kpi_list_hubs", {})
+    expect(await taintWindow(seed.orgId, agentId)).not.toContain("test:money:read")
+  }, 30_000)
+
   it("a read without the readOnly mark parks on a tainted turn; with the mark it runs", async () => {
     const { seed, post } = await seedAgentBound()
     orgs.push(seed.orgId)

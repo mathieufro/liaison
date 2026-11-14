@@ -49,12 +49,30 @@ export function syncShellTier(): void {
   setShellTier(resolveShellTier())
 }
 
+/**
+ * How long the viewport must hold still before a breakpoint crossing becomes
+ * the tier. A tier change lays the shell out again and mounts every open tab's
+ * page anew (their reads start over), so it follows where the viewport SETTLES,
+ * not each width it passes through: a window dragged across two breakpoints, or
+ * a viewport resized for a moment and restored (Chromium does exactly that while
+ * it captures an area taller than the window), changes nothing on screen.
+ */
+export const SHELL_TIER_SETTLE_MS = 100
+
+let settleTimer: ReturnType<typeof setTimeout> | undefined
+
+/** A media query changed: publish the tier once the viewport has settled. */
+function onTierQueryChange(): void {
+  clearTimeout(settleTimer)
+  settleTimer = setTimeout(syncShellTier, SHELL_TIER_SETTLE_MS)
+}
+
 // Module scope, once: the tier is a property of the viewport, not of any one
 // mounted component, and every reader shares this signal.
 if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
   for (const query of SHELL_TIER_QUERIES) {
     try {
-      window.matchMedia(query).addEventListener("change", syncShellTier)
+      window.matchMedia(query).addEventListener("change", onTierQueryChange)
     } catch {
       /* matchMedia mocks in some test environments do not implement addEventListener */
     }

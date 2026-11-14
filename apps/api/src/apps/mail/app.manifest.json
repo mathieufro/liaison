@@ -54,10 +54,9 @@
       {
         "tools": [
           "listAccounts",
-          "getAccount",
           "disconnectAccount"
         ],
-        "text": "CONNECTING A MAILBOX HAPPENS ON A CARD IN THIS CONVERSATION, never through a mail tool: mail has listAccounts/getAccount/disconnectAccount and NO connect tool. When asked to connect a mailbox: (1) call mail__listAccounts to show what is ALREADY connected; (2) a Gmail or Google Workspace mailbox connects on a Connect card: kernel__request_secret kind oauth_connect, app mail, connection gmail, with mode personal for the person's OWN mailbox ('my Gmail', 'just for me': post that card straight away, any member may connect their own) or mode org for a mailbox the organization shares (an admin connects it). When the workspace has no Google client yet, or the card is refused, follow the google-setup skill (kernel__google_setup says what is missing). (3) another provider connects over IMAP with an app password: the google-setup skill's IMAP path. Never point the person to a Settings button or menu by name instead of the card. NEVER claim you connected the mailbox before the card says it is connected, and NEVER fabricate a completed connection by creating a tickets inbox bound to a DIFFERENT account's address (tickets:inboxes.create rejects an emailAddress that does not match the bound connected account, and a tickets inbox is not a mail connection anyway). No phantom account should appear in listAccounts afterward."
+        "text": "CONNECTING A MAILBOX HAPPENS ON A CARD IN THIS CONVERSATION, never through a mail tool: mail has listAccounts/disconnectAccount and NO connect tool. When asked to connect a mailbox: (1) call mail__listAccounts to show what is ALREADY connected; (2) a Gmail or Google Workspace mailbox connects on a Connect card: kernel__request_secret kind oauth_connect, app mail, connection gmail, with mode personal for the person's OWN mailbox ('my Gmail', 'just for me': post that card straight away, any member may connect their own) or mode org for a mailbox the organization shares (an admin connects it). When the workspace has no Google client yet, or the card is refused, follow the google-setup skill (kernel__google_setup says what is missing). (3) another provider connects over IMAP with an app password: the google-setup skill's IMAP path. Never point the person to a Settings button or menu by name instead of the card. NEVER claim you connected the mailbox before the card says it is connected, and NEVER fabricate a completed connection by creating a tickets inbox bound to a DIFFERENT account's address (tickets:inboxes.create rejects an emailAddress that does not match the bound connected account, and a tickets inbox is not a mail connection anyway). No phantom account should appear in listAccounts afterward."
       },
       {
         "tools": [
@@ -67,7 +66,7 @@
       }
     ]
   },
-  "version": "1.8.6",
+  "version": "1.13.3",
   "description": "Email integration: Gmail and IMAP/SMTP",
   "license": "FSL-1.1-ALv2",
   "listing": {
@@ -626,7 +625,10 @@
       }
     }
   },
+  "outsideTextFields": ["from", "subject", "snippet", "body", "attachments"],
+  "activitySources": [{"tool": "activity_read", "scope": "mail:conversations:read", "label": "Mail", "filterKey": "mail"}],
   "tools": {
+    "activity_read": {"description": "A company's or a contact's mail, one row per message, newest first, for their timeline. Read by the kernel.", "readOnly": true, "agentVisible": false, "timeoutMs": 2000, "requiredScopes": ["mail:conversations:read"], "trustBoundary": "user", "handler": "activityRead", "params": {"type": "object", "properties": {"contactIds": {"type": "array", "items": {"type": "string"}}, "companyId": {"type": ["string", "null"]}, "dealIds": {"type": "array", "items": {"type": "string"}}, "before": {"type": ["object", "null"]}, "limit": {"type": "integer"}, "prefix": {"type": "string"}}}},
     "listAccounts": {
       "description": "List the mailboxes this person can use, each with its sync status, last sync error and next retry. Disconnected ones are hidden unless includeDisconnected=true. A mailbox is connected by calling kernel__config_mail, then kernel__request_secret; to the person, say you will connect the mailbox, never a tool name.",
       "searchKeywords": ["compte", "comptes", "boîte", "boîtes", "account", "accounts", "gmail", "imap", "synchronisation", "sync"],
@@ -643,6 +645,8 @@
       }
     },
     "getAccount": {
+      "agentVisible": false,
+      "useInstead": "listAccounts",
       "description": "Get a connected email account by ID",
       "searchKeywords": ["compte", "boîte", "account"],
       "readOnly": true,
@@ -679,8 +683,9 @@
       }
     },
     "getSyncStatus": {
-      "description": "Get sync status for a connected email account",
       "agentVisible": false,
+      "useInstead": "listAccounts",
+      "description": "Get sync status for a connected email account",
       "readOnly": true,
       "requiredScopes": ["mail:accounts:read"],
       "handler": "getSyncStatus",
@@ -865,6 +870,8 @@
       "handler": "agentMailReply",
       "timeoutMs": 60000,
       "preflight": "agentMailReplyPreflight",
+      "pinnedParams": ["sendGuard", "guardKey"],
+      "pinnedOptionalOnRefs": true,
       "resourceOwner": {
         "table": "conversations",
         "param": "conversationId",
@@ -907,6 +914,28 @@
       "params": {
         "type": "object",
         "properties": {
+          "followUp": {
+            "type": "object",
+            "description": "This mail follows up on earlier mail: it stops if they reply.",
+            "properties": {
+              "refs": {
+                "type": "array",
+                "description": "The records it is about, as {kind, id}.",
+                "items": {
+                  "type": "object",
+                  "properties": { "kind": { "type": "string" }, "id": { "type": "string" } },
+                  "required": ["kind", "id"]
+                }
+              },
+              "classification": { "type": "string", "enum": ["marketing", "service"] }
+            }
+          },
+          "sendGuard": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Set by the server; leave it out."
+          },
+          "guardKey": { "type": "string", "description": "Set by the server; leave it out." },
           "conversationId": {
             "type": "string"
           },
@@ -1253,6 +1282,58 @@
         ]
       }
     },
+    "suppression_check": {
+      "description": "Whether addresses opted out of commercial mail (up to 50), with when and how.",
+      "searchKeywords": ["désinscrit", "désabonné", "opt-out", "unsubscribed", "désinscription"],
+      "readOnly": true,
+      "requiredScopes": ["mail:suppressions:read"],
+      "handler": "suppressionCheck",
+      "params": {
+        "type": "object",
+        "properties": {
+          "emails": { "type": "array", "items": { "type": "string" }, "description": "Addresses to check." }
+        },
+        "required": ["emails"]
+      }
+    },
+    "suppression_add": {
+      "description": "Record that someone asked to receive no more commercial mail. Withdraws waiting commercial drafts to them.",
+      "searchKeywords": ["désinscrire", "désabonner", "unsubscribe", "opt-out", "optout", "opposition", "stop"],
+      "requiredScopes": ["mail:conversations:write"],
+      "trustBoundary": "user",
+      "externalEffect": true,
+      "handler": "suppressionAdd",
+      "writesToTable": "kernel.suppressions",
+      "params": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "The address that opted out." },
+          "reason": {
+            "type": "string",
+            "enum": ["person", "reply"],
+            "description": "reply: they asked in a reply. Default person."
+          },
+          "source": { "type": "string", "description": "Id of the message they asked in." }
+        },
+        "required": ["email"]
+      }
+    },
+    "suppression_remove": {
+      "description": "Let an opted-out address receive commercial mail again. GATED: a mail admin approves.",
+      "searchKeywords": ["réinscrire", "réabonner", "resubscribe", "opt-in"],
+      "requiredScopes": ["mail:suppressions:write"],
+      "handler": "suppressionRemove",
+      "preflight": "suppressionRemovePreflight",
+      "summarizer": "summarizeSuppressionRemove",
+      "gated": true,
+      "approvalImpact": "internal",
+      "writesToTable": "kernel.suppressions",
+      "params": {
+        "type": "object",
+        "properties": { "email": { "type": "string", "description": "The address." } },
+        "required": ["email"]
+      }
+    },
     "providers.get": {
       "description": "The mailbox connection types this workspace offers, for the Mail settings page: { gmail: boolean }. Same data as GET /api/mail/providers.",
       "readOnly": true,
@@ -1354,6 +1435,10 @@
       "handler": "agentMailCompose",
       "timeoutMs": 60000,
       "preflight": "agentMailComposePreflight",
+      "pinnedParams": ["sendGuard", "guardKey"],
+      "pinnedOptionalOnRefs": true,
+      "approvalDedupeKeyParam": "guardKey",
+      "approvalDedupeSameRequester": true,
       "resourceOwner": {
         "table": "accounts",
         "param": "accountId"
@@ -1395,6 +1480,28 @@
       "params": {
         "type": "object",
         "properties": {
+          "followUp": {
+            "type": "object",
+            "description": "This mail follows up on earlier mail: it stops if they reply.",
+            "properties": {
+              "refs": {
+                "type": "array",
+                "description": "The records it is about, as {kind, id}.",
+                "items": {
+                  "type": "object",
+                  "properties": { "kind": { "type": "string" }, "id": { "type": "string" } },
+                  "required": ["kind", "id"]
+                }
+              },
+              "classification": { "type": "string", "enum": ["marketing", "service"] }
+            }
+          },
+          "sendGuard": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Set by the server; leave it out."
+          },
+          "guardKey": { "type": "string", "description": "Set by the server; leave it out." },
           "accountId": {
             "type": "string",
             "description": "REQUIRED. The mailbox to send FROM: there is no default, a call without it is refused. Call listAccounts first. When the user writes as themselves (personal correspondence, or they say 'from me' / 'from my address'), pass the account whose ownerType is 'user' and whose emailAddress is theirs; pass the shared org mailbox (e.g. contact@) only for mail the org sends. Never invent a placeholder id."
@@ -1643,13 +1750,31 @@
       "conversation:update",
       "conversation:delete",
       "conversation:converted",
-      "message:create"
+      "message:create",
+      "send_guard:stopped",
+      "suppression:added"
     ],
     "subscribes": {
       "kernel/connected_account:create": "onAccountConnected",
       "kernel/connected_account:disconnect": "onAccountDisconnected",
       "kernel/contact:merge": "onContactMerge"
     }
+  },
+  "attention": {
+    "groupLabel": { "label": "Mail", "labelKey": "kernel.homeGroupMail" },
+    "translations": [
+      {
+        "event": "send_guard:stopped",
+        "kind": "mail:send_guard.stopped",
+        "urgency": 50,
+        "isUrgent": false,
+        "summary": "{{data.summary}}",
+        "recipients": {
+          "kind": "participants",
+          "path": "data.targetUserIds"
+        }
+      }
+    ]
   },
   "webhooks": {
     "gmail-push": {
@@ -1697,6 +1822,12 @@
       "runsFor": {"connection": "imap"},
       "schedule": "0/2 * * * *",
       "timeoutMs": 120000
+    }
+  },
+  "roles": {
+    "member": {
+      "description": "Mail member: sees who has opted out of mail, so nothing is written to them",
+      "scopes": ["mail:suppressions:read"]
     }
   },
   "kind": "app",

@@ -42,6 +42,7 @@ import { assertUnrestrictedSession } from "~/modules/auth/session-ceiling"
 import { FileServiceError, moveFilesToParent } from "~/modules/files/service"
 import { hasScope } from "~/modules/permissions/permissions"
 import { computeUnreadMessageCount } from "~/modules/push/badge-count"
+import { entityDiscussionRoutes } from "~/modules/threads/entity-discussion-routes"
 import {
   deleteMessage,
   editMessage,
@@ -95,6 +96,9 @@ import { ShareAnywayError } from "~/services/security/disclosure-list"
 import { SCOPE_TAINT_BLOCKED_CODE, wouldRevealHiddenHistory } from "~/services/security/visibility"
 
 export const threads = new Hono<AppEnv>()
+
+// An entity's discussion (entity-discussion-routes.ts), before the `/:threadId` routes.
+threads.route("/entity-discussion", entityDiscussionRoutes)
 
 /**
  * "Continue in a DM" carries which agent to talk to. `agentId` is optional

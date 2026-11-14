@@ -70,19 +70,52 @@ describe("contact-detail-store", () => {
     expect(contactDetailStore.discussions.c2).toBeUndefined()
   })
 
-  it("loadBacklinks stores paginated backlinks", async () => {
+  it("loadOptOut keeps when and by what for a reader of the opt-out list", async () => {
     const api = {
-      getEnvelope: vi
-        .fn()
-        .mockResolvedValue({ data: [{ id: "m1", subject: "Hello" }], meta: { nextCursor: "n2" } }),
+      post: vi.fn().mockResolvedValue({
+        results: [
+          { email: "a@x.com", optedOut: true, since: "2026-11-06T09:00:00.000Z", by: "link" },
+        ],
+      }),
     }
-    const { contactDetailStore, loadBacklinks } = await import("./contact-detail-store")
+    const { contactDetailStore, loadOptOut } = await import("./contact-detail-store")
+    await loadOptOut(api as any, "c1", "a@x.com")
+    expect(api.post).toHaveBeenCalledWith("/apps/mail/tools/suppression_check", {
+      params: { emails: ["a@x.com"] },
+    })
+    expect(contactDetailStore.optOuts.c1).toEqual({
+      state: "opted_out",
+      since: "2026-11-06T09:00:00.000Z",
+      by: "link",
+    })
+  })
 
-    await loadBacklinks(api as any, "c1")
+  it("loadOptOut says allowed for an address that did not opt out and for a contact with no address", async () => {
+    const api = {
+      post: vi.fn().mockResolvedValue({ results: [{ email: "a@x.com", optedOut: false }] }),
+    }
+    const { contactDetailStore, loadOptOut } = await import("./contact-detail-store")
+    await loadOptOut(api as any, "c1", "a@x.com")
+    expect(contactDetailStore.optOuts.c1).toEqual({ state: "allowed" })
+    await loadOptOut(api as any, "c2", null)
+    expect(contactDetailStore.optOuts.c2).toEqual({ state: "allowed" })
+    expect(api.post).toHaveBeenCalledTimes(1)
+  })
 
-    expect(api.getEnvelope).toHaveBeenCalledWith("/mail/conversations?contactId=c1&limit=20")
-    expect(contactDetailStore.backlinks.c1.ids).toEqual(["m1"])
-    expect(contactDetailStore.backlinks.c1.hasMore).toBe(true)
+  it("loadOptOut is unavailable, never allowed, when the check fails or answers with an error", async () => {
+    const { contactDetailStore, loadOptOut } = await import("./contact-detail-store")
+    await loadOptOut(
+      { post: vi.fn().mockRejectedValue(new Error("forbidden")) } as any,
+      "c1",
+      "a@x.com",
+    )
+    expect(contactDetailStore.optOuts.c1).toEqual({ state: "unavailable" })
+    await loadOptOut(
+      { post: vi.fn().mockResolvedValue({ error: { code: "x" } }) } as any,
+      "c2",
+      "b@x.com",
+    )
+    expect(contactDetailStore.optOuts.c2).toEqual({ state: "unavailable" })
   })
 
   it("updateContact patches and stores the updated contact", async () => {

@@ -45,7 +45,6 @@ import {
 } from "~/modules/shell/attention-groups"
 import { rowLocaleFrom } from "~/modules/shell/attention-row-format"
 import { attentionStore } from "~/modules/shell/attention-store"
-import { setShowPeerRequests, showPeerRequests } from "~/modules/shell/home-action-count"
 import { followAttentionFeed, homeAgents, waitingOnOthers } from "~/modules/shell/home-agents-store"
 import { homeFilter, homeSections, setHomeFilter } from "~/modules/shell/home-filter"
 import type { HomeFilter } from "~/modules/shell/home-sections"
@@ -181,16 +180,21 @@ const HomeAttentionSidebar: Component = () => {
     return t("kernel.homeSidebar.minutesLeft", { count: mins })
   }
 
-  const facetLabel = (key: string, label: string, labelKey?: string) =>
-    labelKey
-      ? i18n.t(labelKey)
-      : (approvalActionLabel(key, label, { t: i18n.t, locale: i18n.locale() }) ?? label)
+  const facetLabel = (key: string, label: string, labelKey?: string, pill?: true) => {
+    if (labelKey) {
+      const said = i18n.t(labelKey)
+      if (said !== labelKey || !pill) return said
+    }
+    if (pill) return label
+    return approvalActionLabel(key, label, { t: i18n.t, locale: i18n.locale() }) ?? label
+  }
 
   const clusterRowLabel = (kind: string, count: number) =>
     alertClusterLabel(kind, count, rowLocale()).replace(/^\d+\s+/, "")
 
   const briefTime = () => {
-    const at = homeAgents.brief()?.lastRunAt
+    // The brief's own time (its newest message), as Home's brief card shows it.
+    const at = homeAgents.brief()?.messageAt
     if (!at) return undefined
     return new Date(at).toLocaleTimeString(i18n.locale(), { hour: "2-digit", minute: "2-digit" })
   }
@@ -264,7 +268,7 @@ const HomeAttentionSidebar: Component = () => {
       />
       <Show when={open("homeNeeds")}>
         <Show
-          when={sections().needs.total > 0 || sections().needs.peerCount > 0}
+          when={sections().needs.total > 0 || sections().needs.others.length > 0}
           fallback={
             <p
               data-testid="home-side-needs-empty"
@@ -290,7 +294,7 @@ const HomeAttentionSidebar: Component = () => {
               />
             )}
           </For>
-          <Show when={sections().needs.approvals.length > 0 || sections().needs.peerCount > 0}>
+          <Show when={sections().needs.approvals.length > 0 || sections().needs.others.length > 0}>
             <Row
               testid="home-side-approvals"
               label={t("kernel.homeCardApprovals")}
@@ -306,7 +310,7 @@ const HomeAttentionSidebar: Component = () => {
                   <Row
                     sub
                     testid={`home-side-approvals-${facet.key}`}
-                    label={facetLabel(facet.key, facet.label, facet.labelKey)}
+                    label={facetLabel(facet.key, facet.label, facet.labelKey, facet.pill)}
                     count={facet.count}
                     tone="muted"
                     active={filter() === `needs:approvals:${facet.key}`}
@@ -315,17 +319,16 @@ const HomeAttentionSidebar: Component = () => {
                 )}
               </For>
             </Show>
-            <Show when={sections().needs.peerCount > 0 || showPeerRequests()}>
+            <Show when={sections().needs.others.length > 0}>
               <Row
                 sub
                 dim
-                testid="home-side-peers"
-                label={
-                  showPeerRequests()
-                    ? t("kernel.homeSidebar.peersHide")
-                    : t("kernel.homeSidebar.peersShow", { count: sections().needs.peerCount })
-                }
-                onClick={() => setShowPeerRequests(!showPeerRequests())}
+                testid="home-side-others"
+                label={t("kernel.homeRouting.othersGroup")}
+                count={sections().needs.others.length}
+                tone="muted"
+                active={filter() === "needs:others"}
+                onClick={() => pick("needs:others")}
               />
             </Show>
           </Show>
@@ -334,7 +337,8 @@ const HomeAttentionSidebar: Component = () => {
               testid="home-side-alerts"
               label={i18n.t("kernel.homeSectionAlerts")}
               icon={AlertTriangle}
-              count={sections().needs.alerts.length}
+              // Rows, as Needs you shows them: alerts of one kind fold into one.
+              count={sections().needs.alertEntries.length}
               tone="accent"
               active={filter() === "needs:alerts"}
               onClick={() => pick("needs:alerts")}

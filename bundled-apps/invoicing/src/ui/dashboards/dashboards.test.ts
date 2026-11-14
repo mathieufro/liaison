@@ -14,6 +14,7 @@ import {
   B2B_COLUMNS,
   BY_MARKET_COLUMNS,
   EMPTY_STATE,
+  emptyListText,
   toCsv,
 } from "./columns"
 import { perCurrencyRollup } from "./groupings"
@@ -440,5 +441,26 @@ describe("module surface", () => {
     expect(documents).toContain("groupByCustomer")
     expect(documents).toContain("groupByCountry")
     expect(awaiting).toContain("All issued documents are paid")
+  })
+})
+
+describe("the documents list's empty line", () => {
+  const t = (en: string, p?: Record<string, string>) =>
+    en.replace(/\{\{(\w+)\}\}/g, (_, k: string) => p?.[k] ?? "")
+  const day = (iso: string) => iso
+  test("names the period it looked at, and never says 'this period' with no dates set", () => {
+    expect(emptyListText(DEFAULT_FILTER, t, day)).toBe("No documents yet.")
+    expect(
+      emptyListText({ ...DEFAULT_FILTER, date_from: "2026-10-01", date_to: "2026-10-31" }, t, day),
+    ).toBe("No documents from 2026-10-01 to 2026-10-31.")
+    expect(emptyListText({ ...DEFAULT_FILTER, date_from: "2026-10-01" }, t, day)).toBe(
+      "No documents since 2026-10-01.",
+    )
+    expect(emptyListText({ ...DEFAULT_FILTER, date_to: "2026-10-31" }, t, day)).toBe(
+      "No documents up to 2026-10-31.",
+    )
+    expect(emptyListText({ ...DEFAULT_FILTER, market: "eu" } as never, t, day)).toBe(
+      "No documents match these filters.",
+    )
   })
 })

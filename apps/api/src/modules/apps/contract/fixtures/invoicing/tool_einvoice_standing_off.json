@@ -1,0 +1,18 @@
+{
+  "entry": "tool:einvoice_standing_off",
+  "params": {
+    "issuerProfileId": "00000000-0000-4000-8000-0000000000a1",
+    "stream": "card"
+  },
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)",
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": [
+        "einvoice_standing",
+        "{\"where\":{\"issuer_profile_id\":\"00000000-0000-4000-8000-0000000000a1\",\"stream\":\"card\"},\"limit\":1}"
+      ],
+      "reply": "[]"
+    }
+  ]
+}

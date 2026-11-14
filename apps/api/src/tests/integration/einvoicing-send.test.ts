@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { createHash, createHmac, randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { sql as drizzleSql } from "drizzle-orm"
 import {
   decodePDFRawStream,
   PDFArray,
@@ -26,9 +27,9 @@ import {
   type PDFRawStream,
 } from "pdf-lib"
 import { app } from "~/app"
-import { sql } from "~/db"
+import { extractRows, sql } from "~/db"
 import { withPrivilegedDb, withSystemDb } from "~/db/privileged"
-import type { UserContext } from "~/db/rls"
+import { type UserContext, withRlsContext } from "~/db/rls"
 import { connectedAccounts } from "~/db/schema/kernel"
 import { rebuildFilesSelectPolicy } from "~/infra/boot-phase10"
 import { dispatchAppJobWithContext } from "~/infra/jobs/job-context"
@@ -50,6 +51,7 @@ import { registerApps } from "~/modules/apps/runtime"
 import { SandboxBridgeTestAccess } from "~/modules/apps/sandbox/bridge/shared"
 import { initSandboxPool, shutdownSandboxPool } from "~/modules/apps/sandbox/pool"
 import { initWorkerPool, shutdownWorkerPool } from "~/modules/apps/sandbox/worker-pool"
+import { eraseUser } from "~/modules/erasure/erase-user"
 import { registerTemplate } from "~/modules/pdf/registry"
 import { getFileBytes } from "~/modules/pdf/render"
 import { acquireTestLock, releaseTestLock } from "~/tests/route-test-setup"
@@ -280,6 +282,28 @@ function signedWebhook(body: string, t = Math.floor(Date.now() / 1000), secret =
     headers: { "content-type": "application/json", "x-pennylane-signature": `t=${t},v1=${v1}` },
     body,
   })
+}
+
+async function runInvoicingJob(name: string): Promise<void> {
+  const handler = JobsTestAccess.getHandler("invoicing", name)
+  if (!handler) throw new Error(`${name} not registered`)
+  await dispatchAppJobWithContext(
+    handler,
+    { orgId: ORG },
+    { actorType: "system", orgId: ORG, purpose: "job", scopes: ["invoicing:*"] },
+    "session",
+  )
+}
+
+/** A member of the org holding exactly these scopes, no role and no wildcard. */
+async function member(scopes: string[], status = "active"): Promise<UserContext> {
+  const id = randomUUID()
+  await sql`INSERT INTO kernel.users (id, org_id, email, password_hash, name, status)
+    VALUES (${id}, ${ORG}, ${`einv-m-${id.slice(0, 8)}@test.com`}, 'hash', 'Member', ${status})`
+  for (const scope of scopes) {
+    await sql`INSERT INTO kernel.user_scope_grants (user_id, org_id, scope) VALUES (${id}, ${ORG}, ${scope}) ON CONFLICT DO NOTHING`
+  }
+  return { actorType: "user", userId: id, orgId: ORG, scopes, dimensionGrants: {} }
 }
 
 describe("e-invoice send through the einvoicing-pa@1 contract (real Postgres, sandbox, kernel; Pennylane fake)", () => {
@@ -732,5 +756,98 @@ describe("e-invoice send through the einvoicing-pa@1 contract (real Postgres, sa
     )
     expect(mine).toHaveLength(1)
     expect(mine[0]!.e_invoicing).toBeTruthy()
+  }, 180_000)
+
+  it("the daily send card goes to and is decided by a person holding only invoicing documents read and write; a person without documents access sees no send batch and no standing authorization", async () => {
+    const docsOnly = await member(["invoicing:documents:read", "invoicing:documents:write"])
+    const noDocs = await member(["invoicing:settings:read"])
+    const { id } = await issue(B2B_BUYER)
+    await sql`UPDATE app_invoicing.documents SET einvoice_state = 'awaiting_send_batch',
+      einvoice_send_requested_at = ${new Date().toISOString()} WHERE id = ${id}`
+    await sql`INSERT INTO app_invoicing.einvoice_standing (org_id, issuer_profile_id, stream, turned_on_by, turned_on_at, grant_ref, until)
+      VALUES (${ORG}, ${issuerId}, 'transfer', ${USER}, now(), 'grant-standing-transfer', now() + interval '60 days')`
+    await runInvoicingJob("einvoicing-send-daily")
+    const [batch] = await sql<Array<{ id: string; state: string; approval_request_id: string }>>`
+      SELECT id::text, state, approval_request_id FROM app_invoicing.einvoice_send_batches
+      WHERE org_id = ${ORG} AND state = 'pending' ORDER BY created_at DESC LIMIT 1`
+    expect(batch?.approval_request_id).toBeTruthy()
+    const [card] = await sql<Array<{ approve_scope: string; notify: string[] }>>`
+      SELECT approve_scope, notify_user_ids::text[] AS notify FROM kernel.approval_requests WHERE id = ${batch!.approval_request_id}::uuid`
+    expect(card!.notify).toContain(docsOnly.userId)
+    expect(card!.notify).not.toContain(noDocs.userId)
+
+    const counts = (a: UserContext) =>
+      withRlsContext(
+        a,
+        async (t) =>
+          extractRows<{ batches: number; standing: number }>(
+            await t.execute(drizzleSql`SELECT
+            (SELECT count(*)::int FROM app_invoicing.einvoice_send_batches) AS batches,
+            (SELECT count(*)::int FROM app_invoicing.einvoice_standing) AS standing`),
+          )[0],
+      )
+    expect(await counts(docsOnly)).toEqual({ batches: 1, standing: 1 })
+    expect(await counts(noDocs)).toEqual({ batches: 0, standing: 0 })
+
+    await decideApproval({
+      orgId: ORG,
+      requestId: batch!.approval_request_id,
+      actor: docsOnly,
+      decision: "approve",
+    })
+    const [after] = await sql<
+      Array<{ state: string }>
+    >`SELECT state FROM app_invoicing.einvoice_send_batches WHERE id = ${batch!.id}::uuid`
+    expect(after!.state).toBe("approved")
+    const row = await tx(id)
+    expect(row).toMatchObject({ state: "prepared", action: "send_einvoice" })
+    expect(row!.dispatch_grant).toBeTruthy()
+
+    // The standing authorization a stream send reads, and turning it off, under documents access alone.
+    await withRlsContext(docsOnly, async (t) => {
+      await t.execute(drizzleSql`UPDATE app_invoicing.einvoice_standing SET ended_at = now(), ended_by = ${docsOnly.userId}::uuid, ended_reason = 'revoked'
+        WHERE issuer_profile_id = ${issuerId}::uuid AND stream = 'transfer'`)
+    })
+    const [standing] = await sql<Array<{ ended_by: string | null }>>`
+      SELECT ended_by::text FROM app_invoicing.einvoice_standing WHERE org_id = ${ORG} AND stream = 'transfer'`
+    expect(standing!.ended_by).toBe(docsOnly.userId)
+  }, 180_000)
+
+  it("the renewal card of a standing authorization whose person was deactivated goes to every holder of the e-invoicing settings scope", async () => {
+    const gone = await member(
+      ["invoicing:settings:read", "invoicing:settings:write"],
+      "deactivated",
+    )
+    const settingsHolder = await member(["invoicing:settings:read", "invoicing:settings:write"])
+    await sql`INSERT INTO app_invoicing.einvoice_standing (org_id, issuer_profile_id, stream, turned_on_by, turned_on_at, grant_ref, until)
+      VALUES (${ORG}, ${issuerId}, 'card', ${gone.userId}, now() - interval '83 days', 'grant-standing-card', now() + interval '5 days')`
+    await runInvoicingJob("einvoicing-standing-daily")
+    const cards = await sql<
+      Array<{ approve_scope: string; notify: string[]; requested_by: string }>
+    >`
+      SELECT approve_scope, notify_user_ids::text[] AS notify, requested_by::text FROM kernel.approval_requests
+      WHERE org_id = ${ORG} AND tool_name = 'invoicing:issuer_stream_set' AND current_payload->>'stream' = 'card'`
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.approve_scope).toBe("invoicing:settings:write")
+    expect(cards[0]!.notify).toEqual(expect.arrayContaining([settingsHolder.userId, USER]))
+    expect(cards[0]!.notify).not.toContain(gone.userId)
+    expect(cards[0]!.requested_by).not.toBe(gone.userId)
+  }, 180_000)
+
+  it("erasing a person anonymizes their id in the standing authorization and leaves it nowhere in the send batches", async () => {
+    const erased = await member(["invoicing:settings:write"])
+    await sql`UPDATE app_invoicing.einvoice_standing SET turned_on_by = ${erased.userId}, ended_by = ${erased.userId}
+      WHERE org_id = ${ORG} AND stream = 'transfer'`
+    const res = await eraseUser(erased.userId!)
+    expect(res.exitCode).toBe(0)
+    const [standing] = await sql<Array<{ turned_on_by: string | null; ended_by: string | null }>>`
+      SELECT turned_on_by::text, ended_by::text FROM app_invoicing.einvoice_standing WHERE org_id = ${ORG} AND stream = 'transfer'`
+    expect(standing).toBeTruthy()
+    expect(standing!.turned_on_by).not.toBe(erased.userId)
+    expect(standing!.ended_by).not.toBe(erased.userId)
+    const left = await sql<Array<{ n: number }>>`
+      SELECT (SELECT count(*)::int FROM app_invoicing.einvoice_standing s WHERE s.org_id = ${ORG} AND row_to_json(s)::text LIKE ${`%${erased.userId}%`})
+           + (SELECT count(*)::int FROM app_invoicing.einvoice_send_batches b WHERE b.org_id = ${ORG} AND row_to_json(b)::text LIKE ${`%${erased.userId}%`}) AS n`
+    expect(left[0]!.n).toBe(0)
   }, 180_000)
 })

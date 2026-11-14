@@ -1,0 +1,18 @@
+{
+  "entry": "tool:invoices_search",
+  "params": {},
+  "unrecorded": {
+    "reason": "hand-written, not recorded: a recording needs a restricted Stripe key, which the recording run does not have yet. Awaiting a recording against a Stripe test account."
+  },
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": [
+        "stripe_invoices",
+        "{\"where\":{},\"orderBy\":{\"finalized_at\":\"desc\",\"id\":\"asc\"},\"limit\":21,\"offset\":0}"
+      ],
+      "reply": "[]"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

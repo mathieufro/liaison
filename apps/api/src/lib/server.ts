@@ -33,6 +33,7 @@ import { announceSetupToken } from "~/modules/auth/setup-token"
 import { isWsAuthStillValid } from "~/modules/auth/ws-ticket"
 import { ORG_SUSPENDED_CLOSE, orgRefusesNonSessionCredentials } from "~/modules/cloud/suspension"
 import { isDemoOrgExpiredNow } from "~/modules/demo/demo-expiry"
+import { OPT_OUT_PATH } from "~/modules/mail/opt-out-path"
 import { maintenancePage } from "~/modules/maintenance/page"
 import {
   orgTransferStateOf,
@@ -165,6 +166,9 @@ const API_PREFIXES = [
   "/mcp",
   "/.well-known/",
   "/__chaos/",
+  // A commercial mail's opt-out link: the API's own server-rendered page, never
+  // the web app (which would send the recipient to the sign-in page).
+  `${OPT_OUT_PATH}/`,
 ]
 
 // Mirrors apps/api/src/middleware/maintenance.ts. Kept here so the Bun fetch

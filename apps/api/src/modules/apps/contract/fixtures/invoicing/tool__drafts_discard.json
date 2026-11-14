@@ -1,29 +1,42 @@
 {
   "entry": "tool:drafts_discard",
   "params": {
-    "draft_id": "0a33ac73-cd4f-4b12-b266-2d74b75b3225"
+    "draft_id": "35821b8a-e781-47c4-a4d0-8a0bc1904ae8"
   },
   "recordedFrom": "a contract org with the Shopify development store, scripts/contract/record-invoicing.ts",
   "calls": [
     {
+      "method": "db_findOne",
+      "args": ["documents", "35821b8a-e781-47c4-a4d0-8a0bc1904ae8"],
+      "reply": "{\"id\":\"35821b8a-e781-47c4-a4d0-8a0bc1904ae8\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 10:41:01.831361+00\",\"updated_at\":\"2026-11-12 10:41:01.831361+00\",\"einvoice_send_approval_id\":null,\"einvoice_send_requested_at\":null,\"einvoice_send_attempt\":null,\"type\":\"invoice\",\"scope\":null,\"status\":\"draft\",\"payment_status\":\"unpaid\",\"number\":null,\"number_int\":null,\"year_of_issue\":null,\"issuer_profile_id\":\"2db28a22-5cc2-4088-84a1-9ab09b313ab1\",\"counterparty_contact_id\":null,\"counterparty_name\":\"Harbor Lane Recording LLC\",\"counterparty_address\":\"410 Harbor Lane, Portland, OR 97209, United States\",\"counterparty_shipping_address\":null,\"counterparty_shipping_name\":null,\"counterparty_vat_id\":null,\"counterparty_email\":\"person1@example.com\",\"counterparty_country\":\"US\",\"currency\":\"EUR\",\"subtotal_minor\":\"0\",\"tax_total_minor\":\"0\",\"grand_total_minor\":\"0\",\"tax_treatment\":null,\"incoterm\":\"DAP\",\"issued_at\":null,\"due_at\":null,\"paid_at\":null,\"voided_at\":null,\"pdf_file_id\":null,\"pdf_status\":null,\"external_refs\":{},\"shopify_order_id\":null,\"shopify_order_number\":null,\"shipment_ref\":null,\"shopify_draft_order_id\":null,\"shopify_draft_order_name\":null,\"po_number\":null,\"notes\":null,\"lifecycle_log\":[],\"regime\":null,\"regime_reasons\":null,\"operation_category\":null,\"operation_category_source\":null,\"payment_state\":null,\"vat_on_debits\":null,\"customer_kind\":null,\"buyer_siren\":null,\"buyer_siret\":null,\"buyer_routing_address\":null,\"buyer_legal_name\":null,\"billing_line1\":null,\"billing_line2\":null,\"billing_postcode\":null,\"billing_city\":null,\"billing_country_code\":null,\"delivery_name\":null,\"delivery_line1\":null,\"delivery_line2\":null,\"delivery_postcode\":null,\"delivery_city\":null,\"delivery_country_code\":null,\"fx_rate\":null,\"fx_rate_date\":null,\"fx_source\":null,\"legal_original_sha256\":null,\"einvoice_state\":null,\"einvoice_state_raw\":null,\"collection_state\":null,\"collection_reports\":null,\"pa_provider\":null,\"tax_point_date\":null,\"tax_total_eur_minor\":null,\"original_document_id\":null,\"legal_original_id\":null,\"internal_cancellation\":null,\"buyer_siren_confirmed_via\":null,\"external_ref\":null}"
+    },
+    {
+      "method": "db_findMany",
+      "args": [
+        "recurring_run_items",
+        "{\"where\":{\"document_id\":\"35821b8a-e781-47c4-a4d0-8a0bc1904ae8\"},\"limit\":1}"
+      ],
+      "reply": "[]"
+    },
+    {
       "method": "db_findMany",
       "args": [
         "document_lines",
-        "{\"where\":{\"document_id\":\"0a33ac73-cd4f-4b12-b266-2d74b75b3225\"},\"limit\":1000}"
+        "{\"where\":{\"document_id\":\"35821b8a-e781-47c4-a4d0-8a0bc1904ae8\"},\"limit\":1000}"
       ],
-      "reply": "[{\"id\":\"406e26b4-6818-4d4b-8676-94bc15c25307\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 09:09:22.341434+00\",\"updated_at\":\"2026-11-12 09:09:22.341434+00\",\"document_id\":\"0a33ac73-cd4f-4b12-b266-2d74b75b3225\",\"position\":1,\"description\":\"Studio monitor, pair\",\"quantity\":\"2.000\",\"unit_price_minor\":\"41940\",\"discount_minor\":\"0\",\"line_kind\":\"goods\",\"tax_rate_bp\":null,\"subtotal_minor\":\"83880\",\"tax_minor\":\"0\",\"total_minor\":\"83880\",\"hs_code\":\"851822\",\"country_of_origin\":\"FR\",\"customs_description\":\"Loudspeakers\",\"product_source\":null,\"external_id\":null},{\"id\":\"5ae9d755-dbc5-4754-9779-c65c8c6afcc9\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 09:09:22.346153+00\",\"updated_at\":\"2026-11-12 09:09:22.346153+00\",\"document_id\":\"0a33ac73-cd4f-4b12-b266-2d74b75b3225\",\"position\":2,\"description\":\"Installation\",\"quantity\":\"1.000\",\"unit_price_minor\":\"15000\",\"discount_minor\":\"0\",\"line_kind\":\"goods\",\"tax_rate_bp\":null,\"subtotal_minor\":\"15000\",\"tax_minor\":\"0\",\"total_minor\":\"15000\",\"hs_code\":null,\"country_of_origin\":null,\"customs_description\":null,\"product_source\":null,\"external_id\":null}]"
+      "reply": "[{\"id\":\"db83b34f-4c83-43df-b261-b3a0af283daf\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 10:41:01.837086+00\",\"updated_at\":\"2026-11-12 10:41:01.837086+00\",\"document_id\":\"35821b8a-e781-47c4-a4d0-8a0bc1904ae8\",\"position\":1,\"description\":\"Studio monitor, pair\",\"quantity\":\"2.000\",\"unit_price_minor\":\"41940\",\"discount_minor\":\"0\",\"line_kind\":\"goods\",\"tax_rate_bp\":null,\"subtotal_minor\":\"83880\",\"tax_minor\":\"0\",\"total_minor\":\"83880\",\"hs_code\":\"851822\",\"country_of_origin\":\"FR\",\"customs_description\":\"Loudspeakers\",\"product_source\":null,\"external_id\":null},{\"id\":\"ab6fc948-858c-49d1-afb4-dbc7539b5b08\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 10:41:01.842814+00\",\"updated_at\":\"2026-11-12 10:41:01.842814+00\",\"document_id\":\"35821b8a-e781-47c4-a4d0-8a0bc1904ae8\",\"position\":2,\"description\":\"Installation\",\"quantity\":\"1.000\",\"unit_price_minor\":\"15000\",\"discount_minor\":\"0\",\"line_kind\":\"goods\",\"tax_rate_bp\":null,\"subtotal_minor\":\"15000\",\"tax_minor\":\"0\",\"total_minor\":\"15000\",\"hs_code\":null,\"country_of_origin\":null,\"customs_description\":null,\"product_source\":null,\"external_id\":null}]"
     },
     {
       "method": "db_delete",
-      "args": ["document_lines", "406e26b4-6818-4d4b-8676-94bc15c25307"]
+      "args": ["document_lines", "db83b34f-4c83-43df-b261-b3a0af283daf"]
     },
     {
       "method": "db_delete",
-      "args": ["document_lines", "5ae9d755-dbc5-4754-9779-c65c8c6afcc9"]
+      "args": ["document_lines", "ab6fc948-858c-49d1-afb4-dbc7539b5b08"]
     },
     {
       "method": "db_delete",
-      "args": ["documents", "0a33ac73-cd4f-4b12-b266-2d74b75b3225"]
+      "args": ["documents", "35821b8a-e781-47c4-a4d0-8a0bc1904ae8"]
     }
   ]
 }

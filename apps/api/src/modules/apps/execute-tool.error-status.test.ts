@@ -137,6 +137,15 @@ describe("statusForToolError: every deliberate app code is a non-500", () => {
     expect(statusForToolError("NOT_FOUND")).toBe(404)
   })
 
+  it("a company delete refused while accounts or a live recurring schedule hold it is 409", () => {
+    expect(statusForToolError("company_has_accounts")).toBe(409)
+    expect(statusForToolError("company_has_schedules")).toBe(409)
+  })
+
+  it("a person delete refused while a live recurring schedule bills them is 409", () => {
+    expect(statusForToolError("contact_has_schedules")).toBe(409)
+  })
+
   it("still answers 500 for a code nobody declared", () => {
     expect(statusForToolError("something_unexpected")).toBe(500)
   })

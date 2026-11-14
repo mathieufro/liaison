@@ -9,8 +9,10 @@
 // are attributed, not impersonated. A role or system agent is named as itself
 // (a ticket draft the @support routine wrote is "by Support"); a routine run by
 // a personal agent is "Routine {name}"; a personal agent's own turn is
-// "{Person}'s agent". No agent and no routine means a human staged it (MCP, a
-// direct action), and only then is the person named. A routine the reader
+// "{Person}'s agent". A call an MCP client made with no agent row behind it (an
+// AI assistant on a connection bound to no agent; `metadata.origin` is "mcp") is
+// "{Person}'s agent" too: the person did not write it.
+// Only a person's own direct action names the person. A routine the reader
 // cannot see is still a routine: its agent, else "Routine", never the person.
 //
 // This is the only place that rule lives. The card, the attention feed, push,
@@ -34,6 +36,8 @@ export function pickApprovalRequester(
   agent: { id: string; kind: string; displayName: string } | null,
   requestedBy: string,
   routine: { id: string; name: string | null } | null = null,
+  origin: string | null = null,
+  toolName: string | null = null,
 ): ApprovalRequester {
   if (agent && agent.kind !== "personal") {
     return { kind: "agent", id: agent.id, name: agent.displayName }
@@ -47,6 +51,19 @@ export function pickApprovalRequester(
   }
   if (agent) {
     return { kind: "agent", id: agent.id, name: `${user?.name ?? "User"}'s agent` }
+  }
+  if (origin === "mcp") {
+    return { kind: "agent", id: requestedBy, name: `${user?.name ?? "User"}'s agent` }
+  }
+  // An app's scheduled job raised it: the member it is filed under did not ask for it.
+  if (origin === "system") {
+    const app = toolName?.split(":")[0] ?? ""
+    const label = app ? `${app.charAt(0).toUpperCase()}${app.slice(1).replace(/[-_]/g, " ")}` : null
+    return {
+      kind: "agent",
+      id: requestedBy,
+      name: label ? `Scheduled job (${label})` : "Scheduled job",
+    }
   }
   return { kind: "user", id: user?.id ?? requestedBy, name: user?.name ?? "Unknown" }
 }
@@ -79,6 +96,8 @@ export async function readApprovalRequesters(
     routine_id: string | null
     routine_name: string | null
     origin_routine_id: string | null
+    origin: string | null
+    tool_name: string | null
   }>(
     await db.execute(drizzleSql`
       SELECT ar.id, ar.requested_by,
@@ -86,7 +105,8 @@ export async function readApprovalRequesters(
              a.id AS agent_id, a.kind AS agent_kind, a.display_name AS agent_name,
              r.id AS routine_id, COALESCE(NULLIF(btrim(r.title), ''), r.name) AS routine_name,
              CASE WHEN ar.metadata->>'originRoutineId' ~* ${UUID_PATTERN}
-               THEN ar.metadata->>'originRoutineId' END AS origin_routine_id
+               THEN ar.metadata->>'originRoutineId' END AS origin_routine_id,
+             ar.metadata->>'origin' AS origin, ar.tool_name
       FROM ${K}.approval_requests ar
       LEFT JOIN ${K}.users u ON u.id = ar.requested_by
       LEFT JOIN ${K}.agents a ON a.id = ar.agent_id AND a.org_id = ar.org_id
@@ -111,6 +131,8 @@ export async function readApprovalRequesters(
             r.origin_routine_id && !(r.agent_id && r.agent_kind)
             ? { id: r.origin_routine_id, name: null }
             : null,
+        r.origin,
+        r.tool_name,
       ),
     ]),
   )

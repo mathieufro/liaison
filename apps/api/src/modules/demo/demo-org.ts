@@ -12,10 +12,12 @@ import {
   type DemoNeed,
   type DemoOrgMarker,
   type DemoWelcomeChoice,
+  type DemoWorldId,
   demoEntrySchema,
   demoMarker,
   demoOrgMarkerSchema,
   demoWelcomeChoiceSchema,
+  demoWorldIdOf,
   resolveLocale,
   type ShippedLocale,
 } from "@liaison/shared"
@@ -62,12 +64,43 @@ function versionKey(orgId: string): string {
   return `demo:marker-version:${orgId}`
 }
 
+/**
+ * Bumped once a demo org's purge has ended. It names no org, so it outlives the
+ * purge's sweep of every key naming the org: a process that read the marker
+ * while the purge ran (its version counter already swept, its row not yet
+ * deleted) finds this changed and reads again.
+ */
+const PURGE_EPOCH_KEY = "demo:marker-purge-epoch"
+
+/** A marker version: the org's counter and the purge epoch, as one string. */
+function versionOf(counter: unknown, epoch: unknown): string {
+  return `${counter ?? 0}.${epoch ?? 0}`
+}
+
 /** The org's current marker version, or null when Redis cannot say. */
 async function markerVersion(orgId: string): Promise<string | null> {
   try {
-    return (await boundedBy(redis.get(versionKey(orgId)), REDIS_WAIT_MS, redisTimeout)) ?? "0"
+    const [counter, epoch] = await boundedBy(
+      redis.mget(versionKey(orgId), PURGE_EPOCH_KEY),
+      REDIS_WAIT_MS,
+      redisTimeout,
+    )
+    return versionOf(counter, epoch)
   } catch {
     return null
+  }
+}
+
+/** Tell every process a demo org's purge ended (no key naming the org is written). */
+async function bumpPurgeEpoch(orgId: string): Promise<void> {
+  try {
+    await boundedBy(
+      redis.multi().incr(PURGE_EPOCH_KEY).expire(PURGE_EPOCH_KEY, VERSION_TTL_SECONDS).exec(),
+      REDIS_WAIT_MS,
+      redisTimeout,
+    )
+  } catch (err) {
+    log.warn({ err, orgId }, "demo marker: could not tell the other processes the org is gone")
   }
 }
 
@@ -76,12 +109,12 @@ async function bumpMarkerVersion(orgId: string): Promise<string | null> {
   try {
     const key = versionKey(orgId)
     const replies = await boundedBy(
-      redis.multi().incr(key).expire(key, VERSION_TTL_SECONDS).exec(),
+      redis.multi().incr(key).expire(key, VERSION_TTL_SECONDS).get(PURGE_EPOCH_KEY).exec(),
       REDIS_WAIT_MS,
       redisTimeout,
     )
-    const version = replies?.[0]?.[1]
-    return typeof version === "number" ? String(version) : null
+    const counter = replies?.[0]?.[1]
+    return typeof counter === "number" ? versionOf(counter, replies?.[2]?.[1]) : null
   } catch (err) {
     log.warn({ err, orgId }, "demo marker: could not tell the other processes it changed")
     return null
@@ -111,6 +144,17 @@ export async function invalidateDemoMarker(orgId?: string): Promise<void> {
   }
   cache.delete(orgId)
   await bumpMarkerVersion(orgId)
+}
+
+/**
+ * Drop a purged org's cached marker, here and on every other process, once its
+ * purge has ended. `invalidateDemoMarker` before the purge is not enough: the
+ * purge sweeps the org's version counter before it deletes the row, and a
+ * process that reads the marker in between would cache it until its TTL.
+ */
+export async function forgetPurgedDemoMarker(orgId: string): Promise<void> {
+  cache.delete(orgId)
+  await bumpPurgeEpoch(orgId)
 }
 
 /**
@@ -264,6 +308,17 @@ export function demoEntryOf(marker: DemoOrgMarker | null): DemoEntry | null {
   return parsed.success ? parsed.data : null
 }
 
+/**
+ * The demo world a marker's workspace holds (`marker.worldId`). A marker that
+ * names none, or names something that is not a world, reads as the default
+ * world: never as "not a demo", which only the marker's absence means. The
+ * visitor administers the org, so a caller that acts on the world still checks
+ * it against the worlds the box runs.
+ */
+export function demoWorldOf(marker: DemoOrgMarker | null): DemoWorldId {
+  return demoWorldIdOf(marker?.worldId)
+}
+
 /** Record the answer to the door's company question on the marker. */
 export async function recordDemoEntry(orgId: string, entry: DemoEntry): Promise<void> {
   await setDemoMarkerHint(orgId, "entry", entry)
@@ -332,18 +387,24 @@ export async function endVisitorOrg(orgId: string, now: Date = new Date()): Prom
  * Build a visitor marker expiring `ttlHours` from now. `needs` (pick order)
  * rides along as a passthrough field the web reads to order the scenarios: a
  * UI hint only, since the visitor administers the org and could rewrite it.
- * The lead row is the record of what was picked.
+ * The lead row is the record of what was picked. `world` names the demo world
+ * the workspace holds and, for a world that follows the month, the Paris month
+ * it was seeded for (`worldMonth`, `YYYY-MM`); neither is declared in the
+ * marker schema, and `demoWorldOf` reads the world back.
  */
 export function visitorMarker(
   ttlHours: number,
   now: Date = new Date(),
   needs?: readonly DemoNeed[],
+  world?: { worldId: DemoWorldId; worldMonth?: string | null },
 ): DemoOrgMarker {
   return {
     variant: "visitor",
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + ttlHours * 60 * 60 * 1000).toISOString(),
     ...(needs ? { needs: [...needs] } : {}),
+    ...(world ? { worldId: world.worldId } : {}),
+    ...(world?.worldMonth ? { worldMonth: world.worldMonth } : {}),
   }
 }
 
@@ -378,6 +439,10 @@ export const DemoOrgTestAccess = {
   /** What another process's marker write announces, without touching this cache. */
   async bumpVersionAsAnotherProcess(orgId: string): Promise<void> {
     await bumpMarkerVersion(orgId)
+  },
+  /** What another process's end of a purge announces, without touching this cache. */
+  async endPurgeAsAnotherProcess(orgId: string): Promise<void> {
+    await bumpPurgeEpoch(orgId)
   },
   prime(orgId: string, marker: DemoOrgMarker | null): void {
     cache.set(orgId, {

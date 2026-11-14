@@ -3,7 +3,7 @@
     "id": "C01",
     "set": "seed",
     "lang": "fr",
-    "say": "NNN a annulé, enlève les du mois",
+    "say": "Belcour a annulé, enlève-les du mois",
     "typed": [
       "annuler abonnement mois",
       "enlever facture du mois",
@@ -11,7 +11,26 @@
       "end schedule",
       "recurring schedule"
     ],
-    "any": ["invoicing__drafts_discard"]
+    "any": ["invoicing__drafts_discard"],
+    "modelRun": true
+  },
+  {
+    "id": "C04",
+    "set": "seed",
+    "lang": "en",
+    "say": "Elodie is off next week",
+    "typed": ["away", "set away", "out of office", "holiday", "next in line"],
+    "any": ["kernel__set_away"],
+    "modelRun": true
+  },
+  {
+    "id": "C05",
+    "set": "seed",
+    "lang": "fr",
+    "say": "je suis en congés la semaine prochaine, Tom me remplace",
+    "typed": ["congés", "absent", "vacances", "remplaçant", "absence"],
+    "any": ["kernel__set_away"],
+    "modelRun": true
   },
   {
     "id": "C15",
@@ -19,7 +38,8 @@
     "lang": "fr",
     "say": "rembourse Élodie sur sa commande shopify",
     "typed": ["rembourser commande", "shopify refund", "refund order"],
-    "any": ["shopify__refunds_create"]
+    "any": ["shopify__refunds_create"],
+    "modelRun": true
   },
   {
     "id": "C16",
@@ -27,7 +47,8 @@
     "lang": "en",
     "say": "they have not paid",
     "typed": ["failed payment", "unpaid invoice", "overdue invoices", "past due"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "C17",
@@ -35,7 +56,8 @@
     "lang": "fr",
     "say": "qui ne m'a pas payé",
     "typed": ["impayé", "factures impayées", "relance paiement"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "C39",
@@ -43,7 +65,8 @@
     "lang": "en",
     "say": "reply to this ticket",
     "typed": ["reply ticket", "tickets reply", "answer customer"],
-    "any": ["tickets__reply"]
+    "any": ["tickets__reply"],
+    "modelRun": true
   },
   {
     "id": "C40",
@@ -51,7 +74,8 @@
     "lang": "fr",
     "say": "réponds au client sur ce ticket",
     "typed": ["répondre ticket", "répondre client"],
-    "any": ["tickets__reply"]
+    "any": ["tickets__reply"],
+    "modelRun": true
   },
   {
     "id": "C41",
@@ -59,7 +83,8 @@
     "lang": "en",
     "say": "make a task for Tom",
     "typed": ["create task", "new task", "projects create"],
-    "any": ["projects__create"]
+    "any": ["projects__create"],
+    "modelRun": true
   },
   {
     "id": "C42",
@@ -67,7 +92,8 @@
     "lang": "fr",
     "say": "crée une tâche pour Tom",
     "typed": ["créer tâche", "nouvelle tâche", "tâche"],
-    "any": ["projects__create"]
+    "any": ["projects__create"],
+    "modelRun": true
   },
   {
     "id": "C43",
@@ -75,7 +101,8 @@
     "lang": "en",
     "say": "email Sara the summary",
     "typed": ["send email", "compose mail", "mail compose"],
-    "any": ["mail__compose"]
+    "any": ["mail__compose"],
+    "modelRun": true
   },
   {
     "id": "C44",
@@ -83,7 +110,8 @@
     "lang": "fr",
     "say": "envoie un mail à Sara",
     "typed": ["envoyer mail", "envoyer email", "courriel"],
-    "any": ["mail__compose"]
+    "any": ["mail__compose"],
+    "modelRun": true
   },
   {
     "id": "C45",
@@ -91,7 +119,8 @@
     "lang": "en",
     "say": "find invoice F-2026-0640",
     "typed": ["find invoice", "search invoices", "invoice number"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "C46",
@@ -99,7 +128,8 @@
     "lang": "fr",
     "say": "retrouve la facture F-2026-0640",
     "typed": ["chercher facture", "facture", "rechercher facture"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "C47",
@@ -107,7 +137,8 @@
     "lang": "en",
     "say": "issue that invoice",
     "typed": ["issue invoice", "invoice issue"],
-    "any": ["invoicing__invoice_issue"]
+    "any": ["invoicing__invoice_issue"],
+    "modelRun": true
   },
   {
     "id": "C48",
@@ -115,7 +146,8 @@
     "lang": "fr",
     "say": "fais un avoir de 200 euros",
     "typed": ["avoir", "credit note", "note de crédit"],
-    "any": ["invoicing__credit_note_create_and_issue"]
+    "any": ["invoicing__credit_note_create_and_issue"],
+    "modelRun": true
   },
   {
     "id": "C49",
@@ -123,7 +155,8 @@
     "lang": "en",
     "say": "change the address on this contact",
     "typed": ["update contact", "edit contact", "contact write"],
-    "any": ["kernel__contacts_write", "kernel__contacts_address_upsert"]
+    "any": ["kernel__contacts_write", "kernel__contacts_address_upsert"],
+    "modelRun": true
   },
   {
     "id": "C50",
@@ -131,7 +164,8 @@
     "lang": "en",
     "say": "write this down as a policy",
     "typed": ["create document", "knowledge create", "new doc", "write policy"],
-    "any": ["knowledge__create", "kernel__capture_business_knowledge"]
+    "any": ["knowledge__create", "kernel__capture_business_knowledge"],
+    "modelRun": true
   },
   {
     "id": "C51",
@@ -139,7 +173,8 @@
     "lang": "fr",
     "say": "retrouve la politique de remboursement",
     "typed": ["politique remboursement", "knowledge search", "refund policy"],
-    "any": ["knowledge__search"]
+    "any": ["knowledge__search"],
+    "modelRun": true
   },
   {
     "id": "C52",
@@ -147,7 +182,8 @@
     "lang": "fr",
     "say": "mets un rdv avec Lumen mardi",
     "typed": ["rendez-vous", "create event", "calendar event", "réunion"],
-    "any": ["calendar__create_event"]
+    "any": ["calendar__create_event"],
+    "modelRun": true
   },
   {
     "id": "C53",
@@ -155,7 +191,8 @@
     "lang": "en",
     "say": "cancel that shopify order",
     "typed": ["cancel order", "order cancel"],
-    "any": ["shopify__order_cancel"]
+    "any": ["shopify__order_cancel"],
+    "modelRun": true
   },
   {
     "id": "C54",
@@ -163,7 +200,8 @@
     "lang": "en",
     "say": "ship it to Lyon",
     "typed": ["create shipment", "ship parcel", "expédier colis", "label"],
-    "any": ["boxtal__create_shipment", "boxtal__shipment_draft_create"]
+    "any": ["boxtal__create_shipment", "boxtal__shipment_draft_create"],
+    "modelRun": true
   },
   {
     "id": "C55",
@@ -171,7 +209,8 @@
     "lang": "fr",
     "say": "qu'est-ce qui attend ma validation",
     "typed": ["approvals", "pending approvals", "en attente validation", "a valider"],
-    "any": ["kernel__approvals_list"]
+    "any": ["kernel__approvals_list"],
+    "modelRun": true
   },
   {
     "id": "C56",
@@ -179,7 +218,8 @@
     "lang": "en",
     "say": "every monday send me the numbers",
     "typed": ["create routine", "schedule recurring task", "routine weekly"],
-    "any": ["kernel__create_routine"]
+    "any": ["kernel__create_routine"],
+    "modelRun": true
   },
   {
     "id": "C57",
@@ -187,7 +227,35 @@
     "lang": "en",
     "say": "typo: invocie Alpine",
     "typed": ["invocie", "invoce search"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
+  },
+  {
+    "id": "N01",
+    "set": "seed",
+    "lang": "en",
+    "say": "what should I do next here",
+    "typed": ["suggest next steps", "next steps", "what next", "propose follow-up actions"],
+    "any": ["kernel__suggest_next_steps"],
+    "modelRun": true
+  },
+  {
+    "id": "N02",
+    "set": "seed",
+    "lang": "en",
+    "say": "remember that Sara prefers calls in the morning",
+    "typed": ["remember", "memory insert", "save a note to memory", "remember that"],
+    "any": ["kernel__memory_insert"],
+    "modelRun": true
+  },
+  {
+    "id": "N03",
+    "set": "seed",
+    "lang": "fr",
+    "say": "souviens-toi que Sara préfère les appels le matin",
+    "typed": ["souviens-toi", "se souvenir", "mémoriser", "retenir", "ajouter à la mémoire"],
+    "any": ["kernel__memory_insert"],
+    "modelRun": true
   },
   {
     "id": "A001",
@@ -195,7 +263,8 @@
     "lang": "fr",
     "say": "fermer ticket",
     "typed": ["fermer ticket"],
-    "any": ["tickets__close"]
+    "any": ["tickets__close"],
+    "modelRun": true
   },
   {
     "id": "A002",
@@ -203,7 +272,8 @@
     "lang": "fr",
     "say": "attribuer ticket",
     "typed": ["attribuer ticket"],
-    "any": ["tickets__assign"]
+    "any": ["tickets__assign"],
+    "modelRun": true
   },
   {
     "id": "A003",
@@ -211,7 +281,8 @@
     "lang": "en",
     "say": "send email",
     "typed": ["send email"],
-    "any": ["mail__compose"]
+    "any": ["mail__compose"],
+    "modelRun": true
   },
   {
     "id": "A004",
@@ -219,7 +290,8 @@
     "lang": "fr",
     "say": "répondre mail",
     "typed": ["répondre mail"],
-    "any": ["mail__reply"]
+    "any": ["mail__reply"],
+    "modelRun": true
   },
   {
     "id": "A005",
@@ -227,7 +299,8 @@
     "lang": "en",
     "say": "find email",
     "typed": ["find email"],
-    "any": ["mail__search"]
+    "any": ["mail__search"],
+    "modelRun": true
   },
   {
     "id": "A006",
@@ -235,7 +308,8 @@
     "lang": "en",
     "say": "invoice list",
     "typed": ["invoice list"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A007",
@@ -243,7 +317,8 @@
     "lang": "en",
     "say": "find invoice",
     "typed": ["find invoice"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A008",
@@ -251,7 +326,8 @@
     "lang": "en",
     "say": "paid invoice",
     "typed": ["paid invoice"],
-    "any": ["invoicing__documents_mark_paid"]
+    "any": ["invoicing__documents_mark_paid"],
+    "modelRun": true
   },
   {
     "id": "A009",
@@ -259,7 +335,8 @@
     "lang": "en",
     "say": "download invoice",
     "typed": ["download invoice"],
-    "any": ["invoicing__documents_download_pdf"]
+    "any": ["invoicing__documents_download_pdf"],
+    "modelRun": true
   },
   {
     "id": "A010",
@@ -267,7 +344,8 @@
     "lang": "en",
     "say": "shipping label",
     "typed": ["shipping label"],
-    "any": ["boxtal__create_shipment", "boxtal__get_documents", "boxtal__print_pack"]
+    "any": ["boxtal__create_shipment", "boxtal__get_documents", "boxtal__print_pack"],
+    "modelRun": true
   },
   {
     "id": "A011",
@@ -275,7 +353,8 @@
     "lang": "en",
     "say": "update price",
     "typed": ["update price"],
-    "any": ["shopify__variants_update"]
+    "any": ["shopify__variants_update"],
+    "modelRun": true
   },
   {
     "id": "A012",
@@ -283,7 +362,8 @@
     "lang": "en",
     "say": "mark fulfilled",
     "typed": ["mark fulfilled"],
-    "any": ["shopify__fulfillments_create"]
+    "any": ["shopify__fulfillments_create"],
+    "modelRun": true
   },
   {
     "id": "A013",
@@ -291,7 +371,8 @@
     "lang": "en",
     "say": "add task",
     "typed": ["add task"],
-    "any": ["projects__create"]
+    "any": ["projects__create"],
+    "modelRun": true
   },
   {
     "id": "A014",
@@ -299,7 +380,8 @@
     "lang": "en",
     "say": "project status",
     "typed": ["project status"],
-    "any": ["projects__tasks_byProject"]
+    "any": ["projects__tasks_byProject"],
+    "modelRun": true
   },
   {
     "id": "A015",
@@ -307,7 +389,8 @@
     "lang": "en",
     "say": "grant role",
     "typed": ["grant role"],
-    "any": ["kernel__assign_role"]
+    "any": ["kernel__assign_role"],
+    "modelRun": true
   },
   {
     "id": "A016",
@@ -315,7 +398,8 @@
     "lang": "en",
     "say": "set priority",
     "typed": ["set priority"],
-    "any": ["tickets__setPriority"]
+    "any": ["tickets__setPriority"],
+    "modelRun": true
   },
   {
     "id": "A017",
@@ -323,7 +407,8 @@
     "lang": "en",
     "say": "schedule meeting",
     "typed": ["schedule meeting"],
-    "any": ["calendar__create_event"]
+    "any": ["calendar__create_event"],
+    "modelRun": true
   },
   {
     "id": "A018",
@@ -331,7 +416,8 @@
     "lang": "en",
     "say": "stop ad",
     "typed": ["stop ad"],
-    "any": ["ads__pause", "ads__google_pause"]
+    "any": ["ads__pause", "ads__google_pause"],
+    "modelRun": true
   },
   {
     "id": "A019",
@@ -339,7 +425,8 @@
     "lang": "en",
     "say": "customer satisfaction",
     "typed": ["customer satisfaction"],
-    "any": ["tickets__csat_summary", "tickets__csat_list"]
+    "any": ["tickets__csat_summary", "tickets__csat_list"],
+    "modelRun": true
   },
   {
     "id": "A020",
@@ -347,7 +434,8 @@
     "lang": "fr",
     "say": "colis bloqué",
     "typed": ["colis bloqué"],
-    "any": ["boxtal__stuck_list", "boxtal__exceptions_list"]
+    "any": ["boxtal__stuck_list", "boxtal__exceptions_list"],
+    "modelRun": true
   },
   {
     "id": "A021",
@@ -355,7 +443,8 @@
     "lang": "fr",
     "say": "réclamation transporteur",
     "typed": ["réclamation transporteur"],
-    "any": ["boxtal__claim_open"]
+    "any": ["boxtal__claim_open"],
+    "modelRun": true
   },
   {
     "id": "A022",
@@ -363,7 +452,8 @@
     "lang": "fr",
     "say": "avoir",
     "typed": ["avoir"],
-    "any": ["invoicing__credit_note_create_and_issue", "invoicing__credit_note_issue"]
+    "any": ["invoicing__credit_note_create_and_issue", "invoicing__credit_note_issue"],
+    "modelRun": true
   },
   {
     "id": "A023",
@@ -371,7 +461,8 @@
     "lang": "fr",
     "say": "devis en facture",
     "typed": ["devis en facture"],
-    "any": ["invoicing__documents_convert_to_invoice"]
+    "any": ["invoicing__documents_convert_to_invoice"],
+    "modelRun": true
   },
   {
     "id": "A024",
@@ -379,7 +470,8 @@
     "lang": "fr",
     "say": "factures fournisseurs",
     "typed": ["factures fournisseurs"],
-    "any": ["invoicing__received_einvoices_list", "pennylane__supplier_invoices_list"]
+    "any": ["invoicing__received_einvoices_list", "pennylane__supplier_invoices_list"],
+    "modelRun": true
   },
   {
     "id": "A025",
@@ -387,7 +479,8 @@
     "lang": "fr",
     "say": "facture du mois",
     "typed": ["facture du mois"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A026",
@@ -395,7 +488,8 @@
     "lang": "fr",
     "say": "la facture",
     "typed": ["la facture"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A027",
@@ -403,7 +497,8 @@
     "lang": "en",
     "say": "search invoices",
     "typed": ["search invoices"],
-    "any": ["invoicing__documents_search"]
+    "any": ["invoicing__documents_search"],
+    "modelRun": true
   },
   {
     "id": "A028",
@@ -411,7 +506,8 @@
     "lang": "en",
     "say": "where is the parcel",
     "typed": ["where is the parcel"],
-    "any": ["boxtal__track"]
+    "any": ["boxtal__track"],
+    "modelRun": true
   },
   {
     "id": "A029",
@@ -419,7 +515,8 @@
     "lang": "en",
     "say": "what's left to ship",
     "typed": ["what's left to ship"],
-    "any": ["boxtal__to_prepare_list", "boxtal__prep_list"]
+    "any": ["boxtal__to_prepare_list", "boxtal__prep_list"],
+    "modelRun": true
   },
   {
     "id": "A030",
@@ -431,7 +528,8 @@
       "shopify__refunds_create",
       "invoicing__documents_record_refund",
       "shopify__returns_refund"
-    ]
+    ],
+    "modelRun": true
   },
   {
     "id": "A031",
@@ -439,7 +537,8 @@
     "lang": "en",
     "say": "add a note on the order",
     "typed": ["add a note on the order"],
-    "any": ["shopify__order_note_set", "shopify__order_update"]
+    "any": ["shopify__order_note_set", "shopify__order_update"],
+    "modelRun": true
   },
   {
     "id": "A032",
@@ -447,7 +546,8 @@
     "lang": "en",
     "say": "require approval",
     "typed": ["require approval"],
-    "any": ["kernel__approval_policy_set"]
+    "any": ["kernel__approval_policy_set"],
+    "modelRun": true
   },
   {
     "id": "A033",
@@ -455,7 +555,8 @@
     "lang": "en",
     "say": "auto approve",
     "typed": ["auto approve"],
-    "any": ["kernel__policy_set"]
+    "any": ["kernel__policy_set"],
+    "modelRun": true
   },
   {
     "id": "A034",
@@ -463,7 +564,8 @@
     "lang": "fr",
     "say": "active l'application",
     "typed": ["active l'application"],
-    "any": ["kernel__enable_app", "kernel__apps_set_enabled"]
+    "any": ["kernel__enable_app", "kernel__apps_set_enabled"],
+    "modelRun": true
   },
   {
     "id": "A035",
@@ -471,7 +573,8 @@
     "lang": "fr",
     "say": "imprime étiquettes",
     "typed": ["imprime étiquettes"],
-    "any": ["boxtal__print_pack", "boxtal__print_pack_batch"]
+    "any": ["boxtal__print_pack", "boxtal__print_pack_batch"],
+    "modelRun": true
   },
   {
     "id": "L036",
@@ -2200,5 +2303,1149 @@
     "say": "like post",
     "typed": ["like post"],
     "any": ["social__like_item"]
+  },
+  {
+    "id": "H177",
+    "set": "heldout",
+    "lang": "en",
+    "say": "suggest next steps",
+    "typed": ["suggest next steps"],
+    "any": ["kernel__suggest_next_steps"]
+  },
+  {
+    "id": "H178",
+    "set": "heldout",
+    "lang": "fr",
+    "say": "je suis en congés la semaine prochaine, Tom me remplace",
+    "typed": ["congés semaine prochaine", "absent remplaçant"],
+    "any": ["kernel__set_away"]
+  },
+  {
+    "id": "C02",
+    "set": "seed",
+    "lang": "en",
+    "say": "who looks after Arlon",
+    "typed": ["account manager", "company account manager", "who handles company", "company owner"],
+    "any": ["kernel__companies_read", "kernel__companies_search"],
+    "modelRun": true
+  },
+  {
+    "id": "C08",
+    "set": "seed",
+    "lang": "fr",
+    "say": "mets Élodie account manager de Maison Arlon",
+    "typed": ["account manager", "set account manager", "company owner", "modifier société"],
+    "any": ["kernel__companies_write"],
+    "modelRun": true
+  },
+  {
+    "id": "C09",
+    "set": "seed",
+    "lang": "en",
+    "say": "give Tom's accounts to Élodie",
+    "typed": [
+      "reassign accounts",
+      "hand over accounts",
+      "transfer companies",
+      "bulk change account manager"
+    ],
+    "any": ["kernel__companies_write"],
+    "modelRun": true
+  },
+  {
+    "id": "C60",
+    "set": "seed",
+    "lang": "en",
+    "say": "typo: compnay Arlon",
+    "typed": ["compnay", "comapny"],
+    "any": ["kernel__companies_search"],
+    "modelRun": true
+  },
+  {
+    "id": "C61",
+    "set": "seed",
+    "lang": "en",
+    "say": "merge Arlon and Maison Arlon",
+    "typed": ["merge companies", "duplicate companies", "company merge"],
+    "any": ["kernel__companies_merge", "kernel__companies_find_duplicates"],
+    "modelRun": true
+  },
+  {
+    "id": "K01",
+    "set": "seed",
+    "lang": "en",
+    "say": "put these three people under Lumen",
+    "typed": ["link contacts to company", "add people to company", "contacts company"],
+    "any": ["kernel__companies_link_contacts"],
+    "modelRun": true
+  },
+  {
+    "id": "K02",
+    "set": "seed",
+    "lang": "fr",
+    "say": "crée les sociétés de ces contacts",
+    "typed": ["créer sociétés", "sociétés depuis contacts", "regrouper contacts par société"],
+    "any": ["kernel__companies_propose_from_contacts"],
+    "modelRun": true
+  },
+  {
+    "id": "K03",
+    "set": "seed",
+    "lang": "en",
+    "say": "Arlon and Arlon Group are not the same company",
+    "typed": ["not the same company", "not a duplicate", "different companies"],
+    "any": ["kernel__companies_mark_not_same"],
+    "modelRun": true
+  },
+  {
+    "id": "C20",
+    "set": "seed",
+    "lang": "fr",
+    "say": "ouvre un deal pour Lumen à 12k",
+    "typed": ["create deal", "nouvelle opportunité", "affaire", "new deal"],
+    "any": ["projects__create"],
+    "modelRun": true
+  },
+  {
+    "id": "C21",
+    "set": "seed",
+    "lang": "en",
+    "say": "we won Lumen",
+    "typed": ["deal won", "close deal", "mark won"],
+    "any": ["projects__deals_update"],
+    "modelRun": true
+  },
+  {
+    "id": "C22",
+    "set": "seed",
+    "lang": "en",
+    "say": "how is the pipeline",
+    "typed": ["pipeline", "deals by stage", "sales forecast"],
+    "any": ["projects__deals_rollup", "projects__deals_search"],
+    "modelRun": true
+  },
+  {
+    "id": "C23",
+    "set": "seed",
+    "lang": "fr",
+    "say": "qui dois-je relancer",
+    "typed": ["relance", "follow up", "quiet deals", "relancer prospects"],
+    "any": ["projects__deals_followup_candidates"],
+    "modelRun": true
+  },
+  {
+    "id": "K04",
+    "set": "seed",
+    "lang": "en",
+    "say": "set up a sales pipeline for the new market",
+    "typed": ["sales pipeline", "new pipeline", "create pipeline"],
+    "any": ["projects__deals_pipeline_create"],
+    "modelRun": true
+  },
+  {
+    "id": "K05",
+    "set": "seed",
+    "lang": "fr",
+    "say": "il ne veut plus recevoir nos mails, note-le",
+    "typed": ["ne plus recevoir", "désinscrire", "unsubscribe"],
+    "any": ["mail__suppression_add"]
+  },
+  {
+    "id": "K06",
+    "set": "seed",
+    "lang": "en",
+    "say": "did any of these people unsubscribe",
+    "typed": ["unsubscribed", "opted out", "check opt-out"],
+    "any": ["mail__suppression_check"],
+    "modelRun": true
+  },
+  {
+    "id": "K07",
+    "set": "seed",
+    "lang": "en",
+    "say": "she asked to get our offers again",
+    "typed": ["resubscribe", "opt back in", "remove opt-out"],
+    "any": ["mail__suppression_remove"],
+    "modelRun": true
+  },
+  {
+    "id": "K08",
+    "set": "seed",
+    "lang": "en",
+    "say": "Arlon Studio and Maison Arlon are the same client, keep Maison Arlon",
+    "typed": ["merge companies", "duplicate company", "combine companies"],
+    "any": ["kernel__companies_merge"]
+  },
+  {
+    "id": "K09",
+    "set": "seed",
+    "lang": "fr",
+    "say": "fusionne ces deux sociétés, c'est le même client",
+    "typed": ["fusionner sociétés", "doublon société", "même entreprise"],
+    "any": ["kernel__companies_merge"]
+  },
+  {
+    "id": "C62",
+    "set": "seed",
+    "lang": "en",
+    "say": "what have we said to Lumen lately",
+    "typed": ["company timeline", "history with client", "customer history", "activity company"],
+    "any": ["kernel__company_timeline"],
+    "modelRun": true
+  },
+  {
+    "id": "C63",
+    "set": "seed",
+    "lang": "fr",
+    "say": "historique avec le client Lumen",
+    "typed": ["historique client", "historique société", "fil d'activité"],
+    "any": ["kernel__company_timeline"],
+    "modelRun": true
+  },
+  {
+    "id": "C24",
+    "set": "seed",
+    "lang": "en",
+    "say": "stop emailing bob@example",
+    "typed": ["unsubscribe", "opt out", "suppress email", "do not contact"],
+    "any": ["mail__suppression_add"],
+    "modelRun": true
+  },
+  {
+    "id": "C25",
+    "set": "seed",
+    "lang": "fr",
+    "say": "ne lui envoie plus de mails",
+    "typed": ["désinscrire", "désabonner", "opposition"],
+    "any": ["mail__suppression_add"],
+    "modelRun": true
+  },
+  {
+    "id": "K10",
+    "set": "seed",
+    "lang": "en",
+    "say": "are any of these companies the same one twice",
+    "typed": ["duplicate companies", "find duplicates", "same company twice"],
+    "any": ["kernel__companies_find_duplicates"]
+  },
+  {
+    "id": "K11",
+    "set": "seed",
+    "lang": "fr",
+    "say": "rattache Claire à Lumen",
+    "typed": ["rattacher contact société", "lier contact entreprise", "ajouter à la société"],
+    "any": ["kernel__companies_link_contacts", "kernel__companies_link_batch"]
+  },
+  {
+    "id": "K12",
+    "set": "seed",
+    "lang": "fr",
+    "say": "ce ne sont pas la même société",
+    "typed": ["pas un doublon", "pas la même société", "société différente"],
+    "any": ["kernel__companies_mark_not_same"]
+  },
+  {
+    "id": "K13",
+    "set": "seed",
+    "lang": "en",
+    "say": "build companies from the people in my contacts",
+    "typed": [
+      "create companies from contacts",
+      "group contacts by company",
+      "companies from contacts"
+    ],
+    "any": ["kernel__companies_propose_from_contacts", "kernel__companies_link_batch"]
+  },
+  {
+    "id": "K14",
+    "set": "seed",
+    "lang": "fr",
+    "say": "montre-moi la fiche de la société Lumen",
+    "typed": ["fiche société", "détail société", "société"],
+    "any": ["kernel__companies_read", "kernel__companies_search"]
+  },
+  {
+    "id": "K15",
+    "set": "seed",
+    "lang": "fr",
+    "say": "est-ce qu'elle s'est désinscrite",
+    "typed": ["désinscrit", "vérifier désinscription", "opposition"],
+    "any": ["mail__suppression_check"]
+  },
+  {
+    "id": "K16",
+    "set": "seed",
+    "lang": "fr",
+    "say": "elle veut recevoir à nouveau nos mails",
+    "typed": ["réinscrire", "lever opposition", "réabonner"],
+    "any": ["mail__suppression_remove"]
+  },
+  {
+    "id": "K17",
+    "set": "seed",
+    "lang": "en",
+    "say": "who has gone quiet on us",
+    "typed": ["quiet deals", "follow up", "no reply deals", "chase"],
+    "any": ["projects__deals_followup_candidates"]
+  },
+  {
+    "id": "K18",
+    "set": "seed",
+    "lang": "fr",
+    "say": "crée un nouveau pipeline pour le marché allemand",
+    "typed": ["nouveau pipeline", "créer pipeline", "pipeline ventes"],
+    "any": ["projects__deals_pipeline_create"]
+  },
+  {
+    "id": "K19",
+    "set": "seed",
+    "lang": "fr",
+    "say": "quel est le total des affaires en cours",
+    "typed": ["prévision ventes", "total affaires", "pipeline"],
+    "any": ["projects__deals_rollup", "projects__deals_search"]
+  },
+  {
+    "id": "K20",
+    "set": "seed",
+    "lang": "fr",
+    "say": "montre-moi les affaires de Lumen",
+    "typed": ["affaires", "deals société", "chercher affaire"],
+    "any": ["projects__deals_search"]
+  },
+  {
+    "id": "K21",
+    "set": "seed",
+    "lang": "fr",
+    "say": "on a perdu l'affaire Lumen",
+    "typed": ["affaire perdue", "deal lost", "perdu"],
+    "any": ["projects__deals_update"]
+  },
+  {
+    "id": "K22",
+    "set": "seed",
+    "lang": "en",
+    "say": "show me all open deals over 10k",
+    "typed": ["open deals", "list deals", "search deals"],
+    "any": ["projects__deals_search"]
+  },
+  {
+    "id": "K23",
+    "set": "seed",
+    "lang": "en",
+    "say": "what is the forecast for this quarter",
+    "typed": ["forecast", "pipeline forecast", "sales forecast"],
+    "any": ["projects__deals_rollup", "projects__deals_search"]
+  },
+  {
+    "id": "K24",
+    "set": "seed",
+    "lang": "en",
+    "say": "create these twelve companies and put their people under them",
+    "typed": ["create companies", "put people in companies", "group contacts under companies"],
+    "any": ["kernel__companies_link_batch"],
+    "modelRun": true
+  },
+  {
+    "id": "Y01",
+    "set": "seed",
+    "lang": "fr",
+    "say": "vérifie la clé Stripe",
+    "typed": ["vérifier la clé Stripe", "check the Stripe key"],
+    "any": ["stripe__connection_check"]
+  },
+  {
+    "id": "Y02",
+    "set": "seed",
+    "lang": "fr",
+    "say": "quels clients Stripe ne sont liés à aucune entreprise ?",
+    "typed": ["clients Stripe non liés", "Stripe customers not linked"],
+    "any": ["stripe__customers_search"]
+  },
+  {
+    "id": "Y03",
+    "set": "seed",
+    "lang": "en",
+    "say": "show me the Stripe customer for Maison Lune",
+    "typed": ["Stripe customer", "customer subscriptions"],
+    "any": ["stripe__customers_get"]
+  },
+  {
+    "id": "Y04",
+    "set": "seed",
+    "lang": "fr",
+    "say": "rattache ce client Stripe à l'entreprise Maison Lune",
+    "typed": ["lier un client Stripe", "link Stripe customer to company"],
+    "any": ["stripe__customer_link"]
+  },
+  {
+    "id": "Y05",
+    "set": "seed",
+    "lang": "en",
+    "say": "which subscriptions are past due?",
+    "typed": ["past due subscriptions", "abonnements en retard"],
+    "any": ["stripe__subscriptions_search"]
+  },
+  {
+    "id": "Y06",
+    "set": "seed",
+    "lang": "fr",
+    "say": "les factures Stripe impayées de ce client",
+    "typed": ["factures Stripe ouvertes", "open Stripe invoices"],
+    "any": ["stripe__invoices_search"]
+  },
+  {
+    "id": "Y07",
+    "set": "seed",
+    "lang": "en",
+    "say": "list the failed card payments this week",
+    "typed": ["failed payments", "paiements échoués"],
+    "any": ["stripe__payments_search"]
+  },
+  {
+    "id": "Y08",
+    "set": "seed",
+    "lang": "fr",
+    "say": "y a-t-il des litiges ouverts sur Stripe ?",
+    "typed": ["litiges Stripe", "Stripe disputes"],
+    "any": ["stripe__disputes_list"]
+  },
+  {
+    "id": "M01",
+    "set": "seed",
+    "lang": "en",
+    "say": "which clients do we bill every month",
+    "typed": ["recurring invoices", "monthly billing list", "subscriptions we invoice"],
+    "any": ["invoicing__recurring_list"],
+    "modelRun": true
+  },
+  {
+    "id": "M02",
+    "set": "seed",
+    "lang": "fr",
+    "say": "montre-moi la facturation de fin de mois avant que je valide",
+    "typed": ["facturation fin de mois", "factures mensuelles à valider", "month-end invoices"],
+    "any": ["invoicing__recurring_run_get"],
+    "modelRun": true
+  },
+  {
+    "id": "M03",
+    "set": "seed",
+    "lang": "en",
+    "say": "approve this month's invoices so they go out on Monday",
+    "typed": ["approve month-end invoices", "send monthly invoices", "month-end run"],
+    "any": ["invoicing__recurring_run_issue"],
+    "modelRun": true
+  },
+  {
+    "id": "M04",
+    "set": "seed",
+    "lang": "fr",
+    "say": "j'ai validé les factures du mois trop vite, annule la validation",
+    "typed": [
+      "annuler validation factures du mois",
+      "undo month-end approval",
+      "revenir en arrière"
+    ],
+    "any": ["invoicing__recurring_run_unapprove"],
+    "modelRun": true
+  },
+  {
+    "id": "M05",
+    "set": "seed",
+    "lang": "fr",
+    "say": "facture Sauvan 1 200 euros tous les mois à partir de janvier",
+    "typed": ["facturer chaque mois", "nouvel abonnement", "facture récurrente"],
+    "any": ["invoicing__recurring_schedule_create"],
+    "modelRun": true
+  },
+  {
+    "id": "M06",
+    "set": "seed",
+    "lang": "en",
+    "say": "stop billing Maison Nord until March, they paused the contract",
+    "typed": ["pause billing", "suspend monthly invoice", "stop invoicing for now"],
+    "any": ["invoicing__recurring_schedule_pause"],
+    "modelRun": true
+  },
+  {
+    "id": "M07",
+    "set": "seed",
+    "lang": "fr",
+    "say": "à partir de février le forfait passe à 1 500 euros",
+    "typed": ["changer montant mensuel", "modifier abonnement", "update monthly price"],
+    "any": ["invoicing__recurring_schedule_update"],
+    "modelRun": true
+  },
+  {
+    "id": "M08",
+    "set": "seed",
+    "lang": "fr",
+    "say": "est-ce que la clé Stripe qu'on a mise marche bien ?",
+    "typed": ["vérifier clé stripe", "tester connexion stripe", "check stripe key"],
+    "any": ["stripe__connection_check"],
+    "modelRun": true
+  },
+  {
+    "id": "Y09",
+    "set": "seed",
+    "lang": "en",
+    "say": "what is our MRR right now?",
+    "typed": ["monthly recurring revenue", "revenu récurrent mensuel"],
+    "any": ["stripe__mrr_query"]
+  },
+  {
+    "id": "Y10",
+    "set": "seed",
+    "lang": "fr",
+    "say": "rembourse 30 euros sur le dernier paiement Stripe de Maison Lune",
+    "typed": ["rembourser un paiement Stripe", "refund a Stripe charge"],
+    "any": ["stripe__refunds_create"]
+  },
+  {
+    "id": "Y11",
+    "set": "seed",
+    "lang": "en",
+    "say": "cancel their Stripe subscription at the end of the month",
+    "typed": ["cancel Stripe subscription", "résilier l'abonnement Stripe"],
+    "any": ["stripe__subscription_cancel"]
+  },
+  {
+    "id": "Y12",
+    "set": "seed",
+    "lang": "fr",
+    "say": "envoie-lui un lien pour mettre à jour sa carte",
+    "typed": ["lien pour changer de carte", "card update link"],
+    "any": ["stripe__card_update_link"]
+  },
+  {
+    "id": "WI1",
+    "set": "seed",
+    "lang": "en",
+    "say": "who sends the legal invoice for our card subscriptions, us or Stripe",
+    "typed": ["who issues card subscription invoices", "invoice issuer Stripe or Liaison"],
+    "any": ["invoicing__issuer_stream_get"]
+  },
+  {
+    "id": "WI2",
+    "set": "seed",
+    "lang": "fr",
+    "say": "je veux que ce soit Stripe qui émette les factures des abonnements par carte",
+    "typed": ["Stripe émet les factures", "changer l'émetteur des abonnements carte"],
+    "any": ["invoicing__issuer_stream_set"]
+  },
+  {
+    "id": "WI3",
+    "set": "seed",
+    "lang": "en",
+    "say": "I turned off Stripe's receipt and invoice emails to customers, note it",
+    "typed": ["Stripe emails are off", "confirm Stripe customer emails off"],
+    "any": ["invoicing__issuer_emails_confirm"]
+  },
+  {
+    "id": "WI4",
+    "set": "seed",
+    "lang": "fr",
+    "say": "ce paiement Stripe n'a pas de facture, fais-la",
+    "typed": ["facturer un paiement Stripe orphelin", "créer la facture du paiement"],
+    "any": ["invoicing__invoice_from_stripe_payment"]
+  },
+  {
+    "id": "WI5",
+    "set": "seed",
+    "lang": "en",
+    "say": "that Stripe payment is for invoice 2026-0042, link them",
+    "typed": ["link a Stripe payment to an invoice", "reconcile the payment with its invoice"],
+    "any": ["invoicing__payment_link_to_invoice"]
+  },
+  {
+    "id": "C03",
+    "set": "seed",
+    "lang": "en",
+    "say": "Lumen cancelled",
+    "typed": ["cancel subscription", "subscription cancelled", "stripe subscription"],
+    "any": ["stripe__subscriptions_search", "stripe__subscription_cancel"],
+    "modelRun": true
+  },
+  {
+    "id": "C14",
+    "set": "seed",
+    "lang": "en",
+    "say": "refund Arlon on stripe",
+    "typed": ["refund", "stripe refund", "refund payment", "refund charge"],
+    "any": ["stripe__refunds_create"],
+    "modelRun": true
+  },
+  {
+    "id": "C18",
+    "set": "seed",
+    "lang": "en",
+    "say": "what's our MRR",
+    "typed": ["mrr", "monthly recurring revenue", "revenue"],
+    "any": ["stripe__mrr_query"],
+    "modelRun": true
+  },
+  {
+    "id": "C19",
+    "set": "seed",
+    "lang": "en",
+    "say": "send them the link to change their card",
+    "typed": ["update card", "card update link", "payment method link"],
+    "any": ["stripe__card_update_link"],
+    "modelRun": true
+  },
+  {
+    "id": "C37",
+    "set": "seed",
+    "lang": "en",
+    "say": "bill them 2000 every month",
+    "typed": [
+      "recurring invoice",
+      "facture récurrente",
+      "retainer",
+      "schedule invoice",
+      "monthly invoice"
+    ],
+    "any": ["invoicing__recurring_schedule_create"],
+    "modelRun": true
+  },
+  {
+    "id": "C38",
+    "set": "seed",
+    "lang": "en",
+    "say": "what's in this month's run",
+    "typed": ["recurring run", "month end", "run of invoices", "pending recurring"],
+    "any": ["invoicing__recurring_run_get", "invoicing__recurring_list"],
+    "modelRun": true
+  },
+  {
+    "id": "C58",
+    "set": "seed",
+    "lang": "en",
+    "say": "typo: subscripton of Lumen",
+    "typed": ["subscripton", "subscrition"],
+    "any": ["stripe__subscriptions_search"],
+    "modelRun": true
+  },
+  {
+    "id": "C64",
+    "set": "seed",
+    "lang": "en",
+    "say": "Lumen cancelled, take them out",
+    "typed": ["take out of this month's run", "remove from month end run", "end schedule"],
+    "any": ["invoicing__recurring_run_get", "invoicing__drafts_discard"],
+    "modelRun": true
+  },
+  {
+    "id": "C65",
+    "set": "seed",
+    "lang": "en",
+    "say": "Lumen cancelled, take them out",
+    "typed": ["end the monthly invoice", "stop recurring invoice", "pause schedule"],
+    "any": ["invoicing__recurring_schedule_pause", "invoicing__recurring_schedule_update"],
+    "modelRun": true
+  },
+  {
+    "id": "C66",
+    "set": "seed",
+    "lang": "en",
+    "say": "add 2 days at 650 for Sauvan",
+    "typed": ["add a line to the draft", "edit draft", "month end run add row"],
+    "any": ["invoicing__drafts_update"],
+    "modelRun": true
+  },
+  {
+    "id": "C67",
+    "set": "seed",
+    "lang": "en",
+    "say": "from now on 650 for Belcour",
+    "typed": ["change monthly amount", "update recurring price", "modifier abonnement"],
+    "any": ["invoicing__recurring_schedule_update"],
+    "modelRun": true
+  },
+  {
+    "id": "C68",
+    "set": "seed",
+    "lang": "en",
+    "say": "approve it",
+    "typed": ["approve month-end invoices", "month-end run", "approuver factures du mois"],
+    "any": ["invoicing__recurring_run_get", "invoicing__recurring_run_issue"],
+    "modelRun": true
+  },
+  {
+    "id": "Y13",
+    "set": "seed",
+    "lang": "en",
+    "say": "which Stripe customers are on a trial?",
+    "typed": ["Stripe customers on trial", "trial customers"],
+    "any": ["stripe__customers_search"],
+    "modelRun": true
+  },
+  {
+    "id": "Y14",
+    "set": "seed",
+    "lang": "fr",
+    "say": "montre-moi la fiche Stripe de Maison Arlon",
+    "typed": ["fiche client Stripe", "Stripe customer record"],
+    "any": ["stripe__customers_get"],
+    "modelRun": true
+  },
+  {
+    "id": "Y15",
+    "set": "seed",
+    "lang": "en",
+    "say": "this Stripe customer is Lumen Studio, link them",
+    "typed": ["link Stripe customer to company", "associate Stripe customer"],
+    "any": ["stripe__customer_link"],
+    "modelRun": true
+  },
+  {
+    "id": "Y16",
+    "set": "seed",
+    "lang": "en",
+    "say": "does Arlon have open Stripe invoices?",
+    "typed": ["open Stripe invoices", "unpaid Stripe invoices"],
+    "any": ["stripe__invoices_search"],
+    "modelRun": true
+  },
+  {
+    "id": "Y17",
+    "set": "seed",
+    "lang": "fr",
+    "say": "quels paiements par carte ont échoué cette semaine ?",
+    "typed": ["paiements échoués", "failed card payments"],
+    "any": ["stripe__payments_search"],
+    "modelRun": true
+  },
+  {
+    "id": "Y18",
+    "set": "seed",
+    "lang": "en",
+    "say": "are there any open chargebacks?",
+    "typed": ["open disputes", "chargebacks"],
+    "any": ["stripe__disputes_list"],
+    "modelRun": true
+  },
+  {
+    "id": "M09",
+    "set": "seed",
+    "lang": "en",
+    "say": "take back my approval of this month's invoices",
+    "typed": ["undo month-end approval", "reopen month-end run"],
+    "any": ["invoicing__recurring_run_unapprove"],
+    "modelRun": true
+  },
+  {
+    "id": "M10",
+    "set": "seed",
+    "lang": "fr",
+    "say": "quelles factures récurrentes avons-nous ce mois-ci ?",
+    "typed": ["factures récurrentes", "échéancier de facturation"],
+    "any": ["invoicing__recurring_list"],
+    "modelRun": true
+  },
+  {
+    "id": "WI6",
+    "set": "seed",
+    "lang": "fr",
+    "say": "qui émet les factures de ce vendeur, Stripe ou nous ?",
+    "typed": ["flux de facturation émetteur", "who issues the invoices"],
+    "any": ["invoicing__issuer_stream_get"],
+    "modelRun": true
+  },
+  {
+    "id": "WI7",
+    "set": "seed",
+    "lang": "en",
+    "say": "from now on we issue the invoices, not Stripe",
+    "typed": ["switch invoice stream to Liaison", "set issuer stream"],
+    "any": ["invoicing__issuer_stream_set"],
+    "modelRun": true
+  },
+  {
+    "id": "WI8",
+    "set": "seed",
+    "lang": "en",
+    "say": "I switched off Stripe's receipt emails",
+    "typed": ["confirm Stripe emails are off", "Stripe receipts disabled"],
+    "any": ["invoicing__issuer_emails_confirm"],
+    "modelRun": true
+  },
+  {
+    "id": "WI9",
+    "set": "seed",
+    "lang": "fr",
+    "say": "rapproche ce paiement avec la facture 2026-0042",
+    "typed": ["rapprocher paiement facture", "lettrer un paiement"],
+    "any": ["invoicing__payment_link_to_invoice"],
+    "modelRun": true
+  },
+  {
+    "id": "WI10",
+    "set": "seed",
+    "lang": "en",
+    "say": "make an invoice for this Stripe payment that has none",
+    "typed": ["invoice a Stripe payment", "create invoice from payment"],
+    "any": ["invoicing__invoice_from_stripe_payment"],
+    "modelRun": true
+  },
+  {
+    "id": "DS1",
+    "set": "seed",
+    "lang": "en",
+    "say": "let Margot see the sales dashboard, but she can't edit it",
+    "typed": ["share dashboard", "dashboard access viewer"],
+    "any": ["kernel__dashboards_share"],
+    "modelRun": true
+  },
+  {
+    "id": "GH01",
+    "set": "seed",
+    "lang": "en",
+    "say": "which repositories do we have on GitHub",
+    "typed": ["github repositories", "list github repos"],
+    "any": ["github__github_list_repos"]
+  },
+  {
+    "id": "GH02",
+    "set": "seed",
+    "lang": "fr",
+    "say": "qu'est-ce qui a été poussé sur le dépôt GitHub du site cette semaine",
+    "typed": ["commits github", "historique github"],
+    "any": ["github__github_list"]
+  },
+  {
+    "id": "GH03",
+    "set": "seed",
+    "lang": "en",
+    "say": "show me the diff of that GitHub commit",
+    "typed": ["github commit diff", "get github commit"],
+    "any": ["github__github_get_commit"]
+  },
+  {
+    "id": "GH04",
+    "set": "seed",
+    "lang": "en",
+    "say": "which pull requests were merged on GitHub this week",
+    "typed": ["github pull requests", "list pull requests"],
+    "any": ["github__github_list"]
+  },
+  {
+    "id": "GH05",
+    "set": "seed",
+    "lang": "en",
+    "say": "what files does GitHub pull request 12 change",
+    "typed": ["github pull request files", "get pull request"],
+    "any": ["github__github_get_pull_request"]
+  },
+  {
+    "id": "GH06",
+    "set": "seed",
+    "lang": "fr",
+    "say": "les bugs ouverts sur GitHub pour le site",
+    "typed": ["github issues", "bugs github"],
+    "any": ["github__github_list", "github__github_search"]
+  },
+  {
+    "id": "GH07",
+    "set": "seed",
+    "lang": "fr",
+    "say": "où en est le jalon de lancement sur GitHub",
+    "typed": ["jalons github", "github milestones"],
+    "any": ["github__github_list"]
+  },
+  {
+    "id": "GH08",
+    "set": "seed",
+    "lang": "en",
+    "say": "what labels does the GitHub repository use",
+    "typed": ["github labels", "list github labels"],
+    "any": ["github__github_list"]
+  },
+  {
+    "id": "GH09",
+    "set": "seed",
+    "lang": "en",
+    "say": "what was in the last GitHub release",
+    "typed": ["github releases", "github release notes"],
+    "any": ["github__github_list"]
+  },
+  {
+    "id": "GH10",
+    "set": "seed",
+    "lang": "en",
+    "say": "which git tags are on the GitHub repository",
+    "typed": ["github tags", "list github tags"],
+    "any": ["github__github_list"]
+  },
+  {
+    "id": "GH11",
+    "set": "seed",
+    "lang": "fr",
+    "say": "montre-moi le README du dépôt GitHub",
+    "typed": ["lire fichier github", "github read file"],
+    "any": ["github__github_read_file"]
+  },
+  {
+    "id": "GH12",
+    "set": "seed",
+    "lang": "en",
+    "say": "what is in the docs folder of the GitHub repository",
+    "typed": ["github repository tree", "github folder files"],
+    "any": ["github__github_list"]
+  },
+  {
+    "id": "GH13",
+    "set": "seed",
+    "lang": "en",
+    "say": "search our GitHub code for the invoice export",
+    "typed": ["search github code", "github search"],
+    "any": ["github__github_search"]
+  },
+  {
+    "id": "C11",
+    "set": "seed",
+    "lang": "fr",
+    "say": "j'ai passé 3h sur cette tâche",
+    "typed": ["temps passé", "log time", "took", "track hours", "task time"],
+    "any": ["projects__task_time_set"],
+    "modelRun": true
+  },
+  {
+    "id": "C69",
+    "set": "seed",
+    "lang": "en",
+    "say": "set a day rate on the project",
+    "typed": ["project rate", "billing terms", "day rate", "fixed price"],
+    "any": ["projects__billing_terms_set"],
+    "modelRun": true
+  },
+  {
+    "id": "C70",
+    "set": "seed",
+    "lang": "fr",
+    "say": "la tâche a pris moins que prévu, corrige",
+    "typed": ["corriger temps", "correct time entry"],
+    "any": ["projects__task_time_correct", "projects__task_time_set", "projects__update"],
+    "modelRun": true
+  },
+  {
+    "id": "C74",
+    "set": "seed",
+    "lang": "fr",
+    "say": "la tâche a pris 2 jours",
+    "typed": ["took", "a pris", "durée tâche"],
+    "any": ["projects__task_time_set"],
+    "modelRun": true
+  },
+  {
+    "id": "C77",
+    "set": "seed",
+    "lang": "en",
+    "say": "how much time have I logged on this task",
+    "typed": ["my time on task", "time logged", "temps saisi", "took entries"],
+    "any": ["projects__task_time_get"],
+    "modelRun": true
+  },
+  {
+    "id": "C78",
+    "set": "seed",
+    "lang": "en",
+    "say": "turn on dated hours for the project",
+    "typed": ["dated hours", "heures datées", "project plan", "billing basis"],
+    "any": ["projects__time_plan_set"],
+    "modelRun": true
+  },
+  {
+    "id": "C79",
+    "set": "seed",
+    "lang": "fr",
+    "say": "le forfait a 20 heures en novembre",
+    "typed": ["period timebox", "forfait mensuel", "heures du mois", "retainer hours"],
+    "any": ["projects__period_timebox_set"],
+    "modelRun": true
+  },
+  {
+    "id": "C10",
+    "set": "seed",
+    "lang": "en",
+    "say": "how much time went on the portal project this month",
+    "typed": ["time spent project", "project budget", "hours project"],
+    "any": ["projects__budget_get"],
+    "modelRun": true
+  },
+  {
+    "id": "C12",
+    "set": "seed",
+    "lang": "en",
+    "say": "bill Atlas for October",
+    "typed": ["reconcile", "month end billing", "invoice project month", "bill the month"],
+    "any": ["projects__reconcile_propose", "projects__reconcile_facts"],
+    "modelRun": true
+  },
+  {
+    "id": "C92",
+    "set": "seed",
+    "lang": "en",
+    "say": "show the portal project's timesheet for October, day by day",
+    "typed": ["timesheet", "dated sheet", "hours by day"],
+    "any": ["projects__timesheet_get"],
+    "modelRun": true
+  },
+  {
+    "id": "C93",
+    "set": "seed",
+    "lang": "en",
+    "say": "show me the saved reconcile for Atlas from last month",
+    "typed": ["saved reconcile", "open reconcile card", "reconcile for client last month"],
+    "any": ["projects__reconcile_get"],
+    "modelRun": true
+  },
+  {
+    "id": "C94",
+    "set": "seed",
+    "lang": "fr",
+    "say": "sur le rapprochement d'Atlas du mois dernier, mets l'export de données à 3,5 jours",
+    "typed": ["corriger ligne rapprochement", "modifier ligne carte", "change reconcile line"],
+    "any": ["projects__reconcile_line_update"],
+    "modelRun": true
+  },
+  {
+    "id": "C34",
+    "set": "seed",
+    "lang": "en",
+    "say": "send the client the timesheet",
+    "typed": ["timesheet export", "feuille de temps", "hours report pdf"],
+    "any": ["projects__timesheet_export"],
+    "modelRun": true
+  },
+  {
+    "id": "C13",
+    "set": "seed",
+    "lang": "fr",
+    "say": "facture Atlas pour octobre",
+    "typed": ["facturer projet", "facture du mois", "clôture mensuelle", "rapprochement"],
+    "any": ["projects__reconcile_propose", "projects__reconcile_facts"],
+    "modelRun": true
+  },
+  {
+    "id": "C73",
+    "set": "seed",
+    "lang": "en",
+    "say": "check planned vs done for Orbit",
+    "typed": ["planned vs done", "planned done project", "month close"],
+    "any": ["projects__reconcile_facts", "projects__reconcile_propose", "projects__budget_get"],
+    "modelRun": true
+  },
+  {
+    "id": "C90",
+    "set": "seed",
+    "lang": "en",
+    "say": "bill 3.5 days on the data export line instead",
+    "typed": ["change reconcile line", "bill line", "reconcile card line"],
+    "any": ["projects__reconcile_line_update"]
+  },
+  {
+    "id": "C91",
+    "set": "seed",
+    "lang": "fr",
+    "say": "remontre-moi la carte de rapprochement d'octobre",
+    "typed": ["carte rapprochement", "rapprochement enregistré"],
+    "any": ["projects__reconcile_get", "projects__reconcile_facts"]
+  },
+  {
+    "id": "C31",
+    "set": "seed",
+    "lang": "en",
+    "say": "company holidays this year",
+    "typed": ["public holidays", "days off", "jours fériés", "office closed"],
+    "any": ["projects__days_off_list", "projects__days_off_set"],
+    "modelRun": true
+  },
+  {
+    "id": "C32",
+    "set": "seed",
+    "lang": "fr",
+    "say": "qui est dispo la semaine prochaine",
+    "typed": ["capacity", "disponibilité", "charge équipe", "who is free"],
+    "any": ["projects__capacity_get"],
+    "modelRun": true
+  },
+  {
+    "id": "C33",
+    "set": "seed",
+    "lang": "fr",
+    "say": "on gagne de l'argent sur le projet portail ?",
+    "typed": ["margin", "marge", "rentabilité", "profit project"],
+    "any": ["projects__margin_get"],
+    "modelRun": true
+  },
+  {
+    "id": "C75",
+    "set": "seed",
+    "lang": "en",
+    "say": "Nadia works 4 days a week",
+    "typed": [
+      "part time",
+      "days per week",
+      "temps partiel",
+      "4 jours par semaine",
+      "capacity person"
+    ],
+    "any": ["projects__time_settings_set"],
+    "modelRun": true
+  },
+  {
+    "id": "C76",
+    "set": "seed",
+    "lang": "en",
+    "say": "every Friday ask everyone for their hours and tell me who did not answer",
+    "typed": ["create routine", "routine weekly", "relancer heures", "reminder hours"],
+    "any": ["kernel__create_routine"],
+    "modelRun": true
+  },
+  {
+    "id": "C80",
+    "set": "seed",
+    "lang": "en",
+    "say": "take the 11 November closure off the company days",
+    "typed": ["remove day off", "remove holiday", "supprimer jour férié"],
+    "any": ["projects__days_off_remove"],
+    "modelRun": true
+  },
+  {
+    "id": "C81",
+    "set": "seed",
+    "lang": "fr",
+    "say": "combien d'heures fait une journée chez nous",
+    "typed": ["hours per day", "time settings", "heures par jour"],
+    "any": ["projects__time_settings_get", "projects__time_settings_set"],
+    "modelRun": true
+  },
+  {
+    "id": "C82",
+    "set": "seed",
+    "lang": "en",
+    "say": "what margin are we making on the portal project",
+    "typed": ["project margin", "profit project", "marge projet", "invoiced minus cost"],
+    "any": ["projects__margin_get"],
+    "modelRun": true
+  },
+  {
+    "id": "C83",
+    "set": "seed",
+    "lang": "fr",
+    "say": "quels sont les taux de coût horaires de l'équipe",
+    "typed": ["cost rates", "taux de coût", "coût horaire"],
+    "any": ["projects__cost_rates_list"],
+    "modelRun": true
+  },
+  {
+    "id": "C84",
+    "set": "seed",
+    "lang": "en",
+    "say": "Paul costs us 52 an hour from December",
+    "typed": ["set cost rate", "cost per hour", "taux de coût"],
+    "any": ["projects__cost_rate_set"],
+    "modelRun": true
   }
 ]

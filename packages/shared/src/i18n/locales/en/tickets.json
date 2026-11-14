@@ -387,5 +387,25 @@
     "nudgeText": "Nudge text",
     "nudgeTextHelp": "Leave it empty to send the default wording, in the customer's language.",
     "defaultNudge": "Hello,\n\nWe have not heard back from you, so we are checking in: did our last message answer your question, or is there anything else we can help with?\n\nIf we do not hear from you within {{days}} days, we will close this ticket. You can still reply to this email at any time to reopen it.\n\nThank you"
+  },
+  "card": {
+    "pill": "Ticket",
+    "assignee": "Assignee",
+    "category": "Category",
+    "slaDeadline": "Reply due",
+    "lastInbound": "Last customer message",
+    "messages": "Messages",
+    "statusOpen": "Open",
+    "statusAwaitingCustomer": "Waiting for the customer",
+    "statusAwaitingFollowup": "Snoozed",
+    "statusClosed": "Closed",
+    "backlogPill": "Open tickets",
+    "backlogHow": "Counted by the server over every open ticket you can see, not over a page of results",
+    "runningGet": "Reading the ticket",
+    "runningBacklog": "Counting open tickets"
+  },
+  "companySupport": {
+    "empty": "No open ticket from this company's people.",
+    "error": "Could not read this company's tickets."
   }
 }

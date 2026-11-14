@@ -14,6 +14,18 @@ const guideText = (m: { agentInstructions?: unknown }): string => {
 }
 
 describe("mail app manifest validation", () => {
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    expect(mailManifest.attention.groupLabel).toEqual({
+      label: "Mail",
+      labelKey: "kernel.homeGroupMail",
+    })
+  })
+
+  it("keeps the stopped-send attention item beside the heading in its one attention block", () => {
+    const kinds = mailManifest.attention.translations.map((t) => t.kind)
+    expect(kinds).toContain("mail:send_guard.stopped")
+  })
+
   it("gives the sending tools a send sized budget, not the 5 s production default", () => {
     // A send with attachments (copy each file onto the message, MIME build,
     // provider round trip) passes 5 s; under the default an approved compose
@@ -57,7 +69,7 @@ describe("mail app manifest validation", () => {
       "smtpPort",
       "username",
     ])
-    expect(mailManifest.version).toBe("1.8.6")
+    expect(mailManifest.version).toBe("1.13.3")
   })
 
   it("passes manifest validation", () => {
@@ -76,6 +88,25 @@ describe("mail app manifest validation", () => {
     expect(ai).toMatch(/complaint/i)
     expect(ai).toMatch(/contactId/)
     expect(ai).toMatch(/EMPTY result from a free-text NAME query does NOT prove/i)
+  })
+
+  it("the send check's value is the server's on compose and reply, and a chained step builds it at execute", () => {
+    const tools = mailManifest.tools as Record<string, Record<string, any>>
+    for (const name of ["compose", "reply"]) {
+      expect(tools[name]?.pinnedParams).toEqual(["sendGuard", "guardKey"])
+      expect(tools[name]?.pinnedOptionalOnRefs).toBe(true)
+      expect(Object.keys(tools[name]?.params.properties)).toEqual(
+        expect.arrayContaining(["followUp", "sendGuard", "guardKey"]),
+      )
+    }
+    expect(tools.compose?.approvalDedupeKeyParam).toBe("guardKey")
+    expect(tools.compose?.approvalDedupeSameRequester).toBe(true)
+    // No editable field reaches the check's value.
+    for (const name of ["compose", "reply"]) {
+      for (const field of tools[name]?.editableFields ?? []) {
+        expect(String(field.field)).not.toMatch(/^(?:sendGuard|guardKey)/)
+      }
+    }
   })
 
   it("listAccounts says it lists what this person can use, not what the org has", () => {

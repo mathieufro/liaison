@@ -157,9 +157,73 @@ export function createPlatformMethods(ctx: BridgeContext): Record<string, any> {
     schemaName,
     stampDeclaredEmit,
     txDb,
+    userId,
     orgScopedAppChannel,
   } = ctx
   const enqueueFromApp = createAppJobEnqueuer(ctx)
+
+  /** A declared discussion entity of this app named by a bridge call, or the refusal to return. */
+  const discussionRef = async (
+    paramsJson: string,
+    verb: "deleted" | "pruned",
+  ): Promise<{ app: string; entityType: string; entityId: string } | { error: string }> => {
+    const p = JSON.parse(paramsJson || "{}") as { entityType?: unknown; entityId?: unknown }
+    if (typeof p.entityType !== "string" || typeof p.entityId !== "string" || !p.entityId) {
+      return {
+        error: errorEnvelope(
+          Object.assign(
+            new Error(
+              `Give entityType and entityId of the ${verb === "deleted" ? "deleted" : "narrowed"} record.`,
+            ),
+            {
+              code: "invalid_params",
+            },
+          ),
+        ),
+      }
+    }
+    const ref = { app: appName, entityType: p.entityType, entityId: p.entityId }
+    const { isDiscussionEntity } = await import("~/modules/threads/entity-discussion")
+    if (appName === "projects" || !isDiscussionEntity(orgId, ref)) {
+      return {
+        error: errorEnvelope(
+          Object.assign(
+            new Error(
+              `${appName}:${p.entityType} declares no discussion (entities.${p.entityType}.discussion): nothing was ${verb}.`,
+            ),
+            { code: "discussion_not_declared" },
+          ),
+        ),
+      }
+    }
+    return ref
+  }
+
+  /**
+   * Whether the record exists at all, past the caller's row security. On a login that can step
+   * into liaison_admin the read runs on the handler's own transaction, so a delete it just made
+   * counts. Otherwise the privileged read sees only what was committed, where a record the caller
+   * deleted in this call still reads: it counts as gone when the caller could see it there.
+   */
+  const existsForSomeone = async (ref: {
+    app: string
+    entityType: string
+    entityId: string
+  }): Promise<boolean> => {
+    const { actorContextOf, privilegedFrom, transactionRole } = await import("~/db/privileged")
+    const { withRlsContext } = await import("~/db/rls")
+    const { canReadThreadAnchorEntity } = await import("~/modules/threads/thread-anchor")
+    const { role, canElevate } = await transactionRole(txDb)
+    const present = await privilegedFrom(txDb, orgId, "entity-discussion-exists", (ptx) =>
+      canReadThreadAnchorEntity(ptx as never, orgId, ref),
+    )
+    if (!present) return false
+    if (role === "liaison_admin" || canElevate) return true
+    const actor = await actorContextOf(txDb)
+    if (actor.actorType !== "user") return true
+    const sawIt = await withRlsContext(actor, (tx) => canReadThreadAnchorEntity(tx, orgId, ref))
+    return !sawIt
+  }
 
   /**
    * The file parent of a rendered PDF: one of the calling app's OWN registered fileParents. With
@@ -220,6 +284,73 @@ export function createPlatformMethods(ctx: BridgeContext): Record<string, any> {
       const { REDIS_PREFIX, publishRedis } = await import("~/lib/redis")
       await publishRedis(`${REDIS_PREFIX}${scoped}`, payloadJson)
       return JSON.stringify({ ok: true })
+    },
+
+    // --- Discussions ---
+    //
+    // The app deleted a record of its own that holds a discussion: the thread
+    // goes with it (an empty shell where an approval was asked in it), as a
+    // contact's does. Only for this app's declared discussion entities, and
+    // only once the record is gone: not while it reads in the handler's own
+    // transaction, and not while it exists for anyone else (a record hidden
+    // from this caller is not a deleted one).
+    threads_deleteEntityDiscussion: async (paramsJson: string): Promise<string> => {
+      const ref = await discussionRef(paramsJson, "deleted")
+      if ("error" in ref) return ref.error
+      const { canReadThreadAnchorEntity } = await import("~/modules/threads/thread-anchor")
+      const stillThere = (detail: string) =>
+        errorEnvelope(
+          Object.assign(
+            new Error(
+              `${appName}:${ref.entityType} ${ref.entityId} still exists${detail}: delete the record first, then its discussion. Nothing was deleted.`,
+            ),
+            { code: "entity_still_exists" },
+          ),
+        )
+      if (await canReadThreadAnchorEntity(txDb as never, orgId, ref)) return stillThere("")
+      if (await existsForSomeone(ref))
+        return stillThere(" for people this caller cannot see it for")
+      const { deleteEntityDiscussions } = await import("~/modules/threads/entity-discussion")
+      const removed = await deleteEntityDiscussions({
+        orgId,
+        app: appName,
+        entityType: ref.entityType,
+        entityIds: [ref.entityId],
+      })
+      return JSON.stringify({
+        ok: true,
+        deleted: removed.length,
+        result:
+          removed.length > 0
+            ? `The discussion of ${appName}:${ref.entityType} ${ref.entityId} was deleted.`
+            : `${appName}:${ref.entityType} ${ref.entityId} had no discussion: nothing to delete.`,
+      })
+    },
+
+    // The sharing of a record of this app's that holds a discussion narrowed (an
+    // audience, a dimension, an owner changed): everyone seated is dropped but the
+    // caller, while the caller still sees the record. Whoever still sees it is
+    // seated again the next time they open it, so nobody keeps reading a
+    // discussion about a record they lost sight of.
+    threads_pruneEntityDiscussion: async (paramsJson: string): Promise<string> => {
+      const ref = await discussionRef(paramsJson, "pruned")
+      if ("error" in ref) return ref.error
+      const { canReadThreadAnchorEntity } = await import("~/modules/threads/thread-anchor")
+      const keep =
+        auditActorType === "user" && (await canReadThreadAnchorEntity(txDb as never, orgId, ref))
+          ? userId
+          : null
+      const { pruneEntityDiscussion } = await import("~/modules/threads/entity-discussion")
+      const dropped = await pruneEntityDiscussion({ orgId, ref, keepUserId: keep })
+      const what = `${appName}:${ref.entityType} ${ref.entityId}`
+      return JSON.stringify({
+        ok: true,
+        dropped: dropped ?? 0,
+        result:
+          dropped === null
+            ? `${what} has no discussion yet: nobody was seated, nothing to prune.`
+            : `${dropped} ${dropped === 1 ? "person was" : "people were"} taken out of the discussion of ${what}${keep ? " (the caller stays)" : ""}. Whoever still sees the record is seated again when they open it.`,
+      })
     },
 
     // --- Jobs ---

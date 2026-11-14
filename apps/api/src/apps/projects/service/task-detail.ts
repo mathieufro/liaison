@@ -49,6 +49,10 @@ export interface Task {
   /** Effective label per group (own or inherited). Every read site
    *  fills it from one batched query; `taskFromRow` starts it empty. */
   labels: TaskLabel[]
+  /** Time keys, only on a task of a project using time and budgets (task-time-keys.ts). */
+  timeboxMinutes?: number | null
+  realTotalMinutes?: number
+  isMilestone?: boolean
   /** The task's values of the project's active fields, in definition order (fields.ts). */
   fields: Record<string, unknown>
   /** When the task entered its current status (time in status); null where not selected. */

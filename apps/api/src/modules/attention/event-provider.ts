@@ -28,7 +28,8 @@ interface EventRow {
 
 /**
  * Aggregator-facing provider that surfaces persisted, unread, non-email-only
- * attention rows for the current user. Registered into
+ * attention rows for the current user. A row set aside ("Not now") stays out
+ * until its `set_aside_until` passes. Registered into
  * `attentionItemsRegistry` at `["*", "kernel"]` by the bootstrap step.
  */
 export async function getEventAttentionItems(
@@ -44,6 +45,7 @@ export async function getEventAttentionItems(
       AND user_id = ${userId}
       AND read_at IS NULL
       AND email_only = false
+      AND (set_aside_until IS NULL OR set_aside_until <= now())
     ORDER BY urgency DESC, occurred_at ASC
     LIMIT ${PROVIDER_ITEM_CAP}`)) as unknown as EventRow[]
 

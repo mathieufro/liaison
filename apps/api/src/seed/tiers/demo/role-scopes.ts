@@ -7,11 +7,18 @@
 // exactly what it grants is worth more than one that has to be evaluated to be
 // reviewed. `founder_admin` is the org's `admin` default role and holds `*`.
 //
+// The sales and operations desks own the world's deals, so both read and edit
+// deal amounts (the projects app's `sales` tier).
+//
 // Every desk handles tickets or mail, so every desk reads the API connector
 // (the customer card, `connector_read`) and may propose a write
 // (`connector_write`, approval-gated). Only `founder_admin` manages
 // connections, and in a demo org even that stays read-only: the adapter and
 // credential doors refuse demo orgs.
+//
+// Support and finance read the payments mirror (customers, subscriptions,
+// invoices, payments). Refunds, cancellations and the connection stay with the
+// admin: no desk holds a payments write scope.
 //
 // The lists are validated at seed time, not here: `seedDemoOrg` runs every
 // scope through the registry (`unknownScopes`) and the role ceiling guard
@@ -28,8 +35,10 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "kernel:threads:write",
     "kernel:users:read",
     "kernel:contacts:read",
+    "kernel:companies:read",
     "kernel:products:read",
     "mail:conversations:read",
+    "mail:suppressions:read",
     "mail:messages:read",
     "mail:accounts:read",
     "kernel:routines:read",
@@ -50,6 +59,8 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "projects:projects:write",
     "projects:tasks:read",
     "projects:tasks:write",
+    "projects:deals:read",
+    "projects:deals:write",
     "invoicing:documents:read",
     "invoicing:documents:write",
     "invoicing:contacts:read",
@@ -66,6 +77,7 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "tickets:assign",
     "tickets:close",
     "kernel:contacts:write",
+    "kernel:companies:write",
     "kernel:products:write",
     "boxtal:shipments:read",
     "boxtal:shipments:write",
@@ -91,8 +103,10 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "kernel:threads:write",
     "kernel:users:read",
     "kernel:contacts:read",
+    "kernel:companies:read",
     "kernel:products:read",
     "mail:conversations:read",
+    "mail:suppressions:read",
     "mail:messages:read",
     "mail:accounts:read",
     "kernel:routines:read",
@@ -125,6 +139,7 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "shopify:returns:write",
     "shopify:locations:read",
     "kernel:contacts:write",
+    "kernel:companies:write",
     "kernel:products:write",
     "knowledge:documents:update",
     "knowledge:documents:archive",
@@ -137,6 +152,10 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "google-drive:accounts:read",
     "api-connector:read",
     "api-connector:write",
+    "stripe:customers:read",
+    "stripe:subscriptions:read",
+    "stripe:invoices:read",
+    "stripe:payments:read",
   ],
   fulfillment: [
     "database:reads:read",
@@ -144,8 +163,10 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "kernel:threads:write",
     "kernel:users:read",
     "kernel:contacts:read",
+    "kernel:companies:read",
     "kernel:products:read",
     "mail:conversations:read",
+    "mail:suppressions:read",
     "mail:messages:read",
     "mail:accounts:read",
     "kernel:routines:read",
@@ -181,6 +202,39 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "projects:tasks:read",
     "projects:tasks:write",
     "kernel:contacts:write",
+    "kernel:companies:write",
+    "kernel:products:write",
+    "knowledge:documents:read",
+    "knowledge:documents:create",
+    "knowledge:documents:update",
+    "google-drive:accounts:read",
+    "api-connector:read",
+    "api-connector:write",
+  ],
+  // A developer: the bug reports that reach support, the product's projects and the
+  // knowledge base. No orders, shipments, invoices or company mail.
+  engineering: [
+    "database:reads:read",
+    "kernel:threads:read",
+    "kernel:threads:write",
+    "kernel:users:read",
+    "kernel:contacts:read",
+    "kernel:companies:read",
+    "kernel:products:read",
+    "kernel:routines:read",
+    "kernel:routines:write",
+    "kernel:approvals:read",
+    "kernel:files:read",
+    "kernel:skills:write",
+    "tickets:tickets:read",
+    "tickets:tickets:write",
+    "tickets:tickets:reply",
+    "projects:projects:read",
+    "projects:projects:write",
+    "projects:tasks:read",
+    "projects:tasks:write",
+    "kernel:contacts:write",
+    "kernel:companies:write",
     "kernel:products:write",
     "knowledge:documents:read",
     "knowledge:documents:create",
@@ -195,8 +249,10 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "kernel:threads:write",
     "kernel:users:read",
     "kernel:contacts:read",
+    "kernel:companies:read",
     "kernel:products:read",
     "mail:conversations:read",
+    "mail:suppressions:read",
     "mail:messages:read",
     "mail:accounts:read",
     "kernel:routines:read",
@@ -226,6 +282,7 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "boxtal:shipments:read",
     "mail:conversations:write",
     "kernel:contacts:write",
+    "kernel:companies:write",
     "kernel:products:write",
     "kernel:agent:web",
     "knowledge:documents:read",
@@ -237,6 +294,11 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "pennylane:invoices:write",
     "api-connector:read",
     "api-connector:write",
+
+    "stripe:customers:read",
+    "stripe:subscriptions:read",
+    "stripe:invoices:read",
+    "stripe:payments:read",
   ],
   sales: [
     "database:reads:read",
@@ -244,8 +306,10 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "kernel:threads:write",
     "kernel:users:read",
     "kernel:contacts:read",
+    "kernel:companies:read",
     "kernel:products:read",
     "mail:conversations:read",
+    "mail:suppressions:read",
     "mail:messages:read",
     "mail:accounts:read",
     "kernel:routines:read",
@@ -262,6 +326,7 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "shopify:markets:read",
     "shopify:analytics:read",
     "kernel:contacts:write",
+    "kernel:companies:write",
     "kernel:products:write",
     "mail:conversations:write",
     "kernel:agent:web",
@@ -276,6 +341,8 @@ const DEMO_ROLE_SCOPES: Record<DemoRole, readonly string[]> = {
     "tickets:tickets:write",
     "projects:projects:write",
     "projects:tasks:write",
+    "projects:deals:read",
+    "projects:deals:write",
     "knowledge:documents:create",
     "knowledge:documents:read",
     "knowledge:links:create",

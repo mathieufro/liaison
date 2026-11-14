@@ -52,6 +52,8 @@
     "test:e2e:web": "bun run scripts/test-run.ts playwright",
     "test:e2e:parallel": "bun run scripts/test-run.ts e2e-parallel",
     "test:guards": "bun run scripts/test-run.ts guards",
+    "test:relations": "bun run scripts/test-run.ts relations",
+    "tool-bench": "bun apps/api/src/modules/agent/tools/tool-bench/run.ts",
     "test:root": "bun run scripts/test-run.ts root",
     "test:full": "bun run scripts/test-run.ts full",
     "test:gate": "bun run scripts/test-gate.ts",

@@ -351,7 +351,7 @@ export async function bookingData(ctx: EinvCtx, doc: Row): Promise<BookingData> 
         tax_rate_bp: Number(l.tax_rate_bp ?? 0),
         tax_treatment: treatment,
         operation_category:
-          l.line_kind === "services" || l.line_kind === "software" ? "services" : "goods",
+          l.line_kind === "service" || l.line_kind === "software" ? "services" : "goods",
         rate_is_placeholder: false,
         destination_country: country,
       }),

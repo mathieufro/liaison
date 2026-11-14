@@ -1,0 +1,14 @@
+{
+  "key": {
+    "projects.capacity.moveTo": "Confier à {{name}}",
+    "projects.capacity.noneFits": "Personne n'a autant de temps libre prévu cette semaine-là.",
+    "projects.capacity.candidatesError": "Impossible de lire qui a du temps. Rien n'a été déplacé.",
+    "projects.capacity.moved": "{{task}} est maintenant chez {{name}}.",
+    "projects.capacity.toldBoth": "{{a}} et {{b}} ont été prévenus.",
+    "projects.capacity.toldOne": "{{a}} a été prévenu.",
+    "projects.capacity.undo": "Annuler",
+    "projects.capacity.moveFailed": "Impossible de déplacer {{task}}. Rien n'a été déplacé.",
+    "projects.settingsPage.time.source": "Lu depuis",
+    "projects.settingsPage.time.sourceCalendar": "Le calendrier partagé"
+  }
+}

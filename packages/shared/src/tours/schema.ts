@@ -17,6 +17,7 @@
  * by the web (the engine) and the API (completion binding, routes, CLI).
  */
 import { z } from "zod"
+import { DEMO_DEFAULT_WORLD, DEMO_WORLDS, type DemoWorldId } from "../demo/worlds"
 
 /** A key in the `tours` i18n namespace. */
 const TourCopyKeySchema = z
@@ -222,7 +223,10 @@ export const TourEventBindingSchema = z
      */
     match: z
       .record(
-        z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/, "a field path"),
+        // A segment after the first may be a list index (`currentPayload.to.0`).
+        z
+          .string()
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*(?:\.(?:[A-Za-z_][A-Za-z0-9_]*|\d+))*$/, "a field path"),
         z.union([
           z.string(),
           z.boolean(),
@@ -363,6 +367,85 @@ export type TourPathHop = z.infer<typeof TourPathHopSchema>
 /** At most this many hops on the way to a beat's element. */
 export const TOUR_PATH_MAX = 4
 
+/**
+ * A figure a step's copy names (`{{pastDue}}`), read when the step shows from
+ * the same tool the screen it points at reads, never written into the copy.
+ * `path` is a dotted path into the tool's result (`lines.0.pastDueMinor`).
+ * `money`: an amount in minor units, its currency at `currency` (a path too).
+ * `count`: a plain number.
+ */
+const TourFigurePickSchema = z
+  .object({
+    kind: z.enum(["money", "count"]),
+    path: z.string().regex(/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/, "a dotted path"),
+    currency: z
+      .string()
+      .regex(/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/, "a dotted path")
+      .optional(),
+  })
+  .strict()
+  .superRefine((pick, ctx) => {
+    if (pick.kind === "money" && !pick.currency)
+      ctx.addIssue({ code: "custom", message: "a money figure names where its currency is" })
+    if (pick.kind === "count" && pick.currency)
+      ctx.addIssue({ code: "custom", message: "a count has no currency" })
+  })
+
+export const TourBeatFiguresSchema = z
+  .object({
+    /** `<app>:<tool>`, a read the person may call themselves. */
+    tool: z.string().regex(/^[a-z0-9-]+:[a-z0-9_]+$/, "an app:tool name"),
+    params: z.record(z.string(), z.unknown()).optional(),
+    vars: z.record(
+      z.string().regex(/^[a-z][A-Za-z0-9]*$/, "a copy variable name"),
+      TourFigurePickSchema,
+    ),
+  })
+  .strict()
+export type TourBeatFigures = z.infer<typeof TourBeatFiguresSchema>
+
+/** A figure as read: the copy formats it in the person's language. */
+export type TourFigure =
+  | { kind: "money"; minor: number; currency: string }
+  | { kind: "count"; n: number }
+
+function atPath(value: unknown, path: string): unknown {
+  return path
+    .split(".")
+    .reduce<unknown>(
+      (node, part) =>
+        typeof node === "object" && node !== null
+          ? (node as Record<string, unknown>)[part]
+          : undefined,
+      value,
+    )
+}
+
+/**
+ * The figures `figures` names, picked from `result` (what its tool answered).
+ * Null when any is missing or not a number: the step then shows no figure
+ * rather than a wrong one.
+ */
+export function pickTourFigures(
+  figures: TourBeatFigures,
+  result: unknown,
+): Record<string, TourFigure> | null {
+  const out: Record<string, TourFigure> = {}
+  for (const [name, pick] of Object.entries(figures.vars)) {
+    const raw = atPath(result, pick.path)
+    const n = typeof raw === "string" && /^-?\d+$/.test(raw) ? Number(raw) : raw
+    if (typeof n !== "number" || !Number.isFinite(n)) return null
+    if (pick.kind === "count") {
+      out[name] = { kind: "count", n }
+      continue
+    }
+    const currency = atPath(result, pick.currency ?? "")
+    if (typeof currency !== "string" || !/^[A-Za-z]{3}$/.test(currency)) return null
+    out[name] = { kind: "money", minor: n, currency: currency.toUpperCase() }
+  }
+  return out
+}
+
 export const TourBeatSchema = z
   .object({
     id: SlugSchema,
@@ -464,6 +547,11 @@ export const TourBeatSchema = z
      * that will not come, and never completes on another one.
      */
     whenRaised: z.literal(true).optional(),
+    /**
+     * `show` beats: figures the copy names (`{{name}}`), read from a tool when
+     * the step shows (`TourBeatFiguresSchema`).
+     */
+    figures: TourBeatFiguresSchema.optional(),
     /** The beat exists only when this app is installed / this feature is set up in the org. */
     optional: z
       .object({ whenApp: SlugSchema.optional(), whenFeature: z.enum(TOUR_FEATURES).optional() })
@@ -486,6 +574,9 @@ export const TourBeatSchema = z
         ctx.addIssue({ code: "custom", message: "a world beat needs an injector" })
     } else if (beat.injector) {
       ctx.addIssue({ code: "custom", message: "only a world beat names an injector" })
+    }
+    if (beat.figures && beat.kind !== "show") {
+      ctx.addIssue({ code: "custom", message: "only a show beat reads figures" })
     }
     if (beat.reach && beat.kind !== "show") {
       ctx.addIssue({ code: "custom", message: "only a show beat carries reach steps" })
@@ -573,6 +664,17 @@ export const TourSchema = z
      * (a regular org's "Show me how" never lists it).
      */
     demoOnly: z.literal(true).optional(),
+    /**
+     * The demo world this tour belongs to: it is offered, startable and
+     * deep-linkable only in a workspace of that world. A tour without one
+     * belongs to no world (every org it is otherwise available in).
+     */
+    world: z.enum(DEMO_WORLDS).optional(),
+    /**
+     * The scenario is played once: it offers no "Start again" once played,
+     * only the visitor's whole "Start over".
+     */
+    singleRun: z.literal(true).optional(),
     /**
      * The tour talks to the person's own agent, in the one conversation they
      * have with it (their DM, made when missing), recorded when the run starts
@@ -739,6 +841,8 @@ export interface EffectiveBeat {
   /** `show` beats: the steps that bring the anchor on screen. */
   reach?: TourStep[]
   injector?: string
+  /** Figures the copy names, read when the step shows (`TourBeatFiguresSchema`). */
+  figures?: TourBeatFigures
   waitsOn?: TourWait
   /** Played only when that earlier beat completed on its held approval. */
   whenHeld?: string
@@ -800,6 +904,8 @@ export interface EffectiveBeatsContext {
   features?: readonly TourFeature[]
   /** The person plays at phone width (anchorPhone / autoplayPhone apply). */
   phone?: boolean
+  /** The demo world of the org (read as the default world when absent). */
+  worldId?: DemoWorldId
 }
 
 /**
@@ -815,6 +921,8 @@ export function effectiveBeats(tour: Tour, ctx: EffectiveBeatsContext): Effectiv
       ? (ctx.installedApps as ReadonlySet<string>)
       : new Set(ctx.installedApps as readonly string[])
   const out: EffectiveBeat[] = []
+  // A tour of another world has no beats here, whatever else is installed.
+  if (tour.world !== undefined && (ctx.worldId ?? DEMO_DEFAULT_WORLD) !== tour.world) return out
   for (const beat of tour.beats) {
     if (beat.optional?.whenApp && !installed.has(beat.optional.whenApp)) continue
     if (beat.optional?.whenFeature && !ctx.features?.includes(beat.optional.whenFeature)) continue
@@ -848,6 +956,7 @@ export function effectiveBeats(tour: Tour, ctx: EffectiveBeatsContext): Effectiv
     if (autoplay !== undefined) effective.autoplay = autoplay
     if (beat.reach !== undefined) effective.reach = beat.reach
     if (beat.injector !== undefined) effective.injector = beat.injector
+    if (beat.figures !== undefined) effective.figures = beat.figures
     if (beat.waitsOn !== undefined) effective.waitsOn = beat.waitsOn
     if (beat.whenHeld !== undefined) effective.whenHeld = beat.whenHeld
     if (beat.whenRaised !== undefined) effective.whenRaised = beat.whenRaised
@@ -872,6 +981,8 @@ export interface TourAvailabilityContext {
   scopes: ReadonlySet<string> | readonly string[]
   /** The org is a demo org (`demoOnly` tours exist only there). Absent = not a demo org. */
   isDemo?: boolean
+  /** The demo world of the org (read as the default world when absent); a tour of another world is not offered. */
+  worldId?: DemoWorldId
 }
 
 /**
@@ -880,6 +991,7 @@ export interface TourAvailabilityContext {
  */
 export function isTourAvailable(tour: Tour, ctx: TourAvailabilityContext): boolean {
   if (tour.demoOnly && ctx.isDemo !== true) return false
+  if (tour.world !== undefined && (ctx.worldId ?? DEMO_DEFAULT_WORLD) !== tour.world) return false
   const installed = new Set(ctx.installedApps as Iterable<string>)
   const scopes = new Set(ctx.scopes as Iterable<string>)
   if (tour.app !== "kernel" && !installed.has(tour.app)) return false

@@ -118,6 +118,33 @@ describe("ConnectorsPage", () => {
     expect(screen.getByTestId("connector-status-database").textContent).toContain("Not connected")
   })
 
+  // A connection made in the open card (its Connection block reloads the
+  // app's connections) turns the card's header to Connected at once, not
+  // after a reload of the page.
+  it("the header follows a connection made in the card, without a reload", async () => {
+    renderPage()
+    await waitFor(() =>
+      expect(screen.getByTestId("connector-status-database").textContent).toContain(
+        "Not connected",
+      ),
+    )
+    // What the card's Connection block does after a connect: reload the app's connections.
+    appsStore.setConnections({
+      ...appsStore.connections(),
+      database: [
+        {
+          name: "database",
+          type: "credentials",
+          credentialFields: [{ name: "token", label: "Token", type: "password" }],
+          accounts: { active: 1, error: 0 },
+        },
+      ],
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId("connector-status-database").textContent).toBe("Connected"),
+    )
+  })
+
   it("expands the card `?open=` names, and only one at a time", async () => {
     renderPage("?open=gitlab")
     expect(await screen.findByTestId("connector-body-gitlab")).toBeTruthy()

@@ -59,10 +59,45 @@ export function getComposeSignature(id: string): string | null {
 // changed. Replacing the object re-ran all of them on every markRead/WS echo,
 // refetching panel resources and re-triggering the tab-level Suspense: the
 // visible "ticket keeps reloading" blink.
+// The row's `id` is always the key it is stored under: every consumer reads
+// `ticket().id` (the file shelf's parent, panels, actions), so a payload that
+// names the ticket some other way must never leave a row without one.
 function upsertTicket(s: DetailState, ticketId: string, next: Ticket): void {
   const prev = s.byId[ticketId]
-  if (prev) Object.assign(prev, next)
-  else s.byId[ticketId] = next
+  if (prev) Object.assign(prev, next, { id: ticketId })
+  else s.byId[ticketId] = { ...next, id: ticketId }
+}
+
+// A live summary event is newer than any read that was already in flight when
+// it arrived: a tickets:get or ensureSummary answer read before the summary
+// changed must not put the old summary back. Each live summary event bumps the
+// ticket's summary version; a read remembers the version it started at and,
+// when it has moved since, leaves the summary fields as the event set them.
+const summaryVersions = new Map<string, number>()
+const SUMMARY_FIELDS = [
+  "summaryText",
+  "summaryAt",
+  "summaryMessageCount",
+  "summaryStatus",
+  "summaryModel",
+  "summaryError",
+] as const
+
+/** The ticket's summary version: read it before a request, compare after. */
+export function ticketSummaryVersion(ticketId: string): number {
+  return summaryVersions.get(ticketId) ?? 0
+}
+
+function bumpSummaryVersion(ticketId: string): void {
+  summaryVersions.set(ticketId, ticketSummaryVersion(ticketId) + 1)
+}
+
+/** The payload without its summary fields when a live summary event landed since `version`. */
+function withoutStaleSummary(ticketId: string, next: Ticket, version: number): Ticket {
+  if (ticketSummaryVersion(ticketId) === version) return next
+  const fresh = { ...next } as Partial<Ticket>
+  for (const field of SUMMARY_FIELDS) delete fresh[field]
+  return fresh as Ticket
 }
 
 // Last API client seen — captured so the module-level resync subscription can
@@ -120,6 +155,7 @@ export async function loadTicket(
     }),
   )
   try {
+    const version = ticketSummaryVersion(ticketId)
     const out = await runTool<{ ticket: Ticket | null; composeSignatureText?: string | null }>(
       api,
       "tickets:get",
@@ -129,7 +165,7 @@ export async function loadTicket(
     if (out.ticket) {
       setTicketDetailStore(
         produce((s) => {
-          upsertTicket(s, ticketId, out.ticket as Ticket)
+          upsertTicket(s, ticketId, withoutStaleSummary(ticketId, out.ticket as Ticket, version))
           s.composeSignatureById[ticketId] = out.composeSignatureText ?? null
         }),
       )
@@ -315,6 +351,7 @@ export async function setCategory(
 // derived fields the server computes — assigneeName, followupAt, contact — land
 // in the store without a full loadTicket().
 async function refreshTicketHeader(api: ApiClient, ticketId: string): Promise<void> {
+  const version = ticketSummaryVersion(ticketId)
   const out = await runTool<{ ticket: Ticket | null }>(api, "tickets:get", {
     ticketId,
     messagesLimit: 1,
@@ -322,7 +359,7 @@ async function refreshTicketHeader(api: ApiClient, ticketId: string): Promise<vo
   if (out.ticket) {
     setTicketDetailStore(
       produce((s) => {
-        upsertTicket(s, ticketId, out.ticket as Ticket)
+        upsertTicket(s, ticketId, withoutStaleSummary(ticketId, out.ticket as Ticket, version))
       }),
     )
   }
@@ -382,7 +419,18 @@ export async function clearTicketFollowup(api: ApiClient, ticketId: string): Pro
   await refreshTicketHeader(api, ticketId)
 }
 
-export function applyTicketSummaryResult(ticketId: string, result: any): void {
+/**
+ * Apply an ensureSummary/regenerateSummary answer. `sinceVersion` is the
+ * summary version read before the call: when a live summary event landed
+ * meanwhile, the answer is older than what is on screen and is dropped
+ * (returns false).
+ */
+export function applyTicketSummaryResult(
+  ticketId: string,
+  result: any,
+  sinceVersion?: number,
+): boolean {
+  if (sinceVersion !== undefined && ticketSummaryVersion(ticketId) !== sinceVersion) return false
   setTicketDetailStore(
     produce((s) => {
       const t = s.byId[ticketId]
@@ -394,6 +442,7 @@ export function applyTicketSummaryResult(ticketId: string, result: any): void {
       if ("summaryError" in result) t.summaryError = result.summaryError ?? null
     }),
   )
+  return true
 }
 
 export function handleTicketEvent(action: string, data: any): void {
@@ -415,19 +464,27 @@ export function handleTicketEvent(action: string, data: any): void {
       refreshTicketApprovals(api, [id, data.handle])
     },
   )
-  if (action === "summary_updated") handleTicketSummaryEvent(data)
+  if (action === "summary_updated") {
+    bumpSummaryVersion(id)
+    handleTicketSummaryEvent(data)
+  }
   setTicketDetailStore(
     produce((s) => {
       if (action === "create") {
-        upsertTicket(s, id, data as Ticket)
+        // The server's create event is a notice (`ticketId`, handle, subject,
+        // priority), not a ticket: it has no status, requester or SLA. It may
+        // land before tickets:get (a reconnect replays it while the tab loads),
+        // so it only creates a row when it carries a whole ticket (`id`, as the
+        // update branch below), and otherwise patches a row that is loaded.
+        if (data.id || s.byId[id]) upsertTicket(s, id, data as Ticket)
       } else if (action === "summary_updated") {
         const t = s.byId[id]
         if (t) {
           t.summaryText = data.summary ?? data.summaryText ?? t.summaryText
           t.summaryAt = data.summaryAt ?? data.summary_at ?? t.summaryAt
-          t.summaryStatus = data.status ?? "idle"
+          t.summaryStatus = data.status ?? data.summaryStatus ?? "idle"
           t.summaryModel = data.model ?? data.summaryModel ?? t.summaryModel
-          t.summaryError = data.error ?? null
+          t.summaryError = data.error ?? data.summaryError ?? null
         }
       } else if (action === "update" || action === "merged" || action === "reopened") {
         const t = s.byId[id]

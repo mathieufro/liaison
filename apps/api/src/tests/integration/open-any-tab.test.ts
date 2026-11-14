@@ -21,6 +21,7 @@ import { listGatewayTools } from "~/modules/agent/tools/tool-bridge"
 import { createDraft, draftAppName } from "~/modules/app-builder/drafts"
 import { templateFiles } from "~/modules/app-builder/templates"
 import { toolRegistry } from "~/modules/apps/app-registries"
+import { createCompany } from "~/modules/contacts/companies"
 import { createDashboard } from "~/modules/dashboards/service"
 import { createTable } from "~/modules/dashboards/tables/service"
 import { seedContext } from "~/seed/context"
@@ -170,6 +171,11 @@ async function seed(): Promise<void> {
   const contactId = await minimal.contact(orgId, `ada-${tag()}@example.com`, { name: "Ada Lane" })
   put("contacts:contact-detail", contactId, "Ada Lane")
 
+  const { company } = await withRlsContext(everything(viewer), (tx) =>
+    createCompany(tx, { orgId, userId: viewer, input: { name: HOSTILE } }),
+  )
+  put("contacts:company-detail", company.id, HOSTILE)
+
   const ticket = await createOneTicket(ctx, {
     key: `open-any-tab-${tag()}`,
     adminUserId: viewer,
@@ -193,6 +199,8 @@ async function seed(): Promise<void> {
   put("projects:project", seededProject.projectId, "Spring launch")
   // A project's automations page opens on the project it belongs to.
   put("projects:automations", seededProject.projectId, "Spring launch")
+  // So does its dated hours sheet.
+  put("projects:timesheet", seededProject.projectId, "Spring launch")
   put("projects:task", seededProject.taskIds[0]!, "Fix the pump")
 
   const doc = await withRlsContext(everything(viewer), (tx) =>
@@ -302,10 +310,12 @@ describe("open_app under real row security", () => {
     "kernel:dashboard-table",
     "kernel:app-builder",
     "contacts:contact-detail",
+    "contacts:company-detail",
     "tickets:ticket",
     "projects:project",
     "projects:task",
     "projects:automations",
+    "projects:timesheet",
     "knowledge:document",
     "mail:conversation",
     "calendar:event",

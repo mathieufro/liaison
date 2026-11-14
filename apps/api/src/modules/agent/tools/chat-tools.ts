@@ -38,9 +38,15 @@ import { expandWildcardStamp } from "~/modules/agent/scopes/taint-read-scopes"
 import { openContactDiscussion } from "~/modules/contacts/discussion"
 import { attachFilesToParent, FileServiceError } from "~/modules/files/attach"
 import { loadEffectivePermissions } from "~/modules/permissions/permissions"
+import {
+  enrolInEntityDiscussion,
+  isDiscussionEntity,
+  openEntityDiscussion,
+} from "~/modules/threads/entity-discussion"
 import { publishMessageAttachments, sendMessage } from "~/modules/threads/message"
 import { dispatchForPostedMessage } from "~/modules/threads/posted-message-dispatch"
 import { createThread, listThreads } from "~/modules/threads/thread"
+import { canReadThreadAnchorEntity } from "~/modules/threads/thread-anchor"
 
 interface ChatToolContext {
   userId: string
@@ -648,21 +654,103 @@ async function participantTaintRefusal(
   return { code, message, retryable: false, writeTargetTable, reason }
 }
 
-export async function handleThreadsCreate(
+type CreatedFromInput = { app: string; entityType: string; entityId: string }
+
+/** threads_create naming the entity a conversation is about (`createdFrom`). */
+async function createFromEntity(
   params: {
     participantIds: string[]
     title?: string
     initialMessage?: string
     references?: ThreadReferenceInput[]
     forceCreate?: boolean
+    createdFrom: CreatedFromInput
   },
   ctx: ChatToolContext,
 ): Promise<
   | { thread: any }
+  | { threadId: string; created: boolean; [k: string]: unknown }
   | { error: string }
-  | { error: TitleTaintRefusal }
   | { error: { code: string; message: string } }
+  | { error: TitleTaintRefusal }
+  | null
 > {
+  const ref = params.createdFrom
+  const label = `${ref.app}:${ref.entityType} ${ref.entityId}`
+  const notVisible = {
+    error: {
+      code: "created_from_not_visible",
+      message: `${label} does not exist or is not visible to you: nothing was created or posted. Pass an id you saw in a result.`,
+    },
+  }
+  if (!isDiscussionEntity(ctx.orgId, ref)) {
+    // Not a discussion: a new thread that belongs to the entity, as the REST route makes.
+    if (!(await canReadThreadAnchorEntity(ctx.db, ctx.orgId, ref))) return notVisible
+    return null
+  }
+  const opened = await openEntityDiscussion(ctx.db, {
+    orgId: ctx.orgId,
+    userId: ctx.userId,
+    ref,
+  })
+  if (!opened) return notVisible
+  const { enrolled, dropped } = await enrolInEntityDiscussion({
+    orgId: ctx.orgId,
+    threadId: opened.threadId,
+    ref,
+    userIds: params.participantIds.filter((id) => id !== ctx.userId),
+  })
+  const droppedLine =
+    dropped.length > 0 ? ` Not added, since they cannot see ${label}: ${dropped.join(", ")}.` : ""
+  if (!params.initialMessage) {
+    return {
+      threadId: opened.threadId,
+      created: opened.created,
+      ...(enrolled.length > 0 ? { added: enrolled } : {}),
+      ...(dropped.length > 0 ? { notAdded: dropped } : {}),
+      result: `${opened.created ? "Opened" : "Found"} the discussion of ${label} (thread ${opened.threadId}); nothing was posted.${droppedLine} Post into it with kernel__threads_reply and this threadId.`,
+    }
+  }
+  const posted = await postThreadReply(
+    { threadId: opened.threadId, content: params.initialMessage },
+    ctx,
+  )
+  if (!("message" in posted)) return posted
+  return {
+    threadId: opened.threadId,
+    created: opened.created,
+    message: posted.message,
+    ...(enrolled.length > 0 ? { added: enrolled } : {}),
+    ...(dropped.length > 0 ? { notAdded: dropped } : {}),
+    result: `Posted into the discussion of ${label} (thread ${opened.threadId}${opened.created ? ", opened now" : ""}), attributed to you as the agent; everyone who can see it reads it.${droppedLine}`,
+  }
+}
+
+export async function handleThreadsCreate(
+  params: {
+    participantIds?: string[]
+    title?: string
+    initialMessage?: string
+    references?: ThreadReferenceInput[]
+    forceCreate?: boolean
+    createdFrom?: CreatedFromInput
+  },
+  ctx: ChatToolContext,
+): Promise<
+  | { thread: any }
+  | { threadId: string; created: boolean; [k: string]: unknown }
+  | { error: string }
+  | { error: { code: string; message: string } }
+  | { error: TitleTaintRefusal }
+> {
+  const participantIds = params.participantIds ?? []
+  if (params.createdFrom) {
+    const fromEntity = await createFromEntity(
+      { ...params, participantIds, createdFrom: params.createdFrom },
+      ctx,
+    )
+    if (fromEntity) return fromEntity
+  }
   // THE INITIAL MESSAGE is a kernel.messages row, the enforcing sink the tool
   // declares: stamped with the turn's scopes exactly like threads_reply, and
   // hidden from any reader lacking them.
@@ -678,14 +766,14 @@ export async function handleThreadsCreate(
   // A titled or forced create writes into a thread of its own: no DM by dedupe, no standing
   // disclosure of another thread applies to it (rule 14).
   const target = {
-    participantIds: params.participantIds,
+    participantIds: participantIds,
     newThread: !!params.title || params.forceCreate === true,
   }
-  const audience = async () => [...new Set([ctx.userId, ...params.participantIds])]
+  const audience = async () => [...new Set([ctx.userId, ...participantIds])]
   // The title and references are unstamped and read by every later member: only an approval
   // discloses them, never the direct-message or standing shortcut of the message body.
   if (snapshot === null && (params.title || (params.references?.length ?? 0) > 0)) {
-    const refusal = await participantTaintRefusal(ctx, params.participantIds)
+    const refusal = await participantTaintRefusal(ctx, participantIds)
     if (refusal) return { error: refusal }
   }
   // Never written hidden (rule 14): the first message reaches every participant it addresses.
@@ -697,7 +785,7 @@ export async function handleThreadsCreate(
   const result = await createThread(ctx.db, {
     orgId: ctx.orgId,
     userId: ctx.userId,
-    participantIds: params.participantIds,
+    participantIds,
     title: params.title,
     forceCreate: params.forceCreate,
     initialMessage: params.initialMessage
@@ -713,6 +801,7 @@ export async function handleThreadsCreate(
         }
       : undefined,
     references: params.references,
+    ...(params.createdFrom ? { createdFrom: params.createdFrom } : {}),
   })
 
   return {

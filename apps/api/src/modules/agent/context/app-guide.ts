@@ -30,11 +30,46 @@ export type AppGuideInput =
        * For a guide registered under a key that is not an app (the kernel's
        * `kernel-config`, `kernel-admin`, ...): the tools it is about, as sdk names
        * (`kernel__roles_list`) or prefixes ending in `*` (`kernel__config_*`).
-       * The whole guide renders while one of them is loaded; otherwise only its
-       * summary line rides. An app's own guide follows its app instead.
+       * Its core renders while one of them is loaded, with the sections of the
+       * loaded ones (kernel and app tools alike); otherwise only its summary
+       * line rides. An app's own guide follows its app instead.
        */
       coveredTools?: string[]
     }
+
+/** The line that opens a section of a markdown guide: `<!-- tools: kernel__a, kernel__b -->`. */
+const SECTION_MARKER = /^<!--\s*tools:\s*(.+?)\s*-->\s*$/
+
+/**
+ * A markdown guide (the kernel's `prompts/kernel/*.md`) as a guide input: the
+ * text before the first section marker is the core, and each marker opens a
+ * section about the tools it names (sdk names), up to the next marker. A
+ * guide that names its tools (`coveredTools`, frontmatter `tools:`) also
+ * covers its sections' tools, so loading one of them brings that section.
+ * A file with neither stays a plain string guide.
+ */
+export function parseGuideMarkdown(content: string, coveredTools?: string[]): AppGuideInput {
+  const coreLines: string[] = []
+  const sections: Array<{ tools: string[]; lines: string[] }> = []
+  for (const line of content.split("\n")) {
+    const marker = line.match(SECTION_MARKER)
+    if (marker) {
+      const tools = marker[1]!
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+      sections.push({ tools, lines: [] })
+    } else (sections.at(-1)?.lines ?? coreLines).push(line)
+  }
+  const parsed = sections
+    .map((s) => ({ tools: s.tools, text: s.lines.join("\n").trim() }))
+    .filter((s) => s.tools.length > 0 && s.text.length > 0)
+  if (!coveredTools?.length && parsed.length === 0) return content
+  const core = coreLines.join("\n").trim()
+  if (!coveredTools?.length) return { core, sections: parsed }
+  const covered = [...new Set([...coveredTools, ...parsed.flatMap((s) => s.tools)])]
+  return { core, sections: parsed, coveredTools: covered }
+}
 
 /** A string guide is a core with no sections. */
 export function normalizeAppGuide(raw: AppGuideInput): AppGuide {
@@ -67,8 +102,10 @@ export function appGuideSectionKey(app: string, index: number): string {
 /**
  * The parts of an app's guide that apply given the tools currently LOADED for
  * the provider: the core always, a section when one of its tools is loaded.
- * `"all"` renders every section (kernel, and the callers that still hand over a
- * whole guide).
+ * The one selection every door uses (system prompt, mid-run note, sub-agent
+ * runs, MCP), for app guides and kernel guides alike, with the full loaded set
+ * (kernel and app tools). `"all"` renders every section (tests, and the
+ * callers that hand over a whole guide).
  */
 export function selectAppGuideParts(
   app: string,

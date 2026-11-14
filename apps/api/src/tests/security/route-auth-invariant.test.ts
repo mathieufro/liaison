@@ -182,6 +182,12 @@ const PUBLIC_ROUTES: Record<string, PublicRoute> = {
     credential: "own-bearer",
     reason: "device receipt credential",
   },
+  // A commercial mail's opt-out link: the token is the 32-byte random secret it carries.
+  "GET /public/opt-out/:token": { credential: "token-in-path", reason: "opt-out link, read only" },
+  "POST /public/opt-out/:token": {
+    credential: "token-in-path",
+    reason: "opt-out link, records one opt-out",
+  },
   // Inbound webhooks.
   "POST /webhooks/:orgId/:appName/:endpointName": {
     credential: "webhook-verifier",

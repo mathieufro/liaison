@@ -571,6 +571,12 @@ async function applyMerge(
     tx,
     sql`UPDATE ${k}.threads SET created_by = ${real} WHERE org_id = ${orgId} AND created_by = ${ph}`,
   )
+  // A company's creator decides who may share it (migration 0293). The column
+  // is soft, so the foreign key walk never sees it: the person takes it over
+  // here, or a private company the placeholder created would be nobody's.
+  await tx.execute(
+    sql`UPDATE ${k}.companies SET created_by = ${real} WHERE org_id = ${orgId} AND created_by = ${ph}`,
+  )
   base.threadStatesDropped = await touched(
     tx,
     sql`DELETE FROM ${k}.user_thread_state x

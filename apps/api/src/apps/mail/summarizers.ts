@@ -108,6 +108,54 @@ function formatRecipients(recipients: Array<string | { email: string; name?: str
     .join(", ")
 }
 
+/**
+ * Links to the people a new mail goes to, as the requester sees them: the
+ * request is then about their contacts (and through them, their company), so
+ * it reaches that company's page while it waits. Only the To recipients, and
+ * only contacts the requester can read; an unknown address links nothing.
+ */
+async function recipientContactLinks(
+  tx: RlsClient,
+  orgId: string,
+  to: Array<string | { email: string; name?: string }>,
+): Promise<NonNullable<ApprovalSummary["links"]>> {
+  const emails = [
+    ...new Set(
+      to
+        .map((r) => (typeof r === "string" ? r : r?.email))
+        .filter((e): e is string => typeof e === "string" && e.includes("@"))
+        .map((e) => e.trim().toLowerCase()),
+    ),
+  ].slice(0, 10)
+  if (emails.length === 0) return []
+  try {
+    const rows = await tx.transaction(async (sp) =>
+      extractRows<{ id: string; name: string | null; email: string }>(
+        await sp.execute(drizzleSql`
+          SELECT id::text AS id, name, email
+          FROM ${drizzleSql.raw(quoteIdent(schemaRef("kernel")))}.contacts
+          WHERE org_id = ${orgId}::uuid
+            AND lower(email) IN (${drizzleSql.join(
+              emails.map((e) => drizzleSql`${e}`),
+              drizzleSql`, `,
+            )})
+          ORDER BY created_at
+          LIMIT 10
+        `),
+      ),
+    )
+    return rows.map((r) => ({
+      label: r.name || r.email,
+      app: "kernel",
+      entityType: "contact",
+      entityId: r.id,
+    }))
+  } catch {
+    // A recipient lookup never blocks the request: it only routes it.
+    return []
+  }
+}
+
 export async function summarizeMailReply(
   params: {
     conversationId: string
@@ -406,6 +454,7 @@ export async function summarizeMailCompose(
 
   // A compose subject is text the user typed. Unlike an ingested subject it is
   // never purged, so leaving it in the summary would leak it permanently.
+  const links = await recipientContactLinks(ctx.tx, ctx.orgId, params.to ?? [])
   return {
     kind: "mail.compose",
     title:
@@ -414,5 +463,17 @@ export async function summarizeMailCompose(
         : params.subject,
     subtitle: `Compose via ${accountEmail}`,
     lines,
+    ...(links.length > 0 ? { links } : {}),
   }
+}
+
+/** A request to lift an opt-out: who opted out, when and how, for the mail admin who decides. */
+export async function summarizeSuppressionRemove(
+  params: { email?: unknown },
+  ctx: { tx: RlsClient; orgId: string; userId: string },
+): Promise<ApprovalSummary> {
+  const email = typeof params.email === "string" ? params.email.trim() : ""
+  const { suppressionRemoveCard } = await import("~/modules/mail/suppressions")
+  const card = await suppressionRemoveCard(ctx.orgId, email)
+  return { kind: "mail.suppression_remove", title: card.title, lines: card.lines }
 }

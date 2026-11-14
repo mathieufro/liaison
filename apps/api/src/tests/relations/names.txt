@@ -1,0 +1,193 @@
+approval-target: its task renamed while the request is pending, the frozen record keeps its text
+approval-target: its task renamed while the request is pending, the frozen record keeps its text (fails with the event replaced by a no-op)
+approval-target: its ticket merged into another while a request on it is pending, the link closes with a visible state
+approval-target: its ticket merged into another while a request on it is pending, the link closes with a visible state (fails with the event replaced by a no-op)
+approval-target: its task deleted from its page while the request is pending, the link closes with a visible state
+approval-target: its task deleted from its page while the request is pending, the link closes with a visible state (fails with the event replaced by a no-op)
+approval-target: its app switched off while the request is pending, the link closes with a visible state
+approval-target: its app switched off while the request is pending, the link closes with a visible state (fails with the event replaced by a no-op)
+approval-target: its task deleted and taken back out of the bin, it reads as before
+approval-target: its task deleted and taken back out of the bin, it reads as before (fails with the event replaced by a no-op)
+approval-requester: the person who asked deleting their account, the link closes with a visible state
+approval-requester: the person who asked deleting their account, the link closes with a visible state (fails with the event replaced by a no-op)
+approval-requester: the person who asked deactivated and reactivated, it reads as before
+approval-requester: the person who asked deactivated and reactivated, it reads as before (fails with the event replaced by a no-op)
+approval-route: the person it is for deleting their account, the link closes with a visible state
+approval-route: the person it is for deleting their account, the link closes with a visible state (fails with the event replaced by a no-op)
+approval-route: the person it is for deactivated, the link closes with a visible state
+approval-route: the person it is for deactivated, the link closes with a visible state (fails with the event replaced by a no-op)
+approval-route: the person it is for losing the scope to decide, the link closes with a visible state
+approval-route: the person it is for losing the scope to decide, the link closes with a visible state (fails with the event replaced by a no-op)
+approval-route: its task moved to another project, the link holds
+approval-route: its task moved to another project, the link holds (fails with the event replaced by a no-op)
+approval-route: a request from before routing, with no person on it, an old row reads as today's
+approval-route: the person it is for deactivated and reactivated, it reads as before
+approval-route: the person it is for deactivated and reactivated, it reads as before (fails with the event replaced by a no-op)
+approval-route: the person it is for away with a next in line, it passes on to the next in line
+approval-route: the person it is for away with a next in line, it passes on to the next in line (fails with the event replaced by a no-op)
+routine-owner: its owner deactivated, at its next tick, the link closes with a visible state
+routine-owner: its owner deactivated, at its next tick, the link closes with a visible state (fails with the event replaced by a no-op)
+routine-owner: its owner losing a scope it runs with, at its next tick, the link closes with a visible state
+routine-owner: its owner losing a scope it runs with, at its next tick, the link closes with a visible state (fails with the event replaced by a no-op)
+routine-owner: its owner losing and regaining a scope it runs with, a tick after each, it reads as before
+routine-owner: its owner losing and regaining a scope it runs with, a tick after each, it reads as before (fails with the event replaced by a no-op)
+calendar-event-away-range: its out-of-office event renamed, at the next sync, the link holds
+calendar-event-away-range: its out-of-office event renamed, at the next sync, the link holds (fails with the event replaced by a no-op)
+calendar-event-away-range: its out-of-office event cancelled, at the next sync, the link closes with a visible state
+calendar-event-away-range: its out-of-office event cancelled, at the next sync, the link closes with a visible state (fails with the event replaced by a no-op)
+calendar-event-away-range: the person away deactivated, the link closes with a visible state
+calendar-event-away-range: the person away deactivated, the link closes with a visible state (fails with the event replaced by a no-op)
+calendar-event-away-range: the calendar disconnected, the link closes with a visible state
+calendar-event-away-range: the calendar disconnected, the link closes with a visible state (fails with the event replaced by a no-op)
+calendar-event-away-range: its out-of-office event moved to next week, at the next sync, the link closes with a visible state
+calendar-event-away-range: its out-of-office event moved to next week, at the next sync, the link closes with a visible state (fails with the event replaced by a no-op)
+calendar-event-away-range: the person away deactivated and reactivated, then the next sync, it reads as before
+calendar-event-away-range: the person away deactivated and reactivated, then the next sync, it reads as before (fails with the event replaced by a no-op)
+away-range-person: the range ended early by its person, the link closes with a visible state
+away-range-person: the range ended early by its person, the link closes with a visible state (fails with the event replaced by a no-op)
+away-range-person: the person away deactivated, the link closes with a visible state
+away-range-person: the person away deactivated, the link closes with a visible state (fails with the event replaced by a no-op)
+away-range-next-in-line: the next in line deactivated during the range, the link closes with a visible state
+away-range-next-in-line: the next in line deactivated during the range, the link closes with a visible state (fails with the event replaced by a no-op)
+away-range-next-in-line: the next in line losing the scope to decide, the link closes with a visible state
+away-range-next-in-line: the next in line losing the scope to decide, the link closes with a visible state (fails with the event replaced by a no-op)
+away-range-next-in-line: the next in line deactivated and reactivated during the range, it reads as before
+away-range-next-in-line: the next in line deactivated and reactivated during the range, it reads as before (fails with the event replaced by a no-op)
+away-range-next-in-line: the next in line away too, with their own next in line, it passes on to the next in line
+away-range-next-in-line: the next in line away too, with their own next in line, it passes on to the next in line (fails with the event replaced by a no-op)
+stand-in-row-item: the item decided by another decider, the link closes with a visible state
+stand-in-row-item: the item decided by another decider, the link closes with a visible state (fails with the event replaced by a no-op)
+stand-in-row-item: the stand-in deactivated, the link closes with a visible state
+stand-in-row-item: the stand-in deactivated, the link closes with a visible state (fails with the event replaced by a no-op)
+stand-in-row-item: the stand-in losing the scope to decide, the link closes with a visible state
+stand-in-row-item: the stand-in losing the scope to decide, the link closes with a visible state (fails with the event replaced by a no-op)
+stand-in-row-item: its app switched off while the stand-in holds it, the link closes with a visible state
+stand-in-row-item: its app switched off while the stand-in holds it, the link closes with a visible state (fails with the event replaced by a no-op)
+stand-in-row-item: its task moved to another project, the link holds
+stand-in-row-item: its task moved to another project, the link holds (fails with the event replaced by a no-op)
+stand-in-row-item: the stand-in losing and regaining the scope to decide, it reads as before
+stand-in-row-item: the stand-in losing and regaining the scope to decide, it reads as before (fails with the event replaced by a no-op)
+stand-in-row-item: the stand-in away too, with their own next in line, it passes on to the next in line
+stand-in-row-item: the stand-in away too, with their own next in line, it passes on to the next in line (fails with the event replaced by a no-op)
+thread-created-from: its task renamed, the link holds
+thread-created-from: its task renamed, the link holds (fails with the event replaced by a no-op)
+thread-created-from: its ticket merged into another, the link moves to the survivor
+thread-created-from: its ticket merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+thread-created-from: a member losing read access to its task, the reader who lost access sees nothing
+thread-created-from: a member losing read access to its task, the reader who lost access sees nothing (fails with the event replaced by a no-op)
+thread-created-from: its task's app switched off, the link closes with a visible state
+thread-created-from: its task's app switched off, the link closes with a visible state (fails with the event replaced by a no-op)
+thread-created-from: its task moved to another project, the link holds
+thread-created-from: its task moved to another project, the link holds (fails with the event replaced by a no-op)
+thread-created-from: its task deleted and taken back out of the bin, it reads as before
+thread-created-from: its task deleted and taken back out of the bin, it reads as before (fails with the event replaced by a no-op)
+dashboard-owner: the person who made it deactivated, the link holds
+dashboard-owner: the person who made it deactivated, the link holds (fails with the event replaced by a no-op)
+dashboard-owner: its owner losing the scope to share dashboards, the link holds
+dashboard-owner: its owner losing the scope to share dashboards, the link holds (fails with the event replaced by a no-op)
+dashboard-owner: the person who made it exporting their own data, the export carries it
+dashboard-owner: the person who made it exporting their own data, the export carries it (fails with the event replaced by a no-op)
+dashboard-owner: its owner deactivated and reactivated, it reads as before
+dashboard-owner: its owner deactivated and reactivated, it reads as before (fails with the event replaced by a no-op)
+dashboard-author: the person who made it deactivated, the link holds
+dashboard-author: the person who made it deactivated, the link holds (fails with the event replaced by a no-op)
+dashboard-author: the person who made it exporting their own data, the export carries it
+dashboard-author: the person who made it exporting their own data, the export carries it (fails with the event replaced by a no-op)
+store-document-author: the person who made it deactivated, the link holds
+store-document-author: the person who made it deactivated, the link holds (fails with the event replaced by a no-op)
+store-document-author: the person who made it exporting their own data, the export carries it
+store-document-author: the person who made it exporting their own data, the export carries it (fails with the event replaced by a no-op)
+contact-company: its company renamed, the link holds
+contact-company: its company renamed, the link holds (fails with the event replaced by a no-op)
+contact-company: its company merged into another, the link moves to the survivor
+contact-company: its company merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+contact-company: the person's data subject export, the export carries it
+contact-company: the person's data subject export, the export carries it (fails with the event replaced by a no-op)
+company-account-manager: the account manager deactivated, their companies left unowned, the link closes with a visible state
+company-account-manager: the account manager deactivated, their companies left unowned, the link closes with a visible state (fails with the event replaced by a no-op)
+company-account-manager: the account manager exporting their own data, the export carries it
+company-account-manager: the account manager exporting their own data, the export carries it (fails with the event replaced by a no-op)
+company-main-contact: its person merged into another, the link moves to the survivor
+company-main-contact: its person merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+company-main-contact: its person deleted, the link closes with a visible state
+company-main-contact: its person deleted, the link closes with a visible state (fails with the event replaced by a no-op)
+deal-company: its company merged into another, the link moves to the survivor
+deal-company: its company merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+deal-company: its company deleted, the link closes with a visible state
+deal-company: its company deleted, the link closes with a visible state (fails with the event replaced by a no-op)
+deal-contact: its person merged into another, the link moves to the survivor
+deal-contact: its person merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+deal-contact: its person deleted, the link closes with a visible state
+deal-contact: its person deleted, the link closes with a visible state (fails with the event replaced by a no-op)
+deal-contact: the person's data subject export, the export carries it
+deal-contact: the person's data subject export, the export carries it (fails with the event replaced by a no-op)
+deal-owner: the owner exporting their own data, the export carries it
+deal-owner: the owner exporting their own data, the export carries it (fails with the event replaced by a no-op)
+deal-pipeline-project: the deal moved to a work project, the event is refused while the link is live
+deal-pipeline-project: the deal moved to a work project, the event is refused while the link is live (fails with the event replaced by a no-op)
+project-company: its company merged into another, the link moves to the survivor
+project-company: its company merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+project-company: its company deleted, the link closes with a visible state
+project-company: its company deleted, the link closes with a visible state (fails with the event replaced by a no-op)
+suppression-contact: the person deleted after opting out, the link holds
+suppression-contact: the person deleted after opting out, the link holds (fails with the event replaced by a no-op)
+suppression-contact: the person's data subject export, the export carries it
+suppression-contact: the person's data subject export, the export carries it (fails with the event replaced by a no-op)
+app-draft-author: the person who made it deactivated, the link holds
+app-draft-author: the person who made it deactivated, the link holds (fails with the event replaced by a no-op)
+app-draft-author: the person who made it exporting their own data, the export carries it
+app-draft-author: the person who made it exporting their own data, the export carries it (fails with the event replaced by a no-op)
+invoice-party: its person renamed after the invoice was issued, the frozen record keeps its text
+invoice-party: its person renamed after the invoice was issued, the frozen record keeps its text (fails with the event replaced by a no-op)
+invoice-party: its person merged into another, the link moves to the survivor
+invoice-party: its person merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+invoice-party: a reader lost the read scope, the reader who lost access sees nothing
+invoice-party: a reader lost the read scope, the reader who lost access sees nothing (fails with the event replaced by a no-op)
+invoice-party: the person's data subject export, the export carries it
+invoice-party: the person's data subject export, the export carries it (fails with the event replaced by a no-op)
+invoice-party: a reader lost the read scope and got it back, it reads as before
+invoice-party: a reader lost the read scope and got it back, it reads as before (fails with the event replaced by a no-op)
+schedule-party: its company renamed, the link holds
+schedule-party: its company renamed, the link holds (fails with the event replaced by a no-op)
+schedule-party: its company merged into another, the link moves to the survivor
+schedule-party: its company merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+schedule-party: its company deleted while the schedule bills it, the event is refused while the link is live
+schedule-party: its company deleted while the schedule bills it, the event is refused while the link is live (fails with the event replaced by a no-op)
+schedule-party: a reader lost the read scope, the reader who lost access sees nothing
+schedule-party: a reader lost the read scope, the reader who lost access sees nothing (fails with the event replaced by a no-op)
+schedule-party: a reader lost the read scope and got it back, it reads as before
+schedule-party: a reader lost the read scope and got it back, it reads as before (fails with the event replaced by a no-op)
+schedule-contact: its person merged into another, the link moves to the survivor
+schedule-contact: its person merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+schedule-contact: its person deleted while the schedule bills them, the event is refused while the link is live
+schedule-contact: its person deleted while the schedule bills them, the event is refused while the link is live (fails with the event replaced by a no-op)
+schedule-contact: the person's data subject export, the export carries it
+schedule-contact: the person's data subject export, the export carries it (fails with the event replaced by a no-op)
+run-item-schedule-draft: a reader lost the read scope, the reader who lost access sees nothing
+run-item-schedule-draft: a reader lost the read scope, the reader who lost access sees nothing (fails with the event replaced by a no-op)
+run-item-schedule-draft: a reader lost the read scope and got it back, it reads as before
+run-item-schedule-draft: a reader lost the read scope and got it back, it reads as before (fails with the event replaced by a no-op)
+payments-customer-party: its company renamed, the link holds
+payments-customer-party: its company renamed, the link holds (fails with the event replaced by a no-op)
+payments-customer-party: its company merged into another, the link moves to the survivor
+payments-customer-party: its company merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+payments-customer-party: its company deleted, the link closes with a visible state
+payments-customer-party: its company deleted, the link closes with a visible state (fails with the event replaced by a no-op)
+payments-customer-party: a reader lost the read scope, the reader who lost access sees nothing
+payments-customer-party: a reader lost the read scope, the reader who lost access sees nothing (fails with the event replaced by a no-op)
+payments-customer-party: the payments connector switched off and on again, it reads as before
+payments-customer-party: the payments connector switched off and on again, it reads as before (fails with the event replaced by a no-op)
+payments-customer-contact: its person merged into another, the link moves to the survivor
+payments-customer-contact: its person merged into another, the link moves to the survivor (fails with the event replaced by a no-op)
+payments-customer-contact: its person deleted, the link closes with a visible state
+payments-customer-contact: its person deleted, the link closes with a visible state (fails with the event replaced by a no-op)
+payments-customer-contact: the person's data subject export, the export carries it
+payments-customer-contact: the person's data subject export, the export carries it (fails with the event replaced by a no-op)
+payments-invoice-document: a reader lost the read scope, the reader who lost access sees nothing
+payments-invoice-document: a reader lost the read scope, the reader who lost access sees nothing (fails with the event replaced by a no-op)
+payments-invoice-document: the payments connector switched off and on again, it reads as before
+payments-invoice-document: the payments connector switched off and on again, it reads as before (fails with the event replaced by a no-op)
+payments-refund-charge: a reader lost the read scope, the reader who lost access sees nothing
+payments-refund-charge: a reader lost the read scope, the reader who lost access sees nothing (fails with the event replaced by a no-op)
+payments-refund-charge: the payments connector switched off and on again, it reads as before
+payments-refund-charge: the payments connector switched off and on again, it reads as before (fails with the event replaced by a no-op)

@@ -10,6 +10,8 @@
 // a little under fourteen days back and the newest a few minutes ago, so every
 // screen reads as busy this week and still busy right now.
 
+import type { DemoRole } from "~/seed/world/fiction"
+
 export const ACTIVITY_DAYS = 14
 /** The newest activity is this many hours before `now` (a few minutes). */
 export const ACTIVITY_MIN_HOURS = 0.08
@@ -29,7 +31,7 @@ export function seededRandom(seed: number): () => number {
 
 export interface PlanPerson {
   key: string
-  role: "founder_admin" | "ops_lead" | "support" | "fulfillment" | "finance" | "sales"
+  role: DemoRole
 }
 
 export interface PlanInput {

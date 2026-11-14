@@ -63,6 +63,11 @@ export const KERNEL_DASHBOARD_SOURCES: ReadonlySet<string> = new Set([
   "approval_policy_get",
   "policy_get",
   "audit_search",
+  "companies_search",
+  "companies_read",
+  "company_timeline",
+  "companies_find_duplicates",
+  "companies_propose_from_contacts",
   "roles_list",
   "get_role",
   "list_scopes",
@@ -126,6 +131,7 @@ export const SECRET_READS: ReadonlySet<string> = new Set([
  * reads in their own turn. Neither has rows a block can chart.
  */
 export const DOCUMENT_TEXT_READS: ReadonlyMap<string, string> = new Map([
+  ["github:github_read_file", "it returns one repository file's text"],
   ["gitlab:gitlab_read_file", "it returns one repository file's text"],
   ["google-drive:read", "it returns one Drive file's text"],
   ["api-connector:connector_adapter_reference", "it returns the connector authoring guide"],

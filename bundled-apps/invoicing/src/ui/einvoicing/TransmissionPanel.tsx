@@ -223,10 +223,14 @@ export const TransmissionPanel: Component<{ documentId: string }> = (props) => {
   const [data, { refetch }] = createResource(() => props.documentId || null, load)
   const [confirming, setConfirming] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
-  const view = () => transmissionPanelView(data() ?? null)
+  // Read only once settled (latest while refreshing): a pending read would blank the whole
+  // document detail, which renders this panel under its Suspense.
+  const settled = () =>
+    data.state === "ready" || data.state === "refreshing" ? data.latest : undefined
+  const view = () => transmissionPanelView(settled() ?? null)
 
   const send = async () => {
-    const p = data()?.send_preview
+    const p = settled()?.send_preview
     if (!p) return
     setBusy(true)
     try {

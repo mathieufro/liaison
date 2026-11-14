@@ -53,7 +53,11 @@ export function getMentionPrefix(ref: string): "@" | "#" {
  * it as `@[#ticket-6507](tickets:ticket:...)` used to render as "##ticket-6507".
  */
 function chipText(prefix: "@" | "#", label: string): string {
-  return label.startsWith(prefix) ? escapeHtml(label) : `${prefix}${escapeHtml(label)}`
+  if (label.startsWith(prefix)) return escapeHtml(label)
+  // A link written `[@Project](projects:project:...)` carries the mention marker in its text:
+  // the chip's own prefix replaces it, so it never reads "#@Project".
+  const bare = prefix === "#" && label.startsWith("@") ? label.slice(1) : label
+  return `${prefix}${escapeHtml(bare)}`
 }
 
 function escapeAttr(s: string): string {

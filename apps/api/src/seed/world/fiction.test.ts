@@ -163,3 +163,70 @@ describe("demo world: anonymized fictional source of truth", () => {
     expect(first).toBe(SERIALIZED)
   }, 60_000)
 })
+
+/**
+ * Every other world's pack under the same rules, read from its own fiction
+ * module: the company's VAT and IBAN bodies are all zero, every address and
+ * site is on a reserved domain, every declared VAT body is zero, and the
+ * module evaluates to the same pack in two fresh processes.
+ */
+const PACK_FICTIONS = [
+  { world: "saas", file: "../worlds/saas/fiction.ts", exports: ["SAAS_WORLD", "SAAS_ROLE_AGENTS"] },
+  {
+    world: "studio",
+    file: "../worlds/studio/fiction.ts",
+    exports: ["STUDIO_WORLD", "STUDIO_CLIENTS"],
+  },
+] as const
+
+const RESERVED_HOST = /^(?:[a-z0-9-]+\.)*[a-z0-9-]+\.(example|test|invalid|localhost)$/
+
+function serializePackInFreshProcess(file: string, names: readonly string[]): string {
+  const modulePath = new URL(file, import.meta.url).pathname
+  const script = [
+    `const m = await import(${JSON.stringify(modulePath)})`,
+    `process.stdout.write(${names.map((n) => `JSON.stringify(m.${n})`).join(" + ")})`,
+  ].join("\n")
+  const proc = Bun.spawnSync({ cmd: [process.execPath, "--eval", script] })
+  if (proc.exitCode !== 0) {
+    throw new Error(`${file} failed to evaluate in a child process: ${proc.stderr.toString()}`)
+  }
+  return proc.stdout.toString()
+}
+
+for (const pack of PACK_FICTIONS) {
+  describe(`the ${pack.world} world's fiction, under the same rules`, () => {
+    let text = ""
+    let world: {
+      company: Record<string, string>
+      customers: Array<{ email: string; vat?: string }>
+    }
+
+    it("is deterministic: two fresh processes serialize it identically", () => {
+      text = serializePackInFreshProcess(pack.file, pack.exports)
+      expect(serializePackInFreshProcess(pack.file, pack.exports)).toBe(text)
+      world = JSON.parse(text.slice(0, text.indexOf("}[") + 1)) as typeof world
+    }, 60_000)
+
+    it("the company's VAT and IBAN bodies are all zero, and mod 97 refuses the IBAN", () => {
+      expect(world.company.vat).toMatch(/^[A-Z]{2}0+$/)
+      expect(world.company.iban).toMatch(/^[A-Z]{2}0+$/)
+      expect(ibanMod97(world.company.iban as string)).not.toBe(1)
+    })
+
+    it("every address and site it names is on a reserved domain", () => {
+      const emails = text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g) ?? []
+      expect(emails.length).toBeGreaterThan(0)
+      for (const email of emails) expect(`@${email.split("@")[1]}`).toMatch(RESERVED_DOMAIN)
+      for (const url of text.match(/https?:\/\/[^\s"/]+/g) ?? []) {
+        expect(new URL(url).hostname).toMatch(RESERVED_HOST)
+      }
+    })
+
+    it("every declared VAT body is all zero", () => {
+      for (const vat of text.match(/"vat(?:Number)?":"([^"]*)"/g) ?? []) {
+        expect(vat.split(":")[1]).toMatch(/^"[A-Z]{2}0+"$/)
+      }
+    })
+  })
+}

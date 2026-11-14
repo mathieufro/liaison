@@ -581,6 +581,22 @@ export function generateNotNullTightenDdl(
   ]
 }
 
+/**
+ * The statement that lets a live column go NULL when a later app version makes its field
+ * nullable. Additive (expand-safe): code still running from the earlier version keeps writing
+ * the value, and every existing row keeps its own. Metadata only, no table rewrite. Returns null
+ * when the manifest still declares the field NOT NULL.
+ */
+export function generateNotNullLoosenDdl(
+  schemaName: string,
+  tableName: string,
+  fieldName: string,
+  fieldDef: any,
+): string | null {
+  if (!isFieldNullable(fieldDef)) return null
+  return `ALTER TABLE ${quoteIdent(schemaName)}.${quoteIdent(tableName)} ALTER COLUMN ${quoteIdent(snake(fieldName))} DROP NOT NULL`
+}
+
 function deepSortKeys(obj: unknown): unknown {
   if (obj === null || typeof obj !== "object") return obj
   if (Array.isArray(obj)) return obj.map(deepSortKeys)

@@ -93,9 +93,15 @@ import { forgetDemoFixtureCrm } from "~/modules/demo/api-connector/responder"
 import { countVisitorOrgs, listExpiredDemoOrgs } from "~/modules/demo/demo-expiry"
 import { leadForDemoOrg } from "~/modules/demo/demo-leads"
 import { isDemoModeEnabled } from "~/modules/demo/demo-mode"
-import { demoPoolStateOf, invalidateDemoMarker, visitorMarker } from "~/modules/demo/demo-org"
+import {
+  demoPoolStateOf,
+  forgetPurgedDemoMarker,
+  invalidateDemoMarker,
+  visitorMarker,
+} from "~/modules/demo/demo-org"
 import { reservedOwner, seedDemoOrgData } from "~/modules/demo/demo-seeder"
 import { ReapPacer, type ReapPacerOptions, type ReapPressure } from "~/modules/demo/reap-pacer"
+import { forgetDemoPaymentsOutside } from "~/modules/demo/worlds/saas/payments/overlay"
 import { forwardPlayedScenarios } from "~/modules/liaison-team/lead-forwarding"
 import type { OrgExternalStateDeps } from "~/modules/org/purge/external"
 import { purgeOrg } from "~/modules/org/purge/purge-org"
@@ -343,6 +349,9 @@ export const KERNEL_RESET_RULES: Record<string, KernelResetRule> = {
   approval_handle_counters: "clear",
   approved_handler_executions: "clear",
   attention_events: "clear",
+  // A visitor's away records and the app features they switched go with them.
+  away_ranges: "clear",
+  org_app_features: "clear",
   notification_deliveries: "clear",
   notification_receipts: "clear",
   resource_grants: "clear",
@@ -398,6 +407,10 @@ export const KERNEL_RESET_RULES: Record<string, KernelResetRule> = {
   app_logs: "clear",
   contact_segments: "clear",
   contacts: "clear",
+  // A visitor's companies (0293) and opt-outs with their links (0294) are their content.
+  companies: "clear",
+  suppressions: "clear",
+  suppression_links: "clear",
   // Staff-marked trusted sender addresses and domains: a visitor's marks go.
   trusted_senders: "clear",
   device_flow_requests: "clear",
@@ -598,6 +611,8 @@ export async function resetDemoOrgContent(orgId: string): Promise<Record<string,
   await sweepOrgSearchIndex(orgId, "demo-reset-content")
   // The fixture CRM's records written before the reset go with the rest.
   await forgetDemoFixtureCrm(orgId)
+  // So do the card-payments stand-in's outside objects (refunds, cancellations).
+  await forgetDemoPaymentsOutside(orgId)
   return deleted
 }
 
@@ -663,6 +678,14 @@ export async function purgeDemoOrg(
   const stepMs: Record<string, number> = {}
   let stepAt = Date.now()
   const started = stepAt
+  // Tell the other processes the marker and the fixture CRM are gone BEFORE the
+  // purge: it sweeps every Redis key naming the org, so the version and epoch
+  // counters written here go with it, and a process that read the org in the
+  // meantime finds the counters changed (or absent) and reads again. Written
+  // after the purge they would outlive it until they expire. The marker is
+  // dropped once more after the purge (below), through a key naming no org.
+  await invalidateDemoMarker(orgId)
+  await forgetDemoFixtureCrm(orgId)
   const { deleted } = await purgeOrg(orgId, {
     reason: "demo-reset-purge",
     assertAllowed: assertDestructionAllowed,
@@ -676,8 +699,10 @@ export async function purgeDemoOrg(
       stepAt = at
     },
   })
-  await invalidateDemoMarker(orgId)
-  await forgetDemoFixtureCrm(orgId)
+  // A process that read the marker between the purge's Redis sweep and its row
+  // delete cached it under the swept (absent) counter: drop it everywhere.
+  await forgetPurgedDemoMarker(orgId)
+  await forgetDemoPaymentsOutside(orgId)
   log.warn(
     { orgId, slug: stored.slug, deleted, ms: Date.now() - started, stepMs },
     "collected an expired demo workspace",

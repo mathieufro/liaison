@@ -83,7 +83,8 @@ describe("DashboardShareDialog", () => {
     })
     renderDialog(api)
     expect(await screen.findByTestId("dashboard-share-read-only")).toBeInTheDocument()
-    expect(screen.getByTestId("dashboard-share-save")).toBeDisabled()
+    // Read only: the shared dialog offers no Save at all, so nothing can look saved.
+    expect(screen.queryByTestId("dashboard-share-save")).toBeNull()
     expect(api.put).not.toHaveBeenCalled()
   })
 })

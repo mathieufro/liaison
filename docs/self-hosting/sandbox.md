@@ -35,7 +35,7 @@ The app's `/healthz` shows the service as the `sandbox` dependency: `ok` when it
 
 ### The way back, this release only
 
-`LIAISON_APP_RUNTIME=quickjs` in `deploy/.env`, then `docker compose up -d`: every app runs on the local QuickJS sandbox again, whatever else is set. It is the only way back while a server moves to the service, and it is temporary: the next release removes QuickJS and this switch, so a server must run its apps on the service before it takes that release. While the switch is on, `/healthz` does not list the service as a dependency. A host where the service cannot start at all (no gVisor yet) can leave it out meanwhile with `docker compose up -d --scale sandbox=0`, together with the switch.
+`LIAISON_APP_RUNTIME=quickjs` in `deploy/.env`, then `docker compose up -d`: every app runs on the local QuickJS sandbox again, whatever else is set. It is the only way back while a server moves to the service, and it is temporary: the next release removes QuickJS and this switch, so a server must run its apps on the service before it takes that release. While the switch is on, `/healthz` does not list the service as a dependency. A host where the service cannot start at all (no gVisor yet) can leave it out meanwhile with `docker compose up -d --scale sandbox=0`, together with the switch. On such a host `sudo deploy/sandbox-firewall.sh install` still puts the rules in place, and `deploy/sandbox-firewall.sh check` passes with a line saying there is nothing to check while no sandbox service runs and the app runs on QuickJS; run it again once the service runs.
 
 ## Upgrading to the release that turns it on
 

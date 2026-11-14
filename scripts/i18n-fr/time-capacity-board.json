@@ -1,0 +1,27 @@
+{
+  "key": {
+    "projects.capacity.emptyTitle": "Aucun temps prévu sur du travail attribué",
+    "projects.capacity.emptyBody": "La charge n'additionne que le temps prévu sur du travail attribué à quelqu'un. Demandez à l'agent de le fixer à partir d'un devis, ou fixez-le sur une tâche.",
+    "projects.capacity.retry": "Réessayer",
+    "projects.capacity.summary": "{{planned}} prévues, sur {{available}} disponibles.",
+    "projects.capacity.whoCanTake": "Qui peut la prendre ?",
+    "projects.capacity.whoMessage": "Qui peut prendre {{task}} ?",
+    "projects.capacity.footnoteDays": "Les jours non travaillés réduisent ce qui rentre.",
+    "projects.capacity.sidebar": "Charge",
+    "projects.timeSettings.using": "{{count}} projets utilisent le temps et les budgets. Chaque projet l'active dans ses propres réglages.",
+    "projects.timeSettings.usingOne": "1 projet utilise le temps et les budgets. Il est activé dans les réglages de ce projet.",
+    "projects.timeSettings.costRates": "Les taux de coût sont tenus par la finance, par personne, et restent hors de toute autre vue.",
+    "projects.timeSettings.costRatesAsk": "Fixer les taux de coût",
+    "projects.timeSettings.costRatesMessage": "Montre-moi les taux de coût et qui n'en a pas encore.",
+    "projects.time.openSheet": "Ouvrir les heures datées",
+    "kernel.homeDecisions.backToFiveDays": "Revenir à 5 jours",
+    "kernel.homeDecisions.backToFiveDaysFailed": "Impossible de changer vos jours par semaine. Rien n'a été modifié.",
+    "kernel.homeGroupTime": "Temps et budgets",
+    "kernel.homeKind.capacity_over.one": "personne avec plus de temps prévu que ce qui rentre",
+    "kernel.homeKind.capacity_over.other": "personnes avec plus de temps prévu que ce qui rentre",
+    "kernel.homeKind.month_close.one": "projet à rapprocher ce mois-ci",
+    "kernel.homeKind.month_close.other": "projets à rapprocher ce mois-ci",
+    "kernel.homeKind.calendar_ended.one": "calendrier partagé de jours non travaillés à choisir de nouveau",
+    "kernel.homeKind.calendar_ended.other": "calendriers partagés de jours non travaillés à choisir de nouveau"
+  }
+}

@@ -6,8 +6,9 @@
  * entry here and runs its bundle export instead. Loaded lazily by the runner.
  */
 import { calendarEventImportHandler } from "~/apps/calendar/import-kind"
-import { contactImportHandler } from "~/apps/contacts/import-kind"
+import { companyImportHandler, contactImportHandler } from "~/apps/contacts/import-kind"
 import { collectionImportHandler, documentImportHandler } from "~/apps/knowledge/import-kind"
+import { dealImportHandler } from "~/apps/projects/import-deal-kind"
 import {
   projectImportHandler,
   taskImportHandler,
@@ -28,9 +29,11 @@ export const BUILTIN_IMPORT_HANDLERS: Record<string, HostImportHandler> = {
   "chat.message": messageImportHandler,
   "chat.thread": threadImportHandler,
   "calendar.event": calendarEventImportHandler,
+  "contacts.company": companyImportHandler,
   "contacts.contact": contactImportHandler,
   "knowledge.collection": collectionImportHandler,
   "knowledge.document": documentImportHandler,
+  "projects.deal": dealImportHandler,
   "projects.project": projectImportHandler,
   "projects.task": taskImportHandler,
   "projects.template": templateImportHandler,

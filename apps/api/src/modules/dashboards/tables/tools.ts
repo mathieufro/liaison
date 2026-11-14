@@ -666,7 +666,7 @@ export function registerTableTools(orgId: string): void {
     name: "tables_rows_write",
     deferLoading: true,
     description: `Add, change or delete rows of a dashboard table, up to ${MAX_OPS_PER_WRITE} operations applied together (all or none): {op:"add", cells}, {op:"update", id, ifVersion, cells} (only the cells given change), {op:"delete", id, ifVersion}. Read the columns with kernel__tables_get and the rows' ids and versions with kernel__tables_query first. Applies at once and is recorded (people can undo it), unless the table asks for approval of agents' row changes. A row changed since your read is refused naming it: read it again and retry. In a table backed by an app's records, changing a read-through cell also takes ifRecordVersion, the row's recordVersion; a row cannot be deleted there.`,
-    searchKeywords: ["table", "row", "ligne", "add", "ajouter", "update", "modifier", "statut"],
+    searchKeywords: ["table", "row", "ligne", "add", "ajouter", "update", "statut"],
     requiredScopes: [WRITE_SCOPE],
     params: z.object({
       tableId: z.string().uuid(),

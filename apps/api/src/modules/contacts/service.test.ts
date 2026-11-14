@@ -63,6 +63,29 @@ describe("resolveContact — spurious update event", () => {
     expect(updateEvent).toBeUndefined()
   })
 
+  it("does not emit update event when the same external id and metadata are resolved again", async () => {
+    const params = {
+      email: "test3@test.com",
+      name: "Same",
+      externalId: { shopify: "gid://shopify/Customer/7" },
+      metadata: { tier: "gold" },
+    }
+    await resolveContact(rlsDb, ORG_ID, USER_ID, params, { audience: "org" })
+    events.length = 0 // clear create event
+
+    await resolveContact(rlsDb, ORG_ID, USER_ID, params, { audience: "org" })
+    expect(events.find((e) => e.action === "update" && e.entity === "contact")).toBeUndefined()
+
+    await resolveContact(
+      rlsDb,
+      ORG_ID,
+      USER_ID,
+      { ...params, metadata: { tier: "platinum" } },
+      { audience: "org" },
+    )
+    expect(events.find((e) => e.action === "update" && e.entity === "contact")).toBeDefined()
+  })
+
   it("does emit update event when name is merged for the first time", async () => {
     await resolveContact(rlsDb, ORG_ID, USER_ID, { email: "test2@test.com" }, { audience: "org" })
     events.length = 0 // clear create event

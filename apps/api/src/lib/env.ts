@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+
+import { DEMO_WORLDS, type DemoWorldId, isDemoWorldId } from "@liaison/shared"
 import { Encrypter } from "age-encryption"
 import { z } from "zod"
 import { DEFAULT_APP_ORIGINS } from "~/lib/app-origins"
 import { envBoolean, parseEnvBoolean } from "~/lib/env-boolean"
+import { SHOPIFY_FAKE_ADMIN_ENV, shopifyFakeAdminGate } from "~/lib/shopify-fake-admin-gate"
 import { SHUTDOWN_BUDGET_DEFAULTS } from "~/lib/shutdown-budget"
 import {
   RESERVED_MODEL_DEFAULT,
@@ -98,6 +101,38 @@ export function isBareHttpsOrigin(v: string): boolean {
 /** Compose passes a variable nobody set as the empty string: read it as unset. */
 function unsetIfEmpty(v: unknown): unknown {
   return typeof v === "string" && v.trim() === "" ? undefined : v
+}
+
+/**
+ * `LIAISON_DEMO_WORLDS`: demo world ids (`DEMO_WORLDS` in `@liaison/shared`),
+ * comma separated. Null when an entry is not a world or repeats one.
+ */
+export function parseDemoWorldList(raw: string): DemoWorldId[] | null {
+  const out: DemoWorldId[] = []
+  for (const part of raw.split(",")) {
+    const id = part.trim()
+    if (!isDemoWorldId(id) || out.includes(id)) return null
+    out.push(id)
+  }
+  return out
+}
+
+/**
+ * `LIAISON_DEMO_POOL_SIZES`: `<world>=<count>` pairs, comma separated
+ * (`products=2,saas=2,studio=1`). Empty reads as `{}` (no split given). Null
+ * when a pair is malformed, names no world, repeats one or counts past 100.
+ */
+export function parseDemoPoolSizes(raw: string): Partial<Record<DemoWorldId, number>> | null {
+  const out: Partial<Record<DemoWorldId, number>> = {}
+  if (raw.trim() === "") return out
+  for (const part of raw.split(",")) {
+    const match = /^\s*([a-z]+)\s*=\s*(\d{1,3})\s*$/.exec(part)
+    const id = match?.[1]
+    const count = Number(match?.[2])
+    if (!isDemoWorldId(id) || id in out || !(count <= 100)) return null
+    out[id] = count
+  }
+  return out
 }
 
 /** The instance-provided OAuth clients, each a client id and its secret. */
@@ -456,6 +491,23 @@ export const envSchema = z
     // Off by default, and off on the public demo box too, where
     // LIAISON_DEMO_MODE already opens the same door.
     LIAISON_DEMO_SHOPIFY_FIXTURES: envBoolean(false),
+    // LIAISON_TEST_SHOPIFY_ADMIN_URL sends the Shopify app's Admin API requests
+    // (connect, disconnect cleanup, jobs, reads) to a FAKE at this one origin, with
+    // the store's token on them. Test box only: honoured only on a box labelled
+    // private (LIAISON_PRIVATE_DEMO_BOX) with a loopback BASE_URL, never in the
+    // managed edition, and the value must be a bare origin on the box's own network.
+    // Set anywhere else, the server refuses to start (lib/shopify-fake-admin-gate.ts,
+    // the boot check below). Unset by default; never set it on a real instance.
+    LIAISON_TEST_SHOPIFY_ADMIN_URL: z.preprocess(unsetIfEmpty, z.string().trim().optional()),
+    // LIAISON_DEMO_PAYMENTS_FIXTURES turns on the card-payments stand-in's
+    // signed QA route (modules/demo/worlds/saas/payments/), which writes an
+    // outside object for a DEMO MARKED org on a box that is NOT the public demo
+    // instance (a private walk, bench or year box). The stand-in itself needs
+    // no flag: a demo marked org's call to the payments host, from any app, is
+    // answered or refused on every box and never put on the wire, and an org
+    // with no demo marker is never intercepted. Off by default, and off on the
+    // public demo box.
+    LIAISON_DEMO_PAYMENTS_FIXTURES: envBoolean(false),
     // LIAISON_DEMO_WAREHOUSE opts this deployment into the demo seed's
     // warehouse part: the read-only analytics schema behind the `database`
     // connector, built by the deploy-time seed and connected to every demo org.
@@ -531,6 +583,41 @@ export const envSchema = z
     LIAISON_DEMO_POOL_SIZE: z.preprocess(
       (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
       z.coerce.number().int().min(0).max(100).default(5),
+    ),
+    // The demo worlds this box runs, comma separated: products, saas, studio.
+    // A visitor's answer at the door picks one of them; the warm pool keeps
+    // workspaces of each. A world with no seed pack yet is dropped with one
+    // log line. Unset: products only. An unknown or repeated id fails boot.
+    LIAISON_DEMO_WORLDS: z.preprocess(
+      unsetIfEmpty,
+      z
+        .string()
+        .default("products")
+        .refine((v) => parseDemoWorldList(v) !== null, {
+          message: `a comma separated list of demo worlds, each once, from: ${DEMO_WORLDS.join(", ")}`,
+        }),
+    ),
+    // How the warm pool's workspaces split across the demo worlds, as
+    // world=count pairs (products=2,saas=2,studio=1). A world it leaves out,
+    // or one this box does not run, keeps none. Unset: LIAISON_DEMO_POOL_SIZE
+    // split evenly over the worlds the box runs, the remainder in the order
+    // products, saas, studio. A malformed value fails boot.
+    LIAISON_DEMO_POOL_SIZES: z.preprocess(
+      unsetIfEmpty,
+      z
+        .string()
+        .default("")
+        .refine((v) => parseDemoPoolSizes(v) !== null, {
+          message: "world=count pairs, comma separated, each world once, counts 0 to 100",
+        }),
+    ),
+    // The oldest a ready pooled workspace may be, in hours: an older one is
+    // never handed to a visitor and the next refill retires it. A workspace of
+    // a world whose story follows the month (saas, studio) also retires when
+    // the month turns in Europe/Paris.
+    LIAISON_DEMO_POOL_MAX_AGE_HOURS: z.preprocess(
+      unsetIfEmpty,
+      z.coerce.number().int().min(1).max(720).default(12),
     ),
     // How many demo workspaces may be SEEDED at once on this box, across every
     // API process (a Redis-backed gate, demo-seed-gate.ts). Shared by the warm
@@ -824,6 +911,9 @@ export const envSchema = z
     // mail server (deploy/quickstart.sh sets it); never for an instance other
     // people sign in to.
     LIAISON_CONSOLE_EMAIL_BODIES: envBoolean(false),
+    // Operator-only, for an incident: 0 switches off the send check on staged mail,
+    // except the opt-out check. Off nowhere by default, logged at error on boot.
+    MAIL_SEND_GUARD_ENFORCE: envBoolean(true),
     // Email (SMTP) — optional. When SMTP_HOST is absent, emails are logged to console.
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().default(587),
@@ -1304,6 +1394,32 @@ export const envSchema = z
     LIVE_INSTANCE_HEARTBEAT_MS: z.coerce.number().int().positive().default(10_000),
     // How often the leader removes the entries of processes whose heartbeat is gone.
     LIVE_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+    // Tool search ranks by meaning as well as by words, with a small embedding
+    // model run once per host by the embedding process (`embedder`,
+    // modules/agent/tools/embedder-main.ts; about 1.1 GB of memory), which every
+    // API and worker process asks over a local socket. "on" | "off"; unset, it
+    // follows the edition (on when managed, off when self-hosted; lib/edition.ts
+    // toolMeaningEnabled). Off, or while that process does not answer, the
+    // search ranks by words.
+    LIAISON_TOOL_MEANING: z.preprocess(unsetIfEmpty, z.enum(["on", "off"]).optional()),
+    // Where tool search's model files are fetched, checked against their pinned
+    // hashes and read from. Unset: ~/.cache/liaison/models (the compose file
+    // sets /var/lib/liaison/models, on the data volume).
+    // Point it at a persistent volume, or at files shipped with the image for an
+    // install with no outside network.
+    LIAISON_MODEL_CACHE_DIR: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+    // The embedding process's Unix socket (no network port): it listens there,
+    // and the API and worker processes of the host ask it there. Unset:
+    // liaison/embedder.sock under XDG_RUNTIME_DIR, else under the temporary
+    // folder (the compose file sets /var/lib/liaison/run/embedder.sock, on the
+    // data volume every container of the host mounts).
+    LIAISON_EMBEDDER_SOCKET: z.preprocess(
+      (v) => (v === "" ? undefined : v),
+      z.string().startsWith("/", "must be an absolute path").optional(),
+    ),
+    // How long a tool search waits for its query's vector from the embedding
+    // process, in ms, before it ranks by words alone for that search.
+    LIAISON_EMBEDDER_DEADLINE_MS: z.coerce.number().int().positive().max(5_000).default(150),
     // The internal listener every process starts, separate from PORT and never
     // published: another process forwards a mailbox answer here when this one
     // minted the request. 0 (default) takes any free port. It must be reachable
@@ -1508,6 +1624,32 @@ function loadEnv() {
 }
 
 export const env = loadEnv()
+
+// The fake Shopify Admin API (LIAISON_TEST_SHOPIFY_ADMIN_URL) sends a store's
+// token to another host, so it is refused at boot on anything but a labelled
+// private test box, whatever NODE_ENV says. Fail closed: a refused value stops
+// the process rather than being ignored. On, it says so once, here.
+{
+  const gate = shopifyFakeAdminGate({
+    value: env.LIAISON_TEST_SHOPIFY_ADMIN_URL,
+    declaredPrivate: env.LIAISON_PRIVATE_DEMO_BOX,
+    baseUrl: env.BASE_URL,
+    managed: env.LIAISON_EDITION === "managed",
+  })
+  if (gate.state === "refused") {
+    console.error(
+      `FATAL: ${SHOPIFY_FAKE_ADMIN_ENV} is set but refused: ${gate.reason}. ` +
+        "It is for a labelled private test box only (LIAISON_PRIVATE_DEMO_BOX and a loopback BASE_URL); unset it.",
+    )
+    process.exit(1)
+  }
+  if (gate.state === "on") {
+    console.warn(
+      `WARN: ${SHOPIFY_FAKE_ADMIN_ENV} is ON: the Shopify app's Admin API requests, with the store's token, ` +
+        `go to the fake at ${gate.origin} instead of Shopify. Test box only.`,
+    )
+  }
+}
 
 // Guard against misconfiguration: debug flags must not be enabled in production
 if (env.NODE_ENV === "production" && env.EXPOSE_REFRESH_TOKEN_IN_BODY) {

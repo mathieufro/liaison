@@ -8,9 +8,9 @@ import {
   facetsWithSelection,
   filterApprovalsByAction,
   isApprovalItem,
-  isPeerSelfApprovableItem,
+  isOthersItem,
   partitionByAction,
-  partitionPeerRequests,
+  partitionOthersRows,
   ROUTINE_RUNS_FACET,
   reconcileSelection,
   shouldShowApprovalFacets,
@@ -270,38 +270,37 @@ describe("partitionByAction (ticket-10195)", () => {
   })
 })
 
-describe("peer-request folding", () => {
-  function peerApproval(id: string, peerSelfApprovable: boolean | undefined): AttentionItem {
+describe("rows for someone else", () => {
+  function placed(id: string, placement: string | undefined, peer?: boolean): AttentionItem {
     const item = approval("projects:create", "Projects: create", id)
     return {
       ...item,
       metadata: {
         ...item.metadata,
-        ...(peerSelfApprovable === undefined ? {} : { peerSelfApprovable }),
+        ...(placement === undefined ? {} : { placement }),
+        ...(peer === undefined ? {} : { peerSelfApprovable: peer }),
       },
     } as AttentionItem
   }
 
-  it("folds only the rows the server marked as peer self-approvable", () => {
-    const items = [peerApproval("a", true), peerApproval("b", false), peerApproval("c", true)]
-    const { mine, peers } = partitionPeerRequests(items)
-    expect(peers.map((i) => i.entityId)).toEqual(["a", "c"])
-    expect(mine.map((i) => i.entityId)).toEqual(["b"])
+  it("puts only the rows the server placed for others in the others half", () => {
+    const items = [placed("a", "others"), placed("b", "mine"), placed("c", "standing_in")]
+    const { mine, others } = partitionOthersRows(items)
+    expect(others.map((i) => i.entityId)).toEqual(["a"])
+    expect(mine.map((i) => i.entityId)).toEqual(["b", "c"])
   })
 
-  it("treats a row with NO classification as visible, never hidden", () => {
-    // A stale cached feed or an older API must not silently lose rows: the
-    // filter may only remove what it was explicitly told about.
-    const items = [peerApproval("legacy", undefined)]
-    const { mine, peers } = partitionPeerRequests(items)
-    expect(peers).toEqual([])
+  it("an old feed with no placement reads mine, even with the peer flag set", () => {
+    const items = [placed("legacy", undefined, true)]
+    const { mine, others } = partitionOthersRows(items)
+    expect(others).toEqual([])
     expect(mine.map((i) => i.entityId)).toEqual(["legacy"])
-    expect(isPeerSelfApprovableItem(items[0]!)).toBe(false)
+    expect(isOthersItem(items[0]!)).toBe(false)
   })
 
-  it("never folds a non-approval attention item", () => {
+  it("never treats a non-approval attention item as for others", () => {
     const item = nonApproval("mention", "m1")
-    const withFlag = { ...item, metadata: { peerSelfApprovable: true } } as AttentionItem
-    expect(isPeerSelfApprovableItem(withFlag)).toBe(false)
+    const withFlag = { ...item, metadata: { placement: "others" } } as AttentionItem
+    expect(isOthersItem(withFlag)).toBe(false)
   })
 })

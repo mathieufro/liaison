@@ -58,7 +58,7 @@ export function fakeImapServer(opts: {
       if (hits.length === 0 && hi === "*" && current.length > 0) return [Math.max(...current)]
       return hits
     },
-    fetch(range, _query, _options) {
+    fetch(range, query, _options) {
       if (fetchOpen) throw new Error("command issued inside a FETCH iteration")
       stats.fetchRanges.push(range)
       const wanted = Array.isArray(range) ? new Set(range) : null
@@ -71,6 +71,14 @@ export function fakeImapServer(opts: {
             stats.fetchedRows++
             yield {
               uid,
+              // ImapFlow answers `headers` with the raw block, and only when asked.
+              ...((query as { headers?: unknown } | undefined)?.headers
+                ? {
+                    headers: Buffer.from(
+                      "List-Id: <news.example.test>\r\nPrecedence: bulk\r\n\r\n",
+                    ),
+                  }
+                : {}),
               flags: new Set<string>(),
               size: opts.sizes?.[uid] ?? rawImapMessage(uid).byteLength,
               envelope: {

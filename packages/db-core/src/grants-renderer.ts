@@ -33,11 +33,14 @@ const ROLE_NAME = "liaison_readonly"
 // liaison_schema_admin owns migrations. Omitting one would break the LIVE app's RLS
 // predicate functions the moment PUBLIC EXECUTE is revoked. Only liaison_readonly is
 // deliberately left WITHOUT execute (verified against a live FORCE-RLS instance).
+// liaison_definer owns SECURITY DEFINER helpers that run as it and call other
+// in-schema functions (a company's sharing rule calls kernel.has_scope).
 const EXECUTION_ROLES = [
   "liaison_app",
   "liaison_rls",
   "liaison_admin",
   "liaison_schema_admin",
+  "liaison_definer",
 ] as const
 
 interface TableColumns {

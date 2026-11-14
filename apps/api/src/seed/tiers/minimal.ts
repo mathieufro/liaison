@@ -10,6 +10,8 @@
 //               seeds its people;
 //   thread      `createThread` in an RLS transaction as the person;
 //   contact     `resolveContact` as the person (the resolved-contacts factory);
+//   contactAddress
+//               `addAddress` as the org's admin (the address book's add);
 //   grantScope, revokeScope, assignRole, revokeRole
 //               the admin role editor's own services (`grantUserScope`,
 //               `revokeUserScope`, `assignRole`, `unassignRole`) as the org's
@@ -28,11 +30,12 @@
 // never needs a random value and two orgs never collide.
 import { and, asc, eq, like, sql } from "drizzle-orm"
 import { withPrivilegedDb, withSystemDb } from "~/db/privileged"
-import { organizations, roles, userRoles, users } from "~/db/schema/kernel"
+import { messages, organizations, roles, userRoles, users } from "~/db/schema/kernel"
 import { env } from "~/lib/env"
 import { inviteRegister } from "~/modules/auth/auth"
 import { invalidateAuthCache } from "~/modules/auth/auth-state"
 import { signAccessToken } from "~/modules/auth/jwt"
+import { type AddressFields, addAddress } from "~/modules/contacts/addresses"
 import { loadEffectivePermissions } from "~/modules/permissions/permissions"
 import {
   assignRole as assignRoleService,
@@ -44,6 +47,8 @@ import { createScope } from "~/modules/permissions/types"
 import { createThread } from "~/modules/threads/thread"
 import { createInvitation } from "~/modules/users/invites"
 import { demoId, seedContext } from "~/seed/context"
+import { seedPersonalAgent } from "~/seed/factories/agent/agents"
+import { agentDmWith } from "~/seed/factories/agent/presence"
 import { provisionAdminAndRoles, provisionOrgShell } from "~/seed/factories/org/org"
 import { actorFor, asUser } from "~/seed/factories/people/actors"
 import { resolveContacts } from "~/seed/factories/people/contacts"
@@ -243,6 +248,36 @@ export async function thread(
   return (created as { id: string }).id
 }
 
+/** `userId`'s direct messages with their own personal agent, opened as "Message" opens it. */
+export async function agentDm(orgId: string, userId: string): Promise<string> {
+  const agent = await seedPersonalAgent(orgId, userId, "assistant")
+  return agentDmWith(ctxOf(orgId), userId, agent.agentId)
+}
+
+/**
+ * A message `userId` wrote in `threadId`: the person's own words in that conversation, with
+ * the `metadata` a stored turn carries (its tool calls and their cards) when given.
+ */
+export async function postUserMessage(
+  orgId: string,
+  threadId: string,
+  userId: string,
+  content: string,
+  metadata?: Record<string, unknown>,
+): Promise<void> {
+  await withPrivilegedDb(orgId, "seed-minimal:message", (tx) =>
+    tx.insert(messages).values({
+      threadId,
+      orgId,
+      authorId: userId,
+      authorType: "user",
+      content,
+      requiredScopes: [],
+      ...(metadata ? { metadata } : {}),
+    }),
+  )
+}
+
 /** A contact with `email`, resolved by the org's admin. */
 export async function contact(
   orgId: string,
@@ -255,6 +290,19 @@ export async function contact(
   ])
   if (!entry) throw new Error(`minimal seed: contact ${email} was not resolved`)
   return entry[1].id
+}
+
+/** An address on `contactId` (default role `delivery`), added by the org's admin. Returns its id. */
+export async function contactAddress(
+  orgId: string,
+  contactId: string,
+  fields: AddressFields,
+): Promise<string> {
+  const admin = await adminActor(orgId)
+  const { address } = await asUser(admin, (tx) =>
+    addAddress(tx, { orgId, userId: admin.userId, contactId, fields }),
+  )
+  return address.id
 }
 
 type Admin = Awaited<ReturnType<typeof adminActor>>

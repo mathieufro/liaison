@@ -394,34 +394,43 @@ describe("trusted nesting", () => {
   it("a sub-run enqueued from an admitted job is minted nested and admitted over the cap up to cap × 2, then parked", async () => {
     FairnessTestAccess.setCellConcurrency(2)
     const q = freshQueue("kernel-agent")
-    const A = uuid()
-    // The parent holds the org's only token (cap 1: org B has a due job waiting).
-    const B = uuid()
-    const [bJob] = await fairEnqueue(q, [{ name: "agent-subrun", data: { orgId: B }, opts: {} }])
-    expect((await tryAdmit(q.name, A, "parent", "p")).admitted).toBe(true)
-    const children = await runAsJob(
-      null,
-      () =>
-        fairEnqueue(
-          q,
-          Array.from({ length: 3 }, (_, i) => ({
-            name: "agent-subrun",
-            data: { orgId: A, i },
-            // Kept out of any worker's reach.
-            opts: { delay: 3_600_000 },
-          })),
-        ),
-      { queue: q.name, orgId: A, jobId: "parent", admitted: true },
-    )
-    expect(children.every((c) => c.id?.startsWith("n."))).toBe(true)
-    expect(children.every((c) => c.opts.priority === NESTED_PRIORITY)).toBe(true)
-    const verdicts = []
-    for (const c of children) verdicts.push(await tryAdmit(q.name, A, c.id as string, "x"))
-    expect(verdicts.map((v) => v.admitted)).toEqual([true, true, false])
-    for (const c of children) await c.remove()
-    await bJob?.remove()
-    await redis.del(K.qKey(q.name, B), K.tokKey(q.name, A), K.ntokKey(q.name, A))
-    await redis.zrem(K.orgsKey(q.name), B, A)
+    // Nesting needs a kernel queue, and this process hosts a worker on it once any
+    // earlier file in the same process registered a kernel-agent handler. That
+    // worker would take B's job and run it, and B would no longer be waiting.
+    // Paused, the queue keeps B's job waiting whatever ran before this file.
+    await q.pause()
+    try {
+      const A = uuid()
+      // The parent holds the org's only token (cap 1: org B has a due job waiting).
+      const B = uuid()
+      const [bJob] = await fairEnqueue(q, [{ name: "agent-subrun", data: { orgId: B }, opts: {} }])
+      expect((await tryAdmit(q.name, A, "parent", "p")).admitted).toBe(true)
+      const children = await runAsJob(
+        null,
+        () =>
+          fairEnqueue(
+            q,
+            Array.from({ length: 3 }, (_, i) => ({
+              name: "agent-subrun",
+              data: { orgId: A, i },
+              // Kept out of any worker's reach.
+              opts: { delay: 3_600_000 },
+            })),
+          ),
+        { queue: q.name, orgId: A, jobId: "parent", admitted: true },
+      )
+      expect(children.every((c) => c.id?.startsWith("n."))).toBe(true)
+      expect(children.every((c) => c.opts.priority === NESTED_PRIORITY)).toBe(true)
+      const verdicts = []
+      for (const c of children) verdicts.push(await tryAdmit(q.name, A, c.id as string, "x"))
+      expect(verdicts.map((v) => v.admitted)).toEqual([true, true, false])
+      for (const c of children) await c.remove()
+      await bJob?.remove()
+      await redis.del(K.qKey(q.name, B), K.tokKey(q.name, A), K.ntokKey(q.name, A))
+      await redis.zrem(K.orgsKey(q.name), B, A)
+    } finally {
+      await q.resume()
+    }
   })
 
   it("an n. id without a fair:nested entry is gated like any job", async () => {
@@ -465,6 +474,33 @@ describe("stale turn records", () => {
     for (const j of jobs) if ((await tryAdmit(q.name, A, j.id as string, uuid())).admitted) n++
     expect(n).toBe(4)
     expect(await redis.zcard(K.qKey(q.name, B))).toBe(0)
+  })
+
+  it("a waiting org behind a full look-ahead of stale orgs still caps a busy org", async () => {
+    FairnessTestAccess.setCellConcurrency(4)
+    const q = freshQueue()
+    const A = uuid()
+    const B = uuid()
+    const aJobs = await fairEnqueue(
+      q,
+      Array.from({ length: 3 }, (_, i) => orgJob(A, i)),
+    )
+    // Alone, A takes the cap (2) without contention.
+    for (const j of aJobs.slice(0, 2)) {
+      expect((await tryAdmit(q.name, A, j.id as string, uuid())).admitted).toBe(true)
+    }
+    // Four orgs whose jobs ran ungated (their entries stale), due before B's waiting job.
+    const stale = Array.from({ length: 4 }, () => uuid())
+    for (const D of stale) {
+      const [d] = await fairEnqueue(q, [orgJob(D, 1)])
+      await d?.remove()
+      await sleep(2)
+    }
+    await fairEnqueue(q, [orgJob(B, 1)])
+    // B waits behind the stale orgs: A is held to the cap, not given C.
+    expect((await tryAdmit(q.name, A, aJobs[2]?.id as string, uuid())).admitted).toBe(false)
+    // The window (A itself and the first three) was checked and its stale orgs pruned.
+    for (const D of stale.slice(0, 3)) expect(await redis.zscore(K.orgsKey(q.name), D)).toBeNull()
   })
 
   it("a fail-open admit drops the job's entry, and the token of an admit that answered late", async () => {

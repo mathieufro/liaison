@@ -1,0 +1,6 @@
+{
+  "privileged": {
+    "apps/projects/service/time-rows.ts": "Time rows: after the person's own transaction commits, a moved task's time rows follow it to its project, a merged task's rows join the target's (other people's own rows, which no person's transaction may write), and turning dated hours on tells each person with entries on the project once on Home. Writes task_time's task and project and attention lines only; never shows anyone's minutes.",
+    "apps/projects/service/reconcile-sweep.ts": "Projects sweep: once a day it recomputes each org's time and budgets row from its projects' switches and re-points time rows whose task moved. Reads only the switches and each time row's task; no activity, nobody told."
+  }
+}

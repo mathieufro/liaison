@@ -101,7 +101,10 @@ const ShareDialog: Component<ShareDialogProps> = (props) => {
   const [users, setUsers] = createSignal<UserShare[]>([])
   const [roles, setRoles] = createSignal<RoleShare[]>([])
   const [dimensions, setDimensions] = createSignal<DimensionShare[]>([])
-  const [canManage, setCanManage] = createSignal(true)
+  // Nothing is editable until the load says the person may change it: a load
+  // that fails leaves a read-only dialog, never an empty form with a Save.
+  const [canManage, setCanManage] = createSignal(false)
+  const [loadError, setLoadError] = createSignal<string | null>(null)
   const [addQuery, setAddQuery] = createSignal("")
   const [addOpen, setAddOpen] = createSignal(false)
   const [addRoleQuery, setAddRoleQuery] = createSignal("")
@@ -112,7 +115,21 @@ const ShareDialog: Component<ShareDialogProps> = (props) => {
   const [sharing] = createResource(
     () => (props.open ? true : null),
     async () => {
-      const result = await props.load()
+      setCanManage(false)
+      setLoadError(null)
+      let result: Awaited<ReturnType<typeof props.load>>
+      try {
+        result = await props.load()
+      } catch (err) {
+        setLoadError(
+          err instanceof ApiError && (err.status === 404 || err.status === 403)
+            ? i18n.t("kernel.sharing.forbidden")
+            : err instanceof Error
+              ? err.message
+              : String(err),
+        )
+        return null
+      }
       setOrgAccess(result.orgAccess)
       setVariant(result.variant ?? null)
       setUsers(result.users)
@@ -253,7 +270,12 @@ const ShareDialog: Component<ShareDialogProps> = (props) => {
         >
           <div class="mt-4 flex flex-col gap-4">
             <Show when={props.notice}>{props.notice}</Show>
-            <Show when={!canManage()}>
+            <Show when={loadError()}>
+              <p data-testid={`${props.testIdPrefix}-load-error`} class="text-xs text-danger">
+                {loadError()}
+              </p>
+            </Show>
+            <Show when={!canManage() && !loadError()}>
               <p
                 data-testid={`${props.testIdPrefix}-read-only`}
                 class="text-[12px] text-text-tertiary"
@@ -573,15 +595,18 @@ const ShareDialog: Component<ShareDialogProps> = (props) => {
               >
                 {i18n.t("kernel.common.cancel")}
               </button>
-              <button
-                type="button"
-                data-testid={`${props.testIdPrefix}-save`}
-                disabled={saving() || !canManage()}
-                onClick={() => void handleSave()}
-                class="rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-foreground transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {saving() ? i18n.t("kernel.common.saving") : i18n.t("kernel.common.save")}
-              </button>
+              {/* Read only: nothing to save, so no Save that could look like it did something. */}
+              <Show when={canManage()}>
+                <button
+                  type="button"
+                  data-testid={`${props.testIdPrefix}-save`}
+                  disabled={saving()}
+                  onClick={() => void handleSave()}
+                  class="rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-foreground transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving() ? i18n.t("kernel.common.saving") : i18n.t("kernel.common.save")}
+                </button>
+              </Show>
             </div>
           </div>
         </Show>

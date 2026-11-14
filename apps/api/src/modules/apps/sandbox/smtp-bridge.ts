@@ -32,6 +32,9 @@ export interface SmtpSendParams {
   messageId?: string
   inReplyTo?: string
   references?: string[]
+  /** Extra headers: only a commercial mail's `List-Unsubscribe` and
+   *  `List-Unsubscribe-Post` pass; any other name is dropped. */
+  headers?: Record<string, string>
   /** Outbound attachments — base64 bytes, forwarded to nodemailer. */
   attachments?: Array<{
     filename: string
@@ -54,6 +57,9 @@ function normalizeRecipients(addrs: SmtpAddress[] | undefined) {
   return addrs?.map(normalizeRecipient) ?? []
 }
 
+/** The extra headers an app's send may set on this transport. */
+const SMTP_EXTRA_HEADERS = ["List-Unsubscribe", "List-Unsubscribe-Post"] as const
+
 export function buildSmtpMessage(params: SmtpSendParams) {
   const message: Record<string, any> = {
     from: params.from,
@@ -71,6 +77,14 @@ export function buildSmtpMessage(params: SmtpSendParams) {
   if (params.messageId) message.messageId = params.messageId
   if (params.inReplyTo) message.inReplyTo = params.inReplyTo
   if (params.references?.length) message.references = params.references.join(" ")
+  const headers: Record<string, string> = {}
+  for (const name of SMTP_EXTRA_HEADERS) {
+    const value = params.headers?.[name]
+    if (typeof value === "string" && value.trim() !== "") {
+      headers[name] = value.replace(/[\r\n]+/g, " ").trim()
+    }
+  }
+  if (Object.keys(headers).length > 0) message.headers = headers
 
   if (params.attachments?.length) {
     // nodemailer owns header encoding on this transport path: it RFC 2231-
@@ -124,6 +138,11 @@ export function classifyDeliveryState(
 export type SmtpSendResult = {
   messageId: string
   deliveryState: SmtpDeliveryState
+  /**
+   * True when the send was recorded in place and never put on the wire: a demo
+   * workspace's mail to its fictional recipients. Nobody received it.
+   */
+  captured?: true
 }
 
 export async function smtpSend(

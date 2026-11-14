@@ -36,6 +36,7 @@ import {
   creditNoteCreateAndIssuePreflight,
   creditNoteIssue,
   creditNoteIssuePreflight,
+  documentsConvertLocal,
   documentsConvertToInvoice,
   documentsConvertToInvoicePreflight,
   documentsMarkPaid,
@@ -90,7 +91,7 @@ import {
   splitPostalAddress,
 } from "./mutations"
 import type { ReadsFetch } from "./reads"
-import { documentsGet, type ReadsCtx } from "./reads"
+import { documentsGet, documentsSearch, type ReadsCtx } from "./reads"
 import * as summarizers from "./summarizers"
 import {
   summarizeDocumentSend,
@@ -296,6 +297,16 @@ function makeCtx(opts?: {
 
   const executeTool: CrossAppExecuteTool = async (name, args) => {
     extras.executeToolCalls.push({ name, args })
+    // The app's own internal tool runs its handler, as the kernel does for the app's own call.
+    if (name === "invoicing:documents_convert_local") {
+      return { status: "completed", result: await documentsConvertLocal(ctx, args as never) }
+    }
+    // No Stripe app in these tests: the kernel answers an absent app's tool as not found.
+    if (name.startsWith("stripe:"))
+      return {
+        status: "error",
+        error: { code: "tool_not_found", message: `tool ${name} not registered` },
+      }
     if (opts?.executeToolImpl) return opts.executeToolImpl(name, args)
     return { status: "completed", result: { dispatched: true } }
   }
@@ -935,6 +946,36 @@ describe("drafts.create", () => {
     const issued = issuedDocs(db)[0]!
     expect(issued.shopify_order_id).toBe("12768069779622")
     expect(issued.shopify_order_number).toBe("#1149")
+  })
+
+  test("a draft with external_ref set appears in the Pending list and issues by draft id", async () => {
+    // A draft that comes from a source (a recurring run) carries an external_ref. It is a pending
+    // draft anyone can list, and invoice_issue {draft_id} issues it: one numbered invoice, the
+    // draft consumed.
+    const { ctx, db } = makeCtx()
+    const { draft_id } = await draftsCreate(ctx, {
+      type: "invoice",
+      ...BUYER_DRAFT_EINVOICE,
+      counterparty_contact_id: "contact-1",
+      counterparty_name: "Buyer SARL",
+      counterparty_address: "1 rue Buyer, 75002 Paris",
+      counterparty_email: "ap@buyersarl.example",
+      counterparty_country: "FR",
+      issuer_profile_id: "iss-1",
+      currency: "EUR",
+      items: sampleDraftItems,
+    })
+    await db.update("documents", draft_id, { external_ref: "recurring:run-1:item-1" })
+
+    const pending = await documentsSearch(ctx as unknown as ReadsCtx, { status: "draft" })
+    expect(pending.map((r) => r.id)).toEqual([draft_id])
+
+    const r = await invoiceIssue(ctx, { draft_id })
+    expect(r.status).toBe("completed")
+    expect(draftDocs(db)).toHaveLength(0)
+    expect(issuedDocs(db)).toHaveLength(1)
+    expect(issuedDocs(db)[0]!.number).toMatch(/^INV-/)
+    expect(await documentsSearch(ctx as unknown as ReadsCtx, { status: "draft" })).toHaveLength(0)
   })
 
   test("defaults currency to EUR when neither input nor issuer specifies one", async () => {
@@ -2185,6 +2226,49 @@ describe("documents.convert_to_invoice", () => {
     )
   })
 
+  test("a local convert runs as one call of the internal local convert, and its error leaves the quote as it was", async () => {
+    const { ctx, db, extras } = makeCtx()
+    await seedShopifyLinkedQuote(db)
+    // The same quote with no draft order: a local convert.
+    const quote = db
+      .__all("documents")
+      .find((d) => d.id === "00000000-0000-4000-8000-00000000010b")!
+    await db.update("documents", String(quote.id), {
+      shopify_draft_order_id: null,
+      external_refs: {},
+    })
+    const r = await documentsConvertToInvoice(ctx, {
+      operation_category: "goods",
+      source_document_id: String(quote.id),
+    })
+    expect(r.status).toBe("completed")
+    expect(
+      extras.executeToolCalls.filter((c) => c.name === "invoicing:documents_convert_local"),
+    ).toHaveLength(1)
+    const failing = makeCtx()
+    await seedShopifyLinkedQuote(failing.db)
+    await failing.db.update("documents", "00000000-0000-4000-8000-00000000010b", {
+      shopify_draft_order_id: null,
+      external_refs: {},
+    })
+    failing.ctx.executeTool = async () => ({
+      status: "error",
+      error: { code: "forced", message: "forced failure" },
+    })
+    const refused = await documentsConvertToInvoice(failing.ctx, {
+      operation_category: "goods",
+      source_document_id: "00000000-0000-4000-8000-00000000010b",
+    })
+    expect(refused.status === "error" ? refused.error : refused).toEqual({
+      code: "forced",
+      message: expect.stringContaining("no number was used"),
+    })
+    expect(
+      failing.db.__all("documents").find((d) => d.id === "00000000-0000-4000-8000-00000000010b")
+        ?.status,
+    ).toBe("sent")
+  })
+
   test("missing source document → not_found", async () => {
     const { ctx } = makeCtx()
     const r = await documentsConvertToInvoice(ctx, {
@@ -2405,8 +2489,27 @@ describe("documents.convert_to_invoice", () => {
     expect(quote.shopify_order_number).toBe("#1149")
     const log = quote.lifecycle_log as Array<Record<string, unknown>>
     expect(log.map((e) => e.event)).toContain("draft_order_completed")
-    // No invoice was issued locally.
+    // No invoice was issued locally, and the local convert (one transaction) was never entered.
     expect(db.__all("documents").filter((d) => d.type === "invoice")).toHaveLength(0)
+    expect(extras.executeToolCalls.map((c) => c.name)).toEqual([
+      "shopify:draft_orders_complete",
+      "shopify:draft_orders_get",
+    ])
+  })
+
+  test("shopify-linked quote: the local convert refuses it and writes nothing", async () => {
+    const { ctx, db, extras } = makeCtx()
+    await seedShopifyLinkedQuote(db)
+    const r = await documentsConvertLocal(ctx, {
+      operation_category: "goods",
+      source_document_id: "00000000-0000-4000-8000-00000000010b",
+    })
+    expect(r.status === "error" ? r.error.code : r.status).toBe("shopify_linked")
+    expect(extras.executeToolCalls).toHaveLength(0)
+    const quote = db
+      .__all("documents")
+      .find((d) => d.id === "00000000-0000-4000-8000-00000000010b")!
+    expect(quote.status).toBe("sent")
   })
 
   test("shopify-linked quote: a pending_approval from Shopify is propagated and the quote untouched", async () => {
@@ -2497,6 +2600,82 @@ describe("documents.mark_paid", () => {
     const renderDoc = (lastRender.data as { document: Record<string, unknown> }).document
     expect(renderDoc.payment_status).toBe("paid")
     expect(renderDoc.paid_at).toBe("2026-05-29")
+  })
+
+  test("marking a transfer invoice paid reports the collection", async () => {
+    const { ctx, db } = makeCtx()
+    const id = "00000000-0000-4000-8000-000000000131"
+    await db.insert("documents", {
+      id,
+      type: "invoice",
+      status: "issued",
+      number: "INV-2026-31",
+      number_int: 31,
+      year_of_issue: 2026,
+      issuer_profile_id: "iss-1",
+      counterparty_contact_id: "contact-1",
+      currency: "EUR",
+      subtotal_minor: "10000",
+      tax_total_minor: "2000",
+      grand_total_minor: "12000",
+      tax_treatment: "eu_domestic",
+      operation_category: "services",
+      regime: "e_invoice",
+      pa_provider: "fakepa",
+      incoterm: "DAP",
+      issued_at: "2026-11-02",
+      pdf_file_id: "pdf-x",
+      pdf_status: "ready",
+      external_refs: {},
+      lifecycle_log: [],
+    })
+    await db.insert("document_lines", {
+      document_id: id,
+      position: 1,
+      description: "Conseil",
+      quantity: "1",
+      unit_price_minor: "10000",
+      subtotal_minor: "10000",
+      tax_minor: "2000",
+      tax_rate_bp: 2000,
+    })
+    await db.insert("einvoice_transmissions", {
+      document_id: id,
+      action: "send_einvoice",
+      idempotency_key: "k-31",
+      state: "sent",
+      provider_app: "fakepa",
+      provider_ref: "pa-31",
+    })
+    const reported: Array<Record<string, unknown>> = []
+    Object.assign(ctx, {
+      contracts: {
+        call: async (_c: string, op: string, params: Record<string, unknown>) => {
+          reported.push({ op, ...params })
+          return { status: "completed", result: { state: "accepted" } }
+        },
+      },
+    })
+    expect(
+      (
+        await documentsMarkPaid(ctx, {
+          document_id: id,
+          paid_date: "2026-11-20",
+          payment_note: "bank transfer",
+        })
+      ).status,
+    ).toBe("completed")
+    expect(reported).toEqual([
+      expect.objectContaining({
+        op: "report_collection",
+        provider_ref: "pa-31",
+        date: "2026-11-20",
+        amounts_by_vat_rate: [{ rate_bp: 2000, net_minor: "10000", vat_minor: "2000" }],
+      }),
+    ])
+    expect(db.__all("documents").find((d) => d.id === id)).toMatchObject({
+      collection_state: "reported",
+    })
   })
 
   test("emits document:paid with paid_at and payment_status", async () => {

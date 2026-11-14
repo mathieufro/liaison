@@ -20,6 +20,8 @@ export function devProxyFor(apiTarget: string, opts: { preserveHost?: boolean } 
     "/api": { target: apiTarget, changeOrigin },
     "/healthz": { target: apiTarget, changeOrigin },
     "/webhooks": { target: apiTarget, changeOrigin },
+    // A commercial mail's opt-out link, printed from BASE_URL.
+    "/public/opt-out": { target: apiTarget, changeOrigin },
     "/ws": { target: apiTarget, ws: true },
   }
 }

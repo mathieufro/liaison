@@ -78,11 +78,16 @@ async function routeSockets(page: Page) {
 /** The socket's status as the page shows it. The activity bar draws a status
  *  indicator only while the socket is NOT connected, so its absence is the
  *  page's own "connected" (the stack serves a production build, which keeps
- *  no test attribute on the document). */
+ *  no test attribute on the document). Read in ONE step: the indicator goes
+ *  away the moment the socket reconnects, so a count followed by a separate
+ *  attribute read can find it, then wait 10 s for an element that is gone. */
 async function wsStatus(page: Page): Promise<string> {
-  const indicator = page.getByTestId("activity-bar").getByTestId("ws-status-indicator")
-  if ((await indicator.count()) === 0) return "connected"
-  return (await indicator.first().getAttribute("data-ws-status")) ?? "unknown"
+  return page
+    .getByTestId("activity-bar")
+    .getByTestId("ws-status-indicator")
+    .evaluateAll((els) =>
+      els.length === 0 ? "connected" : (els[0]?.getAttribute("data-ws-status") ?? "unknown"),
+    )
 }
 
 function tq(env: { schemaPrefix?: string }) {

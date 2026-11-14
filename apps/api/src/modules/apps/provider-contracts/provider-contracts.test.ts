@@ -52,6 +52,8 @@ const OP_PARAMS: Record<string, string[]> = {
     "cii_xml",
     "buyer",
     "idempotency_key",
+    "stream_ref",
+    "run_item_ref",
   ],
   pa_advance: [
     "provider_ref",
@@ -59,6 +61,8 @@ const OP_PARAMS: Record<string, string[]> = {
     "issue_date",
     "document_ref",
     "legal_original_sha256",
+    "stream_ref",
+    "run_item_ref",
   ],
   pa_status: ["provider_ref"],
   pa_changes: ["cursor"],

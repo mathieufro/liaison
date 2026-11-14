@@ -27,6 +27,7 @@ import {
   Show,
 } from "solid-js"
 import { onEntityChange } from "~/framework/entity-changes"
+import { isFeatureOff } from "~/framework/org-features"
 import { registerUnsavedWork } from "~/lib/unsaved-work"
 import { AppLogsPanel, showsAppLogs } from "~/modules/app-builder/AppLogsPanel"
 import { canAccessScope } from "~/modules/auth/auth-store"
@@ -81,7 +82,12 @@ export const AppSettingsBody: Component<{
   // an admin's page may draw from the workspace's app list before the manifests feed registers
   // the app, and the same sections arriving then must not throw away an unsaved edit.
   const sections = createMemo<SettingsSection[]>((prev) => {
-    const next = visibleSections(props.entry.manifest.settings?.sections, (s) => canAccessScope(s))
+    const next = visibleSections(
+      props.entry.manifest.settings?.sections?.filter(
+        (s) => !isFeatureOff(props.entry.manifest.name, s.feature),
+      ),
+      (s) => canAccessScope(s),
+    )
     return next.map((s) => {
       const drawn = prev.find((p) => p.id === s.id)
       return drawn && JSON.stringify(drawn) === JSON.stringify(s) ? drawn : s

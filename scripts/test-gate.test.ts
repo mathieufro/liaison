@@ -92,6 +92,26 @@ describe("planGate", () => {
     ])
   })
 
+  it("never hands a bundled app's bun tests to its vitest screen suite", () => {
+    const boxtal = ["bundled-boxtal", "bundled-boxtal-ui"]
+    const p = planGate(
+      ["bundled-apps/boxtal/src/manifest.test.ts", "bundled-apps/boxtal/src/catalog.test.ts"],
+      {
+        "bundled-boxtal": { cwd: "bundled-apps/boxtal", selects: [] },
+        "bundled-boxtal-ui": { cwd: "bundled-apps/boxtal", selects: [] },
+      },
+      listDir,
+      (f) => (f.startsWith("bundled-apps/boxtal/") ? boxtal : null),
+    )
+    expect(p.run.map((r) => [r.suite, r.files])).toEqual([
+      [
+        "bundled-boxtal",
+        ["bundled-apps/boxtal/src/catalog.test.ts", "bundled-apps/boxtal/src/manifest.test.ts"],
+      ],
+    ])
+    expect(p.skipped.map((s) => s.suite)).toEqual(["bundled-boxtal-ui"])
+  })
+
   it("ignores docs, and runs the BROAD set for a path the map does not know", () => {
     expect(plan(["docs/testing.md", "README.md"]).run).toEqual([])
     const p = plan(["some/new/thing.ts"])

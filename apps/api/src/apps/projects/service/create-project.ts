@@ -8,7 +8,9 @@ import type { UserContext } from "~/db/rls"
 import { describeDbError } from "~/lib/transient-db-error"
 import { type Column, columnsSchema } from "~/modules/dashboards/tables/columns"
 import { parseStoredLevels, type ValidationLevel } from "./checklist-status"
+import { PIPELINE_CLOSING_STAGES, PIPELINE_OPEN_STAGES } from "./deals"
 import { activeFields, parseStoredFields } from "./fields"
+import { orgUsesTimeBudgets } from "./planning"
 import { ProjectsServiceError } from "./statuses"
 import {
   deriveProjectKey,
@@ -54,6 +56,15 @@ export interface ProjectRow {
 }
 
 export interface ProjectDetail extends ProjectRow {
+  /** Present on a pipeline only, so a work project reads as it always did. */
+  kind?: "pipeline"
+  /** The project's client company, present only when one is set. */
+  companyId?: string
+  /** Time and budgets on this project: present only while the org uses it (or the call set it). */
+  timeBudgets?: boolean
+  /** When and by whom it was last turned, present with `timeBudgets` once it was ever turned. */
+  timeBudgetsChangedAt?: string
+  timeBudgetsChangedBy?: { id: string; name: string }
   statuses: ProjectStatusRow[]
   /** S2 levels in order; [] is plain mode (a checkbox per item). */
   validationLevels: ValidationLevel[]
@@ -404,6 +415,7 @@ export async function loadProjectDetail(
   tx: RlsClient,
   orgId: string,
   projectId: string,
+  opts: { withTimeBudgets?: boolean } = {},
 ): Promise<ProjectDetail> {
   const projectRows = extractRows<
     DbRowProject & {
@@ -414,18 +426,27 @@ export async function loadProjectDetail(
       checklist_on_cards: boolean | null
       owner_name: string | null
       owner_avatar_url: string | null
+      kind: "work" | "pipeline"
+      company_id: string | null
+      time_budgets_on: boolean
+      time_budgets_changed_at: Date | string | null
+      time_budgets_changed_by: string | null
+      changer_name: string | null
     }
   >(
     await tx.execute(drizzleSql`
       SELECT p.id, p.org_id, p.name, p.description, p.color, p.icon, p.key, p."group", p.owner_id,
              p.archived_at, p.created_at, p.updated_at, p.validation_levels,
-             p.checklist_on_cards, p.task_fields,
+             p.checklist_on_cards, p.kind, p.company_id::text AS company_id,
+             p.time_budgets_on, p.time_budgets_changed_at, p.time_budgets_changed_by::text AS time_budgets_changed_by,
+             cu.name AS changer_name, p.task_fields,
              COALESCE((SELECT COUNT(*) FROM ${projectsRel("tasks")} t WHERE t.project_id = p.id AND t.archived_at IS NULL), 0) AS task_count,
              EXISTS (SELECT 1 FROM ${projectsRel("tasks")} t2 WHERE t2.project_id = p.id) AS has_tasks,
              u.name AS owner_name,
              u.avatar_url AS owner_avatar_url
       FROM ${projectsRel("projects")} p
       LEFT JOIN ${kernelRel("users")} u ON u.id = p.owner_id AND u.org_id = p.org_id
+      LEFT JOIN ${kernelRel("users")} cu ON cu.id = p.time_budgets_changed_by AND cu.org_id = p.org_id
       WHERE p.id = ${projectId}::uuid AND p.org_id = ${orgId}::uuid
       LIMIT 1
     `),
@@ -444,6 +465,9 @@ export async function loadProjectDetail(
   const r = projectRows[0]!
   return {
     ...projectFromRow(r),
+    ...(r.kind === "pipeline" ? { kind: "pipeline" as const } : {}),
+    ...(r.company_id ? { companyId: r.company_id } : {}),
+    ...(opts.withTimeBudgets || orgUsesTimeBudgets(orgId) ? timeBudgetsKeys(r) : {}),
     taskCount: typeof r.task_count === "string" ? Number(r.task_count) : r.task_count,
     keyLocked: r.has_tasks === true,
     owner: {
@@ -455,6 +479,23 @@ export async function loadProjectDetail(
     validationLevels: parseStoredLevels(r.validation_levels),
     checklistOnCards: r.checklist_on_cards ?? true,
     fields: activeFields(parseStoredFields(r.task_fields)),
+  }
+}
+
+/** The switch's keys on a project payload: only when the org uses it, or the call set it. */
+function timeBudgetsKeys(r: {
+  time_budgets_on: boolean
+  time_budgets_changed_at: Date | string | null
+  time_budgets_changed_by: string | null
+  changer_name: string | null
+}): Pick<ProjectDetail, "timeBudgets" | "timeBudgetsChangedAt" | "timeBudgetsChangedBy"> {
+  const at = r.time_budgets_changed_at
+  return {
+    timeBudgets: r.time_budgets_on === true,
+    ...(at ? { timeBudgetsChangedAt: at instanceof Date ? at.toISOString() : String(at) } : {}),
+    ...(r.time_budgets_changed_by
+      ? { timeBudgetsChangedBy: { id: r.time_budgets_changed_by, name: r.changer_name ?? "" } }
+      : {}),
   }
 }
 
@@ -626,6 +667,7 @@ async function insertProjectWithKey(
     orgId: string
     input: CreateProjectInput & { fieldDefs?: Column[] }
     ownerId: string
+    kind?: "work" | "pipeline"
   },
 ): Promise<string> {
   const baseKey = args.input.key
@@ -641,7 +683,7 @@ async function insertProjectWithKey(
       await tx.transaction(async (savepointTx) => {
         await savepointTx.execute(drizzleSql`
           INSERT INTO ${projectsRel("projects")}
-            (id, org_id, name, description, icon, color, key, "group", owner_id, checklist_on_cards,
+            (id, org_id, name, description, icon, color, key, "group", owner_id, checklist_on_cards, kind,
              task_fields)
           VALUES (
             ${args.projectId}::uuid,
@@ -654,6 +696,7 @@ async function insertProjectWithKey(
             ${args.input.group ?? null},
             ${args.ownerId}::uuid,
             ${args.input.checklistOnCards ?? true},
+            ${args.kind ?? "work"},
             ${JSON.stringify(args.input.fieldDefs ?? [])}::jsonb
           )
         `)
@@ -676,6 +719,88 @@ async function insertProjectWithKey(
 }
 
 export async function createProject(args: CreateProjectArgs): Promise<ProjectDetail> {
+  return insertProject(args, "work", (input) =>
+    normalizeStatusSeeds(input.statuses).map(([label, order, terminal, color]) => ({
+      label,
+      order,
+      terminal,
+      color,
+      dealOutcome: null,
+    })),
+  )
+}
+
+export interface CreatePipelineInput {
+  name: string
+  description?: string
+  key?: string
+  group?: string | null
+  /** The open stages, in board order. Omit for Lead, Qualified, Demo,
+   *  Proposal. Won and Lost always follow and close a deal. */
+  stages?: string[]
+}
+
+export interface CreatePipelineArgs {
+  tx: RlsClient
+  orgId: string
+  actor: UserContext
+  input: CreatePipelineInput
+}
+
+/**
+ * A sales pipeline: a project whose root tasks are deals. Its stages are the
+ * open ones (by default Lead, Qualified, Demo, Proposal), then Won and Lost,
+ * both terminal, which set a deal's outcome. The key is derived from the name
+ * unless one is given.
+ */
+export async function createPipeline(args: CreatePipelineArgs): Promise<ProjectDetail> {
+  const { stages, ...rest } = args.input
+  const open: Array<{ label: string; color: string | null }> =
+    stages && stages.length > 0
+      ? normalizeStatusSeeds(stages.map((label) => ({ label }))).map(([label]) => ({
+          label,
+          color: null,
+        }))
+      : PIPELINE_OPEN_STAGES.map(([label, color]) => ({ label, color }))
+  const taken = new Set(open.map((s) => s.label.toLowerCase()))
+  for (const [label] of PIPELINE_CLOSING_STAGES) {
+    if (taken.has(label.toLowerCase())) {
+      throw new Error(
+        `invalid_statuses: ${JSON.stringify(label)} is added by the pipeline itself; list only the open stages`,
+      )
+    }
+  }
+  if (open.length + PIPELINE_CLOSING_STAGES.length > MAX_STATUS_SEEDS) {
+    throw new Error(
+      `invalid_statuses: at most ${MAX_STATUS_SEEDS - PIPELINE_CLOSING_STAGES.length} open stages`,
+    )
+  }
+  const seeds: StatusInsert[] = [
+    ...open.map((s, order) => ({ ...s, order, terminal: false, dealOutcome: null })),
+    ...PIPELINE_CLOSING_STAGES.map(([label, color, outcome], i) => ({
+      label,
+      color,
+      order: open.length + i,
+      terminal: true,
+      dealOutcome: outcome,
+    })),
+  ]
+  return insertProject({ ...args, input: rest }, "pipeline", () => seeds)
+}
+
+interface StatusInsert {
+  label: string
+  order: number
+  terminal: boolean
+  color: string | null
+  dealOutcome: "won" | "lost" | null
+}
+
+async function insertProject(
+  args: CreateProjectArgs,
+  kind: "work" | "pipeline",
+  statusSeeds: (input: CreateProjectInput) => StatusInsert[],
+): Promise<ProjectDetail> {
   return args.tx.transaction(async (tx) => {
     const projectId = randomUUID()
     // Checked before anything is written: a too-long group creates nothing.
@@ -686,15 +811,16 @@ export async function createProject(args: CreateProjectArgs): Promise<ProjectDet
       orgId: args.orgId,
       input: { ...args.input, group, fieldDefs },
       ownerId: args.actor.userId,
+      kind,
     })
     // Inside the same transaction: an invalid column list rolls the project
     // row back too, so a rejected create never leaves an empty board behind.
-    const seeds = normalizeStatusSeeds(args.input.statuses)
-    for (const [label, order, terminal, color] of seeds) {
+    const seeds = statusSeeds(args.input)
+    for (const { label, order, terminal, color, dealOutcome } of seeds) {
       const sId = randomUUID()
       await tx.execute(drizzleSql`
         INSERT INTO ${projectsRel("project_statuses")}
-          (id, org_id, project_id, label, color, "order", terminal)
+          (id, org_id, project_id, label, color, "order", terminal, deal_outcome)
         VALUES (
           ${sId}::uuid,
           ${args.orgId}::uuid,
@@ -702,7 +828,8 @@ export async function createProject(args: CreateProjectArgs): Promise<ProjectDet
           ${label},
           ${color},
           ${order},
-          ${terminal}
+          ${terminal},
+          ${dealOutcome}
         )
       `)
     }
@@ -711,7 +838,7 @@ export async function createProject(args: CreateProjectArgs): Promise<ProjectDet
       entity: "project",
       action: "created",
       entityId: projectId,
-      data: { id: projectId, name: args.input.name },
+      data: { id: projectId, name: args.input.name, ...(kind === "pipeline" ? { kind } : {}) },
       actorId: args.actor.userId,
       actorType: args.actor.actorType,
       orgId: args.orgId,

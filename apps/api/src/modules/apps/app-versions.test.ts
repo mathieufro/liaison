@@ -280,6 +280,7 @@ describe("health gate and switch-back (S7)", () => {
       // A reference to a table nobody declares: the DDL fails at registration.
       schema: {
         notes: {
+          rlsScope: "items",
           fields: {
             body: "string",
             owner_id: { type: "uuid", references: { table: "no_such_table", column: "id" } },
@@ -316,6 +317,7 @@ describe("health gate and switch-back (S7)", () => {
     const failing = install("1.0.0", {
       schema: {
         notes: {
+          rlsScope: "items",
           fields: {
             owner_id: { type: "uuid", references: { table: "no_such_table", column: "id" } },
           },
@@ -478,6 +480,7 @@ describe("rollback (S9) and noRollback (A10)", () => {
 describe("additive data rule (S10)", () => {
   const v1Schema = {
     notes: {
+      rlsScope: "items",
       fields: {
         body: "string",
         status: { type: "string", enum: ["open", "closed"] },
@@ -489,7 +492,12 @@ describe("additive data rule (S10)", () => {
   it("refuses a version that drops a column, naming what would be lost", async () => {
     await install("1.0.0", { schema: v1Schema })
     const refused = upgrade("2.0.0", {
-      schema: { notes: { fields: { status: v1Schema.notes.fields.status, label: "string?" } } },
+      schema: {
+        notes: {
+          rlsScope: "items",
+          fields: { status: v1Schema.notes.fields.status, label: "string?" },
+        },
+      },
     })
     await expect(refused).rejects.toThrow("column notes.body is dropped")
     expect(await pointer()).toEqual({ version: "1.0.0", previous: null })
@@ -501,6 +509,7 @@ describe("additive data rule (S10)", () => {
     await upgrade("2.0.0", {
       schema: {
         notes: {
+          rlsScope: "items",
           fields: {
             ...v1Schema.notes.fields,
             status: { type: "string", enum: ["open", "closed", "archived"] },
@@ -551,6 +560,7 @@ describe("redactReason (A14)", () => {
 /** A broken schema: the DDL fails at registration (a reference to no table). */
 const BROKEN_SCHEMA = {
   notes: {
+    rlsScope: "items",
     fields: { owner_id: { type: "uuid", references: { table: "no_such_table", column: "id" } } },
   },
 }
@@ -766,8 +776,8 @@ describe("P2-fix6: reasons are redacted and stay within the org (A14)", () => {
 })
 
 describe("P2-fix7: the additive rule runs on every different package and fails closed", () => {
-  const schema = { notes: { fields: { body: "string", label: "string?" } } }
-  const dropped = { notes: { fields: { label: "string?" } } }
+  const schema = { notes: { rlsScope: "items", fields: { body: "string", label: "string?" } } }
+  const dropped = { notes: { rlsScope: "items", fields: { label: "string?" } } }
 
   it("a same-version package with different bytes is held to the rule", async () => {
     await install("1.0.0", { schema })

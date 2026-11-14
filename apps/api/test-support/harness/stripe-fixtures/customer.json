@@ -1,0 +1,35 @@
+{
+  "id": "cus_FIXTURE0001",
+  "object": "customer",
+  "address": {
+    "city": "Lyon",
+    "country": "FR",
+    "line1": "1 rue Exemple",
+    "line2": null,
+    "postal_code": "69001",
+    "state": null
+  },
+  "balance": 0,
+  "created": 1767225600,
+  "currency": "eur",
+  "default_source": null,
+  "delinquent": false,
+  "description": null,
+  "discount": null,
+  "email": "billing@client.example",
+  "invoice_prefix": "FIX0001",
+  "invoice_settings": {
+    "custom_fields": null,
+    "default_payment_method": "pm_FIXTURE0001",
+    "footer": null,
+    "rendering_options": null
+  },
+  "livemode": false,
+  "metadata": {},
+  "name": "Client Example SAS",
+  "phone": null,
+  "preferred_locales": ["fr"],
+  "shipping": null,
+  "tax_exempt": "none",
+  "test_clock": "clock_FIXTURE0001"
+}

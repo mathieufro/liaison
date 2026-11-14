@@ -48,10 +48,12 @@ test("shared inbox: Amina reassigns to Lucas via assignee picker", async ({
   const assignees = Array.isArray(assigneesBody.data) ? assigneesBody.data : []
   expect(assignees.length).toBeGreaterThan(0)
   // Exactly the picker's fields: email rides along so two assignable people
-  // sharing a name can be told apart (name-collision disambiguation).
+  // sharing a name can be told apart (name-collision disambiguation); away says
+  // until when a colleague is away today (null when present), and nothing more.
   for (const row of assignees) {
     const keys = new Set(Object.keys(row))
-    expect([...keys].sort()).toEqual(["avatarUrl", "email", "id", "name"])
+    expect([...keys].sort()).toEqual(["avatarUrl", "away", "email", "id", "name"])
+    if (row.away !== null) expect(Object.keys(row.away)).toEqual(["until"])
   }
 
   const reassignPromise = page.waitForResponse(

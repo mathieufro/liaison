@@ -20,6 +20,8 @@
 //   own dialog (an app's button is never the decision), checks the approval is
 //   one of this app's tools, and approves the payload fingerprint the HOST read and
 //   showed (an app's differing one, or an edit during the dialog, is refused);
+// - `editApproval(id, fields)`: one of this app's own pending approvals, through the
+//   approvals route, which changes only the fields the tool declares editable;
 // - `openExternal(url)`: https only, a host the app's manifest declares, never
 //   this page's origin; opened with noopener and noreferrer;
 // - `openRecord(app, entity, id)`: another app's record in its own tab (the
@@ -280,6 +282,29 @@ export function buildAppHostCalls(deps: AppHostCallDeps) {
         decision === "approve" ? { decision, payloadHash: shown } : { decision },
         { title: approval.summary?.title?.trim() || approval.toolName },
       )
+    },
+
+    editApproval: async (
+      app: string,
+      approvalId: string,
+      fields: Record<string, unknown>,
+    ): Promise<{ currentPayload?: Record<string, unknown>; payloadHash?: string }> => {
+      if (!KERNEL_ID.test(approvalId)) throw new Error("editApproval: an approval id is required")
+      if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
+        throw new Error("editApproval: the fields to change are required")
+      }
+      const row = await deps.fetch<ApprovalRow>(`/api/approvals/${encodeURIComponent(approvalId)}`)
+      if (!row || typeof row.toolName !== "string" || !row.toolName.startsWith(`${app}:`)) {
+        throw new Error("editApproval: not an approval of this app")
+      }
+      if (row.status !== undefined && row.status !== "pending") {
+        throw new Error("editApproval: this approval is no longer pending")
+      }
+      // The server checks each field against the tool's editable fields.
+      return deps.fetch(`/api/approvals/${encodeURIComponent(approvalId)}/payload`, {
+        method: "POST",
+        body: JSON.stringify({ fields }),
+      })
     },
 
     openExternal: async (app: string, url: string): Promise<void> => {

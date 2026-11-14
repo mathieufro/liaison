@@ -2,6 +2,8 @@
 // Customer kind derivation from the signals an issuing call carries, and the derived identity
 // row it records. Never a guess: a French buyer without a signal stays unknown (null) unless the
 // document comes from a checkout (Shopify), where no company and no VAT id means a consumer.
+
+import { isUniqueViolation } from "../mutations/quote-proforma-po"
 import type { CustomerKind } from "./classify"
 import { LEGAL_FORM_TOKENS, sirenFromFrVat } from "./identity"
 
@@ -79,14 +81,22 @@ export async function ensureDerivedIdentity(
     input.customer_kind === "business"
       ? sirenFromFrVat(input.vat_id, { billingCountry: input.billing_country })
       : null
-  const row = (await db.insert("counterparty_identities", {
-    contact_id: input.contact_id,
-    customer_kind: input.customer_kind,
-    siren,
-    vat_id: present(input.vat_id) ? String(input.vat_id).trim() : null,
-    source: "derived",
-    confirmed_via: null,
-    changed_at: new Date().toISOString(),
-  })) as { id?: unknown }
+  let row: { id?: unknown }
+  try {
+    row = (await db.insert("counterparty_identities", {
+      contact_id: input.contact_id,
+      customer_kind: input.customer_kind,
+      siren,
+      vat_id: present(input.vat_id) ? String(input.vat_id).trim() : null,
+      source: "derived",
+      confirmed_via: null,
+      changed_at: new Date().toISOString(),
+    })) as { id?: unknown }
+  } catch (err) {
+    // A concurrent writer (two issues for one customer at once) recorded the contact's identity
+    // between the read and this insert: the contact has one now, and it is never touched.
+    if (isUniqueViolation(err)) return null
+    throw err
+  }
   return row?.id != null ? String(row.id) : null
 }

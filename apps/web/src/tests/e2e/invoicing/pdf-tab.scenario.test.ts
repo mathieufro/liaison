@@ -77,8 +77,51 @@ test.describe("Invoicing: the document's PDF tab", () => {
     page.on("console", (m) => {
       if (/content security policy/i.test(m.text())) violations.push(m.text())
     })
+    // Every read is held back, as on a slow (cold, loaded) server: the document itself, then the
+    // reads that start once it has drawn (header chips, regime line, e-invoice panel) and the PDF
+    // preview. While the document loads, the detail says so (never a blank pane); once it has
+    // drawn, the header and tab strip stay on screen and usable, never back on "Loading…", until
+    // the other reads return.
+    const held = new Map<string, Array<() => void>>()
+    const released = new Set<string>()
+    const releaseAll = (tool: string) => {
+      released.add(tool)
+      for (const r of held.get(tool) ?? []) r()
+      held.delete(tool)
+    }
+    await page.route(
+      /\/api\/apps\/invoicing\/tools\/(documents_get|einvoice_transmission_get|einvoicing_classify|documents_preview_pdf)$/,
+      async (route) => {
+        const tool = new URL(route.request().url()).pathname.split("/").pop() as string
+        if (!released.has(tool)) {
+          await new Promise<void>((resolve) => held.set(tool, [...(held.get(tool) ?? []), resolve]))
+        }
+        await route.continue().catch(() => {})
+      },
+    )
+    const documentAsked = page.waitForRequest(/\/tools\/documents_get$/)
     await page.goto(`${viteUrl}/invoicing/document/${id}`)
+    await documentAsked
+    await expect(page.getByTestId("document-detail-loading")).toBeVisible()
+    const documentRead = page.waitForResponse(/\/tools\/documents_get$/)
+    releaseAll("documents_get")
+    await documentRead
+    await expect(page.getByTestId("document-detail-tabs")).toBeVisible()
+    await expect(page.getByTestId("document-detail-loading")).toHaveCount(0)
+    const previewAsked = page.waitForRequest(/\/tools\/documents_preview_pdf$/)
     await page.getByTestId("document-detail-tab-pdf").click()
+    await previewAsked
+    await expect(page.getByTestId("document-detail-pdf")).toBeVisible()
+    await expect(page.getByTestId("document-detail-tabs")).toBeVisible()
+    await expect(page.getByTestId("document-detail-loading")).toHaveCount(0)
+    for (const tool of [
+      "einvoice_transmission_get",
+      "einvoicing_classify",
+      "documents_preview_pdf",
+    ]) {
+      releaseAll(tool)
+    }
+    await page.unrouteAll({ behavior: "ignoreErrors" })
     const embed = page.getByTestId("document-detail-pdf-embed")
     await expect(embed).toBeVisible()
     await expect(embed).toHaveJSProperty("tagName", "IFRAME")

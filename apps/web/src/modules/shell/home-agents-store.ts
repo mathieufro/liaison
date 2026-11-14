@@ -32,6 +32,8 @@ export interface LatestBrief {
   lastRunStatus: string | null
   outputThreadId: string | null
   messageId: string | null
+  /** When the newest brief was written: the one time Home shows for the brief. */
+  messageAt?: string | null
 }
 
 export interface MyComputer {

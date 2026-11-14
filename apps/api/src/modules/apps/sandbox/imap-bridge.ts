@@ -14,6 +14,7 @@ import {
   reconcileInbox,
   writeBackToImap,
 } from "~/modules/apps/sandbox/imap-mailbox"
+import { MAIL_HEADER_ALLOWLIST } from "~/modules/mailbox-crypto/header-allowlist"
 
 const log = rootLogger.child({ module: "imap-bridge" })
 const IMAP_FETCH_TIMEOUT_MS = 30_000
@@ -163,6 +164,42 @@ export function imapProviderId(uid: number | string, folder: ImapFolderRole): st
   return folder === "sent" ? `sent:${uid}` : String(uid)
 }
 
+/**
+ * The headers a message's classification reads: the mailbox header allowlist, and
+ * the auto-reply markers an ordinary mailbox keeps. A sealed mailbox's write seals
+ * anything not on the allowlist, as for every provider.
+ */
+const IMAP_INGEST_HEADERS = [
+  ...MAIL_HEADER_ALLOWLIST,
+  "x-autoreply",
+  "x-autorespond",
+  "x-auto-response-suppress",
+] as const
+
+/**
+ * A `HEADER.FIELDS` fetch answers one raw block: unfold it into a lowercased map.
+ * A header given twice joins with a comma, as RFC 5322 reads a repeated field.
+ */
+export function parseImapHeaders(raw: unknown): Record<string, string> {
+  if (raw === null || raw === undefined) return {}
+  const text =
+    raw instanceof Uint8Array
+      ? Buffer.from(raw).toString("utf8")
+      : typeof raw === "string"
+        ? raw
+        : null
+  if (text === null) return typeof raw === "object" ? (raw as Record<string, string>) : {}
+  const out: Record<string, string> = {}
+  for (const line of text.replace(/\r?\n[ \t]+/g, " ").split(/\r?\n/)) {
+    const colon = line.indexOf(":")
+    if (colon <= 0) continue
+    const name = line.slice(0, colon).trim().toLowerCase()
+    const value = line.slice(colon + 1).trim()
+    out[name] = out[name] === undefined ? value : `${out[name]}, ${value}`
+  }
+  return out
+}
+
 export function normalizeImapMessage(
   msg: any,
   uidValidity: number,
@@ -201,7 +238,7 @@ export function normalizeImapMessage(
     textBody,
     htmlBody: msg.htmlBody ?? "",
     snippet: textBody.slice(0, 200),
-    headers: msg.headers ?? {},
+    headers: parseImapHeaders(msg.headers),
     inReplyTo: inReplyTo ?? null,
     references: references ? references.trim().split(/\s+/).filter(Boolean) : [],
     labels: mapImapFlags(flags, folder),
@@ -665,7 +702,14 @@ export async function fetchImapPage(
     if (candidates.length > 0) {
       for await (const row of client.fetch(
         candidates,
-        { uid: true, envelope: true, flags: true, bodyStructure: true, size: true },
+        {
+          uid: true,
+          envelope: true,
+          flags: true,
+          bodyStructure: true,
+          size: true,
+          headers: [...IMAP_INGEST_HEADERS],
+        },
         { uid: true },
       )) {
         rows.set(Number(row.uid), row)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import type { AttentionItem } from "@liaison/shared"
-import { fireEvent, render, screen } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("~/modules/auth/auth-store", () => ({
@@ -33,8 +33,11 @@ vi.mock("~/modules/shell/ApiContext", () => ({
 
 import { createSignal } from "solid-js"
 import { registerEntityOpener, resetRegistry } from "~/framework/app-registry"
+import { HeldKeptTestAccess, keepHolding } from "~/modules/approvals/held-kept"
 import { attentionStore } from "~/modules/shell/attention-store"
 import { resetHomeCardLayout } from "~/modules/shell/home-card-layout"
+import { setHomeFilter } from "~/modules/shell/home-filter"
+import { OVERVIEW } from "~/modules/shell/home-sections"
 import { TabVisibilityProvider } from "~/modules/shell/TabVisibilityContext"
 import { tabStore } from "~/modules/shell/tab-store"
 import { addThread, handleMessageEvent, resetThreadStore } from "~/modules/threads/thread-store"
@@ -93,7 +96,7 @@ const makeApprovalItem = (over: Partial<AttentionItem>): AttentionItem => ({
   entityId: over.entityId ?? "doc-1",
   kind: "approval_pending",
   summary: over.summary ?? "Mark invoice paid",
-  urgency: 40,
+  urgency: over.urgency ?? 40,
   occurredAt: "2026-05-06T12:00:00.000Z",
   action: { type: "decide_approval", approvalId: over.entityId ?? "doc-1" },
   metadata: over.metadata,
@@ -257,24 +260,47 @@ describe("home.cards", () => {
     expect(screen.queryByTestId("home-card-approvals")).toBeNull()
   })
 
-  it("approvals card renders with its count and folds rows past the cap behind Show more", () => {
-    // A 280px inner scroll box used to cap the card: three rows visible, a
-    // second scrollbar inside the page's own. The fold keeps the page as the
-    // only scroll surface and says how much is hidden.
-    const items = Array.from({ length: 10 }, (_, i) =>
-      makeApprovalItem({ id: `att-approval-${i}`, entityId: `doc-${i}` }),
+  it("5 rows no fold, 6 rows fold to 3", () => {
+    const make = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        makeApprovalItem({ id: `att-approval-${i}`, entityId: `doc-${i}` }),
+      )
+    attentionStore._setForTest({ items: make(5), errors: [] })
+    const five = render(() => <Home entityId="home" />)
+    let body = screen.getByTestId("home-card-body-approvals")
+    expect(body.querySelectorAll("li[data-testid^='attention-row-']")).toHaveLength(5)
+    expect(screen.queryByTestId("home-approvals-fold")).toBeNull()
+    five.unmount()
+
+    attentionStore._setForTest({ items: make(6), errors: [] })
+    render(() => <Home entityId="home" />)
+    expect(screen.getByTestId("home-card-count-approvals").textContent).toBe("6")
+    body = screen.getByTestId("home-card-body-approvals")
+    expect(body.className).not.toContain("overflow-y-auto")
+    expect(body.querySelectorAll("li[data-testid^='attention-row-']")).toHaveLength(3)
+    const fold = screen.getByTestId("home-approvals-fold")
+    expect(fold.textContent).toContain("3")
+    fireEvent.click(fold)
+    expect(body.querySelectorAll("li[data-testid^='attention-row-']")).toHaveLength(6)
+    expect(screen.getByTestId("home-approvals-fold").textContent).toContain("Show fewer")
+  })
+
+  it("order kept: the first three are the most urgent, and unfolding keeps the order", () => {
+    const items = [10, 90, 50, 70, 30, 80].map((urgency, i) =>
+      makeApprovalItem({ id: `att-approval-${i}`, entityId: `doc-${urgency}`, urgency }),
     )
     attentionStore._setForTest({ items, errors: [] })
     render(() => <Home entityId="home" />)
-    expect(screen.getByTestId("home-card-count-approvals").textContent).toBe("10")
     const body = screen.getByTestId("home-card-body-approvals")
-    expect(body.className).not.toContain("overflow-y-auto")
-    expect(body.querySelectorAll("li[data-testid^='attention-row-']")).toHaveLength(8)
-    const fold = screen.getByTestId("home-approvals-fold")
-    expect(fold.textContent).toContain("2")
-    fireEvent.click(fold)
-    expect(body.querySelectorAll("li[data-testid^='attention-row-']")).toHaveLength(10)
-    expect(screen.getByTestId("home-approvals-fold").textContent).toContain("Show fewer")
+    const ids = () =>
+      [...body.querySelectorAll("li[data-testid^='attention-row-']")].map((el) =>
+        el.getAttribute("data-testid")?.replace("attention-row-invoicing-document-", ""),
+      )
+    const folded = ids()
+    fireEvent.click(screen.getByTestId("home-approvals-fold"))
+    const all = ids()
+    expect(all.slice(0, 3)).toEqual(folded)
+    expect(new Set(all)).toEqual(new Set(items.map((i) => i.entityId)))
   })
 
   // D21: conversations left Home for Messages. An unread thread and a pinned
@@ -342,7 +368,7 @@ describe("home.cards", () => {
     // from the client's thread-store (outside the 50-thread cap, or before
     // hydration), the Messages card renders nothing for it either. `total()`
     // still counts this item, so a total()-based hasAnyContent gate rendered
-    // a blank home-feed container under "NOTHING URGENT" instead of the
+    // a blank home-feed container under "NOTHING NEEDS YOU NOW" instead of the
     // empty state.
     attentionStore._setForTest({
       items: [
@@ -609,5 +635,604 @@ describe("home and a computer chat's permission request", () => {
     expect(screen.queryByTestId("node-permission-card")).toBeNull()
     expect(screen.queryByTestId("node-permission-allow")).toBeNull()
     expect(screen.getByText("Data needs your OK in the chat")).toBeInTheDocument()
+  })
+})
+
+describe("home decisions", () => {
+  beforeEach(async () => {
+    const { DecisionQueueTestAccess } = await import("~/modules/approvals/decision-queue")
+    DecisionQueueTestAccess.reset()
+    // "Keep holding" lives in storage and in a module signal: forget both, or a draft one test
+    // kept stays folded away in the next.
+    localStorage.removeItem("liaison:heldKept.v1")
+    HeldKeptTestAccess.reload()
+  })
+  const approval = (id: string, metadata: Record<string, unknown> = {}): AttentionItem => ({
+    id: `kernel:approval_pending:${id}`,
+    app: "kernel",
+    entity: "approval_request",
+    entityId: id,
+    kind: "approval_pending",
+    summary: "Refund Café Ombre, €178.80",
+    urgency: 60,
+    occurredAt: new Date(Date.now() - 3_600_000).toISOString(),
+    action: { type: "decide_approval", approvalId: id },
+    metadata: {
+      toolName: "invoicing:refund",
+      actionLabel: "Invoicing: refund",
+      ref: "F-2026-0391",
+      requestHandle: "request-7",
+      requesterName: "Inès Caron's agent",
+      summaryLines: ["Charged on 14 Oct, two days after they cancelled."],
+      expiresInSeconds: 5 * 86_400,
+      ...metadata,
+    },
+  })
+  const attention = (id: string, over: Partial<AttentionItem> = {}): AttentionItem => ({
+    id,
+    app: "kernel",
+    entity: "notification",
+    entityId: `n-${id}`,
+    kind: "system_alert",
+    summary: "Marc Sauvan asked for group pricing for 11 sites",
+    urgency: 90,
+    occurredAt: "2026-05-06T12:00:00.000Z",
+    action: { type: "open_entity", tabType: "kernel:notification", entityId: `n-${id}` },
+    persisted: true,
+    ...over,
+  })
+  const row = (item: AttentionItem) => `attention-row-${item.app}-${item.entity}-${item.entityId}`
+
+  it("approval and attention rows", () => {
+    const a = approval("ap-1")
+    const n = attention("ev-1")
+    attentionStore._setForTest({ items: [a, n], errors: [] })
+    render(() => <Home entityId="home" />)
+    const id = row(a)
+    expect(screen.getByTestId(`${id}-action-chip`).textContent).toBe("Invoicing: refund")
+    expect(screen.getByTestId(`${id}-record-ref`).textContent).toBe("F-2026-0391")
+    expect(screen.getByTestId(id).textContent).toContain("Refund Café Ombre")
+    expect(screen.getByTestId(`${id}-lines`).textContent).toContain("Charged on 14 Oct")
+    expect(screen.getByTestId(`${id}-requester`).textContent).toContain("Inès Caron's agent")
+    expect(screen.getByTestId(`${id}-metric`).textContent).not.toBe("")
+    expect(screen.getByTestId(`${id}-approve`)).toBeTruthy()
+    expect(screen.getByTestId(`${id}-reject`)).toBeTruthy()
+    // Details expands the request in place, on Home.
+    fireEvent.click(screen.getByTestId(`${id}-details`))
+    expect(screen.getByTestId(`${id}-expanded`)).toBeTruthy()
+    // An attention row: Ask agent to draft, and Not now; no decision buttons.
+    const nid = row(n)
+    expect(screen.getByTestId(`${nid}-ask-draft`)).toBeTruthy()
+    expect(screen.getByTestId(`${nid}-not-now`)).toBeTruthy()
+    expect(screen.queryByTestId(`${nid}-approve`)).toBeNull()
+  })
+
+  it("Approve removes at once, done line, Undo, count updates", async () => {
+    const { decisionToastItems, undoDecision, DecisionQueueTestAccess } = await import(
+      "~/modules/approvals/decision-queue"
+    )
+    DecisionQueueTestAccess.reset()
+    const items = [approval("ap-1"), approval("ap-2")]
+    attentionStore._setForTest({ items, errors: [] })
+    render(() => <Home entityId="home" />)
+    expect(screen.getByTestId("home-card-count-approvals").textContent).toBe("2")
+    fireEvent.click(screen.getByTestId(`${row(items[0]!)}-approve`))
+    // The row leaves at once, the count follows, and nothing is sent yet.
+    expect(screen.queryByTestId(row(items[0]!))).toBeNull()
+    expect(screen.getByTestId("home-card-count-approvals").textContent).toBe("1")
+    expect(apiPost).not.toHaveBeenCalledWith(
+      "/approvals/ap-1/decide",
+      expect.anything(),
+      expect.anything(),
+    )
+    // The done line: the decision toast names it and offers Undo for its window.
+    expect(decisionToastItems()).toEqual([
+      expect.objectContaining({
+        id: "ap-1",
+        decision: "approve",
+        phase: "queued",
+        windowMs: 8_000,
+      }),
+    ])
+    expect(undoDecision("approval", "ap-1")).toBe(true)
+    expect(await screen.findByTestId(row(items[0]!))).toBeTruthy()
+    expect(screen.getByTestId("home-card-count-approvals").textContent).toBe("2")
+    DecisionQueueTestAccess.reset()
+  })
+
+  it("fixture pill Billing: payment reminder", () => {
+    const a = approval("ap-1", {
+      toolName: "mail:compose",
+      actionLabel: "Mail: compose",
+      pill: { label: "Billing: payment reminder" },
+    })
+    const plain = approval("ap-2", { toolName: "mail:compose", actionLabel: "Mail: compose" })
+    attentionStore._setForTest({ items: [a, plain], errors: [] })
+    render(() => <Home entityId="home" />)
+    expect(screen.getByTestId(`${row(a)}-action-chip`).textContent).toBe(
+      "Billing: payment reminder",
+    )
+    expect(screen.getByTestId(`${row(plain)}-action-chip`).textContent).toBe("Mail: compose")
+  })
+
+  it("a mail draft's row says what the send check says", () => {
+    const a = approval("ap-1", {
+      toolName: "mail:compose",
+      actionLabel: "Mail: compose",
+      sendGuard: { state: "clear" },
+    })
+    attentionStore._setForTest({ items: [a], errors: [] })
+    render(() => <Home entityId="home" />)
+    expect(screen.getByTestId(`${row(a)}-guard`).textContent).toBe(
+      "Will not go out if they reply first, even after you approve.",
+    )
+  })
+
+  it("held is in Approvals as the viewer's own decision, uncounted, opened as its card; kept leaves Home", () => {
+    const held = approval("ap-held", {
+      toolName: "mail:compose",
+      actionLabel: "Mail: compose",
+      requestHandle: "request-5",
+      expiresInSeconds: 7 * 24 * 3600,
+      sendGuard: {
+        state: "held",
+        who: "omar@example.test",
+        holdUntil: "2026-11-17T08:00:00.000Z",
+      },
+    })
+    attentionStore._setForTest({ items: [held], errors: [] })
+    render(() => <Home entityId="home" />)
+    const card = screen.getByTestId("home-card-approvals")
+    expect(card.textContent).toContain("It waits until 17 Nov")
+    // Its hold, not an expiry, and no request handle to cite.
+    expect(card.textContent).toContain("Until 17 Nov")
+    expect(card.textContent).not.toContain("Expires in")
+    expect(card.textContent).not.toContain("request-5")
+    // Decided on its card, never by an inline Approve; and in no count.
+    expect(screen.queryByTestId(`${row(held)}-approve`)).toBeNull()
+    expect(screen.getByTestId("home-status").textContent).not.toMatch(/\d+\s*NEED/)
+    cleanup()
+    keepHolding("ap-held", "2026-11-17T08:00:00.000Z")
+    render(() => <Home entityId="home" />)
+    expect(screen.queryByTestId(row(held))).toBeNull()
+  })
+
+  it("the approvals count is the length of its list: a held draft sits in its own group with its own count", () => {
+    const waiting = {
+      ...approval("ap-1", { toolName: "mail:compose", actionLabel: "Mail: compose" }),
+      summary: "Follow up on the proposal",
+    }
+    const other = {
+      ...approval("ap-2", { toolName: "mail:compose", actionLabel: "Mail: compose" }),
+      summary: "Card reminder",
+    }
+    const held = {
+      ...approval("ap-held", {
+        toolName: "mail:compose",
+        actionLabel: "Mail: compose",
+        sendGuard: {
+          state: "held",
+          who: "omar@example.test",
+          holdUntil: "2026-11-17T08:00:00.000Z",
+        },
+      }),
+      summary: "Shift planning",
+    }
+    attentionStore._setForTest({ items: [waiting, held, other], errors: [] })
+    render(() => <Home entityId="home" />)
+    const card = screen.getByTestId("home-card-approvals")
+    const heldGroup = screen.getByTestId("home-approvals-held")
+    const rows = [waiting, held, other].map((item) => screen.getByTestId(row(item)))
+    for (const el of rows) expect(card.contains(el)).toBe(true)
+    const counted = rows.filter((el) => !heldGroup.contains(el))
+    expect(screen.getByTestId("home-card-count-approvals").textContent).toBe(String(counted.length))
+    expect(counted.length).toBe(2)
+    expect(screen.getByTestId("home-approvals-held-count").textContent).toBe("1")
+    expect(heldGroup.contains(screen.getByTestId(row(held)))).toBe(true)
+    expect(heldGroup.contains(screen.getByTestId(row(waiting)))).toBe(false)
+  })
+
+  it("stopped shows reason, Dismiss only, uncounted", () => {
+    const notice = attention("ev-stop", {
+      app: "mail",
+      entity: "conversation",
+      entityId: "c-1",
+      // As the event provider hands an app event's kind over.
+      kind: "mail:send_guard.stopped" as AttentionItem["kind"],
+      summary: "Marc replied 2 hours ago, so this did not go out",
+      urgency: 50,
+      action: { type: "open_entity", tabType: "mail:conversation", entityId: "c-1" },
+    })
+    const stoppedDraft = approval("ap-stop", {
+      toolName: "mail:compose",
+      actionLabel: "Mail: compose",
+      sendGuard: { state: "replied", who: "Marc Sauvan", quote: "Thanks" },
+      uncounted: true,
+    })
+    attentionStore._setForTest({ items: [notice, stoppedDraft], errors: [] })
+    render(() => <Home entityId="home" />)
+    const list = screen.getByTestId("home-stopped-list")
+    expect(list.textContent).toContain("Marc replied 2 hours ago")
+    expect(screen.getByTestId(`${row(stoppedDraft)}-guard`).textContent).toContain(
+      "Marc Sauvan replied",
+    )
+    for (const item of [notice, stoppedDraft]) {
+      const id = row(item)
+      expect(screen.getByTestId(`${id}-dismiss`)).toBeTruthy()
+      expect(screen.queryByTestId(`${id}-approve`)).toBeNull()
+      expect(screen.queryByTestId(`${id}-not-now`)).toBeNull()
+      expect(screen.queryByTestId(`${id}-ask-draft`)).toBeNull()
+      expect(screen.queryByTestId(`${id}-mark-read`)).toBeNull()
+    }
+    // Neither is counted: no approvals card, and the status says nothing needs you.
+    expect(screen.queryByTestId("home-card-approvals")).toBeNull()
+    expect(screen.getByTestId("home-status").textContent).not.toMatch(/\d+\s*NEED/)
+  })
+
+  it("a stopped draft's row offers what its card offers: a new reply, the conversation, Dismiss", () => {
+    const stoppedDraft = approval("ap-stop", {
+      toolName: "mail:compose",
+      actionLabel: "Mail: compose",
+      sendGuard: {
+        state: "replied",
+        who: "Marc Sauvan",
+        quote: "Thanks",
+        record: { kind: "conversation", id: "c-9" },
+      },
+      uncounted: true,
+    })
+    attentionStore._setForTest({ items: [stoppedDraft], errors: [] })
+    render(() => <Home entityId="home" />)
+    const id = row(stoppedDraft)
+    expect(screen.getByTestId(`${id}-redraft`).textContent).toContain(
+      "Draft a new reply from their message",
+    )
+    expect(screen.getByTestId(`${id}-open-record`).textContent).toContain("Open conversation")
+    expect(screen.getByTestId(`${id}-dismiss`)).toBeTruthy()
+    // The bare Open only toggled the card, beside Details: gone on a stopped draft.
+    expect(screen.queryByTestId(`${id}-open`)).toBeNull()
+    expect(screen.queryByTestId(`${id}-approve`)).toBeNull()
+  })
+
+  it("a stop by a reply on a ticket the viewer cannot open names a ticket", () => {
+    const stoppedDraft = approval("ap-stop", {
+      toolName: "mail:compose",
+      actionLabel: "Mail: compose",
+      sendGuard: { state: "replied", who: "tomas@example.test", source: "ticket" },
+      uncounted: true,
+    })
+    attentionStore._setForTest({ items: [stoppedDraft], errors: [] })
+    render(() => <Home entityId="home" />)
+    const id = row(stoppedDraft)
+    expect(screen.getByTestId(`${id}-guard`).textContent).toBe(
+      "Not sent: a reply came in on a ticket.",
+    )
+    expect(screen.queryByTestId(`${id}-redraft`)).toBeNull()
+    expect(screen.queryByTestId(`${id}-open-record`)).toBeNull()
+  })
+
+  it("a computed row has no Not now", () => {
+    const computed = attention("c-1", { persisted: undefined, kind: "sla_risk", summary: "SLA" })
+    const persisted = attention("p-1")
+    attentionStore._setForTest({ items: [computed, persisted], errors: [] })
+    render(() => <Home entityId="home" />)
+    expect(screen.queryByTestId(`${row(computed)}-not-now`)).toBeNull()
+    expect(screen.getByTestId(`${row(persisted)}-not-now`)).toBeTruthy()
+  })
+
+  describe("who a row is for", () => {
+    const person = (why: "asked" | "on_item" | "manager", extra: Record<string, unknown> = {}) => ({
+      to: "person",
+      userId: "u-elodie",
+      why,
+      awayUntil: null,
+      standIn: null,
+      blockedStandIn: null,
+      ...extra,
+    })
+    const routed = (id: string, placement: string, route: unknown, names = {}) =>
+      approval(id, {
+        placement,
+        route,
+        routeLine: { forName: "Élodie Renard", ...names },
+        ...(placement === "others" ? { peerSelfApprovable: true } : {}),
+      })
+
+    it("no pill row above the list", () => {
+      attentionStore._setForTest({
+        items: [
+          approval("a-1"),
+          approval("a-2", { toolName: "tickets:reply", actionLabel: "Tickets: reply" }),
+          approval("a-3", { toolName: "mail:send", actionLabel: "Mail: send" }),
+        ],
+        errors: [],
+      })
+      render(() => <Home entityId="home" />)
+      expect(screen.queryByTestId("approval-facet-bar")).toBeNull()
+      expect(screen.queryByTestId("home-approval-peer-toggle")).toBeNull()
+      expect(screen.getByTestId("home-card-approvals").querySelectorAll("[role=tab]").length).toBe(
+        0,
+      )
+    })
+
+    it("one why line on every routed row, each table line", () => {
+      const rows = [
+        routed("w-on", "mine", { ...person("on_item"), userId: "u-1" }),
+        routed("w-ask", "mine", { ...person("asked"), userId: "u-1" }),
+        routed(
+          "w-stand",
+          "standing_in",
+          person("on_item", { awayUntil: "2026-12-20", standIn: "u-1" }),
+        ),
+        routed(
+          "w-block",
+          "mine",
+          person("on_item", { blockedStandIn: "u-tom", awayUntil: "2026-12-20" }),
+          { blockedName: "Tom Reyes" },
+        ),
+        routed("w-oth", "others", person("on_item")),
+        routed("w-usual", "mine", { to: "usual" }),
+        routed("w-owner", "mine", { to: "owner", userId: "u-1" }),
+      ]
+      attentionStore._setForTest({ items: rows, errors: [] })
+      render(() => <Home entityId="home" />)
+      const why = (item: AttentionItem) => screen.queryByTestId(`${row(item)}-why`)?.textContent
+      // Six of the viewer's own rows fold to three: unfold to read them all.
+      fireEvent.click(screen.getByTestId("home-approvals-fold"))
+      expect(why(rows[0]!)).toBe("For you: assigned to you")
+      expect(why(rows[1]!)).toBe("You asked for this")
+      expect(why(rows[2]!)).toMatch(
+        /^For Élodie Renard, away until (20 Dec|Dec 20)\. You are next in line\.$/,
+      )
+      expect(why(rows[3]!)).toBe(
+        "For you: Tom Reyes cannot approve this while Élodie Renard is away",
+      )
+      // A row for others sits in the closed group; open it to read its line.
+      fireEvent.click(screen.getByTestId("home-approvals-others-summary"))
+      expect(why(rows[4]!)).toBe(
+        "For Élodie Renard, who it is assigned to. You can approve it too: you hold the approval right.",
+      )
+      // The usual deciders and an owner-routed row: no route line.
+      expect(why(rows[5]!)).toBeUndefined()
+      expect(why(rows[6]!)).toBeUndefined()
+    })
+
+    it("the group closed with its count", () => {
+      const others = [
+        routed("o-1", "others", person("on_item")),
+        routed("o-2", "others", person("asked")),
+      ]
+      attentionStore._setForTest({ items: [approval("m-1"), ...others], errors: [] })
+      render(() => <Home entityId="home" />)
+      const group = screen.getByTestId("home-approvals-others") as HTMLDetailsElement
+      expect(group.open).toBe(false)
+      expect(screen.getByTestId("home-approvals-others-summary").textContent).toContain(
+        "For others, you can also approve",
+      )
+      expect(screen.getByTestId("home-approvals-others-count").textContent).toBe("2")
+      // The card counts the viewer's own row only.
+      expect(screen.getByTestId("home-card-approvals").textContent).toContain("1")
+    })
+
+    it("the peer toggle gone with its rows in the group as asked", () => {
+      const peer = routed("p-1", "others", person("asked", { userId: "u-tom" }), {
+        forName: "Tom Reyes",
+      })
+      attentionStore._setForTest({ items: [peer], errors: [] })
+      render(() => <Home entityId="home" />)
+      expect(screen.queryByTestId("home-approval-peer-toggle")).toBeNull()
+      fireEvent.click(screen.getByTestId("home-approvals-others-summary"))
+      expect(screen.getByTestId(`${row(peer)}-why`).textContent).toBe(
+        "For Tom Reyes, who asked for it and can approve it. You can too: you hold the approval right.",
+      )
+    })
+
+    it("a passed-on row has no Not now", () => {
+      const passed = attention("pass-1", {
+        kind: "task_overdue",
+        summary: "Élodie's task is overdue",
+        metadata: { forUserId: "u-elodie" },
+      })
+      const own = attention("own-1", { kind: "sla_risk", summary: "Your ticket is at risk" })
+      attentionStore._setForTest({ items: [passed, own], errors: [] })
+      render(() => <Home entityId="home" />)
+      expect(screen.queryByTestId(`${row(passed)}-not-now`)).toBeNull()
+      expect(screen.getByTestId(`${row(own)}-not-now`)).toBeTruthy()
+    })
+
+    it("a fixture provider returning a computed row with Not now fails", () => {
+      // A provider that marks a stand-in's computed row as persisted still gets no Not now.
+      const wrong = attention("comp-1", {
+        persisted: true,
+        kind: "task_overdue",
+        metadata: { forUserId: "u-elodie" },
+      })
+      attentionStore._setForTest({ items: [wrong], errors: [] })
+      render(() => <Home entityId="home" />)
+      expect(screen.getByTestId(row(wrong))).toBeTruthy()
+      expect(screen.queryByTestId(`${row(wrong)}-not-now`)).toBeNull()
+    })
+
+    it("While you were away lists at most 3 lines, and N more, with Dismiss", async () => {
+      const recap = attention("kernel:away_recap:r-1", {
+        entity: "away_range",
+        entityId: "r-1",
+        kind: "kernel:away.recap" as AttentionItem["kind"],
+        summary: "While you were away",
+        urgency: 30,
+        persisted: undefined,
+        action: { type: "open_entity", tabType: "kernel:approvals", entityId: "approvals" },
+        metadata: {
+          awayRecap: {
+            lines: [1, 2, 3].map((n) => ({
+              approvalId: `ap-${n}`,
+              title: `Refund ${n}`,
+              outcome: "approved",
+              decidedByName: "Tom Reyes",
+              decidedAs: "next_in_line",
+              decidedOn: `${new Date().getFullYear()}-11-10`,
+            })),
+            more: 2,
+            forName: "Tester",
+          },
+        },
+      })
+      attentionStore._setForTest({ items: [recap], errors: [] })
+      render(() => <Home entityId="home" />)
+      const id = row(recap)
+      expect(screen.getAllByTestId(`${id}-recap-line`)).toHaveLength(3)
+      expect(screen.getAllByTestId(`${id}-recap-line`)[0]?.textContent).toBe(
+        "Approved by Tom Reyes, next in line for Tester: Refund 1, 10 Nov",
+      )
+      expect(screen.getByTestId(`${id}-recap-more`).textContent).toBe("and 2 more")
+      expect(screen.getByTestId(id).textContent).toContain("While you were away")
+      expect(screen.queryByTestId(`${id}-ask-draft`)).toBeNull()
+      expect(screen.queryByTestId(`${id}-not-now`)).toBeNull()
+      fireEvent.click(screen.getByTestId(`${id}-dismiss`))
+      expect(apiPost).toHaveBeenCalledWith("/attention-items/away-recap/dismiss", {
+        rangeId: "r-1",
+      })
+      await vi.waitFor(() => expect(screen.queryByTestId(id)).toBeNull())
+    })
+
+    it("companies left without an account manager offer Ask agent to reassign, not a draft", () => {
+      const unowned = attention("ev-unowned", {
+        entity: "user",
+        entityId: "u-lea",
+        kind: "kernel:companies.unowned" as AttentionItem["kind"],
+        summary: "2 companies have no account manager since Léa Fontaine left",
+        urgency: 40,
+        action: { type: "open_entity", tabType: "kernel:user", entityId: "u-lea" },
+        metadata: { leftUserId: "u-lea", companyIds: ["c-1", "c-2"], count: 2 },
+      })
+      attentionStore._setForTest({ items: [unowned], errors: [] })
+      render(() => <Home entityId="home" />)
+      const id = row(unowned)
+      expect(screen.getByTestId(`${id}-ask-reassign`).textContent).toBe("Ask agent to reassign")
+      expect(screen.queryByTestId(`${id}-ask-draft`)).toBeNull()
+      expect(screen.getByTestId(`${id}-not-now`)).toBeTruthy()
+    })
+  })
+
+  it("Not now sets the event aside and the row leaves", async () => {
+    const persisted = attention("p-1")
+    attentionStore._setForTest({ items: [persisted], errors: [] })
+    render(() => <Home entityId="home" />)
+    fireEvent.click(screen.getByTestId(`${row(persisted)}-not-now`))
+    expect(apiPost).toHaveBeenCalledWith("/attention-items/set-aside", { eventId: "p-1" })
+    await vi.waitFor(() => expect(screen.queryByTestId(row(persisted))).toBeNull())
+  })
+
+  it("failed source names itself with Retry and the rest shows", () => {
+    attentionStore._setForTest({
+      items: [approval("ap-1")],
+      errors: [{ app: "billing", reason: "timeout", message: "timed out" }],
+    })
+    render(() => <Home entityId="home" />)
+    const card = screen.getByTestId("home-source-failed-billing")
+    expect(card.textContent).toContain("Could not load what Billing has for you")
+    expect(card.textContent).toContain("Anything waiting there is safe and still waiting.")
+    expect(screen.getByTestId(row(approval("ap-1")))).toBeTruthy()
+    apiGetEnvelope.mockClear()
+    fireEvent.click(screen.getByTestId("home-source-failed-billing-retry"))
+    expect(apiGetEnvelope).toHaveBeenCalledWith("/attention-items")
+  })
+
+  // Cold walk 2026-11-08: a whole-feed failure read "Could not load what _aggregator has".
+  it("the whole feed failing says Home could not load, never an internal name", () => {
+    attentionStore._setForTest({
+      items: [],
+      errors: [{ app: "_aggregator", reason: "error", message: "fetch failed" }],
+    })
+    render(() => <Home entityId="home" />)
+    const card = screen.getByTestId("home-source-failed-_aggregator")
+    expect(card.textContent).toContain("Could not load what needs you")
+    expect(card.textContent).not.toContain("_aggregator")
+    expect(card.textContent).not.toContain("Aggregator")
+  })
+
+  // Cold walk 2026-11-08: the stand-in's Home showed nobody away when none of the absent
+  // colleague's items was one they could decide.
+  it("says who is away with the reader next in line, even with no item of theirs", async () => {
+    apiGet.mockImplementation(async (path: string) =>
+      path === "/user/preferences/away/standing-in"
+        ? [{ id: "u-amina", name: "Amina Cherif", until: "2026-11-20" }]
+        : [],
+    )
+    attentionStore._setForTest({ items: [], errors: [] })
+    render(() => <Home entityId="home" />)
+    const line = await screen.findByTestId("home-standing-in-line")
+    expect(line.textContent).toMatch(
+      /^Amina Cherif is away until (20 Nov|Nov 20)\. You are next in line\. Show what you cover$/,
+    )
+  })
+
+  it("the stand-in line's link narrows Home to what the reader covers for that colleague", async () => {
+    apiGet.mockImplementation(async (path: string) =>
+      path === "/user/preferences/away/standing-in"
+        ? [{ id: "u-amina", name: "Amina Cherif", until: "2026-11-20" }]
+        : [],
+    )
+    const route = {
+      to: "person",
+      userId: "u-amina",
+      why: "on_item",
+      awayUntil: "2026-11-20",
+      standIn: "u-1",
+      blockedStandIn: null,
+    }
+    const covered = approval("cov-1", {
+      placement: "standing_in",
+      route,
+      routeLine: { forName: "Amina Cherif" },
+    })
+    const mine = approval("own-1")
+    attentionStore._setForTest({ items: [covered, mine], errors: [] })
+    render(() => <Home entityId="home" />)
+    fireEvent.click(await screen.findByTestId("home-standing-in-show"))
+    try {
+      const slice = await screen.findByTestId("home-slice")
+      expect(screen.getByTestId("home-slice-title").textContent).toBe("What you cover 1")
+      expect(slice.querySelector(`[data-testid="${row(covered)}"]`)).not.toBeNull()
+      expect(slice.querySelector(`[data-testid="${row(mine)}"]`)).toBeNull()
+    } finally {
+      setHomeFilter(OVERVIEW)
+    }
+  })
+
+  it("no stand-in line when nobody away names the reader", async () => {
+    attentionStore._setForTest({ items: [], errors: [] })
+    render(() => <Home entityId="home" />)
+    await Promise.resolve()
+    expect(screen.queryByTestId("home-standing-in")).toBeNull()
+  })
+
+  it("brief with a time", async () => {
+    apiGet.mockImplementation(async (path: string) =>
+      path === "/home/brief"
+        ? {
+            routineId: "r-1",
+            routineName: "Morning brief",
+            message: {
+              id: "m-1",
+              threadId: "t-1",
+              text: "Monthly recurring revenue is €84,708.",
+              at: "2026-11-09T06:30:00.000Z",
+            },
+          }
+        : [],
+    )
+    render(() => <Home entityId="home" />)
+    expect((await screen.findByTestId("home-brief-text")).textContent).toContain(
+      "Monthly recurring revenue",
+    )
+    expect(screen.getByTestId("home-brief-time").textContent).toMatch(/\d{1,2}:\d{2}/)
+  })
+
+  it("No brief set up with Set up", async () => {
+    apiGet.mockImplementation(async (path: string) => (path === "/home/brief" ? null : []))
+    render(() => <Home entityId="home" />)
+    expect((await screen.findByTestId("home-brief-none")).textContent).toContain("No brief set up")
+    expect(screen.getByTestId("home-brief-setup").textContent).toBe("Set up a morning brief")
   })
 })

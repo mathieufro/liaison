@@ -1,0 +1,1739 @@
+{
+  "name": "stripe",
+  "version": "0.1.29",
+  "kind": "app",
+  "iconName": "credit-card",
+  "description": "Stripe connector: a read mirror of customers, subscriptions, invoices, payments, refunds and disputes, kept current by a signed webhook.",
+  "listing": {
+    "publisher": "Liaison",
+    "category": "Finance",
+    "icon": "credit-card",
+    "summary": "Stripe: customers, subscriptions, invoices and payments from your Stripe account, read through a restricted key.",
+    "sourceRepository": "https://github.com/liaison-sh/liaison/tree/main/bundled-apps/stripe"
+  },
+  "packageFormat": 1,
+  "license": "FSL-1.1-ALv2",
+  "host": "^1.4",
+  "capabilities": [
+    "bulk.fetch",
+    "contacts.addToOrganisation"
+  ],
+  "dependencies": {
+    "optional": [
+      "invoicing",
+      "tickets",
+      "projects"
+    ]
+  },
+  "scopes": [
+    "stripe:customers:read",
+    "stripe:customers:write",
+    "stripe:subscriptions:read",
+    "stripe:subscriptions:write",
+    "stripe:invoices:read",
+    "stripe:payments:read",
+    "stripe:refunds:write",
+    "stripe:admin:connection",
+    "stripe:internal"
+  ],
+  "roles": {
+    "member": {
+      "description": "Stripe reader: customers, subscriptions, invoices, payments, refunds and disputes",
+      "scopes": [
+        "stripe:customers:read",
+        "stripe:subscriptions:read",
+        "stripe:invoices:read",
+        "stripe:payments:read"
+      ]
+    },
+    "billing": {
+      "description": "Stripe billing: link customers to companies and contacts, request refunds and cancellations through approvals",
+      "extends": "member",
+      "scopes": [
+        "stripe:customers:write",
+        "stripe:refunds:write",
+        "stripe:subscriptions:write"
+      ]
+    },
+    "admin": {
+      "description": "Stripe administrator: connect the account and manage its key and webhook",
+      "extends": "billing",
+      "scopes": [
+        "stripe:admin:connection"
+      ]
+    }
+  },
+  "connections": {
+    "stripe": {
+      "type": "credentials",
+      "adminScope": "stripe:admin:connection",
+      "allowedDomains": [
+        "api.stripe.com"
+      ],
+      "limits": {
+        "concurrency": 4,
+        "perSecond": 20,
+        "burst": 20
+      },
+      "credentialFields": [
+        {
+          "name": "restrictedKey",
+          "type": "password",
+          "label": "Restricted key",
+          "refusePattern": {
+            "pattern": "^sk_(live|test)_",
+            "code": "secret_key_refused",
+            "message": "That is your secret key, so I did not keep it. Create a restricted key in Stripe (Developers, API keys, Create restricted key: it starts with rk_) and paste that one.",
+            "messageKey": "kernel.stripeSecretKeyRefused"
+          }
+        }
+      ],
+      "checkBeforeStore": "connection_precheck",
+      "appSecretConfigKeys": [
+        "webhookSigningSecret",
+        "webhookSigningSecretPrevious"
+      ],
+      "setupGuide": {
+        "summary": "Stripe connects with a restricted key that reads customers, subscriptions, invoices, charges, disputes, payment methods, products, prices and events, and writes refunds, plus a webhook to this workspace.",
+        "steps": [
+          {
+            "who": "human",
+            "minutes": 3,
+            "text": "In the Stripe Dashboard, open **Developers → API keys → Create restricted key**. Give **Read** to Customers, Subscriptions, Invoices, Charges, Disputes, Payment methods, Products, Prices and Events, and **Write** to Refunds. Leave everything else at None.",
+            "url": "https://dashboard.stripe.com/apikeys"
+          },
+          {
+            "who": "human",
+            "minutes": 1,
+            "text": "Paste the restricted key (it starts with `rk_`) into **Restricted key**. Never paste the secret key (`sk_`).",
+            "place": "liaison"
+          },
+          {
+            "who": "human",
+            "minutes": 3,
+            "text": "In **Developers → Webhooks**, add an endpoint at the webhook address Liaison shows, selecting the Customer, Invoice and Charge events, then give Liaison its signing secret.",
+            "url": "https://dashboard.stripe.com/webhooks"
+          }
+        ]
+      }
+    }
+  },
+  "settings": {
+    "sections": [
+      {
+        "id": "connection",
+        "title": "Stripe account",
+        "description": "Connect with a restricted key that starts with rk_. A secret key (sk_) is refused.",
+        "scope": "org",
+        "adminScope": "stripe:admin:connection",
+        "blocks": [{ "block": "connections", "names": ["stripe"] }]
+      }
+    ]
+  },
+  "webhooks": {
+    "events": {
+      "handler": "eventsHandler",
+      "verify": "stripeWebhookVerifier",
+      "bodyLimitBytes": 5242880
+    }
+  },
+  "webhookHealth": {
+    "probe": "probe-webhook-upstream"
+  },
+  "outsideTextFields": [
+    "name",
+    "email",
+    "plan",
+    "number",
+    "reason",
+    "failureCode"
+  ],
+  "tools": {
+    "connection_check": {
+      "deferLoading": true,
+      "description": "Check the saved Stripe key: one read per permission Liaison uses and a refund probe that creates nothing. Says which permission is missing, or that the key is wrong, of another account or of the other mode.",
+      "searchKeywords": [
+        "clé",
+        "vérifier"
+      ],
+      "requiredScopes": [
+        "stripe:admin:connection"
+      ],
+      "trustBoundary": "user",
+      "handler": "connectionCheck",
+      "writesToTable": "app_stripe.install_metadata",
+      "timeoutMs": 60000,
+      "runningLabel": "Checking the Stripe key",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "returns": {
+        "schema": {
+          "mode": "string",
+          "account": "object",
+          "state": "string",
+          "checks": "object",
+          "summary": "string"
+        }
+      },
+      "resultCard": {
+        "kind": "list",
+        "pill": {
+          "label": "Stripe key"
+        },
+        "title": "Stripe key",
+        "items": {
+          "path": "result.checks",
+          "label": "{{item.label}}: {{item.level}}",
+          "meta": "{{item.meta}}",
+          "limit": 10
+        }
+      }
+    },
+    "connection_precheck": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "The key check run on a key before it is stored: a key Stripe refuses, of another account or of the other mode is not kept. Records nothing.",
+      "requiredScopes": [
+        "stripe:admin:connection"
+      ],
+      "trustBoundary": "user",
+      "handler": "connectionPrecheck",
+      "timeoutMs": 60000,
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "settings_load": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "The Stripe settings page's load: the connection state and the key's permissions from the last check.",
+      "requiredScopes": [
+        "stripe:admin:connection"
+      ],
+      "trustBoundary": "user",
+      "handler": "settingsLoad",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "home_load": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "The Stripe page's load: the connection and its state, the import's progress per resource, rows per table and the counts that need a person. No figure while the import runs.",
+      "requiredScopes": [
+        "stripe:customers:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "homeLoad",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "customers_search": {
+      "deferLoading": true,
+      "readOnly": true,
+      "taintSource": true,
+      "description": "Search Stripe customers in Liaison's mirror by name, email or id (cus_), or list those not linked, past due, on trial or cancelled. Masked: no address, card as brand and last 4.",
+      "requiredScopes": [
+        "stripe:customers:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "customersSearch",
+      "readsFromTable": "app_stripe.stripe_customers",
+      "params": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "filter": {
+            "type": "string",
+            "enum": [
+              "unlinked",
+              "past_due",
+              "trial",
+              "cancelled"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor of the previous page."
+          }
+        },
+        "additionalProperties": false
+      },
+      "searchKeywords": [
+        "abonné",
+        "client"
+      ]
+    },
+    "customers_get": {
+      "focusCore": "customer",
+      "deferLoading": true,
+      "readOnly": true,
+      "taintSource": true,
+      "description": "One Stripe customer from the mirror, by its id, or the one linked to a contact or company: its subscriptions, open invoices, masked card and links.",
+      "requiredScopes": [
+        "stripe:customers:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "customersGet",
+      "readsFromTable": "app_stripe.stripe_customers",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stripe customer id, cus_..."
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "companyId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "searchKeywords": [
+        "client"
+      ]
+    },
+    "customer_link": {
+      "deferLoading": true,
+      "externalEffect": true,
+      "description": "Link a Stripe customer to a Liaison company and/or contact, unlink it (unlink), or restore the link it replaced (undo). Changes Liaison only, never Stripe. Only records you can read.",
+      "requiredScopes": [
+        "stripe:customers:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "customerLink",
+      "writesToTable": "app_stripe.stripe_customers",
+      "params": {
+        "type": "object",
+        "properties": {
+          "stripeCustomerId": {
+            "type": "string"
+          },
+          "companyId": {
+            "type": "string"
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "unlink": {
+            "type": "boolean"
+          },
+          "undo": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "stripeCustomerId"
+        ]
+      },
+      "searchKeywords": [
+        "lier",
+        "associer"
+      ]
+    },
+    "subscriptions_search": {
+      "deferLoading": true,
+      "readOnly": true,
+      "taintSource": true,
+      "description": "Stripe subscriptions from the mirror by id, plan name, status or customer, with plan, MRR, period end, trial end and masked card. An id returns that one row.",
+      "requiredScopes": [
+        "stripe:subscriptions:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "subscriptionsSearch",
+      "readsFromTable": "app_stripe.stripe_subscriptions",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "trialing",
+              "active",
+              "past_due",
+              "unpaid",
+              "canceled",
+              "incomplete",
+              "incomplete_expired",
+              "paused"
+            ]
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor of the previous page."
+          }
+        },
+        "additionalProperties": false
+      },
+      "searchKeywords": [
+        "abonnement"
+      ]
+    },
+    "mrr_query": {
+      "deferLoading": true,
+      "readOnly": true,
+      "taintSource": true,
+      "description": "Stripe MRR from the mirror, per currency: now, past due, plan split, movements since the month start.",
+      "requiredScopes": [
+        "stripe:subscriptions:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "mrrQuery",
+      "readsFromTable": "app_stripe.stripe_subscriptions",
+      "params": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "breakdown": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "searchKeywords": [
+        "mrr",
+        "recurring",
+        "revenu"
+      ]
+    },
+    "invoices_search": {
+      "deferLoading": true,
+      "readOnly": true,
+      "taintSource": true,
+      "description": "Stripe invoices from the mirror by customer or status, with number, amounts due and paid, next retry, and the Liaison document it became.",
+      "requiredScopes": [
+        "stripe:invoices:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "invoicesSearch",
+      "readsFromTable": "app_stripe.stripe_invoices",
+      "params": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "open",
+              "paid",
+              "uncollectible",
+              "void"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor of the previous page."
+          }
+        },
+        "additionalProperties": false
+      },
+      "searchKeywords": [
+        "impayé"
+      ]
+    },
+    "payments_search": {
+      "focusCore": "customer",
+      "deferLoading": true,
+      "readOnly": true,
+      "taintSource": true,
+      "description": "Stripe charges from the mirror by customer, invoice or status, card as brand and last 4; unmatched: charges no Stripe invoice explains.",
+      "requiredScopes": [
+        "stripe:payments:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "paymentsSearch",
+      "readsFromTable": "app_stripe.stripe_payments",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stripe charge id, ch_..."
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "invoiceId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "pending"
+            ]
+          },
+          "unmatched": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor of the previous page."
+          }
+        },
+        "additionalProperties": false
+      },
+      "searchKeywords": [
+        "paiement",
+        "échec"
+      ]
+    },
+    "disputes_list": {
+      "deferLoading": true,
+      "readOnly": true,
+      "taintSource": true,
+      "description": "Stripe disputes from the mirror by customer or status, with reason and evidence due date. Read only: answer a dispute in Stripe.",
+      "requiredScopes": [
+        "stripe:payments:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "disputesList",
+      "readsFromTable": "app_stripe.stripe_disputes",
+      "params": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor of the previous page."
+          }
+        },
+        "additionalProperties": false
+      },
+      "searchKeywords": [
+        "litige",
+        "chargeback"
+      ]
+    },
+    "customer_context": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "The linked Stripe customer's plan, status, masked card and unpaid invoices for the ticket, contact or company in view. Read by the kernel.",
+      "requiredScopes": [
+        "stripe:subscriptions:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "customerContext",
+      "params": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": {
+              "app": {
+                "type": "string"
+              },
+              "entityType": {
+                "type": "string"
+              },
+              "entityId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "app",
+              "entityType",
+              "entityId"
+            ]
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "timeoutMs": 2000,
+      "readsFromTable": "app_stripe.stripe_subscriptions"
+    },
+    "activity_read": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "A company's or a contact's Stripe rows for their timeline: customer created, payment failed, retry failed, subscription started or cancelled, refund, dispute. Read by the kernel.",
+      "requiredScopes": [
+        "stripe:customers:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "activityRead",
+      "params": {
+        "type": "object",
+        "properties": {
+          "contactIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "companyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dealIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "before": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "prefix": {
+            "type": "string"
+          }
+        }
+      },
+      "timeoutMs": 2000
+    },
+    "approval_route_read": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "Which company a pending approval about a Stripe customer, subscription or charge is for. Read by the kernel when an approval is proposed.",
+      "requiredScopes": [
+        "stripe:customers:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "approvalRouteRead",
+      "params": {
+        "type": "object",
+        "properties": {
+          "entityType": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entityType",
+          "entityId"
+        ]
+      },
+      "readsFromTable": "app_stripe.stripe_customers"
+    },
+    "billing_status_for_counterparty": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "Whether a contact or company, or a Stripe customer with one of their emails, pays a live Stripe subscription; unavailable until the import is complete.",
+      "requiredScopes": [
+        "stripe:internal"
+      ],
+      "trustBoundary": "user",
+      "handler": "billingStatusForCounterparty",
+      "params": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string"
+          },
+          "companyId": {
+            "type": "string"
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "invoice_document_link": {
+      "agentVisible": false,
+      "description": "Record the Liaison document a Stripe invoice became, or that Stripe's own invoice stands.",
+      "requiredScopes": [
+        "stripe:internal"
+      ],
+      "trustBoundary": "user",
+      "handler": "invoiceDocumentLink",
+      "writesToTable": "app_stripe.stripe_invoices",
+      "params": {
+        "type": "object",
+        "properties": {
+          "stripeInvoiceId": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string",
+            "description": "The document's number, shown on the Stripe invoice's row."
+          },
+          "issuedBy": {
+            "type": "string",
+            "enum": [
+              "stripe",
+              "before_connection"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "stripeInvoiceId"
+        ]
+      }
+    },
+    "refund_document_link": {
+      "agentVisible": false,
+      "description": "Record the credit note a Stripe refund became, or that none follows it.",
+      "requiredScopes": [
+        "stripe:internal"
+      ],
+      "trustBoundary": "user",
+      "handler": "refundDocumentLink",
+      "writesToTable": "app_stripe.stripe_refunds",
+      "params": {
+        "type": "object",
+        "properties": {
+          "stripeRefundId": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "string",
+            "enum": [
+              "issued_by_stripe",
+              "nothing_left"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "stripeRefundId"
+        ]
+      }
+    },
+    "refunds_for_charge": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "Every refund of one Stripe charge, by id, read from Stripe, with the charge's invoice.",
+      "requiredScopes": [
+        "stripe:internal"
+      ],
+      "trustBoundary": "user",
+      "handler": "refundsForCharge",
+      "params": {
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chargeId"
+        ],
+        "additionalProperties": false
+      },
+      "timeoutMs": 15000
+    },
+    "reconcile_candidates": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "Stripe invoices with no Liaison document, recently paid invoices, and succeeded refunds with no credit note, for invoicing's safety job.",
+      "requiredScopes": [
+        "stripe:internal"
+      ],
+      "trustBoundary": "user",
+      "handler": "reconcileCandidates",
+      "params": {
+        "type": "object",
+        "properties": {
+          "waiting": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500
+          }
+        },
+        "additionalProperties": false
+      },
+      "timeoutMs": 60000
+    },
+    "invoice_send_state": {
+      "readOnly": true,
+      "agentVisible": false,
+      "description": "Whether a payment reminder about a Stripe invoice may still go out, read from Stripe at send time: stops on paid, void or uncollectible; waits when Stripe cannot be asked.",
+      "requiredScopes": [
+        "stripe:invoices:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "invoiceSendState",
+      "params": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      },
+      "timeoutMs": 2000
+    },
+    "refunds_create": {
+      "description": "Refund a Stripe charge, in full or in part (amountMinor in cents). Parks an approval; Stripe is called only after a person approves. Refused when the charge is already refunded, disputed, or the amount is above what is left.",
+      "deferLoading": true,
+      "searchKeywords": [
+        "rembourser",
+        "remboursement",
+        "refund"
+      ],
+      "requiredScopes": [
+        "stripe:refunds:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "refundsCreate",
+      "preflight": "refundsCreatePreflight",
+      "summarizer": "summarizeRefundsCreate",
+      "summarizerContext": {
+        "tool": "payments_search",
+        "params": {
+          "id": "chargeId"
+        }
+      },
+      "gated": true,
+      "noAutoApprove": true,
+      "approvalImpact": "external",
+      "externalEffect": true,
+      "pinnedParams": [
+        "chargeId"
+      ],
+      "approvalDedupeKeyParam": "chargeId",
+      "approvalDedupeSameRequester": true,
+      "approvalExpiryHours": 168,
+      "writesToTable": "app_stripe.stripe_refunds",
+      "timeoutMs": 30000,
+      "runningLabel": "Refunding in Stripe",
+      "editableFields": [
+        {
+          "field": "amountMinor",
+          "label": "Amount incl. VAT",
+          "widget": "text"
+        }
+      ],
+      "params": {
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string",
+            "description": "ch_..."
+          },
+          "amountMinor": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "In cents, e.g. \"1200\". Omit to refund all that is left."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "ticketId": {
+            "type": "string",
+            "description": "Adds an internal note there."
+          }
+        },
+        "required": [
+          "chargeId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "subscription_cancel": {
+      "description": "Cancel a Stripe subscription, at the end of its period unless atPeriodEnd is false. Parks an approval showing the MRR and invoice effect; Stripe is called only after a person approves.",
+      "deferLoading": true,
+      "searchKeywords": [
+        "résilier",
+        "annuler",
+        "abonnement"
+      ],
+      "requiredScopes": [
+        "stripe:subscriptions:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "subscriptionCancel",
+      "preflight": "subscriptionCancelPreflight",
+      "summarizer": "summarizeSubscriptionCancel",
+      "summarizerContext": {
+        "tool": "subscription_cancel_effect",
+        "params": {
+          "subscriptionId": "subscriptionId",
+          "atPeriodEnd": "atPeriodEnd"
+        }
+      },
+      "gated": true,
+      "noAutoApprove": true,
+      "approvalImpact": "external",
+      "externalEffect": true,
+      "pinnedParams": [
+        "subscriptionId"
+      ],
+      "approvalDedupeKeyParam": "subscriptionId",
+      "approvalDedupeSameRequester": true,
+      "approvalExpiryHours": 168,
+      "writesToTable": "app_stripe.stripe_subscriptions",
+      "timeoutMs": 30000,
+      "runningLabel": "Cancelling in Stripe",
+      "params": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "description": "sub_..."
+          },
+          "atPeriodEnd": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "subscriptionId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "subscription_cancel_effect": {
+      "description": "What cancelling a subscription changes: MRR, invoices and the company's open deals, for its approval card.",
+      "readOnly": true,
+      "agentVisible": false,
+      "requiredScopes": [
+        "stripe:subscriptions:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "subscriptionCancelEffect",
+      "readsFromTable": "app_stripe.stripe_subscriptions",
+      "timeoutMs": 5000,
+      "params": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          },
+          "atPeriodEnd": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "subscriptionId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "card_update_link": {
+      "focusCore": "customer",
+      "description": "A Stripe page where a customer can pay with a new card: the customer portal login link when set, else their open invoice's page. Returns the sentence that is true for that link (effect); never stored.",
+      "deferLoading": true,
+      "readOnly": true,
+      "searchKeywords": [
+        "carte",
+        "lien",
+        "card"
+      ],
+      "requiredScopes": [
+        "stripe:customers:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "cardUpdateLink",
+      "readsFromTable": "app_stripe.stripe_invoices",
+      "params": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "description": "cus_..."
+          }
+        },
+        "required": [
+          "customerId"
+        ],
+        "additionalProperties": false
+      },
+      "returns": {
+        "schema": {
+          "url": "any",
+          "kind": "any",
+          "effect": "any",
+          "summary": "string"
+        }
+      }
+    }
+  },
+  "contextProviders": [
+    {
+      "on": [
+        "tickets:ticket",
+        "kernel:contact",
+        "contacts:contact-detail",
+        "kernel:company",
+        "contacts:company-detail"
+      ],
+      "tool": "customer_context",
+      "scope": "stripe:subscriptions:read",
+      "loadTools": [
+        "customers_get"
+      ]
+    }
+  ],
+  "activitySources": [
+    {
+      "tool": "activity_read",
+      "scope": "stripe:customers:read",
+      "label": "Stripe",
+      "filterKey": "stripe"
+    }
+  ],
+  "approvalRoute": {
+    "customer": "approval_route_read",
+    "subscription": "approval_route_read",
+    "charge": "approval_route_read"
+  },
+  "cross_app_calls": [
+    {
+      "target": "kernel:contacts_read",
+      "reason": "a link names only a contact the person can read"
+    },
+    {
+      "target": "invoicing:card_stream_issuer",
+      "reason": "a refund is followed by a credit note only when Liaison issues the invoices for card payments"
+    },
+    {
+      "target": "kernel:contacts_search",
+      "reason": "find the contact a Stripe customer's email names"
+    },
+    {
+      "target": "kernel:companies_read",
+      "reason": "a link names only a company the person can read"
+    },
+    {
+      "target": "kernel:companies_search",
+      "reason": "suggest the company on a customer's email domain"
+    },
+    {
+      "target": "tickets:get",
+      "reason": "the contact of the ticket in view, for the customer context"
+    },
+    {
+      "target": "tickets:addNote",
+      "reason": "a refund made for a ticket leaves an internal note on it, never a reply"
+    },
+    {
+      "target": "projects:deals_search",
+      "reason": "a cancellation card names the company's open deals"
+    }
+  ],
+  "jobs": {
+    "backfill": {
+      "handler": "backfillJob",
+      "schedule": "* * * * *",
+      "timeoutMs": 90000,
+      "runsFor": {
+        "rows": [
+          {
+            "entity": "sync_state",
+            "where": {
+              "status": {
+                "in": [
+                  "pending",
+                  "running"
+                ]
+              }
+            }
+          },
+          {
+            "entity": "install_metadata",
+            "where": {
+              "webhook_confirmed_at": null
+            }
+          },
+          {
+            "entity": "webhook_deliveries",
+            "where": {
+              "status": "held"
+            }
+          }
+        ]
+      }
+    },
+    "reconcile": {
+      "handler": "reconcileJob",
+      "schedule": "0 3 * * *",
+      "timeoutMs": 90000,
+      "runsFor": {
+        "connection": "stripe"
+      }
+    },
+    "probe-webhook-upstream": {
+      "handler": "probeWebhookUpstreamJob",
+      "runsFor": {
+        "connection": "stripe"
+      },
+      "schedule": "*/15 * * * *",
+      "timeoutMs": 90000
+    },
+    "catchup-retry": {
+      "handler": "catchupRetryJob",
+      "schedule": "* * * * *",
+      "timeoutMs": 90000,
+      "runsFor": {
+        "rows": {
+          "entity": "sync_state",
+          "where": {
+            "catchup_due": true
+          }
+        }
+      }
+    },
+    "prune-webhook-deliveries": {
+      "handler": "pruneWebhookDeliveriesJob",
+      "schedule": "30 3 * * *",
+      "timeoutMs": 90000,
+      "runsFor": {
+        "rows": {
+          "entity": "webhook_deliveries"
+        }
+      }
+    },
+    "purge-mirror": {
+      "handler": "purgeMirrorJob",
+      "onDemand": true,
+      "timeoutMs": 90000
+    },
+    "mrr-rebuild": {
+      "handler": "mrrRebuildJob",
+      "onDemand": true,
+      "timeoutMs": 90000
+    }
+  },
+  "events": {
+    "emits": [
+      "customer:updated",
+      "subscription:created",
+      "subscription:updated",
+      "subscription:canceled",
+      "trial:ending_soon",
+      "invoice:finalized",
+      "invoice:paid",
+      "invoice:payment_failed",
+      "invoice:voided",
+      "invoice:uncollectible",
+      "refund:created",
+      "refund:settled",
+      "refund:failed",
+      "dispute:opened",
+      "dispute:closed",
+      "payment:unmatched",
+      "connection:state_changed",
+      "card_number:masked"
+    ],
+    "subscribes": {
+      "kernel/connected_account:disconnect": "onConnectionDisconnected",
+      "customer:updated": "matchCustomerOnUpdate"
+    }
+  },
+  "attention": {
+    "translations": [
+      {
+        "event": "card_number:masked",
+        "kind": "stripe:card.masked",
+        "urgency": 50,
+        "summary": "A card number in Stripe ({{data.fields}}) was hidden before it was stored",
+        "recipients": {
+          "kind": "scope_holders",
+          "scope": "stripe:admin:connection"
+        }
+      },
+      {
+        "event": "connection:state_changed",
+        "kind": "stripe:connection.problem",
+        "urgency": 70,
+        "summary": "Stripe connection is now {{data.to}}",
+        "recipients": {
+          "kind": "scope_holders",
+          "scope": "stripe:admin:connection"
+        }
+      }
+    ]
+  },
+  "schema": {
+    "stripe_customers": {
+      "rlsScope": "customers",
+      "fields": {
+        "stripe_id": "string",
+        "email": "text?",
+        "name": "text?",
+        "currency": "text?",
+        "delinquent": {
+          "type": "boolean",
+          "default": false
+        },
+        "address": "json?",
+        "tax_ids": "json?",
+        "company_id": "uuid?",
+        "contact_id": "uuid?",
+        "match_method": {
+          "type": "string",
+          "enum": [
+            "email",
+            "contact_company",
+            "external_id",
+            "person"
+          ],
+          "required": false
+        },
+        "match_by": {
+          "type": "uuid",
+          "required": false,
+          "userRef": true,
+          "onErase": "anonymize"
+        },
+        "deleted_at": "date?",
+        "stripe_updated": "date",
+        "created_at_stripe": "date",
+        "previous_link": "json?"
+      },
+      "constraints": {
+        "unique": [
+          [
+            "stripe_id"
+          ]
+        ]
+      },
+      "indexes": [
+        [
+          "company_id"
+        ],
+        [
+          "contact_id"
+        ],
+        [
+          "email"
+        ]
+      ]
+    },
+    "stripe_subscriptions": {
+      "rlsScope": "subscriptions",
+      "fields": {
+        "stripe_id": "string",
+        "customer_id": "string",
+        "status": {
+          "type": "string",
+          "enum": [
+            "trialing",
+            "active",
+            "past_due",
+            "unpaid",
+            "canceled",
+            "incomplete",
+            "incomplete_expired",
+            "paused"
+          ]
+        },
+        "plan_name": "string",
+        "items": "json",
+        "discount_percent": "numeric?",
+        "discount_amount_minor": "bigint?",
+        "mrr_minor": "bigint",
+        "currency": "string",
+        "current_period_start": "date",
+        "current_period_end": "date",
+        "trial_end": "date?",
+        "cancel_at": "date?",
+        "canceled_at": "date?",
+        "card_brand": "text?",
+        "card_last4": "text?",
+        "card_exp": "text?",
+        "past_due_since": "date?",
+        "started_at": "date?",
+        "stripe_updated": "date"
+      },
+      "constraints": {
+        "unique": [
+          [
+            "stripe_id"
+          ]
+        ]
+      },
+      "indexes": [
+        [
+          "customer_id"
+        ],
+        [
+          "status",
+          "current_period_end"
+        ],
+        [
+          "status",
+          "trial_end"
+        ]
+      ]
+    },
+    "stripe_invoices": {
+      "rlsScope": "invoices",
+      "fields": {
+        "stripe_id": "string",
+        "customer_id": "string",
+        "subscription_id": "text?",
+        "number": "text?",
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "open",
+            "paid",
+            "uncollectible",
+            "void"
+          ]
+        },
+        "total_minor": "bigint",
+        "tax_minor": "bigint",
+        "amount_paid_minor": "bigint",
+        "amount_due_minor": "bigint",
+        "currency": "string",
+        "period_start": "date?",
+        "period_end": "date?",
+        "billing_reason": "text?",
+        "hosted_invoice_url": "text?",
+        "next_payment_attempt": "date?",
+        "finalized_at": "date?",
+        "paid_at": "date?",
+        "issuer": {
+          "type": "string",
+          "enum": [
+            "liaison",
+            "stripe",
+            "before_connection",
+            "undecided"
+          ],
+          "default": "undecided"
+        },
+        "liaison_document_id": "uuid?",
+        "liaison_document_number": "text?",
+        "stripe_updated": "date"
+      },
+      "constraints": {
+        "unique": [
+          [
+            "stripe_id"
+          ]
+        ]
+      },
+      "indexes": [
+        [
+          "customer_id"
+        ],
+        [
+          "subscription_id"
+        ]
+      ]
+    },
+    "stripe_payments": {
+      "rlsScope": "payments",
+      "fields": {
+        "stripe_id": "string",
+        "payment_intent": "text?",
+        "invoice_id": "text?",
+        "customer_id": "text?",
+        "amount_minor": "bigint",
+        "refunded_minor": {
+          "type": "bigint",
+          "default": 0
+        },
+        "currency": "string",
+        "status": {
+          "type": "string",
+          "enum": [
+            "succeeded",
+            "failed",
+            "pending"
+          ]
+        },
+        "failure_code": "text?",
+        "failure_message": "text?",
+        "card_brand": "text?",
+        "card_last4": "text?",
+        "card_exp": "text?",
+        "created_at_stripe": "date",
+        "disputed": {
+          "type": "boolean",
+          "default": false
+        },
+        "stripe_updated": "date?"
+      },
+      "constraints": {
+        "unique": [
+          [
+            "stripe_id"
+          ]
+        ]
+      },
+      "indexes": [
+        [
+          "invoice_id"
+        ],
+        [
+          "customer_id"
+        ]
+      ]
+    },
+    "stripe_refunds": {
+      "rlsScope": "payments",
+      "fields": {
+        "stripe_id": "string",
+        "payment_id": "string",
+        "amount_minor": "bigint",
+        "currency": "string",
+        "status": "string",
+        "reason": "text?",
+        "liaison_document_id": "uuid?",
+        "liaison_skipped": "text?",
+        "created_at_stripe": "date",
+        "stripe_updated": "date?"
+      },
+      "constraints": {
+        "unique": [
+          [
+            "stripe_id"
+          ]
+        ]
+      },
+      "indexes": [
+        [
+          "payment_id"
+        ]
+      ]
+    },
+    "stripe_disputes": {
+      "rlsScope": "payments",
+      "fields": {
+        "stripe_id": "string",
+        "payment_id": "string",
+        "amount_minor": "bigint",
+        "currency": "string",
+        "reason": "string",
+        "status": "string",
+        "evidence_due_by": "date?",
+        "funds_withdrawn_at": "date?",
+        "created_at_stripe": "date",
+        "stripe_updated": "date?"
+      },
+      "constraints": {
+        "unique": [
+          [
+            "stripe_id"
+          ]
+        ]
+      },
+      "indexes": [
+        [
+          "payment_id"
+        ]
+      ]
+    },
+    "stripe_mrr_events": {
+      "rlsScope": "subscriptions",
+      "fields": {
+        "stripe_event_id": "string",
+        "subscription_id": "string",
+        "customer_id": "string",
+        "at": "date",
+        "kind": {
+          "type": "string",
+          "enum": [
+            "new",
+            "upgrade",
+            "downgrade",
+            "cancelled"
+          ]
+        },
+        "delta_minor": "bigint",
+        "before_minor": "bigint",
+        "after_minor": "bigint",
+        "currency": "string",
+        "source": {
+          "type": "string",
+          "enum": [
+            "webhook",
+            "reconcile"
+          ]
+        }
+      },
+      "constraints": {
+        "unique": [
+          [
+            "stripe_event_id"
+          ]
+        ]
+      },
+      "indexes": [
+        [
+          "currency",
+          "at"
+        ]
+      ]
+    },
+    "sync_state": {
+      "rlsScope": "internal",
+      "fields": {
+        "resource": "string",
+        "cursor": "text?",
+        "done_count": {
+          "type": "integer",
+          "default": 0
+        },
+        "total_count": "integer?",
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed"
+          ],
+          "default": "pending"
+        },
+        "catchup_due": {
+          "type": "boolean",
+          "default": false
+        },
+        "last_error_code": "text?",
+        "updated": "date"
+      },
+      "constraints": {
+        "unique": [
+          [
+            "resource"
+          ]
+        ]
+      }
+    },
+    "install_metadata": {
+      "rlsScope": "internal",
+      "fields": {
+        "account_id": "text?",
+        "account_name": "text?",
+        "livemode": {
+          "type": "boolean",
+          "default": false
+        },
+        "permissions": "json",
+        "state": "string",
+        "last_event_at": "date?",
+        "last_event_type": "text?",
+        "connected_at": "date",
+        "webhook_confirmed_at": "date?"
+      }
+    },
+    "webhook_deliveries": {
+      "rlsScope": "internal",
+      "fields": {
+        "event_id": "string",
+        "topic": "string",
+        "status": "string",
+        "failure_count": {
+          "type": "integer",
+          "default": 0
+        },
+        "received_at": "date",
+        "processed_at": "date?",
+        "claimed_at": "date?"
+      },
+      "constraints": {
+        "unique": [
+          [
+            "event_id"
+          ]
+        ]
+      }
+    }
+  },
+  "sendGuardProviders": {
+    "stripe:invoice": {
+      "tool": "invoice_send_state",
+      "serviceMessage": true,
+      "pill": {
+        "label": "Stripe: payment reminder"
+      }
+    }
+  },
+  "routines": {
+    "failed-payments": {
+      "description": "Every morning, draft a payment reminder for each failed card payment that needs one.",
+      "kind": "recurring",
+      "cron": "0 7 * * *",
+      "timezone": "UTC",
+      "promptTemplate": "For each failed Stripe payment that Stripe no longer retries and that has no reminder waiting, draft one with mail__compose, followUp {refs:[{kind:\"stripe:invoice\", id}], classification:\"service\"}. Get the link with card_update_link and say what it does using its effect. Mention the customer's open tickets. Skip payments Stripe still retries.",
+      "scopes": [
+        "stripe:customers:read",
+        "stripe:invoices:read",
+        "stripe:payments:read",
+        "mail:conversations:write",
+        "tickets:tickets:read"
+      ],
+      "enabledByDefault": false,
+      "followUp": true
+    }
+  },
+  "views": {
+    "activityBar": {
+      "icon": "StripeAppIcon",
+      "label": "Stripe",
+      "order": 66,
+      "tabAction": {
+        "type": "home",
+        "entityId": "home",
+        "label": "Stripe"
+      }
+    },
+    "tabTypes": {
+      "home": {
+        "component": "StripeHome",
+        "sidebar": "StripeSidebar",
+        "icon": "StripeAppIcon",
+        "label": "Stripe",
+        "singleton": true,
+        "urlPattern": "/stripe",
+        "referenceable": false
+      },
+      "customers": {
+        "component": "StripeCustomersList",
+        "sidebar": "StripeSidebar",
+        "icon": "StripeAppIcon",
+        "label": "Customers",
+        "singleton": true,
+        "urlPattern": "/stripe/customers",
+        "referenceable": false
+      },
+      "customer": {
+        "entity": "customer",
+        "component": "StripeCustomerDetail",
+        "sidebar": "StripeSidebar",
+        "icon": "StripeAppIcon",
+        "label": "Customer",
+        "singleton": false,
+        "urlPattern": "/stripe/customers/:entityId",
+        "referenceable": true
+      }
+    }
+  },
+  "entities": {
+    "customer": {
+      "labelField": "name",
+      "searchable": false,
+      "tableName": "stripe_customers",
+      "readScope": "stripe:customers:read",
+      "discussion": true
+    }
+  },
+  "slots": {
+    "contact_detail": {
+      "panels": [
+        {
+          "id": "stripe-customer",
+          "label": "Stripe",
+          "component": "ContactStripePanel",
+          "group": "money",
+          "order": 40,
+          "visibility_scope": "stripe:customers:read"
+        }
+      ]
+    },
+    "company_detail": {
+      "panels": [
+        {
+          "id": "stripe-money",
+          "label": "Stripe",
+          "component": "CompanyStripePanel",
+          "group": "money",
+          "order": 20,
+          "visibility_scope": "stripe:customers:read"
+        }
+      ]
+    }
+  },
+  "contributions": {
+    "ticket:detail:panel": {
+      "label": "Stripe",
+      "component": "TicketStripeCard",
+      "visibility_scope": "stripe:customers:read"
+    }
+  }
+}

@@ -4,6 +4,7 @@
   "dependencies": { "tools": ["test-bridge-b:internalCallback"] },
   "schema": {
     "audit": {
+      "rlsScope": "thing",
       "fields": {
         "key": "string",
         "payload": "json",

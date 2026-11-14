@@ -42,26 +42,28 @@ function parseIpv4ToInt(host: string): number | null {
     nums.push(n)
   }
 
+  // The switch below reads only the parts its arm's length guarantees.
+  const [a = 0, b = 0, c = 0, d = 0] = nums
   let result: number
   switch (nums.length) {
     case 1: {
-      if (nums[0] > 0xffffffff) return null
-      result = nums[0]
+      if (a > 0xffffffff) return null
+      result = a
       break
     }
     case 2: {
-      if (nums[0] > 0xff || nums[1] > 0xffffff) return null
-      result = (nums[0] << 24) | nums[1]
+      if (a > 0xff || b > 0xffffff) return null
+      result = (a << 24) | b
       break
     }
     case 3: {
-      if (nums[0] > 0xff || nums[1] > 0xff || nums[2] > 0xffff) return null
-      result = (nums[0] << 24) | (nums[1] << 16) | nums[2]
+      if (a > 0xff || b > 0xff || c > 0xffff) return null
+      result = (a << 24) | (b << 16) | c
       break
     }
     default: {
       if (nums.some((n) => n > 0xff)) return null
-      result = (nums[0] << 24) | (nums[1] << 16) | (nums[2] << 8) | nums[3]
+      result = (a << 24) | (b << 16) | (c << 8) | d
       break
     }
   }
@@ -120,10 +122,10 @@ function normalizeHostForClassification(ip: string): string {
   // (`::ffff:0:a.b.c.d`), or IPv4-compatible (`::a.b.c.d`) — unwrap to the
   // trailing IPv4 literal.
   const mapped = host.match(/^::(?:ffff:)?(?:0:)?((?:\d{1,3}\.){3}\d{1,3})$/)
-  if (mapped) return mapped[1]
+  if (mapped?.[1]) return mapped[1]
   // IPv4-mapped where the address is given in hex words (`::ffff:7f00:1`).
   const hexMapped = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
-  if (hexMapped) {
+  if (hexMapped?.[1] && hexMapped[2]) {
     const hi = Number.parseInt(hexMapped[1], 16)
     const lo = Number.parseInt(hexMapped[2], 16)
     if (!Number.isNaN(hi) && !Number.isNaN(lo)) {

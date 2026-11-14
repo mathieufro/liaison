@@ -292,6 +292,17 @@ check() {
   same_network
   gateway="${PREFIX}1"
   sid="$(eval "$DC ps -q sandbox" 2>/dev/null | head -n 1 || :)"
+  # A host that runs every app on QuickJS (LIAISON_APP_RUNTIME=quickjs, the service left
+  # out with --scale sandbox=0) has no sandbox service to check: say so and pass.
+  if [ -z "$sid" ]; then
+    for id in $(app_ids); do
+      if docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id" 2>/dev/null |
+        grep -qx 'LIAISON_APP_RUNTIME=quickjs'; then
+        echo "sandbox-firewall: no sandbox service runs and the app runs every app on QuickJS (LIAISON_APP_RUNTIME=quickjs): nothing to check. Run check again once the service runs."
+        exit 0
+      fi
+    done
+  fi
   [ -n "$sid" ] || die "no running sandbox service in this compose project ($DC); pass the -p/--env-file/-f the stack runs with"
   sip="$(ip_on_net "$sid" | head -n 1)"
   [ "$sip" = "$SANDBOX_IP" ] || die "the sandbox service is at '${sip}', the rules name $SANDBOX_IP: set LIAISON_SANDBOX_IP and LIAISON_SANDBOX_SUBNET to what the stack runs with"

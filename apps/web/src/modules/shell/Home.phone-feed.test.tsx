@@ -8,7 +8,7 @@
 // feed: compact greeting, plain-sentence status, a single scrollable chip row,
 // and one compact row per item with one action row.
 import type { AttentionItem } from "@liaison/shared"
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("~/modules/auth/auth-store", () => ({
@@ -115,72 +115,30 @@ describe("phone attention feed", () => {
     expect(status.className).not.toContain("tracking-[0.04em]")
   })
 
-  it("home-phone.facets put the filter chips on one scrollable 32px row", () => {
+  // The per-action filter chips are gone: one list, and each row's pill names its action.
+  it("home.approvals: no filter chips, the pill stays on each row in its app's colour", () => {
     setShellTier("phone")
     attentionStore._setForTest({
       items: [
-        { ...distinctTitleApproval("k-1"), metadata: { toolName: "knowledge:create" } },
-        { ...distinctTitleApproval("k-2"), metadata: { toolName: "knowledge:update" } },
+        {
+          ...distinctTitleApproval("k-1"),
+          metadata: { toolName: "tickets:reply", actionLabel: "Tickets: reply" },
+        },
+        {
+          ...distinctTitleApproval("k-2"),
+          metadata: { toolName: "kernel:update_skill", actionLabel: "Kernel: update skill" },
+        },
       ],
       errors: [],
     })
     render(() => <Home entityId="home" />)
-    const bar = screen.getByTestId("home-approval-facets")
-    expect(bar.className).not.toContain("flex-wrap")
-    expect(bar.className).toContain("overflow-x-auto")
-    const all = screen.getByTestId("home-approval-facet-all")
-    expect(all.className).toContain("h-8")
-  })
-
-  // The phone chips read "All8" and "Tickets: reply2" where the desktop chip
-  // read "All 8": the phone chip is a flex box, and a flex container drops the
-  // whitespace-only edges of its anonymous text items, so the literal space
-  // between the label and its count was eaten by the layout. The separation is
-  // a gap now, which no layout can swallow.
-  it("home-phone.facets keep the label and the count apart", () => {
-    setShellTier("phone")
-    attentionStore._setForTest({
-      items: [
-        { ...distinctTitleApproval("k-1"), metadata: { toolName: "tickets:reply" } },
-        { ...distinctTitleApproval("k-2"), metadata: { toolName: "tickets:reply" } },
-        { ...distinctTitleApproval("k-3"), metadata: { toolName: "knowledge:create" } },
-      ],
-      errors: [],
-    })
-    render(() => <Home entityId="home" />)
-    for (const testId of ["home-approval-facet-all", "home-approval-facet-tickets:reply"]) {
-      const chip = screen.getByTestId(testId)
-      expect(chip.className).toContain("gap-1")
-      expect(chip.className).toContain("inline-flex")
-      // The label and the count are two elements, so neither can be folded
-      // into the other's text node.
-      expect(chip.querySelectorAll("span")).toHaveLength(2)
-    }
-    expect(screen.getByTestId("home-approval-facet-all").textContent?.trim()).toBe("All3")
-    expect(screen.getByTestId("home-approval-facet-tickets:reply").textContent?.trim()).toBe(
-      "tickets:reply2",
-    )
-  })
-
-  it("home.facets wear their app's colour; All stays neutral", () => {
-    setShellTier("phone")
-    attentionStore._setForTest({
-      items: [
-        { ...distinctTitleApproval("k-1"), metadata: { toolName: "tickets:reply" } },
-        { ...distinctTitleApproval("k-2"), metadata: { toolName: "kernel:update_skill" } },
-      ],
-      errors: [],
-    })
-    render(() => <Home entityId="home" />)
-    const tickets = screen.getByTestId("home-approval-facet-tickets:reply")
-    expect(tickets).toHaveAttribute("data-app", "tickets")
-    expect(tickets.style.getPropertyValue("--app-pill-bg-light")).toBe(
+    expect(screen.queryByTestId("home-approval-facets")).toBeNull()
+    expect(screen.queryByTestId("home-approval-facet-all")).toBeNull()
+    const chip = screen.getByTestId(`${rowId("k-1")}-action-chip`)
+    expect(chip).toHaveAttribute("data-app", "tickets")
+    expect(chip.style.getPropertyValue("--app-pill-bg-light")).toBe(
       `hsl(${appHue("tickets")} 60% 94%)`,
     )
-    expect(tickets).toHaveAttribute("aria-pressed", "false")
-    const kernel = screen.getByTestId("home-approval-facet-kernel:update_skill")
-    expect(kernel).toHaveAttribute("data-app-tone", "system")
-    expect(screen.getByTestId("home-approval-facet-all").className).not.toContain("app-pill")
   })
 
   it("home-phone.row renders one compact row: inline glyph, one action row, chevron details", () => {
@@ -209,10 +167,10 @@ describe("phone attention feed", () => {
     expect(byline?.textContent).not.toContain("44")
     expect(secondary.className).not.toContain("font-mono")
     expect(secondary.className).not.toContain("text-warning")
-    // Approve / Reject side by side at 36px, not a 90px slab.
+    // Approve / Reject side by side, each a 44px touch target, not a 90px slab.
     const approve = screen.getByTestId(`${rowId("k-1")}-approve`)
-    expect(approve.className).toContain("h-9")
-    expect(screen.getByTestId(`${rowId("k-1")}-reject`).className).toContain("h-9")
+    expect(approve.className).toContain("min-h-11")
+    expect(screen.getByTestId(`${rowId("k-1")}-reject`).className).toContain("min-h-11")
     // Details is a chevron at the row end, not an orphaned right-aligned link.
     const details = screen.getByTestId(`${rowId("k-1")}-details`)
     expect(details.textContent?.trim()).not.toContain("Details")
@@ -298,33 +256,6 @@ describe("phone attention feed", () => {
   // painted in the page colour, dark over the lighter approvals card. The row
   // now masks its own edge, so the chips fade over whatever is behind them,
   // and only while there is more to scroll.
-  it("home-phone.facets mask the scrolling row's right edge only while it overflows", async () => {
-    setShellTier("phone")
-    attentionStore._setForTest({
-      items: [
-        { ...distinctTitleApproval("k-1"), metadata: { toolName: "knowledge:create" } },
-        { ...distinctTitleApproval("k-2"), metadata: { toolName: "knowledge:update" } },
-      ],
-      errors: [],
-    })
-    // jsdom has no layout: give the row more content than width.
-    const widths = [
-      vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(600),
-      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300),
-    ]
-    try {
-      render(() => <Home entityId="home" />)
-      const bar = screen.getByTestId("home-approval-facets")
-      await waitFor(() => expect(bar.dataset.fadeEnd).toBe("true"))
-      expect(bar.dataset.fadeStart).toBeUndefined()
-      // (jsdom drops `mask-image` itself; the flag above is what drives it.)
-      // No painted element over the chips any more.
-      expect(screen.queryByTestId("home-approval-facets-fade")).toBeNull()
-    } finally {
-      for (const w of widths) w.mockRestore()
-    }
-  })
-
   it("home-phone.header is opaque, so rows never show through the greeting", () => {
     setShellTier("phone")
     attentionStore._setForTest({ items: [distinctTitleApproval("k-1")], errors: [] })
@@ -337,5 +268,32 @@ describe("phone attention feed", () => {
     // The greeting and the status line are both inside it.
     expect(header.contains(screen.getByTestId("home-greeting"))).toBe(true)
     expect(header.contains(screen.getByTestId("home-status"))).toBe(true)
+  })
+
+  // The pixels (390 px wide, 44 px targets) are read on a real phone screen; here, the classes.
+  it("home-phone: every row action is a 44px touch target", () => {
+    setShellTier("phone")
+    const notice: AttentionItem = {
+      id: "ev-1",
+      app: "kernel",
+      entity: "notification",
+      entityId: "n-1",
+      kind: "system_alert",
+      summary: "A deal went quiet",
+      urgency: 90,
+      occurredAt: "2026-05-06T12:00:00.000Z",
+      action: { type: "open_entity", tabType: "kernel:notification", entityId: "n-1" },
+      persisted: true,
+    }
+    attentionStore._setForTest({ items: [distinctTitleApproval("k-1"), notice], errors: [] })
+    render(() => <Home entityId="home" />)
+    const ids = [
+      `${rowId("k-1")}-approve`,
+      `${rowId("k-1")}-reject`,
+      "attention-row-kernel-notification-n-1-ask-draft",
+      "attention-row-kernel-notification-n-1-not-now",
+    ]
+    for (const id of ids) expect(screen.getByTestId(id).className).toContain("min-h-11")
+    expect(screen.getByTestId(`${rowId("k-1")}-details`).className).toContain("h-11")
   })
 })

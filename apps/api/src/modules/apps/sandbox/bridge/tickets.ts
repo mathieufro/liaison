@@ -63,6 +63,23 @@ export function createTicketsMethods(ctx: BridgeContext): Record<string, any> {
   // Tool results go to a model when an agent or an MCP client is the reader.
   const readerIsModel = auditActorType === "agent" || auditActorType === "mcp"
   return {
+    /** Rows for a company's or a contact's timeline, read under the caller's row security. */
+    tickets_activityRead: async (paramsJson: string): Promise<string> => {
+      if (ctx.appName !== "tickets")
+        throw new Error("tickets_activityRead is only available to the tickets app")
+      const { hasScope } = await import("~/modules/permissions/permissions")
+      if (!hasScope("tickets:tickets:read", ctx.callerScopes ?? [])) {
+        throw new Error("forbidden: missing scope tickets:tickets:read")
+      }
+      const { ticketActivityRows } = await import("~/apps/tickets/activity-source")
+      const { withReadOnlySource } = await import("~/modules/contacts/activity")
+      const params = JSON.parse(paramsJson)
+      return JSON.stringify(
+        await withReadOnlySource(ctx.txDb as never, (tx) =>
+          ticketActivityRows(tx, ctx.orgId, params),
+        ),
+      )
+    },
     // --- Tickets-specific bridge methods (gated; only meaningful when appName === "tickets") ---
     tickets_validateAndApply: async (ticketId: string, inputJson: string): Promise<string> => {
       if (appName !== "tickets") {
@@ -615,6 +632,18 @@ export function createTicketsMethods(ctx: BridgeContext): Record<string, any> {
             ticketId,
             body: { currentAssignee: currentOwner, ticketId },
           },
+        })
+      }
+      if (updated.length > 0) {
+        // A pending request about this ticket is now for its new owner. Its own transaction:
+        // a failure is logged and the assignment stands.
+        const { updateItemRoutePerson } = await import("~/modules/approvals/route-world")
+        await updateItemRoutePerson({
+          orgId,
+          app: "tickets",
+          entityType: "ticket",
+          entityId: ticketId,
+          personId: newAssignee,
         })
       }
       return JSON.stringify({ ticketId, assignedTo: resolvedAssignee })

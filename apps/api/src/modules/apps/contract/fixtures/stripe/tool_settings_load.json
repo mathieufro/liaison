@@ -1,0 +1,15 @@
+{
+  "entry": "tool:settings_load",
+  "params": {},
+  "unrecorded": {
+    "reason": "hand-written, not recorded: a recording needs a restricted Stripe key, which the recording run does not have yet. Awaiting a recording against a Stripe test account."
+  },
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": ["install_metadata", "{\"limit\":1}"],
+      "reply": "[]"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

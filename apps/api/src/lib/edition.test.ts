@@ -3,16 +3,27 @@
 // control-plane pair alone never switches managed on (such a server refuses to
 // boot, lib/managed-boot.ts); anything else is self-hosted.
 import { afterEach, describe, expect, it } from "bun:test"
-import { _setEdition, detectEdition, edition, isManagedEdition } from "~/lib/edition"
+import {
+  _setEdition,
+  detectEdition,
+  edition,
+  isManagedEdition,
+  toolMeaningEnabled,
+} from "~/lib/edition"
 import { env } from "~/lib/env"
 
 const saved = env.LIAISON_EDITION
+const savedMeaning = env.LIAISON_TOOL_MEANING
+const setMeaningEnv = (v: "on" | "off" | undefined) => {
+  ;(env as { LIAISON_TOOL_MEANING?: string }).LIAISON_TOOL_MEANING = v
+}
 const setEditionEnv = (v: "managed" | "self_hosted" | undefined) => {
   ;(env as { LIAISON_EDITION?: string }).LIAISON_EDITION = v
 }
 
 afterEach(() => {
   setEditionEnv(saved)
+  setMeaningEnv(savedMeaning)
   _setEdition(null)
 })
 
@@ -56,5 +67,31 @@ describe("edition()", () => {
     setEditionEnv("managed")
     _setEdition("self_hosted")
     expect(isManagedEdition()).toBe(false)
+  })
+})
+
+describe("tool search by meaning", () => {
+  it("is on by default in the managed edition", () => {
+    setMeaningEnv(undefined)
+    _setEdition("managed")
+    expect(toolMeaningEnabled()).toBe(true)
+  })
+
+  it("is off by default on a self-hosted server, so no model loads", () => {
+    setMeaningEnv(undefined)
+    _setEdition("self_hosted")
+    expect(toolMeaningEnabled()).toBe(false)
+  })
+
+  it("LIAISON_TOOL_MEANING=on turns it on for a self-hosted server", () => {
+    setMeaningEnv("on")
+    _setEdition("self_hosted")
+    expect(toolMeaningEnabled()).toBe(true)
+  })
+
+  it("LIAISON_TOOL_MEANING=off turns it off in the managed edition", () => {
+    setMeaningEnv("off")
+    _setEdition("managed")
+    expect(toolMeaningEnabled()).toBe(false)
   })
 })

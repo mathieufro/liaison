@@ -469,6 +469,7 @@ describe("registerApps — manifest format", () => {
       _format: "manifest" as const,
       _bundlePath: "/apps/manifest-app-untrusted/handlers.js",
       trusted: false,
+      scopes: ["manifest-app-untrusted:items:read"],
       schema: {
         items: {
           fields: { title: "string" },
@@ -507,6 +508,7 @@ describe("registerApps — manifest format", () => {
       _bundlePath: "/fake/bundle.js",
       _uiBundlePath: "/fake/installRoot/ui-app/1.0.0/ui.js",
       trusted: false,
+      scopes: ["ui-app:items:read"],
       schema: { items: { fields: { title: "string" } } },
       events: { emits: ["items:created"] },
     }
@@ -526,6 +528,7 @@ describe("registerApps — manifest format", () => {
       _format: "manifest" as const,
       _bundlePath: "/fake/bundle.js",
       trusted: false,
+      scopes: ["ui-app-noui:items:read"],
       schema: { items: { fields: { title: "string" } } },
       events: { emits: ["items:created"] },
     }

@@ -1,0 +1,1 @@
+Company reads (search, read, timeline, duplicates, proposals) are kernel sources -> apps/api/src/modules/dashboards/sources.ts (KERNEL_DASHBOARD_SOURCES)

@@ -1,0 +1,4 @@
+credentialFields refusePattern: pattern, code, message, messageKey -> apps/api/src/modules/apps/manifest-schema.ts (credentialFieldSchema)
+refused value answers 422 with code and message, never the value -> apps/api/src/modules/apps/connections/routes.ts (connectionRoutes)
+checkBeforeStore: read-only tool run with the candidate key; refusal stops the save -> apps/api/src/modules/apps/manifest-schema.ts (connectionSchema)
+candidate key reaches only that run's requests -> apps/api/src/modules/apps/sandbox/bridge/context.ts (createBridgeContext)

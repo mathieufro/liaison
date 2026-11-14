@@ -11,7 +11,7 @@ import { loadEffectivePermissions } from "~/modules/permissions/permissions"
 import { createThread } from "~/modules/threads/thread"
 import { createTestOrg } from "./org"
 
-async function buildUserContext(userId: string, orgId: string): Promise<UserContext> {
+export async function buildUserContext(userId: string, orgId: string): Promise<UserContext> {
   const perms = await withPrivilegedDb(orgId, "test-load-perms", (tx) =>
     loadEffectivePermissions(tx, userId, orgId),
   )

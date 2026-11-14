@@ -28,6 +28,18 @@ const TAINT_SOURCES: Array<[string, string[]]> = [
       "gitlab_search",
     ],
   ],
+  [
+    join(BUNDLED, "github", "app.manifest.json"),
+    [
+      "github_list_commits",
+      "github_get_commit",
+      "github_list_pull_requests",
+      "github_get_pull_request",
+      "github_list_issues",
+      "github_read_file",
+      "github_search",
+    ],
+  ],
   [join(BUNDLED, "google-drive", "app.manifest.json"), ["search", "read"]],
   [join(BUNDLED, "database", "app.manifest.json"), ["db_read", "db_query"]],
   [
@@ -37,6 +49,7 @@ const TAINT_SOURCES: Array<[string, string[]]> = [
   [join(BUNDLED, "social", "app.manifest.json"), ["findings_list", "dm_list", "dm_get"]],
   [join(BUNDLED, "ads", "app.manifest.json"), ["graph_get", "google_search_terms"]],
   [join(BUNDLED, "calls", "app.manifest.json"), ["calls_segments_since", "calls_list"]],
+  [join(BUNDLED, "ads", "app.manifest.json"), ["graph_get", "google_search_terms"]],
 ]
 
 describe("taint sources", () => {

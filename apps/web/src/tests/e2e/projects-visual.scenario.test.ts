@@ -805,7 +805,7 @@ test.describe("projects visual", () => {
       name: "RichInbox",
       emailAddress: `rich-${Date.now()}@e2e.test`,
     })
-    await seedRichAttentionFeed(env, {
+    const rich = await seedRichAttentionFeed(env, {
       orgId: world.org.id,
       userId: qa.admin.id,
       adminToken: qa.admin.token,
@@ -817,9 +817,14 @@ test.describe("projects visual", () => {
     await expect(page.getByTestId("home-feed")).toBeVisible({ timeout: 15_000 })
     await expect
       .poll(async () => await page.locator('[data-testid^="attention-row-"]').count(), {
-        timeout: 10_000,
+        timeout: 30_000,
       })
       .toBeGreaterThanOrEqual(8)
+    // The stored lists are refreshed by queued jobs, one per interval: the blocked
+    // task (its block is the seed's last write) can land a refresh after the rest.
+    await expect(
+      page.getByTestId(`attention-row-projects-task-${rich.taskIds.blockedId}`),
+    ).toBeVisible({ timeout: 30_000 })
 
     await assertNoRedOrangeAttentionRow(page)
     // Wait an extra beat for the stagger animation to complete (8 rows × 30ms
@@ -909,7 +914,8 @@ test.describe("projects visual", () => {
       page.getByTestId(`attention-row-tickets-ticket-${seeded.ticketId}`),
       page.getByTestId(`attention-row-kernel-approval_request-${seeded.approvalRequestId}`),
     ]
-    for (const r of rows) await expect(r).toBeVisible({ timeout: 10_000 })
+    // The stored lists are refreshed by a queued job (one interval at most).
+    for (const r of rows) await expect(r).toBeVisible({ timeout: 30_000 })
     const knowledgeIds = await qaKnowledgeReviewDocIds(env, world.org.id)
     for (const id of knowledgeIds) {
       await expect(page.getByTestId(`attention-row-knowledge-document-${id}`)).toBeVisible({

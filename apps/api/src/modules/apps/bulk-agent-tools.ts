@@ -13,6 +13,14 @@ interface BulkDecl {
   minSelection?: number
   /** Defer the derived agent tool from the hot tool core (discoverable via tool_search). */
   deferLoading?: boolean
+  /** Words people use for the action, read only by the tool_search ranker. */
+  searchKeywords?: string[]
+}
+
+/** The search words of a derived agent tool: every word its actions declare, once. */
+function bulkSearchKeywords(decls: readonly BulkDecl[]): { searchKeywords?: string[] } {
+  const words = [...new Set(decls.flatMap((d) => d.searchKeywords ?? []))]
+  return words.length ? { searchKeywords: words } : {}
 }
 
 interface ManifestToolDecl {
@@ -150,6 +158,7 @@ export function registerBulkAgentTools(opts: BulkRegistrationOptions): void {
         gated: false,
         agentVisible: true,
         ...(decl.deferLoading === true ? { deferLoading: true } : {}),
+        ...bulkSearchKeywords([decl]),
         handler: noopHandler,
         params: buildSingleEntryParams(underlying, decl),
         bulkMeta: meta,
@@ -178,6 +187,7 @@ export function registerBulkAgentTools(opts: BulkRegistrationOptions): void {
         requiredScopes,
         gated: false,
         agentVisible: true,
+        ...bulkSearchKeywords(entries.map(({ decl }) => decl)),
         handler: noopHandler,
         params: buildGroupedParams(Object.keys(operationMap)),
         bulkMeta: meta,

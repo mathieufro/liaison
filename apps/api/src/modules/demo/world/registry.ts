@@ -36,6 +36,7 @@
 
 import {
   beatArrived,
+  type DemoWorldId,
   orgKernelSettingsSchema,
   PROSPECT_ROUTINE_NAME,
   type TourBeatGate,
@@ -49,7 +50,7 @@ import { byokEncryptionKey, env } from "~/lib/env"
 import { rootLogger } from "~/lib/logger"
 import { getOrgKernelSettings } from "~/lib/settings"
 import { isChatModelProvider } from "~/modules/agent/credits/model-keys"
-import { isVisitorDemoOrgId } from "~/modules/demo/demo-org"
+import { demoWorldOf, isVisitorDemoOrgId, loadDemoMarker } from "~/modules/demo/demo-org"
 import { demoVerifiedIdentity } from "~/modules/demo/demo-verification"
 import { chatQuestionInjector } from "~/modules/demo/world/chat-question"
 import { commerceOrderInjector } from "~/modules/demo/world/commerce-order"
@@ -57,6 +58,12 @@ import { knowledgeLucasAsksInjector } from "~/modules/demo/world/knowledge-lucas
 import { projectsCommentInjector } from "~/modules/demo/world/projects-comment"
 import { salesEmailInjector } from "~/modules/demo/world/sales-email"
 import { supportTicketInjector } from "~/modules/demo/world/support-ticket"
+import { saasChatQuestionInjector } from "~/modules/demo/worlds/saas/chat-question"
+import { saasKnowledgeAsksInjector } from "~/modules/demo/worlds/saas/knowledge-asks"
+import { paymentRecoveredInjector } from "~/modules/demo/worlds/saas/payment-recovered"
+import { saasProjectsCommentInjector } from "~/modules/demo/worlds/saas/projects-comment"
+import { saasSalesEmailInjector } from "~/modules/demo/worlds/saas/sales-email"
+import { saasSupportTicketInjector } from "~/modules/demo/worlds/saas/support-ticket"
 import {
   assertWorldBeatAllowed,
   completeDoBeat,
@@ -96,6 +103,12 @@ export interface WorldInjector {
   /** The world beat's `injector` slug. */
   id: string
   /**
+   * The demo world the injector writes into. It runs in a workspace of that
+   * world only: the registry refuses it anywhere else. Absent: not bound to a
+   * world (it runs wherever its tour is offered).
+   */
+  world?: DemoWorldId
+  /**
    * What the live event sets off spends on the box's model key (an agent
    * turn, a routine run): it waits until the visitor confirmed their email.
    */
@@ -125,6 +138,12 @@ function injectors(): Map<string, WorldInjector> {
       projectsCommentInjector,
       commerceOrderInjector,
       knowledgeLucasAsksInjector,
+      paymentRecoveredInjector,
+      saasSupportTicketInjector,
+      saasProjectsCommentInjector,
+      saasChatQuestionInjector,
+      saasSalesEmailInjector,
+      saasKnowledgeAsksInjector,
     ].map((injector) => [injector.id, injector]),
   )
   return injectorMap
@@ -181,6 +200,7 @@ function gateForError(err: unknown): TourBeatGate {
 /** What a pass did, for the retry route and the tests. */
 export type WorldBeatOutcome =
   | "not_demo"
+  | "other_world"
   | "no_world_beat"
   | "completed"
   | "replayed"
@@ -385,6 +405,14 @@ export async function runWorldBeatOnce(
   const current = await currentWorldBeat(target)
   if (!current) return "no_world_beat"
   const { beatId, injector, runStartedAt } = current
+  // An injector of one world never writes into a workspace of another.
+  if (injector.world !== undefined && injector.world !== demoWorldOf(await loadDemoMarker(orgId))) {
+    log.warn(
+      { tourId, injector: injector.id, world: injector.world },
+      "World beat injector refused outside its world",
+    )
+    return "other_world"
+  }
 
   const claim = await claimMark(orgId, ownerUserId, tourId, beatId)
   if (claim.state === "busy") return "busy"

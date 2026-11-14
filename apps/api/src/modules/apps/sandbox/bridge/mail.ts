@@ -6,8 +6,31 @@ import { withReleasedSavepoint } from "~/db/savepoint"
 import { schemaRef } from "~/db/schema-ref"
 import { rootLogger } from "~/lib/logger"
 import { quoteIdent } from "~/lib/sql-utils"
+import { currentRunContext } from "~/modules/agent/runtime/run-context"
 import type { BridgeContext } from "~/modules/apps/sandbox/bridge/context"
 import { snakeCase } from "~/modules/apps/sandbox/bridge/shared"
+import {
+  type CommercialSend,
+  recordCommercialSendAfterSend,
+} from "~/modules/mail/commercial-send-record"
+import {
+  type BuildSendGuardInput,
+  buildSendGuard,
+  COMMERCIAL_IDENTITY_MISSING_MESSAGE,
+  checkPersonCompose,
+  commercialFooterFor,
+  commercialRecipient,
+  describeStop,
+  evaluateSendGuard,
+  isPinnedSendGuard,
+  personZone,
+  plainGuardSince,
+  recipientsOf,
+  requestFacts,
+  type SendGuardVerdict,
+  stopCode,
+  withoutThirdParty,
+} from "~/modules/mail/send-guard"
 
 const K = () => drizzleSql.raw(schemaRef("kernel"))
 
@@ -59,13 +82,17 @@ async function mailboxSealErrorContext<T>(
 /** Mail search and the mailbox sealing surface. */
 export function createMailMethods(ctx: BridgeContext): Record<string, any> {
   const {
+    actorType,
     appName,
+    approvalContext,
     assertMailboxNotResetMidRun,
+    bridgeOptions,
     callerScopes,
     coerceByteaRowFields,
     coerceNumericRowFields,
     inheritedActor,
     orgId,
+    refuseWriteOnReadOnlyRun,
     requireApp,
     schemaName,
     stampDeclaredEmit,
@@ -75,7 +102,101 @@ export function createMailMethods(ctx: BridgeContext): Record<string, any> {
     validateEntity,
     validateFields,
   } = ctx
+  // Captured here, in the run's frame: a callback from the sandbox has lost it.
+  const followUpRun = currentRunContext()?.routineFollowUp === true
+  // A person's own click decides for itself. Their request approved by someone
+  // else later has `approvalContext`, and is checked like any other.
+  const directHumanCall = () =>
+    bridgeOptions?.origin === "human-ui" && actorType === "user" && !approvalContext
+
+  /** The contacts behind these addresses, as far as the caller can see them. */
+  const contactIdsFor = async (addresses: readonly string[]): Promise<string[]> => {
+    if (addresses.length === 0) return []
+    const rows = extractRows<{ id: string }>(
+      await txDb.execute(
+        drizzleSql`SELECT id FROM ${K()}.contacts
+                    WHERE org_id = ${orgId}::uuid AND lower(email) = ANY(
+                      ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(addresses)}::jsonb)))`,
+      ),
+    )
+    return rows.map((row) => row.id)
+  }
+
+  /**
+   * The record of this handler run's commercial send, set by the check at send and written by
+   * `mail_commercialSent` once the provider accepted the mail (modules/mail/commercial-send-record.ts).
+   * Kept here, never handed to the sandbox: what is recorded is what the check decided.
+   */
+  const pendingCommercialSend = bridgeOptions?.commercialSend ?? { value: null }
+  const commercialSendOf = (args: {
+    toolName: string
+    recipient: string
+    footer: { textBody?: string; htmlBody?: string }
+    textBody: unknown
+    htmlBody: unknown
+    mode: string | null
+    approvedBy: "person" | "approver" | "policy"
+  }): CommercialSend => ({
+    orgId,
+    actorId: userId,
+    actorType: actorType === "agent" ? "agent" : "user",
+    toolName: args.toolName,
+    recipient: args.recipient,
+    textBody: args.footer.textBody ?? args.textBody,
+    htmlBody: args.footer.htmlBody ?? args.htmlBody,
+    mode: args.mode,
+    approvedBy: args.approvedBy,
+    approverId:
+      args.approvedBy === "approver"
+        ? (approvalContext?.approvalDeciderId ?? null)
+        : args.approvedBy === "person"
+          ? userId
+          : null,
+    ...(approvalContext ? { approvalRequestId: approvalContext.approvalRequestId } : {}),
+  })
+
+  /**
+   * A stop names the record only if the caller can open it: a colleague's mailbox stays unnamed.
+   * Its kind stays as `source`, so a reply on a ticket still reads as a ticket. Unreadable, a
+   * third person in it is named only by their company (`withoutThirdParty`).
+   */
+  const withReadableRecord = async <T extends SendGuardVerdict>(verdict: T): Promise<T> => {
+    const record = verdict.record
+    if (!record) return withoutThirdParty(verdict)
+    const target =
+      record.kind === "ticket"
+        ? drizzleSql.raw(`${quoteIdent(schemaRef("app_tickets"))}.tickets`)
+        : drizzleSql.raw(`${quoteIdent(schemaRef("app_mail"))}.conversations`)
+    try {
+      const rows = extractRows(
+        await txDb.execute(drizzleSql`SELECT 1 FROM ${target} WHERE id = ${record.id}::uuid`),
+      )
+      if (rows.length > 0) return verdict
+    } catch {
+      // Not readable by this caller, by any means: the stop stays, unnamed.
+    }
+    const { record: _unnamed, ...rest } = verdict
+    return withoutThirdParty({ ...rest, source: record.kind } as T)
+  }
+
   return {
+    /** Rows for a company's or a contact's timeline, read under the caller's row security. */
+    mail_activityRead: async (paramsJson: string): Promise<string> => {
+      if (ctx.appName !== "mail")
+        throw new Error("mail_activityRead is only available to the mail app")
+      const { hasScope } = await import("~/modules/permissions/permissions")
+      if (!hasScope("mail:conversations:read", ctx.callerScopes ?? [])) {
+        throw new Error("forbidden: missing scope mail:conversations:read")
+      }
+      const { mailActivityRows } = await import("~/modules/mail/activity-source")
+      const { withReadOnlySource } = await import("~/modules/contacts/activity")
+      const params = JSON.parse(paramsJson)
+      return JSON.stringify(
+        await withReadOnlySource(ctx.txDb as never, (tx) =>
+          mailActivityRows(tx, ctx.orgId, params),
+        ),
+      )
+    },
     // ── Mailbox sealing (spec section 5.2) ──────────────────────────────────
     //
     // The bridge can SEAL. There is deliberately no counterpart that unseals,
@@ -438,6 +559,300 @@ export function createMailMethods(ctx: BridgeContext): Record<string, any> {
         { accountId: params.accountId, messageIds: params.messageIds },
       )
       return JSON.stringify({ count })
+    },
+
+    /**
+     * The send check's value for a staged `mail:compose` or `mail:reply`, in the
+     * preflight, last. A person's own call has none. A follow-up the check would
+     * stop is refused here, so no card is staged that could never send.
+     */
+    mail_buildSendGuard: async (paramsJson: string): Promise<string> => {
+      requireApp("mail", "mail_buildSendGuard")
+      if (directHumanCall()) return JSON.stringify({ applies: false })
+      const params = JSON.parse(paramsJson) as {
+        toolName: "mail:compose" | "mail:reply"
+        to?: unknown
+        cc?: unknown
+        bcc?: unknown
+        conversationId?: string
+        followUp?: BuildSendGuardInput["followUp"]
+      }
+      const recipients = recipientsOf(params.to, params.cc, params.bcc)
+      const zone = await personZone(orgId, userId)
+      const built = await buildSendGuard({
+        ...zone,
+        orgId,
+        toolName: params.toolName,
+        followUpRun,
+        followUp: params.followUp ?? null,
+        recipients,
+        contactIds: await contactIdsFor(recipients),
+        ...(params.conversationId ? { conversationId: params.conversationId } : {}),
+        // Only a person's own click is not staged by an agent (and it has no guard at all).
+        agentStaged: bridgeOptions?.origin !== "human-ui",
+      })
+      if ("commercialIdentityMissing" in built) {
+        return JSON.stringify({
+          applies: true,
+          refusal: {
+            code: "commercial_identity_missing",
+            message: `Nothing was sent and no draft was staged. ${COMMERCIAL_IDENTITY_MISSING_MESSAGE}`,
+            retryable: false,
+          },
+        })
+      }
+      if ("refused" in built) {
+        return JSON.stringify({
+          applies: true,
+          refusal: { ...built.refused, retryable: false },
+        })
+      }
+      const { state } = built.verdict
+      if (state !== "clear" && state !== "held") {
+        const verdict = await withReadableRecord(built.verdict)
+        return JSON.stringify({
+          applies: true,
+          refusal: {
+            code: `SEND_GUARD_${state.toUpperCase()}`,
+            message: describeStop(verdict, "stage"),
+            retryable: !verdict.final,
+            body: { guard: verdict },
+          },
+        })
+      }
+      return JSON.stringify({
+        applies: true,
+        sendGuard: built.sendGuard,
+        ...(built.guardKey ? { guardKey: built.guardKey } : {}),
+      })
+    },
+
+    /**
+     * The check at send, after the approval is recorded and before anything leaves,
+     * on the payload as it stands now. A call staged with no value (a chained
+     * `@ref` step, or one from before this check) is built here as plain.
+     */
+    mail_checkSendGuard: async (paramsJson: string): Promise<string> => {
+      requireApp("mail", "mail_checkSendGuard")
+      const params = JSON.parse(paramsJson) as {
+        toolName?: string
+        sendGuard?: unknown
+        to?: unknown
+        cc?: unknown
+        bcc?: unknown
+        conversationId?: string
+        textBody?: unknown
+        htmlBody?: unknown
+      }
+      const recipients = recipientsOf(params.to, params.cc, params.bcc)
+      if (directHumanCall()) {
+        // A person's own new message to a prospect keeps the company's rules.
+        if (params.toolName !== "mail:compose") return JSON.stringify({ applies: false })
+        const own = await checkPersonCompose(orgId, recipients)
+        if (!own.commercial) return JSON.stringify({ applies: false })
+        if ("refused" in own) {
+          return JSON.stringify({
+            applies: true,
+            state: "refused",
+            final: true,
+            code: own.refused.code,
+            message: own.refused.message,
+            approved: false,
+            guard: { state: "refused", reason: own.refused.message, classification: "marketing" },
+          })
+        }
+        const footer = await commercialFooterFor(
+          orgId,
+          own.recipient,
+          params.textBody,
+          params.htmlBody,
+        )
+        if (!footer) {
+          const message = `Nothing was sent. ${COMMERCIAL_IDENTITY_MISSING_MESSAGE}`
+          return JSON.stringify({
+            applies: true,
+            state: "refused",
+            final: true,
+            code: "commercial_identity_missing",
+            message,
+            approved: false,
+            guard: { state: "refused", reason: message, classification: "marketing" },
+          })
+        }
+        pendingCommercialSend.value = commercialSendOf({
+          toolName: params.toolName,
+          recipient: own.recipient,
+          footer,
+          textBody: params.textBody,
+          htmlBody: params.htmlBody,
+          mode: null,
+          approvedBy: "person",
+        })
+        return JSON.stringify({
+          applies: true,
+          state: "clear",
+          record: { guard: { state: "clear", classification: "marketing", footer: "commercial" } },
+          footer,
+        })
+      }
+      const request = approvalContext
+        ? await requestFacts(orgId, approvalContext.approvalRequestId)
+        : null
+      const guard = isPinnedSendGuard(params.sendGuard)
+        ? params.sendGuard
+        : plainGuardSince(
+            recipients,
+            await contactIdsFor(recipients),
+            request?.createdAt ?? new Date(),
+            params.conversationId,
+          )
+      const zone = await personZone(orgId, request?.requestedBy ?? userId)
+      const checked = await evaluateSendGuard({
+        ...zone,
+        orgId,
+        guard,
+        recipients,
+        ...(params.toolName ? { toolName: params.toolName } : {}),
+        at: "send",
+      })
+      // The class it was checked under now: an edit of the recipients may have made it commercial.
+      const classification = checked.classification ?? guard.classification
+      if (checked.state === "clear") {
+        // A commercial mail gets its footer here, and the send's record says so, so
+        // what left can be checked against the classification it was sent under.
+        const commercial = classification === "marketing"
+        const first = commercial ? await commercialRecipient(orgId, recipients) : null
+        const footer = first
+          ? await commercialFooterFor(orgId, first, params.textBody, params.htmlBody)
+          : null
+        if (commercial && !footer) {
+          // The identity was cleared after staging: the mail cannot leave without it.
+          const message = `The mail was not sent. ${COMMERCIAL_IDENTITY_MISSING_MESSAGE}`
+          return JSON.stringify({
+            applies: true,
+            state: "unavailable",
+            final: false,
+            code: "commercial_identity_missing",
+            message,
+            approved: approvalContext !== undefined,
+            guard: {
+              state: "unavailable",
+              reason: message,
+              mode: guard.mode,
+              classification,
+            },
+          })
+        }
+        if (commercial && footer && first) {
+          pendingCommercialSend.value = commercialSendOf({
+            toolName: params.toolName ?? "mail:compose",
+            recipient: first,
+            footer,
+            textBody: params.textBody,
+            htmlBody: params.htmlBody,
+            mode: guard.mode,
+            approvedBy: approvalContext ? "approver" : "policy",
+          })
+        }
+        return JSON.stringify({
+          applies: true,
+          state: "clear",
+          record: {
+            guard: {
+              state: "clear",
+              mode: guard.mode,
+              classification,
+              ...(footer ? { footer: "commercial" } : {}),
+            },
+          },
+          ...(footer ? { footer } : {}),
+        })
+      }
+      const verdict = await withReadableRecord(checked)
+      return JSON.stringify({
+        applies: true,
+        state: verdict.state,
+        final: verdict.final,
+        code: stopCode(verdict),
+        message: describeStop(verdict, approvalContext ? "approved" : "auto"),
+        approved: approvalContext !== undefined,
+        guard: { ...verdict, mode: guard.mode, classification },
+      })
+    },
+
+    /**
+     * After the provider accepted a mail the check at send cleared as commercial: its record
+     * and the notice mark (modules/mail/commercial-send-record.ts). Nothing when the check set
+     * none. The mail is already gone, so a record that cannot be written is logged, not refused.
+     */
+    mail_commercialSent: async (): Promise<string> => {
+      requireApp("mail", "mail_commercialSent")
+      const send = pendingCommercialSend.value
+      pendingCommercialSend.value = null
+      if (!send) return JSON.stringify({ recorded: false, commercial: false })
+      return JSON.stringify({
+        recorded: await recordCommercialSendAfterSend(send),
+        commercial: true,
+      })
+    },
+
+    // Opt-outs (modules/mail/suppressions.ts). The tools' required scopes are checked again here,
+    // and row security on kernel.suppressions decides each write.
+    mail_suppressionCheck: async (paramsJson: string): Promise<string> => {
+      requireApp("mail", "mail_suppressionCheck")
+      const { hasScope } = await import("~/modules/permissions/permissions")
+      if (!hasScope("mail:suppressions:read", callerScopes ?? [])) {
+        throw new Error("forbidden: missing scope mail:suppressions:read")
+      }
+      const { emails } = JSON.parse(paramsJson) as { emails?: unknown }
+      const list = Array.isArray(emails)
+        ? emails.filter((e): e is string => typeof e === "string" && e.trim() !== "")
+        : []
+      const { checkSuppressions } = await import("~/modules/mail/suppressions")
+      return JSON.stringify(
+        await checkSuppressions({
+          orgId,
+          emails: list,
+          given: Array.isArray(emails) ? emails.length : 0,
+          db: txDb,
+        }),
+      )
+    },
+    mail_suppressionAdd: async (paramsJson: string): Promise<string> => {
+      requireApp("mail", "mail_suppressionAdd")
+      refuseWriteOnReadOnlyRun("kernel.suppressions", "mail_suppressionAdd")
+      const { hasScope } = await import("~/modules/permissions/permissions")
+      if (!hasScope("mail:conversations:write", callerScopes ?? [])) {
+        throw new Error("forbidden: missing scope mail:conversations:write")
+      }
+      const params = JSON.parse(paramsJson) as Record<string, unknown>
+      const { addSuppressionTool } = await import("~/modules/mail/suppressions")
+      return JSON.stringify(
+        await addSuppressionTool({
+          orgId,
+          db: txDb,
+          userId: actorType === "user" || actorType === "agent" ? userId : null,
+          actorType: actorType === "agent" ? "agent" : actorType === "user" ? "user" : "system",
+          params,
+        }),
+      )
+    },
+    mail_suppressionRemove: async (paramsJson: string): Promise<string> => {
+      requireApp("mail", "mail_suppressionRemove")
+      refuseWriteOnReadOnlyRun("kernel.suppressions", "mail_suppressionRemove")
+      const { hasScope } = await import("~/modules/permissions/permissions")
+      if (!hasScope("mail:suppressions:write", callerScopes ?? [])) {
+        throw new Error("forbidden: missing scope mail:suppressions:write")
+      }
+      const params = JSON.parse(paramsJson) as Record<string, unknown>
+      const { removeSuppressionTool } = await import("~/modules/mail/suppressions")
+      return JSON.stringify(
+        await removeSuppressionTool({
+          orgId,
+          db: txDb,
+          params,
+        }),
+      )
     },
 
     /** Mirror a Gmail write-back onto the stored labels, as a delta (modules/mail/gmail-write-back.ts). */

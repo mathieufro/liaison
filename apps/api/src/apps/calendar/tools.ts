@@ -180,7 +180,7 @@ export function toAttendeeDtos(raw: unknown): CalendarAttendeeDto[] {
   return out
 }
 
-interface RawEventRow {
+export interface RawEventRow {
   id: string
   calendar_id: string
   google_event_id?: string | null
@@ -275,6 +275,18 @@ export interface ListEventsParams {
   calendarId?: string
   timeMin: string
   timeMax: string
+  /** Only events one of these addresses attends (one, or up to 50). */
+  attendee?: string | string[]
+}
+
+/** The attendee filter's addresses, lowercased; null when none was asked for. */
+export function attendeeFilter(value: unknown): Set<string> | null {
+  const list = typeof value === "string" ? [value] : Array.isArray(value) ? value : []
+  const emails = list
+    .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+    .slice(0, 50)
+    .map((v) => v.trim().toLowerCase())
+  return emails.length > 0 ? new Set(emails) : null
 }
 
 /**
@@ -436,7 +448,11 @@ export async function listEventsForCaller(
   for (const ex of exceptions) {
     results.push(rowToDto(ex.deleted_at ? { ...ex, status: "cancelled" } : ex))
   }
-  return results
+  const attending = attendeeFilter(params.attendee)
+  if (!attending) return results
+  return results.filter((event) =>
+    event.attendees.some((a) => attending.has(a.email.trim().toLowerCase())),
+  )
 }
 
 interface SearchRow {

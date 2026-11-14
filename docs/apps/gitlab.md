@@ -29,7 +29,7 @@ Ask your agent, for example:
 - "Were all the bugs in milestone 2.3 closed before the 2.3 release?"
 - "Show me the README of the mobile app repository."
 
-The agent starts with `gitlab_list_projects` to find the project, then reads what it needs. File contents are redacted for secrets before the agent sees them.
+The agent starts with `gitlab_list_projects` to find the project, then reads what it needs. Every text it reads (files, diffs, commit messages, issue and merge request text, search results) is redacted for secrets before the agent sees it.
 
 ## Bring repository docs into Knowledge
 

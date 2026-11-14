@@ -114,6 +114,19 @@ export const CONNECTION_ESTIMATES: Array<{ refs: string[]; label: string } & Ste
   { refs: ["gitlab/gitlab"], label: "GitLab: a read-only access token", minutes: [2, 4] },
   { refs: ["boxtal/boxtal"], label: "Boxtal: two API key pairs", minutes: [4, 7] },
   { refs: ["pennylane/pennylane"], label: "Pennylane: an API token", minutes: [3, 6] },
+  // Not in the install the full onboarding was measured on: listed with its own time.
+  {
+    refs: ["github/github"],
+    label: "GitHub: a read-only fine-grained token",
+    minutes: [3, 5],
+    part: "extra",
+  },
+  {
+    refs: ["stripe/stripe"],
+    label: "Stripe: a restricted key and a webhook",
+    minutes: [5, 10],
+    part: "extra",
+  },
   {
     refs: ["calls/transcript-source", "monitoring/alert-source", "projects/ci-source"],
     label:

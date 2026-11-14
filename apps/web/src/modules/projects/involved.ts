@@ -44,6 +44,8 @@ export interface InvolvedTask {
   statusTerminal: boolean
   assigneeId: string | null
   dueDate: string | null
+  /** The task's timebox: present only on a task of a project using time and budgets. */
+  timeboxMinutes?: number | null
   involvement: Involvement
 }
 

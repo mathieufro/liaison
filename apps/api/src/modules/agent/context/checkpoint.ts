@@ -472,6 +472,53 @@ export function trimHistoryToBudget<
   return { rows: rows.slice(from), droppedRows: from, rawTokens, keptTokens: running }
 }
 
+/** The system row type carrying the guide notes of history rows the raw tail cap dropped. */
+export const CARRIED_GUIDE_NOTES_TYPE = "carried_guide_notes"
+
+/**
+ * The guide notes of the rows the raw tail cap dropped (trimHistoryToBudget), as one history row
+ * placed ahead of the kept tail, or null when they carried none. Without it a guide whose note
+ * sat in a dropped row left the history and was sent again as a new note the next turn, and again
+ * each time the window slid: on a long thread the same guides were sent turn after turn. A
+ * checkpoint's fold is different: what it folds is summarised and its guides are sent again once.
+ * NOT a `messages` row and never persisted.
+ */
+export function carriedGuideNotesRow(
+  dropped: ReadonlyArray<{ metadata?: unknown; createdAt?: unknown }>,
+  kept: ReadonlyArray<{ metadata?: unknown }>,
+  params: { threadId: string; orgId: string },
+): HistoryMessageRow | null {
+  // A note the kept tail replays itself is not carried twice.
+  const seen = new Set<string>(
+    kept.flatMap((row) => readGuideNotes(row.metadata).map((n) => n.content)),
+  )
+  const notes: Array<{ afterToolCallId: null; content: string }> = []
+  for (const row of dropped) {
+    for (const note of readGuideNotes(row.metadata)) {
+      if (seen.has(note.content)) continue
+      seen.add(note.content)
+      notes.push({ afterToolCallId: null, content: note.content })
+    }
+  }
+  if (notes.length === 0) return null
+  const at = dropped[dropped.length - 1]?.createdAt ?? null
+  return {
+    id: `carried-guide-notes:${params.threadId}`,
+    threadId: params.threadId,
+    orgId: params.orgId,
+    authorId: null,
+    authorType: "system",
+    authorAgentId: null,
+    content: "",
+    metadata: { type: CARRIED_GUIDE_NOTES_TYPE, guideNotes: notes },
+    requiredScopes: [],
+    disclosureList: null,
+    createdAt: at,
+    updatedAt: at,
+    deletedAt: null,
+  } as unknown as HistoryMessageRow
+}
+
 /**
  * The checkpoint summary as a history message row, so the renderer treats it
  * exactly like any other stored row (one pure function of the stored state,

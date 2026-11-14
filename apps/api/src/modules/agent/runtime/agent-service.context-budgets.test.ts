@@ -18,10 +18,17 @@ import {
   TURN_SYSTEM_PROMPT_TOKEN_CAP,
   TURN_TOOL_SCHEMA_TOKEN_CAP,
 } from "~/modules/agent/context/context"
-import { DISCOVERED_TOOLS_META_KEY } from "~/modules/agent/context/discovery-window"
+import {
+  DISCOVERED_TOOLS_META_KEY,
+  TOOL_ORDER_META_KEY,
+} from "~/modules/agent/context/discovery-window"
 import { AgentServiceTestAccess } from "~/modules/agent/runtime/agent-service"
 import { planTurnToolBudget } from "~/modules/agent/runtime/turn-tool-budget"
-import { agentInstructionsRegistry, toolRegistry } from "~/modules/apps/app-registries"
+import {
+  agentInstructionsRegistry,
+  entityRegistry,
+  toolRegistry,
+} from "~/modules/apps/app-registries"
 import { acquireTestLock, releaseTestLock } from "~/tests/route-test-setup"
 
 const ORIG_ANTHROPIC_KEY = process.env.LIAISON_ANTHROPIC_API_KEY
@@ -78,12 +85,14 @@ function registerTool(
   name: string,
   description: string,
   requiredScopes: string[] = ["kernel:threads:read"],
+  extra: { focusCore?: true | string } = {},
 ) {
   toolRegistry.set([ORG_ID, app, name], {
     appName: app,
     name,
     description,
     requiredScopes,
+    ...extra,
     handler: async () => ({ ok: true, tool: `${app}__${name}` }),
   } as any)
 }
@@ -389,6 +398,100 @@ describe("context budgets hold on the request a turn actually sends", () => {
         process.env.LIAISON_ANTHROPIC_API_KEY = ORIG_ANTHROPIC_KEY
       else delete process.env.LIAISON_ANTHROPIC_API_KEY
     }
+  })
+
+  // An app whose manifest names a core list (`focusCore`): on a thread made
+  // for one of its entities the turn loads that list with its schemas. With a
+  // fixed tool list (kernel__call_tool held) every other tool of the app is
+  // held for the SDK and listed by name only, so a first call through
+  // kernel__call_tool runs; without one they stay in the deferred catalog.
+  describe("a thread's own app with a core list", () => {
+    const CORE_APP = "corebill"
+    const coreNames = Array.from({ length: 30 }, (_, i) => `op_${String(i).padStart(2, "0")}`)
+    const sdk = (name: string) => `${CORE_APP}__${name}`
+    const turn = async (withCallTool: boolean) => {
+      capturedParams = null
+      process.env.LIAISON_ANTHROPIC_API_KEY = "sk-test-key"
+      agentInstructionsRegistry.set([ORG_ID, CORE_APP], "The core bill app.")
+      entityRegistry.set([ORG_ID, CORE_APP, "invoice"], { labelField: "number", handlePrefix: "I" })
+      const declared: Record<string, true | string> = {
+        op_00: true,
+        op_01: "invoice",
+        op_02: "credit_note",
+      }
+      for (const name of coreNames) {
+        const focusCore = declared[name]
+        registerTool(
+          CORE_APP,
+          name,
+          `${sdk(name)}: ${"does one billing thing. ".repeat(20)}`,
+          ["kernel:threads:read"],
+          focusCore ? { focusCore } : {},
+        )
+      }
+      // The kernel's tools are registered by the first turn of this file: a
+      // turn without a fixed list is one whose tool set holds no call_tool.
+      const callTool = toolRegistry.get([ORG_ID, "kernel", "call_tool"])
+      if (!withCallTool) toolRegistry.delete([ORG_ID, "kernel", "call_tool"])
+      else expect(callTool).toBeDefined()
+      await sql`DELETE FROM kernel.messages WHERE thread_id = ${THREAD_ID}`
+      await sql`UPDATE kernel.threads SET agent_discovered_tools = '[]'::jsonb, created_from = ${JSON.stringify({ app: CORE_APP, entityType: "invoice", entityId: crypto.randomUUID() })}::jsonb WHERE id = ${THREAD_ID}`
+      try {
+        const { runAgentChat } = await import("./agent-service")
+        const result = await runAgentChat({
+          threadId: THREAD_ID,
+          content: "mark it paid",
+          actor: ACTOR,
+          orgId: ORG_ID,
+        })
+        const step0 = await capturedParams.prepareStep({ steps: [], stepNumber: 0 })
+        const active = step0.activeTools as string[]
+        const messages = JSON.stringify(capturedParams.messages)
+        await result.finalize({
+          usage: { promptTokens: 1000, completionTokens: 10 },
+          finishReason: "stop",
+          text: "ok",
+          steps: [],
+        })
+        // The list the provider was sent, as the reply records it for the next turn.
+        const [reply] = await sql<{ order: string[] | null }[]>`
+          SELECT metadata->'${sql.unsafe(TOOL_ORDER_META_KEY)}' AS order FROM kernel.messages
+          WHERE thread_id = ${THREAD_ID} AND author_type = 'agent'
+          ORDER BY created_at DESC LIMIT 1`
+        return { active, sent: reply?.order ?? [], messages }
+      } finally {
+        await sql`UPDATE kernel.threads SET created_from = NULL WHERE id = ${THREAD_ID}`
+        await sql`DELETE FROM kernel.messages WHERE thread_id = ${THREAD_ID}`
+        if (!withCallTool && callTool) toolRegistry.set([ORG_ID, "kernel", "call_tool"], callTool)
+        agentInstructionsRegistry.delete([ORG_ID, CORE_APP])
+        entityRegistry.delete([ORG_ID, CORE_APP, "invoice"])
+        for (const name of coreNames) toolRegistry.delete([ORG_ID, CORE_APP, name])
+        if (ORIG_ANTHROPIC_KEY !== undefined)
+          process.env.LIAISON_ANTHROPIC_API_KEY = ORIG_ANTHROPIC_KEY
+        else delete process.env.LIAISON_ANTHROPIC_API_KEY
+      }
+    }
+
+    it("sends that list's schemas and holds every other tool, listed by name, for a call", async () => {
+      const { active, sent, messages } = await turn(true)
+      expect(sent).toContain("kernel__call_tool")
+      // A tool named for an entity type the thread is not about is by name only.
+      expect(sent.filter((n) => n.startsWith(`${CORE_APP}__`)).sort()).toEqual([
+        sdk("op_00"),
+        sdk("op_01"),
+      ])
+      for (const name of coreNames) expect(active).toContain(sdk(name))
+      expect(messages).toContain(`- ${sdk("op_05")}`)
+      expect(messages).toContain(`- ${sdk("op_02")}`)
+      expect(messages).not.toContain(`- ${sdk("op_00")}`)
+    })
+
+    it("without a fixed list, loads that list and leaves the others in the deferred catalog", async () => {
+      const { active, sent } = await turn(false)
+      expect(sent).not.toContain("kernel__call_tool")
+      const loaded = active.filter((n) => n.startsWith(`${CORE_APP}__`))
+      expect(loaded.sort()).toEqual([sdk("op_00"), sdk("op_01")])
+    })
   })
 })
 

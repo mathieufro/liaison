@@ -27,6 +27,7 @@
 
 export {
   type ConvertToInvoiceResult,
+  documentsConvertLocal,
   documentsConvertToInvoice,
   documentsConvertToInvoicePreflight,
 } from "./mutations/convert-to-invoice"

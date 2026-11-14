@@ -13,6 +13,7 @@ import { api } from "@liaison/test-helpers"
 import type { Page } from "@playwright/test"
 import {
   activeTabScope,
+  expandToolRollups,
   loginAsAdmin,
   loginAsAmina,
   openAgentApp,
@@ -356,6 +357,7 @@ test.describe("Agent App: Skills", () => {
       .filter({ hasText: S1_ANSWER })
       .last()
     await expect(turnRow).toBeVisible({ timeout: 30_000 })
+    await expandToolRollups(turnRow)
     await expect(turnRow.locator('[data-tool-name="kernel__skill_read"]').first()).toBeVisible({
       timeout: 20_000,
     })
@@ -462,6 +464,7 @@ test.describe("Agent App: Skills", () => {
       .filter({ hasText: S2_ANSWER })
       .last()
     await expect(turnRow).toBeVisible({ timeout: 30_000 })
+    await expandToolRollups(turnRow)
     await expect(turnRow.locator('[data-tool-name="kernel__skill_read"]').first()).toBeVisible({
       timeout: 20_000,
     })

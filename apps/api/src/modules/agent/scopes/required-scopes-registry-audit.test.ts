@@ -67,8 +67,13 @@ describe("required scopes registry audit", () => {
     const apps = new Set(orgTools().map(([[, app]]) => app))
     expect(bundled.length).toBeGreaterThanOrEqual(5)
     // registerApps drops an invalid descriptor with only a log line, so a
-    // missing app here means the audit below never saw its tools.
-    expect(bundled.filter((name) => !apps.has(name))).toEqual([])
+    // missing app here means the audit below never saw its tools. An app that
+    // declares no tool (a connector whose tools come later) registers none.
+    const withTools = bundled.filter(
+      (name) => Object.keys((bundledDescriptor(name).tools as object | undefined) ?? {}).length > 0,
+    )
+    expect(withTools.length).toBeGreaterThanOrEqual(5)
+    expect(withTools.filter((name) => !apps.has(name))).toEqual([])
     expect(apps.has("kernel")).toBe(true)
   })
 

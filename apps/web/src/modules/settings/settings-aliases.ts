@@ -113,6 +113,7 @@ export const SETTINGS_ALIASES: readonly SettingsAlias[] = [
   ...toConnector("database", "/settings/database"),
   ...toConnector("google-drive", "/settings/google-drive"),
   ...toConnector("pennylane", "/settings/pennylane"),
+  ...toConnector("stripe", "/settings/stripe"),
   ...toConnector("api-connector", "/settings/api-connector"),
 ]
 

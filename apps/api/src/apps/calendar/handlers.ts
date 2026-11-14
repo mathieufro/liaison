@@ -9,6 +9,7 @@
 import type { CoreCtx } from "~/modules/apps/core/ctx"
 
 export interface CalendarMethods {
+  calendar_activityRead(paramsJson: string): Promise<string>
   getUserId(): string
   getOrgId(): string
   db_findMany(entity: string, optsJson: string): Promise<string>
@@ -1333,4 +1334,9 @@ export async function exportCalendar(params: unknown, ctx: CalendarCtx): Promise
     status: r.sync_status,
     createdAt: r.created_at,
   }))
+}
+
+/** Timeline rows for the kernel's activity read (activitySources), host-side. */
+export async function activityRead(params: unknown, ctx: CalendarCtx): Promise<unknown> {
+  return JSON.parse(await ctx.calendar_activityRead(JSON.stringify(params ?? {})))
 }

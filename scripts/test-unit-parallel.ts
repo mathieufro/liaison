@@ -322,12 +322,17 @@ async function runUnitOnShard(files: string[], shardId: number, token: number): 
  *   - bounds the process's RSS growth (`memoryUsage().rss`): what earlier files
  *     allocated and the heap they left fragmented count against the bound
  *     (org-archive/writer.test.ts grew 200 MB after export/orchestrator.test.ts
- *     and its neighbours, 6 MB alone).
+ *     and its neighbours, 6 MB alone), or
+ *   - bounds CPU time (`process.cpuUsage()`): the counter is the whole process's,
+ *     so what earlier files left running and the GC of the heap they grew count
+ *     against the bound (tool-bench/bench.test.ts measured 6.9 s of ranking CPU
+ *     in a batch of 8 on CI, 1.8 s alone in the same run).
  * A file that fails inside a batch is rerun alone before it counts as failed
  * (cross-file bleed is the batch's fault, not the file's), and the report names
  * every file that only passed alone.
  */
-const SOLO_PATTERN = /\bmock\.module\(|\b_getGlobalHandlerCount\(\)|\bmemoryUsage\(\)\.rss\b/
+const SOLO_PATTERN =
+  /\bmock\.module\(|\b_getGlobalHandlerCount\(\)|\bmemoryUsage\(\)\.rss\b|\bcpuUsage\(/
 function isSolo(file: string): boolean {
   if (BATCH <= 1) return true
   if ((HISTORY[file] ?? 0) >= SLOW_SOLO_MS) return true

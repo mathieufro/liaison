@@ -21,7 +21,7 @@ import {
   RetryError,
   streamText,
 } from "ai"
-import { and, asc, desc, eq, isNull } from "drizzle-orm"
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm"
 import { HTTPException } from "hono/http-exception"
 import type { PrivilegedDb, RlsClient } from "~/db"
 import { withPrivilegedDb } from "~/db/privileged"
@@ -50,11 +50,6 @@ import {
 } from "~/lib/failure-severity"
 import { rootLogger } from "~/lib/logger"
 import {
-  normalizeAppGuide,
-  renderAppGuideBlock,
-  selectAppGuideParts,
-} from "~/modules/agent/context/app-guide"
-import {
   advanceCheckpoint,
   checkpointAsHistoryRow,
   historyBudget,
@@ -68,12 +63,12 @@ import {
 import { estimateTokens, runCompaction } from "~/modules/agent/context/compaction"
 import {
   assembleContext,
-  coveringGuideKeys,
-  discoveredAppNames,
   estimateToolSchemaTokens,
+  personHasNoComputer,
   RUNTIME_TAIL_OPEN,
   stepInputBreakdown,
   TURN_TOOL_SCHEMA_TOKEN_CAP,
+  undeliveredGuideBlocks,
 } from "~/modules/agent/context/context"
 import {
   DISCOVERED_TOOLS_META_KEY,
@@ -88,10 +83,13 @@ import {
   indexedToolPart,
   lastToolResultCallId,
   loadedToolPart,
+  noteTokens,
   renderGuideNote,
   renderIndexedToolsBlock,
   renderLoadedToolsBlock,
   skillNotePart,
+  storedNotesTokens,
+  THREAD_GUIDE_NOTES_TOKEN_CAP,
   withGuideNotes,
 } from "~/modules/agent/context/guide-notes"
 import { replyLanguage } from "~/modules/agent/context/reply-language"
@@ -177,6 +175,7 @@ import { resolveEffectiveAgentModel } from "~/modules/agent/runtime/model-overri
 import { connectionClaimVerdict } from "~/modules/agent/runtime/open-cards"
 import { persistAgentTurn } from "~/modules/agent/runtime/persist-agent-turn"
 import { failureContextRequiredScopes } from "~/modules/agent/runtime/reinvoke"
+import { createReplyText, joinStepText, joinStepTexts } from "~/modules/agent/runtime/reply-flatten"
 import { clipAndMarkStepMessages } from "~/modules/agent/runtime/rolling-cache-breakpoints"
 import {
   currentRunContext,
@@ -214,6 +213,16 @@ import {
   turnSupersededByNewerMessage,
   waitForEarlierLiveTurn,
 } from "~/modules/agent/runtime/superseded-turn"
+import {
+  markSupersededWithinTurn,
+  supersedeOlderToolCards,
+  type ToolCallPresentation,
+  type ToolCardFields,
+  toolCallPresentation,
+  toolCardFieldsForError,
+  toolCardFieldsForResult,
+  withToolCardFieldsOnSteps,
+} from "~/modules/agent/runtime/tool-card-store"
 import { TurnEffectKeys } from "~/modules/agent/runtime/tool-effect-key"
 import {
   createTurnDeadline,
@@ -223,11 +232,14 @@ import {
 import {
   appOfSdkToolName,
   focusAppNames,
+  focusCorePreload,
   focusHeadroomFill,
   resolveTurnFocus,
+  withFocusCore,
 } from "~/modules/agent/runtime/turn-focus"
 import { registerDurableTurn } from "~/modules/agent/runtime/turn-handoff"
 import {
+  checkInFacts,
   createTurnInputBudget,
   TURN_BUDGET_ANSWER_ONLY_RESULT,
   TURN_BUDGET_CHECK_IN_NOTE,
@@ -292,7 +304,6 @@ import {
   isUnresolvedToolCallError,
   repairHeldToolCall,
 } from "~/modules/agent/tools/tool-name-resolve"
-import { agentInstructionsRegistry } from "~/modules/apps/app-registries"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import { primeOrgApps } from "~/modules/apps/org-apps"
 import { PaymentRequiredError } from "~/modules/cloud/suspension"
@@ -343,11 +354,16 @@ export function withPriorSteps(
 ): FinalizeInput {
   if (prior.length === 0) return input
   const sum = (pick: (v: JournalStepView) => number) => prior.reduce((n, v) => n + pick(v), 0)
-  const priorText = prior.map((v) => v.text).join("")
+  const priorText = joinStepTexts(prior.map((v) => v.text))
   const priorReasoning = prior.map((v) => v.reasoning).join("")
+  // A retraction is measured on this attempt's streamed text, so it is cut from
+  // this attempt's output before the merge (`retractedAttempt`); nothing is cut
+  // after it. The merged reply carries no stepTexts: they would count from the
+  // attempt's start, not the turn's.
+  const { stepTexts: _thisAttempt, ...rest } = input
   return {
-    ...input,
-    text: priorText + input.text,
+    ...rest,
+    text: joinStepText(priorText, input.text),
     ...(input.reasoning !== undefined || priorReasoning
       ? { reasoning: priorReasoning + (input.reasoning ?? "") }
       : {}),
@@ -367,6 +383,21 @@ export function withPriorSteps(
       reasoningTokens: (input.usage.reasoningTokens ?? 0) + sum((v) => v.usage.reasoningTokens),
     },
   }
+}
+
+/**
+ * An attempt's output without its retracted false text, cut on the very text
+ * the retractions were measured on: this attempt's own streamed text, before a
+ * resumed turn joins the earlier attempts' steps in front of it
+ * (`withPriorSteps`). The later cut first, so the earlier one's offsets hold.
+ */
+export function retractedAttempt<T extends FinalizeInput>(
+  input: T,
+  retractions: { first: Retraction | null; second: Retraction | null },
+): T {
+  const cut = (out: T, r: Retraction | null): T =>
+    r ? { ...out, ...retractTurnOutput(out, r) } : out
+  return cut(cut(input, retractions.second), retractions.first)
 }
 
 /**
@@ -1327,6 +1358,10 @@ interface RunAgentChatResult {
     }
     finishReason: string
     text: string
+    /** Each step's text exactly as streamed, in order, when `text` joins the steps as
+     *  paragraphs (reply-flatten.ts): a retraction, counted on the streamed text, is
+     *  cut from these and the steps joined again. */
+    stepTexts?: readonly string[]
     reasoning?: string
     /** Ordered reasoning/tool interleave — see TurnTimelineEntry. */
     timeline?: TurnTimelineEntry[]
@@ -1557,6 +1592,24 @@ async function resolveScopeOverride(
     effectiveScope,
     withheld: withheldByRoom(agent.scopeCeiling, grants, effectiveScope),
   }
+}
+
+/** The tokens of the guide notes the thread's replies stored so far (THREAD_GUIDE_NOTES_TOKEN_CAP). */
+export async function getThreadNotesTokens(threadId: string, orgId: string): Promise<number> {
+  const rows = await withPrivilegedDb(orgId, "get-thread-notes-tokens", async (tx) =>
+    tx
+      .select({ metadata: messages.metadata })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.threadId, threadId),
+          eq(messages.orgId, orgId),
+          eq(messages.authorType, "agent"),
+          sql`${messages.metadata} ? ${GUIDE_NOTES_META_KEY}`,
+        ),
+      ),
+  )
+  return storedNotesTokens(rows.map((r) => r.metadata))
 }
 
 export async function getLastInputTokens(threadId: string, orgId: string): Promise<number> {
@@ -2271,6 +2324,7 @@ async function runAgentChatTurn(
   const rootRunId = crypto.randomUUID()
   // A demo visitor's turn (step budget, visitor tool result limits).
   const visitorTurn = await isVisitorTurn(orgId, creditCheck.demo !== undefined)
+  const noOwnComputer = await personHasNoComputer(orgId, actor)
   // A routine run's token account (S17, A34), inherited BY REFERENCE from the
   // frame this turn was started in: the routine tick's frame, or the asking
   // turn's frame for an agents_ask callee. Every step of this turn adds to it,
@@ -2299,6 +2353,15 @@ async function runAgentChatTurn(
     currentRunContext()?.routineId === params.routineId &&
     currentRunContext()?.routineMailboxReaderUserId
       ? { routineMailboxReaderUserId: currentRunContext()?.routineMailboxReaderUserId }
+      : {}),
+    // A follow-up routine's tick (routines.follow_up): its turn stages drafts
+    // and runs on instead of pausing, and its mail checks as a follow-up.
+    // Only into the turn of THAT routine's tick, as the reader above.
+    ...(params.routineId &&
+    !params.coordination &&
+    currentRunContext()?.routineId === params.routineId &&
+    currentRunContext()?.routineFollowUp === true
+      ? { routineFollowUp: true }
       : {}),
     // The same tick's park signal (routine-mailbox-wait.ts), and the browser
     // nonce of a run its owner started with Run now: only into the turn of
@@ -2332,6 +2395,8 @@ async function runAgentChatTurn(
     // Code on the person's own machine (run_on_my_computer) runs without an approval only here.
     humanTurn: humanTypedTurn,
     ...(visitorTurn ? { visitorTurn: true } : {}),
+    // A person with no computer set up for Liaison is offered no tool that reads one.
+    ...(noOwnComputer ? { noOwnComputer: true } : {}),
     // Client-minted turn nonce for the mailbox decrypt protocol. Its presence is
     // what lets this turn ask the browser to decrypt; its absence is the locked
     // path (blueprint Task 9.2).
@@ -2398,7 +2463,9 @@ async function runAgentChatTurn(
   )
   for (const name of Object.keys(tools)) runFrame.turnToolNames.add(name)
   // Deferred SDK names the actor could unlock (scope-visible, chat-reachable).
-  const deferredNames = new Set(listDeferredTools(orgId, actor).map((t) => t.sdkName))
+  const deferredNames = new Set(
+    listDeferredTools(orgId, actor, "agent", false, { noOwnComputer }).map((t) => t.sdkName),
+  )
   // A tool registered after the set above was built (an MCP server's tool list
   // arriving with the dial tool_search makes) joins it when tool_search loads
   // it, so it is callable on the next step of THIS turn. Only the loaded names
@@ -2436,7 +2503,6 @@ async function runAgentChatTurn(
   // A SOFT focus app (the view a person's message was sent from, in any
   // other org) only fills the room the budget left: the client's active tab
   // never pushes out what the conversation itself loaded.
-  const toolDefs = tools as Record<string, { description?: string; inputSchema?: unknown }>
   const focus = await resolveTurnFocus({
     orgId,
     threadId,
@@ -2447,6 +2513,11 @@ async function runAgentChatTurn(
   })
   const focusApps = focusAppNames(focus)
   const hardFocusApps = focusAppNames(focus, true)
+  const toolDefs = withFocusCore(
+    orgId,
+    hardFocusApps,
+    tools as Record<string, { description?: string; inputSchema?: unknown }>,
+  )
   // THE TOOLS THE LAST TURN SENT STAY. A tool that leaves the list moves every
   // tool after it, and the provider then re-reads the request from there: on
   // an upstream that renders the tools ahead of the conversation, the whole
@@ -2464,9 +2535,19 @@ async function runAgentChatTurn(
     carried.add(name)
   }
   const preloaded: string[] = []
-  for (const name of Object.keys(tools)) {
-    if (!deferredNames.has(name) || discoveredTools.has(name)) continue
-    if (!hardFocusApps.has(appOfSdkToolName(name))) continue
+  // An app with a core list (manifest `focusCore`) preloads that list; its
+  // other tools are listed by name and purpose once the budget has run, below.
+  const focusPlan = focusCorePreload({
+    candidates: Object.keys(tools).filter(
+      (name) =>
+        deferredNames.has(name) &&
+        !discoveredTools.has(name) &&
+        hardFocusApps.has(appOfSdkToolName(name)),
+    ),
+    tools: toolDefs,
+    focus,
+  })
+  for (const name of focusPlan.preload) {
     discoveredTools.add(name)
     // Counted as the turn's starting surface, not as its own discovery: a
     // preload is no evidence the conversation used the app, so it does not
@@ -2479,6 +2560,8 @@ async function runAgentChatTurn(
   // turn can call a loaded tool through kernel__call_tool: the tools the last
   // turn sent are the list, so none of them may be shed.
   const fixedListMode = CALL_TOOL_SDK_NAME in tools
+  // A hard focus app's tools off its core list, listed by name only (below).
+  const focusIndexed = new Set<string>()
   // THE TOOLS LOADED ON SPECULATION (the apps the last turns worked, the
   // view's app): most are never called, and on a fixed list a loaded tool's
   // schema rides a guide note that stays in the history for good. They are
@@ -2573,6 +2656,21 @@ async function runAgentChatTurn(
       discoveredTools.add(name)
       if (fixedListMode) speculativeTools.add(name)
     }
+    // THE REST OF A CORE-LISTED FOCUS APP: loaded for the SDK and listed by
+    // name and purpose (isIndexOnly), so a first call with fitting arguments
+    // runs through kernel__call_tool and the schema follows when asked for.
+    // They cost an index line, not a schema, so they come after the budget.
+    // Without a fixed list there is no index: they stay in the deferred
+    // catalog, announced and one tool_search away.
+    if (fixedListMode) {
+      for (const name of focusPlan.indexOnly) {
+        if (discoveredTools.has(name)) continue
+        discoveredTools.add(name)
+        discoveredAtStart.add(name)
+        speculativeTools.add(name)
+        focusIndexed.add(name)
+      }
+    }
     if (recentFill.length > 0) {
       log.info(
         {
@@ -2592,6 +2690,7 @@ async function runAgentChatTurn(
           focusApps: [...focusApps],
           hardFocusApps: [...hardFocusApps],
           preloadedToolCount: preloaded.filter((n) => discoveredTools.has(n)).length,
+          indexedFocusToolCount: focusIndexed.size,
           trimmedFocusToolCount: overflow.length,
           headroomToolCount: softFill.length,
         },
@@ -2621,7 +2720,9 @@ async function runAgentChatTurn(
   // (takeGuideNote), and the model calls it through kernel__call_tool.
   const fixedToolList: Set<string> | null = fixedListMode
     ? (() => {
-        const startSet = new Set(activeAtStart)
+        // A tool listed by name only is not on the list: it is called through
+        // kernel__call_tool, and listing it would send its schema after all.
+        const startSet = new Set(activeAtStart.filter((name) => !focusIndexed.has(name)))
         if (threadToolOrder.length === 0) return startSet
         const ordered = new Set(threadToolOrder)
         return new Set([
@@ -2827,7 +2928,22 @@ async function runAgentChatTurn(
     !focusPreloaded.has(name) &&
     !guidePartsDelivered.has(loadedToolPart(name)) &&
     (speculativeTools.has(name) || guidePartsDelivered.has(indexedToolPart(name)))
+  // THE CONVERSATION'S NOTES BUDGET (THREAD_GUIDE_NOTES_TOKEN_CAP): what the
+  // thread's replies stored, plus this turn's notes so far, against the cap,
+  // after every turn whether or not the thread was compacted. A routine run's
+  // history starts at its own trigger, so its notes are counted from there:
+  // it is not capped by the earlier ticks'.
+  const threadNotesTokens = anchoredHistory ? 0 : await getThreadNotesTokens(threadId, orgId)
+  const notesBudgetLeft = (): number | null =>
+    anchoredHistory
+      ? null
+      : THREAD_GUIDE_NOTES_TOKEN_CAP -
+        threadNotesTokens -
+        guideNotes.reduce((n, note) => n + noteTokens(note.content), 0)
+  // Parts a note past the budget left out: not offered again this turn.
+  const notesWithheld = new Set<string>()
   const takeGuideNote = (): string | null => {
+    const known = new Set([...guidePartsDelivered, ...notesWithheld])
     const blocks: string[] = []
     const parts: string[] = []
     const skillBlocks = pendingSkillNotes.map((note) => note.text)
@@ -2838,20 +2954,9 @@ async function runAgentChatTurn(
     const guidedTools = new Set([...discoveredTools].filter((name) => !isIndexOnly(name)))
     // A guide that names its tools (kernel-config, ...) arrives with the
     // first of them, like an app's guide arrives with the app's first tool.
-    for (const app of new Set([
-      ...discoveredAppNames(guidedTools),
-      ...coveringGuideKeys(orgId, guidedTools),
-    ])) {
-      const instr = agentInstructionsRegistry.get([orgId, app])
-      if (!instr) continue
-      const selected = selectAppGuideParts(app, normalizeAppGuide(instr), guidedTools)
-      const core = guidePartsDelivered.has(app) ? undefined : selected.core
-      const sections = selected.sections.filter((section) => !guidePartsDelivered.has(section.key))
-      if (core === undefined && sections.length === 0) continue
-      blocks.push(renderAppGuideBlock(app, { core, sections }))
-      if (core !== undefined) parts.push(app)
-      for (const section of sections) parts.push(section.key)
-    }
+    const guides = undeliveredGuideBlocks(orgId, guidedTools, known)
+    blocks.push(...guides.blocks)
+    parts.push(...guides.parts)
     // A loaded tool the thread's fixed list leaves out: its description and
     // parameters, once, so it can be called through kernel__call_tool.
     // A tool known by name only gets one index line instead.
@@ -2860,13 +2965,7 @@ async function runAgentChatTurn(
       indexed,
       parts: toolParts,
     } = fixedToolList
-      ? undeliveredLoadedTools(
-          computeActiveTools(),
-          fixedToolList,
-          tools,
-          guidePartsDelivered,
-          isIndexOnly,
-        )
+      ? undeliveredLoadedTools(computeActiveTools(), fixedToolList, tools, known, isIndexOnly)
       : { loaded: [], indexed: [], parts: [] }
     parts.push(...toolParts)
     if (
@@ -2877,17 +2976,45 @@ async function runAgentChatTurn(
     ) {
       return null
     }
-    for (const part of parts) guidePartsDelivered.add(part)
     const toolBlocks = [
       ...(loaded.length > 0 ? [renderLoadedToolsBlock(loaded)] : []),
       ...(indexed.length > 0 ? [renderIndexedToolsBlock(indexed)] : []),
     ]
-    return renderGuideNote(
+    const full = renderGuideNote(
       blocks,
       parts,
       toolBlocks.length > 0 ? toolBlocks.join("\n\n") : undefined,
       skillBlocks,
     )
+    const left = notesBudgetLeft()
+    if (left === null || noteTokens(full) <= left) {
+      for (const part of parts) guidePartsDelivered.add(part)
+      return full
+    }
+    // Past the budget: the tools it loads, by name only, when that fits; the
+    // guides and schemas are left out (a misfit call answers with the
+    // parameters, fixedToolListRepair).
+    for (const part of parts) notesWithheld.add(part)
+    const byName = [
+      ...loaded.map((t) => ({ name: t.name, description: t.description })),
+      ...indexed,
+    ].filter((t) => !known.has(indexedToolPart(t.name)))
+    const indexParts = byName.map((t) => indexedToolPart(t.name))
+    const slim =
+      byName.length > 0 ? renderGuideNote([], indexParts, renderIndexedToolsBlock(byName)) : null
+    log.info(
+      {
+        threadId,
+        orgId,
+        noteTokens: noteTokens(full),
+        left,
+        listedByName: slim && noteTokens(slim) <= left ? byName.length : 0,
+      },
+      "guide_notes_over_thread_budget",
+    )
+    if (!slim || noteTokens(slim) > left) return null
+    for (const part of indexParts) guidePartsDelivered.add(part)
+    return slim
   }
   // The turn's own note goes after the person's message, before the turn's
   // runtime context (which is never replayed): the next turn's history
@@ -3037,6 +3164,10 @@ async function runAgentChatTurn(
       : params.background || params.routineId || params.coordination || params.agentDispatched
         ? null
         : createTurnInputBudget()
+  // Every step of the turn, whichever stream ran it (the turn's own, a
+  // correction continuation, an earlier attempt of a resumed turn): the
+  // check-in answers from all of them (checkInFacts).
+  const turnSteps: Array<NonNullable<Parameters<typeof checkInFacts>[0]>[number]> = []
   // Run-scoped clip-once ledger for intra-run micro-compaction (prepareStep).
   const clippedResultIds: ClipLedger = new Map()
   // A repeat fetch pins the earlier result through it (web-fetch-repeat.ts).
@@ -3134,6 +3265,24 @@ async function runAgentChatTurn(
   }
   // The finalize's view of the earlier attempts' steps.
   const priorViews: JournalStepView[] = journaledSteps.map((step) => step.view)
+  // A resumed turn's earlier attempts took steps: they count against its
+  // budget, a visitor's step cap included, so a resume never starts the count
+  // again (a visitor turn handed off mid-step ran up to twice its cap), and the
+  // check-in lists their calls with this attempt's.
+  for (const view of priorViews) {
+    turnBudget?.recordStep(view.usage.inputTokens)
+    turnSteps.push({
+      toolCalls: view.toolCalls.map((c) => ({
+        toolName: c.toolName,
+        toolCallId: c.toolCallId,
+        input: c.args,
+      })),
+      toolResults: view.toolResults.map((r) => ({ toolCallId: r.toolCallId, output: r.result })),
+    })
+  }
+  if (visitorStepBudget !== null && creditCheck.demo && priorViews.length > 0) {
+    creditCheck.demo.maxSteps = Math.max(1, visitorStepBudget - priorViews.length)
+  }
   let stepsJournaled = params.resume?.turn.stepCount ?? 0
   const effectKeysSeed = priorPrep?.effectKeys ?? {}
   // The journal stores each step's ADDITIONS to the growing prepareStep state
@@ -3361,6 +3510,9 @@ async function runAgentChatTurn(
         ]
       : []),
     ...(turnBudget ? [() => turnBudget.checkInSent] : []),
+    // A step budget (a visitor's turn) is a hard cap on the whole turn,
+    // whichever stream reaches it.
+    ...(turnBudget ? [() => turnBudget.stepsLeft() === 0] : []),
     ...(params.routineId ? [() => routinePauseSent] : []),
     // A draining process stops the turn at the next step boundary (M2).
     () => handoffRequested,
@@ -3462,7 +3614,7 @@ async function runAgentChatTurn(
       // A routine run chaining on a parked call proposes steps only: same
       // tools, but a call that would run at once is refused (StepContext).
       stepCtx.chainOnly =
-        params.routineId && routineParkedEarlier && !routinePauseDue
+        params.routineId && !runFrame.routineFollowUp && routineParkedEarlier && !routinePauseDue
           ? ROUTINE_CHAIN_ONLY_RESULT
           : null
       const base = { activeTools: computeActiveTools() }
@@ -3470,8 +3622,14 @@ async function runAgentChatTurn(
       // request asks for go out now, not after another round of reading.
       const lastToolStep = !checkIn && !lastToolStepNoted && turnBudget?.lastToolStepDue() === true
       if (lastToolStep) lastToolStepNoted = true
+      // The check-in answers from the turn's own record: what ran, what waits, nothing else.
       const checkInMessages = checkIn
-        ? [{ role: "user" as const, content: TURN_BUDGET_CHECK_IN_NOTE }]
+        ? [
+            {
+              role: "user" as const,
+              content: `${TURN_BUDGET_CHECK_IN_NOTE}\n${checkInFacts(turnSteps)}`,
+            },
+          ]
         : routinePause
           ? [{ role: "user" as const, content: ROUTINE_RUN_PAUSE_NOTE }]
           : lastToolStep
@@ -3669,7 +3827,9 @@ async function runAgentChatTurn(
           return
         }
       }
-      if (params.routineId && !routinePauseDue) {
+      // A follow-up routine never pauses: what it staged waits for a person
+      // while the run goes on and ends (routine-run-resume.ts).
+      if (params.routineId && !runFrame.routineFollowUp && !routinePauseDue) {
         if (routinePauseFallsDue(step, routineParkedEarlier, routineChainRetries)) {
           routinePauseDue = true
         } else if (routineParkedEarlier && !stepParkedACall(step)) {
@@ -3686,6 +3846,13 @@ async function runAgentChatTurn(
       turnBudget?.recordStep(
         readStepUsage((step as { usage?: unknown } | undefined)?.usage).inputTokens ?? 0,
       )
+      {
+        const done = step as {
+          toolCalls?: Array<{ toolName?: string; toolCallId?: string; input?: unknown }>
+          toolResults?: Array<{ toolCallId?: string; output?: unknown }>
+        }
+        turnSteps.push({ toolCalls: done.toolCalls ?? [], toolResults: done.toolResults ?? [] })
+      }
       // Runaway guard: cumulative input tokens across this run's steps. Checked
       // here (not in the chunk loop) so the abort fires between steps — the
       // model never starts another full-context step past the cap.
@@ -3971,10 +4138,12 @@ async function runAgentChatTurn(
       : withFalseApprovalGuard({
           first: result,
           shouldCorrect: async (run) => {
+            // A continuation is more steps: none once the turn's step budget is spent.
             if (
               abortController.signal.aborted ||
               stoppedAtHardTokenLimit ||
-              turnBudget?.checkInSent === true
+              turnBudget?.checkInSent === true ||
+              turnBudget?.stepsLeft() === 0
             ) {
               return false
             }
@@ -4036,6 +4205,9 @@ async function runAgentChatTurn(
           correctAgain: {
             shouldCorrect: async (cont) => {
               if (correction !== "announced_action" || abortController.signal.aborted) return false
+              // The correction already answered at the step budget's check-in, or spent
+              // the last step: a further continuation would run past the cap.
+              if (turnBudget?.checkInSent === true || turnBudget?.stepsLeft() === 0) return false
               if (!announcesImminentAction(cont.finalText)) return false
               const lookups = falseApprovalLookups({
                 orgId,
@@ -4122,6 +4294,10 @@ async function runAgentChatTurn(
     }
     finishReason: string
     text: string
+    /** Each step's text exactly as streamed, in order, when `text` joins the steps as
+     *  paragraphs (reply-flatten.ts): a retraction, counted on the streamed text, is
+     *  cut from these and the steps joined again. */
+    stepTexts?: readonly string[]
     /** Accumulated reasoning/thinking text (full or summary, per the provider). */
     reasoning?: string
     /** Ordered interleave of reasoning segments and tool calls in the exact order
@@ -4157,15 +4333,10 @@ async function runAgentChatTurn(
     // A conversation other people read receives the turn's answer, never the
     // narration written between its tools (shared-thread-reply.ts). A private
     // chat keeps every line, drawn where it was written.
-    // A corrected false approval claim: the correction is the answer, so the
-    // stored reply drops the false text (false-approval-guard.ts).
-    // The later cut first, so the earlier one's offsets still hold.
-    const withoutSecond = secondRetraction
-      ? retractTurnOutput(finalParams, secondRetraction)
-      : finalParams
-    const turnOutput = falseApprovalRetraction
-      ? retractTurnOutput(withoutSecond, falseApprovalRetraction)
-      : withoutSecond
+    // A corrected false approval claim was cut already: the correction is the
+    // answer, so the stored reply drops the false text (`retractedAttempt`, in
+    // `finalize`, before a resumed turn's earlier steps are joined in front).
+    const turnOutput = finalParams
     const answer = replyForAudience({
       shared: context.sharedAudience !== null,
       text: turnOutput.text,
@@ -4636,6 +4807,15 @@ async function runAgentChatTurn(
       ...(creditCheck.demo ? { demo: creditCheck.demo } : {}),
     })
 
+    await supersedeOlderToolCards({
+      orgId,
+      actorId: actor.userId,
+      threadId,
+      messageId: agentMsg.id,
+      createdAt: agentMsg.createdAt,
+      toolCalls,
+    })
+
     return {
       messageId: agentMsg.id,
       creditCost,
@@ -4690,7 +4870,13 @@ async function runAgentChatTurn(
           withheldCapabilities: [],
         }
       }
-      return await finalizeReply(withPriorSteps(finalParams, priorViews))
+      const ownOutput = retractedAttempt(finalParams, {
+        first: falseApprovalRetraction,
+        second: secondRetraction,
+      })
+      return await finalizeReply(
+        withPriorSteps(ownOutput, await withToolCardFieldsOnSteps(orgId, priorViews)),
+      )
     } finally {
       unregisterTurn()
     }
@@ -5204,6 +5390,8 @@ async function runThreadTurn(
   // Returned to this function's caller only; never broadcast to the room.
   let withheldCapabilities: string[] = []
   let text = ""
+  // The stored reply: each step's text a paragraph of its own (reply-flatten.ts).
+  const replyText = createReplyText()
   let reasoning = ""
   // What the room's sockets receive of the turn's text: in a shared thread only
   // the answer, never a step's notes before its tools (shared-thread-reply.ts).
@@ -5305,6 +5493,7 @@ async function runThreadTurn(
         ...(streamErrorNotice ? { errorNotice: streamErrorNotice } : {}),
         reasoning,
         timeline,
+        stepTexts: replyText.steps,
       })
       withheldCapabilities = done?.withheldCapabilities ?? []
       if (done?.finishReason === HANDOFF_FINISH_REASON) turnHandedOff = true
@@ -5334,7 +5523,8 @@ async function runThreadTurn(
 
     for await (const chunk of result.fullStream) {
       if (chunk.type === "text-delta") {
-        text += chunk.text
+        replyText.add(chunk.text)
+        text = replyText.text
         const lastText = timeline[timeline.length - 1]
         if (lastText?.kind === "text") lastText.text += chunk.text
         else timeline.push({ kind: "text", text: chunk.text })
@@ -5366,10 +5556,12 @@ async function runThreadTurn(
         // against an org admin or the operator. Every non-mail call passes
         // through by reference, unchanged.
         const persistableArgs = await redactMailToolArgs(orgId, chunk.toolName, chunk.input)
+        const presentation = toolCallPresentation(orgId, chunk.toolName)
         currentStep.toolCalls.push({
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: persistableArgs,
+          ...presentation,
           ...replayableProviderMetadata(chunk.providerMetadata),
         })
         timeline.push({ kind: "tool", toolCallId: chunk.toolCallId, step: steps.length })
@@ -5378,6 +5570,7 @@ async function runThreadTurn(
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: persistableArgs,
+          ...presentation,
           ...uiEffectRequester(chunk.toolName, actor.userId),
         })
       } else if (chunk.type === "tool-result") {
@@ -5398,13 +5591,22 @@ async function runThreadTurn(
           )?.toolName ??
           ""
         const persistableResult = await redactMailToolResult(orgId, resultToolName, chunk.output)
+        // The card reads the redacted result too, so a sealed value never reaches it.
+        const cardFields = await toolCardFieldsForResult(
+          orgId,
+          resultToolName,
+          persistableResult,
+          chunk.output,
+        )
         currentStep.toolResults.push({
           toolCallId: chunk.toolCallId,
           result: persistableResult,
+          ...cardFields,
         })
         emitStreamEvent("tool_result", {
           toolCallId: chunk.toolCallId,
           result: persistableResult,
+          ...cardFields,
         })
       } else if (chunk.type === "tool-error") {
         // The AI SDK emits this INSTEAD of a tool-result when the call never
@@ -5426,12 +5628,19 @@ async function runThreadTurn(
           },
           "Agent tool call errored",
         )
-        currentStep.toolErrors.push({ toolCallId: chunk.toolCallId, error: chunk.error })
+        const errorCardFields = toolCardFieldsForError(orgId, chunk.toolName)
+        currentStep.toolErrors.push({
+          toolCallId: chunk.toolCallId,
+          error: chunk.error,
+          ...errorCardFields,
+        })
         emitStreamEvent("tool_result", {
           toolCallId: chunk.toolCallId,
           result: { error: failed },
+          ...errorCardFields,
         })
       } else if (chunk.type === "finish-step") {
+        replyText.endStep()
         const step = readStepUsage(chunk.usage)
         usage.promptTokens += step.inputTokens ?? 0
         usage.completionTokens += step.outputTokens ?? 0
@@ -5637,6 +5846,7 @@ export async function rerunAgentTurn(input: {
   })
 
   let text = ""
+  const replyText = createReplyText()
   // The text after the last tool call: what a shared room receives (shared-thread-reply.ts).
   let finalStepText = ""
   let finishReason = "stop"
@@ -5666,7 +5876,8 @@ export async function rerunAgentTurn(input: {
   try {
     for await (const chunk of chat.fullStream) {
       if (chunk.type === "text-delta") {
-        text += chunk.text
+        replyText.add(chunk.text)
+        text = replyText.text
         finalStepText += chunk.text
       } else if (chunk.type === "tool-call") {
         finalStepText = ""
@@ -5675,6 +5886,7 @@ export async function rerunAgentTurn(input: {
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: await redactMailToolArgs(orgId, chunk.toolName, chunk.input),
+          ...toolCallPresentation(orgId, chunk.toolName),
           ...replayableProviderMetadata(chunk.providerMetadata),
         })
       } else if (chunk.type === "tool-result") {
@@ -5682,11 +5894,14 @@ export async function rerunAgentTurn(input: {
           (chunk as { toolName?: string }).toolName ??
           currentStep.toolCalls.find((tc) => tc.toolCallId === chunk.toolCallId)?.toolName ??
           ""
+        const redacted = await redactMailToolResult(orgId, toolName, chunk.output)
         currentStep.toolResults.push({
           toolCallId: chunk.toolCallId,
-          result: await redactMailToolResult(orgId, toolName, chunk.output),
+          result: redacted,
+          ...(await toolCardFieldsForResult(orgId, toolName, redacted, chunk.output)),
         })
       } else if (chunk.type === "finish-step") {
+        replyText.endStep()
         const step = readStepUsage(chunk.usage)
         usage.promptTokens += step.inputTokens ?? 0
         usage.completionTokens += step.outputTokens ?? 0
@@ -5729,6 +5944,7 @@ export async function rerunAgentTurn(input: {
     usage,
     finishReason,
     text,
+    stepTexts: replyText.steps,
     finalStepText,
     steps,
     errorDetail,
@@ -5932,28 +6148,33 @@ function replayableProviderMetadata(
 
 function extractToolCalls(
   steps: Array<{
-    toolCalls?: Array<{
-      toolCallId: string
-      toolName: string
-      args: unknown
-      providerMetadata?: ToolCallProviderMetadata
-    }>
-    toolResults?: Array<{ toolCallId: string; result: unknown }>
-    toolErrors?: Array<{ toolCallId: string; error: unknown }>
+    toolCalls?: Array<
+      {
+        toolCallId: string
+        toolName: string
+        args: unknown
+        providerMetadata?: ToolCallProviderMetadata
+      } & ToolCallPresentation
+    >
+    toolResults?: Array<{ toolCallId: string; result: unknown } & ToolCardFields>
+    toolErrors?: Array<{ toolCallId: string; error: unknown } & ToolCardFields>
   }>,
   /** The turn's calls that marked it as having read outside text; absent: not recorded. */
   taintedToolCallIds?: ReadonlySet<string>,
-): Array<{
-  toolCallId: string
-  toolName: string
-  args: unknown
-  result: unknown
-  status: "completed" | "error"
-  error?: { message: string; code?: string; status?: number }
-  providerMetadata?: ToolCallProviderMetadata
-  tainted?: boolean
-}> {
-  return steps.flatMap((step) =>
+): Array<
+  {
+    toolCallId: string
+    toolName: string
+    args: unknown
+    result: unknown
+    status: "completed" | "error"
+    error?: { message: string; code?: string; status?: number }
+    providerMetadata?: ToolCallProviderMetadata
+    tainted?: boolean
+  } & ToolCallPresentation &
+    ToolCardFields & { cardSuperseded?: true }
+> {
+  const calls = steps.flatMap((step) =>
     (step.toolCalls ?? []).map((tc) => {
       // A tool that errors in AI SDK v6 emits a `tool-error` chunk and never
       // produces a matching toolResult, so the entry is absent. Distinguish that
@@ -5966,6 +6187,14 @@ function extractToolCalls(
         toolName: tc.toolName,
         args: tc.args,
         ...(tc.providerMetadata ? { providerMetadata: tc.providerMetadata } : {}),
+        // Reload draws what the live row drew (never replayed: `convertToCoreMessages` names
+        // the fields a replay sends, and none of these is one).
+        ...(tc.readOnly !== undefined ? { readOnly: tc.readOnly } : {}),
+        ...(tc.appLabel ? { appLabel: tc.appLabel } : {}),
+        ...(tc.runningLabel ? { runningLabel: tc.runningLabel } : {}),
+        ...(tc.runningLabelKey ? { runningLabelKey: tc.runningLabelKey } : {}),
+        ...(tr?.card ? { card: tr.card } : {}),
+        ...((tr?.cardError ?? te?.cardError) ? { cardError: tr?.cardError ?? te?.cardError } : {}),
         result: tr?.result ?? null,
         status: tr === undefined ? ("error" as const) : ("completed" as const),
         // Present only on the failing half: a completed call has nothing to say here,
@@ -5977,6 +6206,7 @@ function extractToolCalls(
       }
     }),
   )
+  return markSupersededWithinTurn(calls)
 }
 
 /**

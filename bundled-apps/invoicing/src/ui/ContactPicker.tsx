@@ -81,6 +81,8 @@ export async function loadContact(id: string): Promise<PickerContact | null> {
 export const ContactPicker: Component<{
   contactId: string | null
   disabled?: boolean
+  /** The customer must be chosen: the search box does not say "Optional". */
+  required?: boolean
   onPick: (c: PickerContact) => void
   onClear: () => void
 }> = (props) => {
@@ -124,7 +126,7 @@ export const ContactPicker: Component<{
                 }
               }
             }}
-            placeholder={tr("Optional: search a contact")}
+            placeholder={props.required ? tr("Search a contact") : tr("Optional: search a contact")}
             class={inputClass}
           />
           <Show when={open() && query().trim().length >= 2 && !results.loading}>

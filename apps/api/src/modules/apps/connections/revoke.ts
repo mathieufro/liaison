@@ -638,6 +638,22 @@ export async function runDueConnectionTeardowns(): Promise<TeardownOutcome[]> {
  * the purge stops before the rows that hold the tokens go and resumes from here.
  */
 export async function teardownOrgConnections(orgId: string): Promise<TeardownOutcome[]> {
+  // Only load the org's apps when there is something to tear down: loading them
+  // starts the org's whole runtime, which an org with no live connection (most
+  // expired demo workspaces) would start only to have it released again.
+  const live = await withPrivilegedDb(orgId, "org-purge-connection-teardown-lookup", (tx) =>
+    tx
+      .select({ id: connectedAccounts.id })
+      .from(connectedAccounts)
+      .where(
+        and(
+          eq(connectedAccounts.orgId, orgId),
+          drizzleSql`${connectedAccounts.status} <> 'disconnected'`,
+        ),
+      )
+      .limit(1),
+  )
+  if (live.length === 0) return []
   await loadOrgApps(orgId)
   const ids = await withPrivilegedDb(orgId, "org-purge-connection-teardown", async (tx) => {
     const rows = await tx

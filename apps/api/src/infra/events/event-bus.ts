@@ -743,6 +743,9 @@ export async function subscribeToEvent(
  * kind:'event' routines).
  */
 export const KERNEL_DECLARED_EMITS: ReadonlySet<string> = new Set([
+  // A feature inside an app switched on or off (modules/apps/org-features.ts): the
+  // catalog changed, so live MCP sessions are told (modules/mcp/catalog-notifier.ts).
+  "app:feature_update",
   "user:registered",
   "user:deactivate",
   "user:reactivate",
@@ -823,6 +826,15 @@ export const KERNEL_DECLARED_EMITS: ReadonlySet<string> = new Set([
   "contact:delete",
   "contact:merge",
   "contact:share",
+  // A company was created, edited, merged into another or closed (the relationship ended).
+  "company:create",
+  "company:update",
+  "company:merge",
+  "company:closed",
+  // A company's general access or grants changed (modules/contacts/companies.ts).
+  "company:share",
+  // A company was deleted: its search document and open rows go.
+  "company:delete",
   "presence:update",
   "org:update",
   // One field of an app's declarative settings page written (modules/apps/settings-routes.ts).

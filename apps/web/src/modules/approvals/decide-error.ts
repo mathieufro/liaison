@@ -141,6 +141,17 @@ export function decideErrorToast(err: ApiError, t: Translate = tNow): DecideErro
       refreshFeed: true,
     }
   }
+  if (status === 422 && code === "send_guard_not_held") {
+    // "Send now" on a mail that is no longer held: a reply came in, or the hold ended. Nothing
+    // was sent; the card reloads and shows what the check says now.
+    return {
+      toast: { message: t("kernel.approvalsUi.err.sendGuardNotHeld"), type: "info" },
+      inline: false,
+      keepExecuting: false,
+      keepReasonOpen: false,
+      refreshFeed: true,
+    }
+  }
   if (status === 409 && code === "already_signed_off") {
     // A two-approver request this person already signed off (their own send, or
     // an earlier approve): it waits for a DIFFERENT approver and stays pending.

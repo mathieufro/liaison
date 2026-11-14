@@ -95,6 +95,7 @@ Type `object`, optional.
 | --- | --- | --- | --- | --- |
 | `email.from` | `string` | no |  |  |
 | `email.replyTo` | `string` | no |  |  |
+| `email.commercialIdentity` | `commercialIdentitySchema` | no |  | The legal name and postal address every commercial mail states (its footer). |
 
 ## mail
 

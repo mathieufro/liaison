@@ -20,6 +20,10 @@
  * reading as On. A stale entry whose reload fails keeps its last persisted
  * answer (bounded staleness, logged).
  *
+ * The features switched on inside each app (`kernel.org_app_features`) load with
+ * the same entry, so `isFeatureOffForTool` answers as synchronously and a change
+ * travels the same invalidation (org-features.ts writes them).
+ *
  * The synchronous `isAppOffForOrg` serves the tool-bridge, slot and context
  * walks, which run after their async entry point primed the org. It reads only
  * the cache; the dispatch behind those surfaces (`executeToolCore`, jobs,
@@ -36,12 +40,13 @@ import { withPrivilegedDb } from "~/db/privileged"
 import {
   apps,
   orgAppAccess,
+  orgAppFeatures,
   organizations,
   roleScopeGrants,
   userRoles,
   userScopeGrants,
 } from "~/db/schema/kernel"
-import { rootLogger } from "~/lib/logger"
+import { appsLogger, rootLogger } from "~/lib/logger"
 import { publishRedis, REDIS_PREFIX, redisSub } from "~/lib/redis"
 import { UUID_RE } from "~/lib/uuid"
 import { appVisibleToOrg } from "~/modules/apps/app-org-scope"
@@ -94,6 +99,9 @@ export class AppStateUnavailableError extends Error {
   }
 }
 
+/** A tool of a feature that is off for the workspace was asked for: not retryable. */
+export const FEATURE_OFF_CODE = "feature_off"
+
 /** Backstop for a missed invalidation: an entry older than this is reloaded on prime. */
 export const ORG_APPS_TTL_MS = 15_000
 const ORG_APPS_INVALIDATE_CHANNEL = `${REDIS_PREFIX}org-apps:invalidate`
@@ -103,6 +111,14 @@ export { UUID_RE }
 
 interface Entry {
   apps: ReadonlyMap<string, OrgAppState>
+  /** App name to the features switched on for the org. A feature absent here is off. */
+  enabledFeatures: ReadonlyMap<string, ReadonlySet<string>>
+  /**
+   * The feature rows could not be read: every feature reads off for listing and
+   * new calls, but an approved call answers a retryable unavailable instead of a
+   * final off, and the entry is stamped stale so the next prime reads again.
+   */
+  featuresUnreadable?: boolean
   /** The id is a UUID that no organization row carries: the org was deleted. */
   orgMissing: boolean
   /** The org row has `deleting_at` set: its deletion has started (modules/org/purge/). */
@@ -209,6 +225,35 @@ async function readOrgApps(
   })
 }
 
+/**
+ * The org's switched-on features, in their own read: a failure here answers that
+ * every feature is off (logged) and says the read failed (`ok: false`), while the
+ * app state above keeps its own rules.
+ */
+async function readOrgFeatures(
+  orgId: string,
+): Promise<{ ok: boolean; features: Map<string, Set<string>> }> {
+  const out = new Map<string, Set<string>>()
+  if (!UUID_RE.test(orgId)) return { ok: true, features: out }
+  try {
+    const rows = await withPrivilegedDb(orgId, "org-features-read", (db) =>
+      db
+        .select({ app: orgAppFeatures.appName, feature: orgAppFeatures.feature })
+        .from(orgAppFeatures)
+        .where(and(eq(orgAppFeatures.orgId, orgId), eq(orgAppFeatures.enabled, true))),
+    )
+    for (const row of rows) {
+      const features = out.get(row.app) ?? new Set<string>()
+      features.add(row.feature)
+      out.set(row.app, features)
+    }
+  } catch (err) {
+    appsLogger.error({ err, orgId }, "org feature rows unreadable; every feature reads off")
+    return { ok: false, features: new Map() }
+  }
+  return { ok: true, features: out }
+}
+
 /** Reload the org's entry now (an invalidation, a write, a stale entry). Throws on a load failure. */
 export async function reloadOrgApps(orgId: string, opts: { fresh?: boolean } = {}): Promise<void> {
   // A load already running is shared, unless the caller just WROTE the state
@@ -220,9 +265,15 @@ export async function reloadOrgApps(orgId: string, opts: { fresh?: boolean } = {
   generation.set(orgId, gen)
   const load: Promise<void> = readOrgApps(orgId)
     .then(async (read) => {
+      const features = await readOrgFeatures(orgId)
+      return { ...read, enabledFeatures: features.features, featuresUnreadable: !features.ok }
+    })
+    .then(async (read) => {
       if (generation.get(orgId) === gen) {
         const prev = cache.get(orgId)
-        cache.set(orgId, { ...read, loadedAt: Date.now() })
+        // A failed feature read is not an answer to keep: stamped stale, the next
+        // prime reads the table again instead of serving "all off" for the TTL.
+        cache.set(orgId, { ...read, loadedAt: read.featuresUnreadable ? 0 : Date.now() })
         const ended = read.orgDeleting || read.orgMissing
         if (ended && !(prev?.orgDeleting || prev?.orgMissing)) notifyOrgEnded(orgId)
         return
@@ -380,6 +431,38 @@ export function isAppOffForOrg(orgId: string, app: string): boolean {
   return isOffStatus(cache.get(orgId)?.apps.get(app)?.status)
 }
 
+/**
+ * Synchronous: does the feature this tool declares stand off for the org? The one
+ * answer for every surface that lists or runs a tool. Its miss goes the other way
+ * from `isAppOffForOrg`: an org this process has not primed reads a featured tool
+ * as off and a plain tool as on, so a walk reached without a prime hides a feature
+ * rather than showing one.
+ */
+export function isFeatureOffForTool(
+  orgId: string,
+  tool: { appName: string; feature?: string },
+): boolean {
+  if (!tool.feature) return false
+  return !cache.get(orgId)?.enabledFeatures.get(tool.appName)?.has(tool.feature)
+}
+
+/**
+ * Sync, after a prime: did the last read of the org's feature rows fail? Then an
+ * off answer from `isFeatureOffForTool` is "unknown", not a row that says off.
+ */
+export function orgFeaturesUnreadable(orgId: string): boolean {
+  return cache.get(orgId)?.featuresUnreadable === true
+}
+
+/** Sync, after a prime: every feature switched on for the org. */
+export function enabledFeaturesFor(orgId: string): Array<{ app: string; feature: string }> {
+  const out: Array<{ app: string; feature: string }> = []
+  for (const [app, features] of cache.get(orgId)?.enabledFeatures ?? []) {
+    for (const feature of features) out.push({ app, feature })
+  }
+  return out.sort((a, b) => `${a.app}:${a.feature}`.localeCompare(`${b.app}:${b.feature}`))
+}
+
 /** Synchronous state read from the cache (after a prime). */
 export function peekOrgAppState(orgId: string, app: string): OrgAppState | null {
   return cache.get(orgId)?.apps.get(app) ?? null
@@ -519,7 +602,7 @@ export function forgetOrgApps(orgId?: string): void {
 export function rememberOrgAppStates(
   orgId: string,
   states: ReadonlyArray<Partial<OrgAppState> & Pick<OrgAppState, "app" | "status">>,
-  org: { deleting?: boolean } = {},
+  org: { deleting?: boolean; features?: Readonly<Record<string, readonly string[]>> } = {},
 ): void {
   const full = states.map(
     (s): OrgAppState => ({
@@ -532,6 +615,9 @@ export function rememberOrgAppStates(
   )
   cache.set(orgId, {
     apps: new Map(full.map((s) => [s.app, s])),
+    enabledFeatures: new Map(
+      Object.entries(org.features ?? {}).map(([app, features]) => [app, new Set(features)]),
+    ),
     orgMissing: false,
     orgDeleting: org.deleting === true,
     loadedAt: Date.now(),

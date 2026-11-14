@@ -34,7 +34,7 @@ import { type ActorContext, withRlsContext } from "~/db/rls"
 import { appsLogger } from "~/lib/logger"
 import { TEST_ONLY_APPS } from "~/modules/apps/discover-apps"
 import { ensureAppsForOrg } from "~/modules/apps/init"
-import { registerApps } from "~/modules/apps/runtime"
+import { AppRegistrationFatalError, registerApps } from "~/modules/apps/runtime"
 
 type Manifest = { roles?: Record<string, { scopes?: string[]; extends?: string }> }
 
@@ -677,12 +677,12 @@ describe("tickets: read markers keep every access; api keys reach the tickets ad
 })
 
 describe("startup registration of the built-in apps", () => {
-  it("logs no governance warning for any app", () => {
-    // Test scaffolding (`test`, `example`, ...) never registers in production.
-    const governance = warnings
-      .filter((w) => w.msg.includes("no grantable scope can reach"))
-      .filter((w) => !TEST_ONLY_APPS.has(String(w.obj.app)))
-    expect(governance.map((w) => ({ app: w.obj.app, tables: w.obj.tables }))).toEqual([])
+  it("refuses no app for a table its scopes cannot reach", async () => {
+    // A refusal throws outside production, so reaching this line already says
+    // the registration above refused none; no app is left in error either.
+    const errored = await sql<{ name: string }[]>`
+      SELECT name FROM kernel.apps WHERE org_id = ${orgId} AND status = 'error'`
+    expect(errored.map((r) => r.name).filter((n) => !TEST_ONLY_APPS.has(n))).toEqual([])
   })
 
   it("logs no drift warning for the reconciled columns", () => {
@@ -776,19 +776,15 @@ describe("the governance check on a migration-governed table", () => {
     _bundlePath: "/apps/mg-check-app/handlers.js",
     schema: { notes: { rlsGovernedByMigration: true, fields: { title: "string" } } },
   })
-  const governanceWarnings = async (version: string) => {
-    const seen: string[][] = []
-    const spy = spyOn(appsLogger, "warn").mockImplementation(((obj: unknown, msg: unknown) => {
-      if (String(msg).includes("no grantable scope can reach")) {
-        seen.push(((obj as { tables?: string[] }).tables ?? []) as string[])
-      }
-    }) as never)
+  /** The tables a refused registration names, or [] when it registers. */
+  const refusedTables = async (version: string): Promise<string[]> => {
     try {
       await registerApps([manifest(version) as never], orgId)
-    } finally {
-      spy.mockRestore()
+      return []
+    } catch (err) {
+      if (!(err instanceof AppRegistrationFatalError)) throw err
+      return (err.details.tables ?? []) as string[]
     }
-    return seen
   }
 
   afterAll(async () => {
@@ -796,18 +792,24 @@ describe("the governance check on a migration-governed table", () => {
     await sql`DELETE FROM kernel.apps WHERE name = ${APP}`
   })
 
-  it("reports the table while no migration policy can grant it, and not once one does", async () => {
+  it("refuses the app while no migration policy can grant the table, and registers it once one does", async () => {
     await sql.unsafe(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`)
-    // First registration creates the table; then a migration-style deny-default
-    // policy alone, which grants nothing.
-    await governanceWarnings("1.0.0")
+    // A migration created the table with a deny-default policy alone, which grants nothing.
+    // Owned by the role registrations run as, as a migration-created schema is.
+    await sql.unsafe(`CREATE SCHEMA "${SCHEMA}"`)
+    await sql.unsafe(
+      `CREATE TABLE "${SCHEMA}".notes (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), org_id uuid NOT NULL, title text NOT NULL)`,
+    )
+    await sql.unsafe(`ALTER TABLE "${SCHEMA}".notes ENABLE ROW LEVEL SECURITY`)
+    await sql.unsafe(`ALTER SCHEMA "${SCHEMA}" OWNER TO liaison_admin`)
+    await sql.unsafe(`ALTER TABLE "${SCHEMA}".notes OWNER TO liaison_admin`)
     await sql.unsafe(
       `CREATE POLICY notes_deny_default ON "${SCHEMA}".notes FOR ALL TO liaison_rls USING (false) WITH CHECK (false)`,
     )
-    expect(await governanceWarnings("1.0.1")).toEqual([["notes"]])
+    expect(await refusedTables("1.0.1")).toEqual(["notes"])
     await sql.unsafe(
       `CREATE POLICY notes_owner ON "${SCHEMA}".notes FOR SELECT TO liaison_rls USING (org_id = NULLIF(rls_ctx.org_id(), '')::uuid)`,
     )
-    expect(await governanceWarnings("1.0.2")).toEqual([])
+    expect(await refusedTables("1.0.2")).toEqual([])
   })
 })

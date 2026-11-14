@@ -73,6 +73,12 @@ const PROCESS_COLUMN = /^claimed_by$/
  * the recipient's quiet hours, so it depends on the hour the lane was built.
  */
 const SCHEDULE_COLUMN = /^digest_eligible_at$/
+/**
+ * The org's setup stamp: a hash of the build id and every app's version
+ * (setup-stamp.ts), so it differs between two checkouts, or a runner and a
+ * laptop, for the same world. Its presence is kept, its value is not.
+ */
+const BUILD_COLUMN = /^app_setup_stamp$/
 /** Values handed out in arrival order by a counter. */
 const ARRIVAL_ORDER_COLUMN = /^(seq|avatar_color)$/
 const COUNTER_HANDLE = /-[0-9a-f-]*\d[0-9a-f-]*$/
@@ -110,6 +116,7 @@ function normalise(value: unknown, column: string, clock: Clock, prefix = ""): u
   if (VOLATILE_COLUMN.test(column)) return "<volatile>"
   if (ARRIVAL_ORDER_COLUMN.test(column)) return "<counter>"
   if (PROCESS_COLUMN.test(column)) return "<process>"
+  if (BUILD_COLUMN.test(column)) return "<build>"
   if (SCHEDULE_COLUMN.test(column)) return "<scheduled>"
   if (column === "handle" && typeof value === "string") return value.replace(COUNTER_HANDLE, "-<n>")
   if (typeof value === "string") {

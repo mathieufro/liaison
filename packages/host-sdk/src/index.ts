@@ -22,6 +22,12 @@ declare const __LIAISON_APP_NAME__: string | undefined
 // Public types — plugins `import type { HostServices } from "@liaison/host"`.
 // ─────────────────────────────────────────────────────────────────────────
 
+/** A pending approval after an edit: its payload as it now stands and its fingerprint. */
+export interface HostApprovalEdit {
+  currentPayload?: Record<string, unknown>
+  payloadHash?: string
+}
+
 /** Generic auth-aware fetch. Path is kernel-relative ("/api/..."). */
 export type HostFetch = <T = unknown>(path: string, init?: RequestInit) => Promise<T>
 
@@ -145,6 +151,29 @@ export interface SlotMountHandle {
 
 /** Host-driven slot mount. `callerApp` is the bound consuming app (reserved for
  *  future iframe routing/telemetry; resolution uses the descriptor). */
+/** Serializable descriptor for an entity's discussion mounted by a bundle. */
+export interface EntityDiscussionMountDescriptor {
+  /** The app whose entity it is; absent means the calling app. */
+  app?: string
+  /** The entity kind, as the app's manifest declares it (`entities.<type>.discussion`). */
+  entityType: string
+  entityId: string
+  /** The root data-testid (default `entity-discussion`). */
+  testId?: string
+  /** Shown while the discussion has no message. */
+  emptyText?: string
+  placeholder?: string
+  sendLabel?: string
+  /** Text put in the box when it opens, for the person to finish and send (never sent by itself). */
+  prefill?: string
+}
+
+export type EntityDiscussionMounter = (
+  callerApp: string,
+  anchor: SlotAnchor,
+  descriptor: EntityDiscussionMountDescriptor,
+) => SlotMountHandle
+
 export type SlotMounter = (
   callerApp: string,
   anchor: SlotAnchor,
@@ -275,6 +304,9 @@ export interface HostServices {
   /** Host-driven cross-app slot-body mount. The kernel's buildHostServices()
    *  always provides it; pre-existing shims may not. */
   mountSlot?: SlotMounter
+  /** Host-driven mount of an entity's discussion (who may read it is the
+   *  server's, from who may see the entity). Optional so older shims stay valid. */
+  mountEntityDiscussion?: EntityDiscussionMounter
   /**
    * The reader's UI language ("en", "fr"). A reactive accessor on the kernel
    * (reading it inside a render tracks a language switch). Optional so older
@@ -300,6 +332,9 @@ export interface HostServices {
     entityType: string,
     id: () => string | null | undefined,
   ) => void
+  /** Name the page's tab after the record it shows (see `app.tabLabel`). Optional:
+   *  a host without it keeps the view's label. */
+  tabLabel?: (appName: string, label: () => string | null | undefined) => void
   // Host API 1.3: typed calls instead of kernel routes, so a screen framed on an
   // origin of its own (no network, no session) still works. Each is bound to the
   // calling app and limited by the host; optional so older shims stay valid.
@@ -324,6 +359,13 @@ export interface HostServices {
     decision: "approve" | "deny",
     payloadHash?: string,
   ) => Promise<unknown>
+  /** Change the fields of one of this app's pending approvals that its tool lets a person
+   *  edit; answers the payload as it now stands, with its new fingerprint. */
+  editApproval?: (
+    appName: string,
+    approvalId: string,
+    fields: Record<string, unknown>,
+  ) => Promise<HostApprovalEdit>
   /** Open an https page of a host the app's manifest declares, in a new tab. */
   openExternal?: (appName: string, url: string) => Promise<void>
   /** Open another app's record in its own tab. */
@@ -628,6 +670,25 @@ export const app = {
       ),
     })
   },
+  /**
+   * Edit one of this app's pending approvals: only the fields its tool declares editable
+   * change (the server refuses any other). Answers the new payload fingerprint, the one a
+   * following `decideApproval(id, "approve", payloadHash)` approves.
+   */
+  editApproval: (
+    approvalId: string,
+    fields: Record<string, unknown>,
+  ): Promise<HostApprovalEdit> => {
+    const host = getHost()
+    if (host.framed && host.editApproval) return host.editApproval(getAppName(), approvalId, fields)
+    return host.fetch<HostApprovalEdit>(
+      `/api/approvals/${encodeURIComponent(approvalId)}/payload`,
+      {
+        method: "POST",
+        body: JSON.stringify({ fields }),
+      },
+    )
+  },
   /** Whether the host confirms approval decisions itself (the app need not ask again). */
   confirmsApprovals: (): boolean => {
     const host = optionalHost()
@@ -663,6 +724,12 @@ export const app = {
   trackOpenRecord: (entityType: string, id: () => string | null | undefined): void => {
     getHost().trackOpenRecord?.(getAppName(), entityType, id)
   },
+  /** From a page's component body: the tab's label follows `label()` (null keeps the view's). */
+  tabLabel: (label: () => string | null | undefined): void => {
+    // A host without it (an older one, a test with no host) keeps the view's label.
+    const host = optionalHost()
+    if (host?.tabLabel) host.tabLabel(getAppName(), label)
+  },
   /**
    * Host-driven cross-app slot-body mount. Renders another app's contributed
    * component into the caller-supplied `anchor`. The caller never receives the
@@ -675,6 +742,20 @@ export const app = {
     const host = getHost()
     if (!host.mountSlot) return { resolved: false, dispose: () => {} }
     return host.mountSlot(getAppName(), anchor, descriptor)
+  },
+  /**
+   * Mount the discussion of one of the app's records into `anchor`: one
+   * conversation per record, read and written by whoever can see the record.
+   * A bundle cannot import the kernel's component, so the host renders it.
+   * Returns `{ resolved: false }` when the host predates it.
+   */
+  mountEntityDiscussion: (
+    anchor: SlotAnchor,
+    descriptor: EntityDiscussionMountDescriptor,
+  ): SlotMountHandle => {
+    const host = getHost()
+    if (!host.mountEntityDiscussion) return { resolved: false, dispose: () => {} }
+    return host.mountEntityDiscussion(getAppName(), anchor, descriptor)
   },
 }
 

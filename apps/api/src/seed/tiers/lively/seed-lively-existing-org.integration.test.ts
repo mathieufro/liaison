@@ -99,15 +99,20 @@ describe("the lively tier in an existing org", () => {
     expect(result.world.org.people.length).toBe(10)
   })
 
-  it("never marks the org as a demo org and keeps its name", async () => {
+  it("never marks the org as a demo org and keeps its name and its commercial identity", async () => {
     invalidateDemoMarker(org.orgId)
     expect(await loadDemoMarker(org.orgId)).toBeNull()
     const [row] = rowsOf(
       await withSystemDb("lively-existing-test-org", (tx) =>
-        tx.execute(sql`SELECT name FROM kernel.organizations WHERE id = ${org.orgId}::uuid`),
+        tx.execute(
+          sql`SELECT name, settings -> 'commercialIdentity' AS identity
+              FROM kernel.organizations WHERE id = ${org.orgId}::uuid`,
+        ),
       ),
     )
     expect(row?.name).toBe("Harness Org")
+    // The world company's identity is not the org owner's to be given.
+    expect(row?.identity ?? null).toBeNull()
   })
 
   it("adopts the members in their seats: own password and roles kept, seat role added", async () => {

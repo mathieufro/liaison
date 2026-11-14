@@ -18,7 +18,9 @@ Every tool has a scope. The agent sees a tool only when the scope is inside its 
 
 ## How an agent finds a tool
 
-Most kernel tools and all app tools are loaded on demand. The agent calls `tool_search` with keywords, or with `select:name` when it knows the exact name, and the matching tools become callable on its next step. `tool_search` needs `kernel:threads:read`. A role agent without that scope has no app tools at all.
+Most kernel tools and all app tools are loaded on demand. The agent calls `tool_search` with keywords, or with `select:name` when it knows the exact name, and the matching tools become callable on its next step. The search ranks by words and, where meaning is on, by meaning as well, so a request in plain words, such as "Marc left, cut his access", finds the tool that deactivates a user. It ranks only the tools the agent may use. Meaning is on by default in the managed edition and off by default on a self-hosted server, which can turn it on ([Tool search model](../self-hosting/docker.md#tool-search-model)). The model runs in one embedding process for the whole server; while that process is not running or answers slowly, the search ranks by words alone. When nothing matches, the search loads nothing and names the apps it can search, with how many tools each has. A `select:` with a bare name that two apps share, such as `refunds_create`, loads neither and lists both, so the agent names the one it means. `tool_search` needs `kernel:threads:read`. A role agent without that scope has no app tools at all.
+
+The search reads each word beyond its exact spelling: another form of it (`factures`, `invoicing`), a misspelling of five letters or more (`refnud`), and common French words and plain synonyms for the English words of tool names (`rembourser`, `money` for a refund). In a query of several words, a word few tools answer to counts more than a common one such as `send` or `list`.
 
 A conversation keeps the same tool list from its first turn to its last, so the model provider can reuse its cached copy of the conversation. A tool loaded later is not added to that list: its description and parameters arrive in the conversation, and the agent calls it through `call_tool` with the tool's name and arguments. When the arguments do not fit, `call_tool` answers with the tool's name and the parameters it expects. When the name is no tool the agent can call, for instance one that was replaced by another, `call_tool` says so and points at a `tool_search` by the job in words, since `select:name` only works for a name that a search has returned.
 
@@ -65,7 +67,7 @@ Scopes are shown in full. `kernel:agent:memory` is the gate for the memory and n
 | `threads_list` | List recent conversations you are in. | `kernel:threads:read` | No |
 | `threads_search` | Search conversations by title, participant or content. | `kernel:threads:read` | No |
 | `threads_read` | Read the messages of one conversation. | `kernel:threads:read` | No |
-| `threads_create` | Message people in the conversation you already share (a 1:1 opens if none). | `kernel:threads:write` | When an agent opens a new conversation |
+| `threads_create` | Message people in the conversation you already share (a 1:1 opens if none). With `createdFrom` naming a record that has a discussion, posts into that discussion instead, as the agent; people listed who cannot see the record are left out and named. A record you cannot see: `created_from_not_visible`, nothing is posted. | `kernel:threads:write` | When an agent opens a new conversation |
 | `threads_reply` | Post a message into an existing conversation, or into a contact's discussion (`contactId`). | `kernel:threads:write` | No |
 | `agents_ask` | Ask another agent a question, or hand it one piece of work, without adding it to the conversation. | `kernel:threads:write` | No |
 | `agents_invite` | Add another agent to the conversation, after you approve it there. | `kernel:threads:write` | Yes |
@@ -158,7 +160,7 @@ The agent builds dashboards from read tools and data store collections, and prev
 | Tool | What it does | Scope | Approval |
 | --- | --- | --- | --- |
 | `contacts_search` | Search contacts by name, email or company. | `kernel:contacts:read` | No |
-| `contacts_read` | Read a contact with recent mail and timeline. | `kernel:contacts:read` | No |
+| `contacts_read` | Read a contact with recent mail and timeline, and one line per other app that holds records for them, such as a recurring schedule or an invoice, with its id. Only what you may read there is named. | `kernel:contacts:read` | No |
 | `contacts_write` | Create or update a contact. | `kernel:contacts:write` | Yes |
 | `contacts_export` | Export contacts to a CSV file. | `kernel:contacts:export`, `kernel:contacts:read` | Yes |
 | `contacts_find_duplicates` | Find likely duplicate contacts. | `kernel:contacts:read` | No |
@@ -335,6 +337,7 @@ A change that changes nothing (an app that is already on, a setting already at t
 | `thread_mute_set` | Mute or unmute a conversation. | `kernel:agent:memory` | No |
 | `sidebar_apps_get` | Read which apps are hidden from your sidebar, or from a member's with `kernel:users:admin`. | `kernel:agent:memory` | No |
 | `sidebar_apps_set` | Hide apps from your sidebar or show them again, or a member's with `kernel:users:admin`. Hiding never changes access. | `kernel:agent:memory` | No |
+| `set_away` | Record the days someone is away (never why), end them, or name their standing next in line. The result states the dates with weekdays, who is next in line and what they cannot approve. Someone else's days need `kernel:users:admin` or `projects:capacity:write`. | `kernel:threads:read` | Only when the turn read outside text, or a routine or an MCP client asks: then it waits for the person who asked |
 | `report_bug` | File a bug report about Liaison itself. It never waits for an approval, whatever the conversation read before. Where bug reports go only to the Liaison team, it prepares the report and you send it from its card. It can attach up to 5 of your files (`attachments`, file ids you can open). | `kernel:bug_reports:file` (every member holds it) | No |
 
 ### Sub-agents
@@ -372,6 +375,8 @@ An agent never handles a secret: an API key, a password or an OAuth client secre
 - Type the secret into the card and select **Save**. The card sends it straight to the place that stores it, the same one the Settings page uses. App and connector credentials are saved for the organization, not for you alone, unless the agent asked for your own account: a personal mailbox over IMAP (your @gmail.com address, for one) is saved as yours, and only you can fill in that card.
 - Liaison then checks that a new secret was stored. Only then is the request marked saved, and the agent is told it was saved with a short hint: the last 4 characters of a provider key, the end of an OAuth client ID, or the prefix of a new API key. A password gets no hint.
 - If a member already connected that same account for themselves, the card says it replaces their personal account. Select **Replace it** to go ahead: their own connection is disconnected and they are told.
+- When the place that stores it refuses what you typed (a Stripe secret key where a restricted key is asked for, a key the provider rejects), the card shows that refusal's own words, which say why and what to do. Nothing is stored.
+- The card names the app by its name. For credentials, the agent is told the labels of the fields the card asks for, such as **Restricted key**.
 - The card says who asked: the agent, and the person it asked for.
 - For an IMAP mailbox you already approved in a mail or tickets configuration change, the card shows that change's servers, ports and username read-only and asks only for the password. They come from the approved change, never from the agent's request. For a @gmail.com address with no approved change, the card shows Gmail's own servers (`imap.gmail.com`:993, `smtp.gmail.com`:465, the address as username).
 - A setup step on the card can carry links, such as Google's 2-Step Verification and app-password pages for a personal Gmail address. They open in a new tab.

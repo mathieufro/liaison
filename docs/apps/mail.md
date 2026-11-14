@@ -104,6 +104,8 @@ On a self-hosted Liaison, `MAILBOX_ENCRYPTION_DEFAULT` (`managed` or `private`) 
 2. Use the sidebar to switch between **Inbox**, **Assigned to me**, **Starred**, **Sent**, **Drafts** and **Trash**.
 3. Use **Search conversations...** at the top of the list to filter by text. The search covers the whole folder, not only the conversations already loaded in the list: after you type two characters or more, conversations further down are found too ("Searching all conversations…" shows while it runs). For a private mailbox the text is searched in your browser, and only the matching message ids are sent to the server.
 4. Switch between **All**, **Primary** and **Other** when the category switch is shown.
+
+A card number in an email is hidden before the email is stored: it shows as `•••• •••• •••• 4242`, a security code next to it as `•••`, and the email ends with "[A card number was hidden.]". Order and invoice numbers, tracking numbers, SIRET and SIREN numbers, VAT numbers, IMEIs, IBANs and phone numbers stay as written: a number counts as a card only when its first digits and its length match a card network, and a number right after a label such as SIRET, IMEI, order or invoice is never taken for one. In a private mailbox with end-to-end encryption the server never holds the text, so it is hidden where an agent reads the email instead.
 5. Hover a row to **Claim** it (assign it to yourself), **Mark read** or **Mark unread**, **Archive** it, or **Star** it.
 
 An open conversation catches up after a connection drop: mail that arrived while you were offline shows once the app reconnects.
@@ -136,9 +138,74 @@ From a conversation you can also **Convert to ticket**, which moves it into [Tic
 
 An agent's draft can attach files by their id, or a file an earlier step of the same approval request creates (a quote's PDF, for example), cited by that step's reference.
 
+On **Home**, a draft's row says what the check before sending says. A draft held by an automatic reply leaves **Home** until the hold ends; one the check stopped shows why and offers **Dismiss** only, and neither counts in the number on **Home** (see [Approve what agents do](../agents/approvals.md)). An app that declares a `pill` for the kind of record a mail is about names the row with it.
+
 There is one pending reply draft per conversation. A new agent draft replaces your own waiting draft. It is refused when a colleague's draft is already waiting.
 
 If the agent's turn is refused because the server restarts, the mail app sends it again once, after the wait the server asks for (a second, at most five).
+
+### The check before an agent's mail goes out
+
+When you approve an agent's draft, Liaison looks at the conversation once more before it sends:
+
+- **A reply came in** after the draft was written: the draft is not sent, and the row says who replied. A reply from a colleague of the recipient counts too: anyone whose contact is at the same company, including someone who became a contact after the draft was written.
+- **A delivery failure came back** for the address: not sent.
+- **An automatic reply came in** (an out-of-office, for example): the draft is held until the return date the message states, or for a default wait when it states none, then it comes back to **Home** by itself. The card offers **Send now** in place of **Approve**. **Send now** sends anyway; Liaison checks again first, and a reply or a failure that arrived since still stops it.
+- **A recipient opted out of commercial mail**: not sent, and the card asks you to remove them from the recipients or leave the draft unsent.
+- **The record the mail is about says not to send it**: not sent. An app that holds such records says why in its own words.
+
+A stop caused by a reply or a failure is final: approving the same draft again cannot pass, so the card offers **Dismiss** only. If the check itself could not run, the card says so and you can try again shortly.
+
+The check can only see mail Liaison has already imported. A reply that reached the mailbox but has not synced yet (a few minutes at most, see [What an IMAP mailbox keeps in step](#what-an-imap-mailbox-keeps-in-step)) is not seen, so a draft approved in that window can still go out. The check narrows the risk; it does not remove it.
+
+The check applies to drafts written by agents only. A message you write yourself in the composer is sent as you send it, and is never held or stopped by it.
+
+### Record an opt-out
+
+When someone asks to receive no more commercial mail, ask your agent to note it (tool `mail:suppression_add`). Anyone who can write mail can record one. Liaison keeps only a fingerprint of the address, never the address itself. Drafts of commercial mail already waiting for that address are withdrawn at once, and the check before sending refuses any new one. A service message, such as an invoice or an order update, still goes.
+
+When someone answers a mail asking to stop ("unsubscribe", "stop", "ne plus recevoir", "abmelden", "darme de baja", "cancellami" and other phrases in English, French, German, Spanish and Italian), Liaison raises an opt-out request for approval in the name of the mailbox's owner (for a shared mailbox, the person who connected it). Nothing is recorded until someone approves it, and each person gets one request however often they ask. A short reply counts; in a longer one the phrase must stand on a line of its own, and text quoted from an earlier mail never counts. Newsletters, automatic mail and the history imported when a mailbox is first connected raise no request. A sealed mailbox's mail cannot be read, so its replies raise no request: its reply still stops the draft it answers, and the opt-out is then for a person to record.
+
+A new sender whose address is at a company's domain is linked to that company, when exactly one company holds the domain. A conversation that starts with mail you send is linked to the contact of its first To address, when that address already has a contact; sending never creates one.
+
+An agent can check up to 50 addresses at a time (`mail:suppression_check`, scope `mail:suppressions:read`). It says when and how each person opted out.
+
+Lifting an opt-out (`mail:suppression_remove`) waits for a mail admin's approval. The card says who opted out, when and how.
+
+### Commercial mail: identity, opt-out link and one recipient
+
+A commercial mail is a follow-up, or a new message to someone the data marks as a prospect: a contact on an open deal (directly or through their company), recorded under professional interest, or added from a third party or an enrichment. The agent does not decide it; the recipient's record does. A reply in the person's own conversation is never commercial this way.
+
+Before any commercial mail can go, set the organization's legal name and postal address in **Settings > Organization > Commercial identity** (or `email.commercialIdentity` in `liaison config apply`, the agent tool `kernel:config_email`). Until both are set, the agent is told that nothing was staged and where to set them.
+
+Every commercial mail ends with that legal name and address, a link to stop commercial messages, and "or reply stop". The same link goes in the `List-Unsubscribe` header with `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, so a mail client's unsubscribe button works too, on Gmail and on IMAP/SMTP mailboxes. Liaison adds all of it as the mail leaves, so an approver's edit cannot remove it. No tracking image is ever added.
+
+A commercial mail goes to one person outside the organization, so each one gets their own link; colleagues may stay on copy. An agent's new message to someone who opted out is refused, commercial or not: it can still reply in that person's own conversation.
+
+The same rules hold for a mail you write yourself. When a recipient of your new message is a prospect, the composer shows the lines that will be added below your text; you cannot remove them, and they leave with the mail with its own opt-out link and headers. Your mail still needs no approval. If that prospect opted out, or the mail names more than one outside person, the composer says so and the mail is not sent. A new message to someone who opted out but is not a prospect, such as a supplier, goes, and the composer shows that they opted out.
+
+The footer is written in the recipient's language: the language recorded on their contact (`language` in its details), else the organization's language. English and French are available.
+
+### Who commercial mail may go to
+
+An agent's commercial mail goes only to someone whose contact records a lawful basis: consent, existing customer, professional interest, or a generic company address. The check refuses it, and names the person, when:
+
+- no basis is recorded (contacts that existed before these fields have none until someone records one);
+- the person is recorded as a consumer, or nobody recorded whether they are one, and the basis is not consent. With nothing recorded, a contact counts as a business only when it is linked to a company whose domain is a business one (not a free mail provider such as gmail.com, hotmail.fr or t-online.de) and its own address is on that domain; any other contact with nothing recorded counts as a consumer;
+- their country's rule asks for consent and the basis is something else. The default rule is opt-out for France and consent everywhere else. A contact with no recorded country takes the country of its first current address that has one (verified addresses first), and with neither it takes the rule for everywhere else. The refusal names the countries where the rule is opt-out, so you know whether recording a country would help;
+- two contacts at the same address record different bases. A person keeps one, by merging the contacts or correcting one.
+
+A generic company address passes in France without a consumer status. A service message skips this check.
+
+A mail you write yourself to a prospect is not stopped for a missing basis: you are the sender who answers for it. The composer says calmly that no basis is recorded for writing to that person commercially, and lets you record one on their contact from there; you can still send. An address that opted out stays refused for everyone. Under the message, the composer lists what is recorded about each recipient who is a contact: the basis, business or consumer, and whether they opted out; an agent mail's approval card shows the same line.
+
+The first commercial mail to someone whose address did not come from them (recorded as from a third party, an enrichment, or with no recorded source) also says where the address came from and that they can object. Their contact then records that this notice went out, and later mails do not repeat it.
+
+Every commercial mail is recorded in the audit log as it leaves: who approved it, a fingerprint of its text with the footer, the basis, its class and the opt-out check. The record holds no address.
+
+Once a day, contacts recorded under professional interest that have sent no mail or ticket and had no deal for three years are listed on one Home item for each person who is both an admin and allowed to edit contacts. Nothing is deleted: you decide whether to keep them. Not now hides the item until next week; once read, it comes back only when the list changes.
+
+The link opens a page that asks once and records the opt-out with one button. Opening the page changes nothing (mail scanners open links), and pressing again changes nothing more. The page shows the organization's legal name and address, never the recipient's address, in English or French. Links older than three years stop working.
 
 ## Scopes
 
@@ -151,6 +218,10 @@ If the agent's turn is refused because the server restarts, the mail app sends i
 | `mail:conversations:write` | Reply, forward, compose, archive, label and convert to ticket |
 | `mail:drafts:read` | Read mail drafts |
 | `mail:approve` | Approve, edit or deny the mail drafts agents propose |
+| `mail:suppressions:read` | See who has opted out of mail |
+| `mail:suppressions:write` | Lift an opt-out |
+
+Mail's `member` role holds `mail:suppressions:read`, so everyone with the Full Member role sees who has opted out before writing to them. Anyone who holds `mail:conversations:write` can record an opt-out; lifting one stays with mail admins.
 
 See the [scope reference](../reference/scopes.md) and [roles](../admin/roles.md).
 
@@ -159,7 +230,6 @@ See the [scope reference](../reference/scopes.md) and [roles](../admin/roles.md)
 | Tool | What it does | Approval |
 |---|---|---|
 | `listAccounts` | List the mailboxes the person can use with their sync status, last sync error and next retry (hides disconnected ones by default) | No |
-| `getAccount` | Get one connected mailbox | No |
 | `disconnectAccount` | Disconnect a mailbox (an agent connects one through the mail configuration change and a secret card) | No |
 | `search` | Search conversations by text, sender, date range, contact, status, assignee or unread | No |
 | `read` | Read a conversation, optionally with message bodies | No |

@@ -1,0 +1,11 @@
+Today's brief reads the caller's own morning-brief routine -> apps/api/src/modules/home/brief-route.ts (homeBriefRoutes)
+No brief set up offers Set up -> packages/shared/src/i18n/locales/en/kernel.json (homeDecisions.briefNone)
+deal-followups template weekday 08:00, owner's timezone, follow-up -> apps/api/src/modules/agent/routines/kernel-routine-templates.ts (registerKernelRoutineTemplates)
+deal-followups default 7 quiet days, one pipeline or all -> apps/api/src/modules/agent/routines/kernel-routine-templates.ts (DEAL_FOLLOWUPS_DEFAULT_QUIET_DAYS)
+deal-followups drafts from the deal owner's mailbox or skips no_sender -> apps/api/src/apps/projects/service/deals.ts (dealsWithWaitingDraft)
+deal-followups no_sender skip -> apps/api/src/apps/projects/service/deals.ts (followupCandidates)
+deal-followups card: who approves, skips today, added at send -> apps/api/src/modules/agent/routines/deal-followups-card.ts (summarizeDealFollowupsSetup)
+deal closed cancels waiting drafts about it -> apps/api/src/modules/approvals/withdraw-on-events.ts (withdrawCommercialDraftsOn)
+app switched off cancels drafts whose send check names its records -> apps/api/src/modules/approvals/cancel.ts (cancelApprovalsForSwitchedOffApp)
+pausing keeps waiting drafts: a disabled routine's tick is skipped -> apps/api/src/modules/agent/routines/routine-worker.ts (runRoutineTick)
+Link to the follow-ups page -> docs/sales/follow-ups.md

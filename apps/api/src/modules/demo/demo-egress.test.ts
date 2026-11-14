@@ -118,6 +118,24 @@ describe("demo egress lockdown", () => {
     expect(onTheWire).toEqual([])
   })
 
+  it("records a demo org's mail to its fictional people as captured, and nothing reaches the transport", async () => {
+    DemoModeTestAccess.set(true)
+    const send = smtpBridge(demoOrgId, demoUserId)
+    const result = JSON.parse(
+      await send({ to: ["noor@brasserie.example"], subject: "Hi", textBody: "Hi" }),
+    )
+    expect(result).toMatchObject({ deliveryState: "delivered", captured: true })
+    expect(typeof result.messageId).toBe("string")
+    expect(onTheWire).toEqual([])
+  })
+
+  it("a normal org's send is not marked captured", async () => {
+    DemoModeTestAccess.set(true)
+    const send = smtpBridge(normalOrgId, normalUserId)
+    const result = JSON.parse(await send({ to: ["customer@example.com"], subject: "Hi" }))
+    expect(result.captured).toBeUndefined()
+  })
+
   it("leaves a normal org on the same box sending, so the check is keyed on the org", async () => {
     DemoModeTestAccess.set(true)
     const send = smtpBridge(normalOrgId, normalUserId)

@@ -11,7 +11,7 @@
 // second layer naming the same person) updates the row already there instead
 // of adding a twin, and queues the same contact events the product queues.
 import { resolveContactSchema } from "@liaison/shared"
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 import { withSystemDb } from "~/db/privileged"
 import type { UserContext } from "~/db/rls"
 import { contacts } from "~/db/schema/kernel/contacts"
@@ -28,6 +28,11 @@ export interface ResolvedContactInput {
   externalId?: Record<string, string>
   tags?: string[]
   metadata?: Record<string, unknown>
+  /**
+   * The country the world places them in (ISO 3166 alpha-2), recorded as the
+   * country the send check reads. Never replaces one already recorded.
+   */
+  recipientCountry?: string
 }
 
 export interface ResolvedContact {
@@ -58,6 +63,10 @@ export async function resolveContacts(
       : ({ audience: "owner", ownerUserId: actor.userId } as const)
   const out: Array<[string, ResolvedContact]> = []
   await asUser(actor, async (tx) => {
+    // Countries are recorded in one statement for the whole batch, after every
+    // contact exists: the first country named for a contact wins, and one
+    // already recorded is never replaced.
+    const countries: Array<{ id: string; country: string }> = []
     for (const input of inputs) {
       const fields = {
         email: input.email,
@@ -72,7 +81,25 @@ export async function resolveContacts(
       const params = { ...fields, ...(input.tags !== undefined ? { tags: input.tags } : {}) }
       const { contact } = await resolveContact(tx as never, ctx.orgId, actor.userId, params, target)
       if (!contact) throw new Error(`contacts seed: contact ${input.key} was not created`)
+      if (input.recipientCountry) {
+        countries.push({ id: contact.id, country: input.recipientCountry.toUpperCase() })
+      }
       out.push([input.key, { id: contact.id, name: contact.name, email: contact.email }])
+    }
+    if (countries.length > 0) {
+      const byId = new Map<string, string>()
+      for (const { id, country } of countries) if (!byId.has(id)) byId.set(id, country)
+      const cases = [...byId].map(([id, country]) => sql`WHEN ${id}::uuid THEN ${country}`)
+      await tx
+        .update(contacts)
+        .set({ recipientCountry: sql`CASE ${contacts.id} ${sql.join(cases, sql` `)} END` })
+        .where(
+          and(
+            eq(contacts.orgId, ctx.orgId),
+            inArray(contacts.id, [...byId.keys()]),
+            isNull(contacts.recipientCountry),
+          ),
+        )
     }
   })
   return out

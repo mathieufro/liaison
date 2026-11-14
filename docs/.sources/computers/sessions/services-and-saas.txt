@@ -1,0 +1,1 @@
+A read of a session with no pull request says so -> apps/api/src/modules/node-sessions/agent-tools.ts (handleComputerSessionRead)

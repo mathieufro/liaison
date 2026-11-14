@@ -401,7 +401,11 @@ export async function handleComputerSessionRead(
     ...(open.length > OPEN_MAX ? { moreWaiting: open.length - OPEN_MAX } : {}),
     ...(row.resultSummary ? { result: fence(clip(row.resultSummary, RESULT_MAX)) } : {}),
     ...(row.error ? { error: fence(clip(row.error, LINE_MAX)) } : {}),
-    ...(row.prUrl ? { pullRequest: fence(clip(row.prUrl, LINE_MAX)) } : {}),
+    // No link is a fact too: a session that has not opened one says so, so an
+    // answer never links a pull request that does not exist yet.
+    pullRequest: row.prUrl
+      ? fence(clip(row.prUrl, LINE_MAX))
+      : `none yet: this session has opened no pull request (status ${row.status})`,
     recentActivity: recent
       .reverse()
       .map(eventLine)

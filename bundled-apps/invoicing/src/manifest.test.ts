@@ -50,6 +50,41 @@ function findOpaqueParams(m: unknown): string[] {
 }
 
 describe("invoicing manifest", () => {
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    const attention = (manifest as { attention?: { groupLabel?: unknown } }).attention
+    expect(attention?.groupLabel).toEqual({
+      label: "Invoicing",
+      labelKey: "kernel.homeGroupInvoicing",
+    })
+  })
+
+  it("the draft tools say a draft with a source is a visible pending draft and invoice_issue issues it", () => {
+    const tools = (manifest as unknown as { tools: Record<string, { description: string }> }).tools
+    // red: put the "LEGACY, internal" opening back and the draft tools read as dead again.
+    for (const name of ["drafts_create", "drafts_update", "drafts_discard"]) {
+      const text = tools[name]!.description
+      expect(text).not.toMatch(/legacy|no user facing draft/i)
+      expect(text.toLowerCase()).toContain("unissued draft")
+    }
+    expect(tools.drafts_create!.description.toLowerCase()).toContain("a draft with a source")
+    expect(tools.drafts_create!.description).toContain("visible pending draft")
+    expect(tools.drafts_create!.description).toContain("invoice_issue {draft_id}")
+    expect(tools.drafts_update!.description).toContain("one from a source")
+    // Behaviour is unchanged: the agent's free invoice draft is still steered to the paid-order and
+    // conversion paths, and a quote to its own tool.
+    expect(tools.drafts_create!.description).toContain("quote_create_and_issue")
+  })
+
+  it("line_kind accepts service beside goods, software and shipping", () => {
+    const lineKind = (
+      manifest as unknown as {
+        schema: { document_lines: { fields: { line_kind: { enum: string[]; default: string } } } }
+      }
+    ).schema.document_lines.fields.line_kind
+    expect(lineKind.enum).toEqual(["goods", "software", "service", "shipping"])
+    expect(lineKind.default).toBe("goods")
+  })
+
   it("validates against packageManifestSchema", () => {
     const r = packageManifestSchema.safeParse(manifest)
     if (!r.success) {
@@ -1283,13 +1318,19 @@ describe("invoicing manifest", () => {
     expect(patch.properties?.notes, "drafts_update.patch must expose notes").toBeDefined()
   })
 
-  it("documents_update's description lists notes among the fields editable after issue", () => {
-    const desc =
-      (
-        manifest as unknown as {
-          tools: Record<string, { description?: string }>
-        }
-      ).tools.documents_update?.description ?? ""
+  it("documents_update's description or its guide section lists notes among the fields editable after issue", () => {
+    // Past its first 600 characters the description reads from a guide section naming the tool,
+    // which renders whenever the tool is loaded.
+    const m = manifest as unknown as {
+      tools: Record<string, { description?: string }>
+      agentInstructions: { sections?: Array<{ tools?: string[]; text?: string }> }
+    }
+    const desc = [
+      m.tools.documents_update?.description ?? "",
+      ...(m.agentInstructions.sections ?? [])
+        .filter((x) => x.tools?.includes("documents_update"))
+        .map((x) => x.text ?? ""),
+    ].join("\n\n")
     expect(desc).toContain("po_number, notes) stays editable post-issue")
   })
 
@@ -1617,19 +1658,46 @@ describe("invoicing manifest", () => {
     //   states the total that issues.
     // 0.20.49: above both lines of work, which each changed it under the number before; no change of its own.
     // 0.20.50: a search for a number no document carries says so and names the numbers ending in the same digits.
-    // 0.20.52: the package carries the app SDK's manifest `secrets` field; no change of its own.
-    // 0.20.54: orders_invoiceability_check, the read the Shopify app asks before it stages a draft order
+    // 0.20.51: the shared settings types it builds against changed; no change of its own.
+    // 0.20.52: its attention heading is declared here, not in the web shell.
+    // 0.20.56: document search declares one search keyword fewer.
+    // 0.20.57: hidden tools name the visible one to use instead.
+    // 0.20.58: sentences shared by several tools, and the longest descriptions past 600 characters, read from guide sections.
+    // 0.20.59: its core tools load on a hard focus of its entity, the others by name.
+    // 0.20.52 (main): the package carries the app SDK's manifest `secrets` field; no change of its own.
+    // 0.20.60: both of the above, merged.
+    // 0.20.63: the company page's Money section.
+    // 0.20.54 (main): orders_invoiceability_check, the read the Shopify app asks before it stages a draft order
     //   create or complete; a quote made as a draft order carries the buyer VAT number to the order.
-    // 0.20.55: a re-driven order reads the buyer VAT number and billing company the live order
+    // 0.20.55 (main): a re-driven order reads the buyer VAT number and billing company the live order
     //   carries now; an untaxed order to another member state without a VAT number parks for review.
-    // 0.20.56: a quote made as a draft order links the contact's Shopify customer (the contact read
-    //   asked with the wrong argument and shape, so the link was never made).
-    // 0.20.57: quotes and invoices for a B2B company name the company, billed at its location with
-    //   its tax registration id; each draft's own taxesIncluded splits net and tax.
-    // 0.21.0: no transaction is held across a run: an issue commits its number, document, lines and
+    // 0.20.56 (main): a quote made as a draft order links the contact's Shopify customer.
+    // 0.20.64: above the 0.20.56 main took meanwhile, merged.
+    // 0.20.65: a consulting line is a service line; the draft tools say a draft from a source is a visible
+    //   pending draft that invoice_issue issues; the first issue on a profile with no time zone asks for one.
+    // 0.20.66: recurring schedules: three tables, four tools (save, change, pause, list) and an import kind.
+    // 0.20.67: the month-end run: draft, card, approve, issue and legal-date jobs, four run tools.
+    // 0.20.68: run rows issue atomically, refusals checked at staging, a held-by-the-day-limit
+    // notice, and the run card's approval route.
+    // 0.20.69: run drafts written whole by an internal tool, run rows issued only by their job
+    //   inside the issue window, and a convert that calls Shopify with no transaction open.
+    // 0.20.70: month-end rows edited through the draft tools (how far, put back, two writers, added rows)
+    // 0.20.71: a run row's due rule reads its dates without a time suffix
+    // 0.20.72: who issues what (card stream, Stripe's own emails) and the issuer guard
+    // 0.20.73: a parked draft discard names what it does (discard, this month only, end the schedule)
+    // 0.20.74: card payments on Stripe issue, pay and credit by their own handlers; settled and failed Stripe refunds reach the refund handler
+    // 0.20.75: both of the above, merged
+    // 0.20.76: the issuer guard reads a contact's identifiers only, so it does not mark the turn
+    // 0.20.57 (main): quotes and invoices for a B2B company name the company, billed at its location
+    //   with its tax registration id; each draft's own taxesIncluded splits net and tax.
+    // 0.20.79: above the 0.20.57 main took meanwhile, merged.
+    // 0.20.83: the source repository link names the repository where the code now lives.
+    // 0.20.84: the schedule page names its entity, so a turn sent from it knows the open schedule.
+    // 0.21.0 (main): no transaction is held across a run: an issue commits its number, document, lines and
     //   the writes that go with it (the draft it replaces, the invoice a credit note credits) in one
     //   batch; automatic credit notes carry a dedup key; the deferred-retry sweep resumes issues a
     //   dead run left unrendered.
+    // 0.21.1: above the 0.21.0 main took meanwhile, merged.
     // 0.21.1: the deferred-retry, payment reconcile, order-number backfill and shipment link jobs hold
     //   no transaction (each write commits on its own; the shipment link merges in the database);
     //   resume-interrupted-issues wakes only while a document waits for its PDF.
@@ -1638,7 +1706,13 @@ describe("invoicing manifest", () => {
     // 0.21.3: no tool holds a transaction across its run: credit notes and convert-to-invoice commit
     //   their writes with the document, and order_reissue_apply issues the credit note and its
     //   replacement in one commit (both or neither).
-    // 0.21.9: a unique-key race reads as one when a sandboxed call rejects with its text alone.
+    // 0.21.13: a document may name the project it bills (billing_project_id), and the projects app
+    //   reads a project's invoiced amount through project_invoiced_get.
+    // 0.21.14: project_invoiced_get pages on a unique order, counts only issued statuses in the
+    //   query, refuses past its cap and reads an issue date as a calendar day.
+    // 0.21.15: a unique-key race reads as one when a sandboxed call rejects with its text alone.
+    // 0.21.16: a month-end card drawn again shows what changed only once its rows are read.
+    // 0.21.17: the documents list names the period it is empty for; the footer opens settings.
     expect(m.version).toMatch(/^\d+\.\d+\.\d+$/)
     const overdue = (manifest as unknown as { jobs: Record<string, { runsFor?: unknown }> }).jobs[
       "overdue-scan"
@@ -1888,6 +1962,36 @@ describe("issuing tool budgets", () => {
       "order_reissue_apply",
     ]) {
       expect({ name, timeoutMs: tools[name]?.timeoutMs ?? 0 }).toEqual({ name, timeoutMs: 60_000 })
+    }
+  })
+})
+
+describe("tools that hold a transaction", () => {
+  const tools = (
+    manifest as unknown as {
+      tools: Record<string, { atomic?: boolean; trustBoundary?: string; agentVisible?: boolean }>
+    }
+  ).tools
+  it("no tool holds one; the convert's local half and the run steps are internal", () => {
+    expect(
+      Object.entries(tools)
+        .filter(([, t]) => t.atomic === true)
+        .map(([n]) => n),
+    ).toEqual([])
+    for (const name of [
+      "documents_convert_local",
+      "recurring_draft_write",
+      "recurring_item_issue",
+    ]) {
+      expect({
+        name,
+        boundary: tools[name]?.trustBoundary,
+        agent: tools[name]?.agentVisible,
+      }).toEqual({
+        name,
+        boundary: "internal",
+        agent: false,
+      })
     }
   })
 })

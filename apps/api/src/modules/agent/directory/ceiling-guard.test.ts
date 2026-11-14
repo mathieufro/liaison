@@ -18,6 +18,12 @@ describe("CEILING GUARD", () => {
     ).toThrow(RoleAgentAdminScopeError)
   })
 
+  it("CEILING GUARD: the portal administration scope is an admin scope, rejected for a role agent", () => {
+    expect(() =>
+      assertNoAdminScopesInRoleCeiling("role", ["kernel:contacts:read", "kernel:portal:admin"]),
+    ).toThrow(RoleAgentAdminScopeError)
+  })
+
   for (const wildcard of ["*", "kernel:*", "kernel:users:*"]) {
     it(`CEILING GUARD: role ceiling entry ${wildcard} covers an admin scope, rejected`, () => {
       expect(() =>

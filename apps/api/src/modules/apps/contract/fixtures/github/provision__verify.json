@@ -1,0 +1,28 @@
+{
+  "entry": "provision:verify",
+  "params": {
+    "config": {}
+  },
+  "unrecorded": {
+    "reason": "hand-written, not recorded: a recording needs a read-only GitHub token on a test repository, which the recording run does not have yet. Awaiting a recording against GitHub."
+  },
+  "calls": [
+    {
+      "method": "connections_getSettings",
+      "args": ["github"],
+      "reply": "{\"values\":{\"owner\":\"maison-example\"},\"missing\":[]}"
+    },
+    {
+      "method": "fetch",
+      "args": [
+        "https://api.github.com/user",
+        "{\"method\":\"GET\",\"headers\":{\"accept\":\"application/vnd.github+json\",\"x-github-api-version\":\"2022-11-28\"},\"auth\":{\"connection\":\"github\",\"scheme\":\"bearer\",\"fields\":[\"token\"]}}"
+      ],
+      "error": {
+        "message": "Connection \"github\" has no token",
+        "status": 409,
+        "code": "credential_missing"
+      }
+    }
+  ]
+}

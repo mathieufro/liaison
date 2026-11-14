@@ -129,6 +129,13 @@ const KNOWN_LITERAL_USES: LiteralPin[] = [
   // payload — a kernel-declared special case until manifests can declare an
   // openTarget resolver (32b461c3 landed without a pin; re-pinned after the
   // authority-module refactor shifted the file).
+  // Opt-outs: the event that an address opted out is mail's (mail/suppression:added), and
+  // the drafts it withdraws are kernel approval rows; the kernel owns the opt-out list.
+  {
+    file: "modules/approvals/withdraw-on-events.ts",
+    branch:
+      'if (event.app !== "mail" || event.entity !== "suppression" || event.action !== "added") return',
+  },
   {
     file: "modules/approvals/attention.ts",
     branch: '...(appName === "tickets" && typeof r.current_payload?.ticketId === "string"',
@@ -230,6 +237,15 @@ const KNOWN_LITERAL_USES: LiteralPin[] = [
     file: "modules/agent/tools/setup-state-tool.ts",
     branch: '|| app === "google-drive") {',
   }, // Drive's client is a Google client too
+  // Entity discussions: a task's discussion is the task's own comment thread, kept by the
+  // projects app, so it is never a second thread (a contact's is the kernel's).
+  {
+    file: "modules/threads/entity-discussion.ts",
+    branch: 'ref.app === "projects" && ref.entityType === "task"',
+  },
+  // The tool bench reads the instruction text of real apps; the example app is the
+  // template every new app copies, not a catalog the model is served.
+  { file: "modules/agent/tools/tool-bench/bench.ts", branch: 'if (app === "example") continue' },
   // connect_link_send: a mail connection asks the person which mailbox kind they want.
   { file: "modules/agent/tools/connection-tools.ts", branch: '${params.app === "mail" ?' },
   // open-cards: the Google Calendar app's cards open under the calendar card kind.

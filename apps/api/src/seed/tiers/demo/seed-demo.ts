@@ -59,16 +59,25 @@
 // Shopify write overlay is reset by `installDemoShopifyConnection` inside the
 // org layer, so a visitor's writes against the fixture shop go away too.
 
-import type { DemoNeed, DemoSeedPart } from "@liaison/shared"
+import {
+  DEMO_DEFAULT_WORLD,
+  DEMO_WORLDS,
+  type DemoNeed,
+  type DemoSeedPart,
+  type DemoWorldId,
+  isDemoWorldId,
+} from "@liaison/shared"
 import { and, eq, sql } from "drizzle-orm"
 import { withPrivilegedDb } from "~/db/privileged"
 import { approvalRequests, routines } from "~/db/schema/kernel"
 import { env } from "~/lib/env"
 import { rootLogger } from "~/lib/logger"
 import { storeApprovalSummaries } from "~/modules/approvals/served-summary"
+import { refreshAllAppAttention } from "~/modules/apps/attention-store"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import { setOrgAppAccess, setOrgAppStatus } from "~/modules/apps/org-app-service"
 import { getOrgAppState } from "~/modules/apps/org-apps"
+import { isDemoModeEnabled } from "~/modules/demo/demo-mode"
 import { completeDemoOrgReset, resetDemoOrgContent } from "~/modules/demo/demo-reset"
 import {
   DEMO_COMPANY_NAME,
@@ -77,9 +86,12 @@ import {
   ensureReservedSecondAdmin,
   reservedOwner,
 } from "~/modules/demo/demo-seeder"
+import { saasScenarioStart } from "~/modules/demo/worlds/saas/scenario-start"
 import { runAsSeed } from "~/modules/notifications/seeded"
 import { joinPendingApprovals } from "~/seed/factories/people/membership"
-import { DEMO_APPS, demoSeedPlan } from "./demo-apps"
+import { demoWorldPack, findDemoWorldPack } from "~/seed/worlds"
+import { DEMO_APPS, type DemoSeedPlan, demoSeedPlan } from "./demo-apps"
+import { replaceSeededDemoOrg } from "./replace-demo-org"
 import { type SeedDemoAccountsResult, seedDemoAccounts } from "./seed-accounts"
 import {
   enableScenarioRoutine,
@@ -95,6 +107,12 @@ import { type SeedDemoWarehouseResult, seedDemoWarehouse } from "./seed-warehous
 const seedLog = rootLogger.child({ module: "demo-seed" })
 
 export interface SeedDemoWorldOptions extends SeedDemoOrgOptions {
+  /**
+   * The demo world to seed (`DEMO_WORLDS`). Defaults to `products`. Its pack
+   * gives the org its people, desks, mail domain and name (unless `orgName` is
+   * given), and every layer its specs (`seed/worlds`).
+   */
+  worldId?: DemoWorldId
   /**
    * Anchor every relative offset in the domain layers to this instant. Defaults
    * to the moment of the call, so a freshly seeded org always looks active.
@@ -133,7 +151,15 @@ export interface SeedDemoWorldOptions extends SeedDemoOrgOptions {
 
 /** One layer's outcome, for the log and for the caller's own reporting. */
 export interface SeedLayerFailure {
-  layer: "support" | "commerce" | "warehouse" | "agent-native" | "accounts" | "support-routine"
+  layer:
+    | "support"
+    | "commerce"
+    | "warehouse"
+    | "world"
+    | "agent-native"
+    | "accounts"
+    | "support-routine"
+    | "attention"
   message: string
 }
 
@@ -175,6 +201,21 @@ async function storeSeededApprovalSummaries(orgId: string): Promise<number> {
   return storeApprovalSummaries(orgId, ids)
 }
 
+/**
+ * Recompute the apps' stored attention lists of the org, every app provider for every active
+ * person (or only `userIds`), the way the minute tick does (`refreshAllAppAttention`). The Home
+ * feed reads only those stored lists for an app (attention-store.ts), so a workspace the seed just
+ * wrote shows empty queues until they are computed. The org's apps are registered in this process
+ * first, the way a server registers them at boot.
+ */
+export async function refreshSeededAttention(
+  orgId: string,
+  userIds?: readonly string[],
+): Promise<void> {
+  await ensureAppsForOrg(orgId)
+  await refreshAllAppAttention(orgId, userIds ? { userIds: [...userIds] } : {})
+}
+
 function message(err: unknown): string {
   if (!(err instanceof Error)) return String(err)
   // A failed query's wrapper names the SQL only; the database's own reason
@@ -186,13 +227,19 @@ function message(err: unknown): string {
 /**
  * The picks decide what the visitor sees: every demo app they did not pick is
  * turned Off, every other one is On and open to everyone (Everything and an
- * untailored seed turn none Off). A re-seed puts back whatever an earlier
- * visitor turned Off, removed or restricted; an app already as planned is left
- * untouched. Returns the apps turned Off.
+ * untailored seed turn none Off in `products`; another world also turns Off the
+ * demo apps it does not have). A re-seed puts back whatever an earlier visitor
+ * turned Off, removed or restricted; an app already as planned is left
+ * untouched. Apps the plan does not name are not touched. Returns the apps
+ * turned Off.
  */
-async function applyAppPlan(orgId: string, offApps: readonly string[]): Promise<string[]> {
-  const off = new Set(offApps)
-  for (const app of DEMO_APPS) {
+async function applyAppPlan(
+  orgId: string,
+  plan: Pick<DemoSeedPlan, "apps" | "offApps">,
+): Promise<string[]> {
+  const off = new Set(plan.offApps)
+  const governed = new Set([...plan.apps, ...plan.offApps])
+  for (const app of DEMO_APPS.filter((a) => governed.has(a))) {
     // An app not registered in this deployment has no row to set.
     const state = await getOrgAppState(orgId, app)
     if (!state) continue
@@ -216,18 +263,22 @@ async function applyAppPlan(orgId: string, offApps: readonly string[]): Promise<
  * which the full seed switches on, goes back Off unless they picked support,
  * so nothing in an app they never asked for runs behind their back. The other
  * seeded content of the apps turned Off stays in place, out of sight, which is
- * what an app turned Off already means. Cheap on purpose: a few row updates
- * inside the claim, never a seed.
+ * what an app turned Off already means. Last, the claiming owner's stored
+ * attention lists are recomputed (`ownerUserId`), so the Home they land on
+ * holds the queues as of the claim, not as of the pool's seed. Cheap on
+ * purpose: a few row updates and one person's lists inside the claim, never a
+ * seed.
  */
 export async function fitPooledWorldToNeeds(
   orgId: string,
   needs: readonly DemoNeed[],
+  worldId: DemoWorldId = DEMO_DEFAULT_WORLD,
+  ownerUserId?: string,
 ): Promise<{ appsOff: string[]; supportRoutineOff: boolean }> {
-  // Only offApps and the support routine are read here, neither depends on the warehouse.
-  const plan = demoSeedPlan(needs, { warehouse: env.LIAISON_DEMO_WAREHOUSE })
-  const appsOff = await applyAppPlan(orgId, plan.offApps)
+  const fit = pooledFitPlan(needs, worldId)
+  const appsOff = await applyAppPlan(orgId, fit)
   let supportRoutineOff = false
-  if (!plan.parts.has("support-routine")) {
+  if (fit.routinesOff.includes(SUPPORT_SCENARIO_ROUTINE)) {
     const ids = await withPrivilegedDb(orgId, "demo-pool:support-routine-off", async (tx) =>
       (
         await tx
@@ -251,7 +302,27 @@ export async function fitPooledWorldToNeeds(
       supportRoutineOff = true
     }
   }
+  if (ownerUserId) await refreshSeededAttention(orgId, [ownerUserId])
   return { appsOff, supportRoutineOff }
+}
+
+/**
+ * What fitting a pooled workspace of `worldId` to `needs` does, short of
+ * writing it: the world's plan for those needs gives the apps left On and
+ * turned Off, and the support scenario's routine goes Off unless support was
+ * picked. Every other routine the world seeded stays as it is.
+ */
+export function pooledFitPlan(
+  needs: readonly DemoNeed[],
+  worldId: DemoWorldId,
+): { apps: readonly string[]; offApps: readonly string[]; routinesOff: string[] } {
+  // Only the apps and the support routine are read here, neither depends on the warehouse.
+  const plan = demoSeedPlan(needs, { warehouse: env.LIAISON_DEMO_WAREHOUSE }, worldId)
+  return {
+    apps: plan.apps,
+    offApps: plan.offApps,
+    routinesOff: plan.parts.has("support-routine") ? [] : [SUPPORT_SCENARIO_ROUTINE],
+  }
 }
 
 /**
@@ -273,10 +344,15 @@ async function seedDemoWorldLayers(opts: SeedDemoWorldOptions): Promise<SeedDemo
   const baseTime = opts.baseTime ?? new Date()
   const failures: SeedLayerFailure[] = []
 
-  // What this seed writes: everything (no needs), or a visitor's picks.
-  const plan = demoSeedPlan(opts.needs, {
-    warehouse: opts.warehouse ?? env.LIAISON_DEMO_WAREHOUSE,
-  })
+  // Which world, and what this seed writes of it: everything (no needs), or a
+  // visitor's picks.
+  const worldId = opts.worldId ?? DEMO_DEFAULT_WORLD
+  const pack = demoWorldPack(worldId)
+  const plan = demoSeedPlan(
+    opts.needs,
+    { warehouse: opts.warehouse ?? env.LIAISON_DEMO_WAREHOUSE },
+    worldId,
+  )
   const wants = (part: DemoSeedPart) =>
     plan.parts.has(part) && !(part === "commerce" && opts.withoutCommerce === true)
   if (opts.withoutCommerce === true) log("world: the commerce part is left out on request")
@@ -285,12 +361,17 @@ async function seedDemoWorldLayers(opts: SeedDemoWorldOptions): Promise<SeedDemo
   }
   const org = await seedDemoOrg({
     ...opts,
-    ...(plan.tailored && !opts.apps ? { apps: plan.apps } : {}),
+    orgName: opts.orgName ?? pack.orgName,
+    world: opts.world ?? pack.world,
+    roleAgents: opts.roleAgents ?? pack.roleAgents,
+    deskTeams: opts.deskTeams ?? pack.deskTeams,
+    emailDomain: opts.emailDomain ?? pack.emailDomain,
+    apps: opts.apps ?? plan.apps,
     includeDomainData: true,
   })
-  log(`world: org '${org.orgSlug}' ready with ${org.people.length} people`)
+  log(`world: org '${org.orgSlug}' (${worldId}) ready with ${org.people.length} people`)
 
-  const off = await applyAppPlan(org.orgId, plan.offApps)
+  const off = await applyAppPlan(org.orgId, plan)
   if (off.length > 0) log(`world: turned Off the apps not picked: ${off.join(", ")}`)
 
   // `resetDemoOrgContent` REFUSES (it throws) unless demo mode is on and the
@@ -311,6 +392,11 @@ async function seedDemoWorldLayers(opts: SeedDemoWorldOptions): Promise<SeedDemo
     support = await seedDemoSupport(org, {
       now: baseTime,
       log,
+      specs: {
+        support: pack.supportSpecs,
+        knowledge: pack.knowledgeSpecs,
+        threads: pack.threadSpecs,
+      },
       ...(plan.tailored
         ? {
             tailored: {
@@ -326,9 +412,25 @@ async function seedDemoWorldLayers(opts: SeedDemoWorldOptions): Promise<SeedDemo
     log(`world: the support layer failed: ${message(err)}`)
   }
 
+  // The world's own layer: `products` writes its shop and its warehouse below,
+  // any other world its pack's layer (`pack.layer`), after support so its rows
+  // can name the people, contacts and conversations support wrote.
+  const products = worldId === "products"
+  if (!products && pack.layer) {
+    try {
+      await pack.layer({ org, baseTime, plan, log })
+      log(`world: the ${worldId} layer is seeded`)
+    } catch (err) {
+      failures.push({ layer: "world", message: message(err) })
+      log(`world: the ${worldId} layer failed: ${message(err)}`)
+    }
+  } else if (!products) {
+    log(`world: the ${worldId} pack has no layer of its own yet`)
+  }
+
   let commerce: SeedDemoCommerceResult | null = null
   try {
-    if (wants("commerce")) {
+    if (products && wants("commerce")) {
       commerce = await seedDemoCommerce({
         org,
         baseTime,
@@ -348,7 +450,7 @@ async function seedDemoWorldLayers(opts: SeedDemoWorldOptions): Promise<SeedDemo
   // written against an org that already has one.
   let warehouse: SeedDemoWarehouseResult | null = null
   try {
-    if (wants("warehouse")) {
+    if (products && wants("warehouse")) {
       warehouse = await seedDemoWarehouse(org, { baseTime, log })
       const rows = Object.values(warehouse.counts).reduce((n, v) => n + v, 0)
       log(`world: the oracle holds ${rows} warehouse rows`)
@@ -367,6 +469,7 @@ async function seedDemoWorldLayers(opts: SeedDemoWorldOptions): Promise<SeedDemo
     agentNative = await seedDemoAgentNative(org, {
       baseTime,
       log,
+      specs: pack.agentNative,
       ...(plan.tailored ? { scenarioParts: plan.parts } : {}),
     })
   } catch (err) {
@@ -392,6 +495,16 @@ async function seedDemoWorldLayers(opts: SeedDemoWorldOptions): Promise<SeedDemo
   } catch (err) {
     seedLog.error({ err, orgId: org.orgId }, "demo seed: storing approval summaries failed")
     log(`world: approval summaries not stored, they are filled when served: ${message(err)}`)
+  }
+
+  // The kernel's stored approval summaries are in; the apps' stored attention lists are computed
+  // now from what every layer wrote, so the workspace's Home opens with its queues full.
+  try {
+    await refreshSeededAttention(org.orgId)
+    log("world: the apps' attention lists are stored")
+  } catch (err) {
+    failures.push({ layer: "attention", message: message(err) })
+    log(`world: the apps' attention lists could not be stored: ${message(err)}`)
   }
 
   // The support scenario's routine goes on LAST, once every seeded ticket is
@@ -441,6 +554,36 @@ async function seedDemoWorldLayers(opts: SeedDemoWorldOptions): Promise<SeedDemo
 }
 
 /**
+ * What starting a scenario writes, per world: the approval ids written.
+ *
+ * - `products`: each scenario's seeded approvals (`seedScenarioApprovals`).
+ * - `saas`: the money decisions (the card reminder, the refund) are seeded with
+ *   the workspace, on Home from the start, so the money scenario brings
+ *   nothing more. The support, projects and sales scenarios write what they
+ *   need when they start (`modules/demo/worlds/saas/scenario-start.ts`: the
+ *   support routine, the visitor's task, the sales routine); the others bring
+ *   nothing. None seeds an approval.
+ * - `studio`: no scenario yet.
+ *
+ * A world never writes another world's approvals.
+ */
+async function startWorldScenario(
+  worldId: DemoWorldId,
+  orgId: string,
+  need: DemoNeed,
+  ownerUserId: string,
+): Promise<string[]> {
+  switch (worldId) {
+    case "products":
+      return seedScenarioApprovals(orgId, need)
+    case "saas":
+      return saasScenarioStart(orgId, need, ownerUserId)
+    case "studio":
+      return []
+  }
+}
+
+/**
  * What a visitor's scenario brings into their workspace when they start it:
  * that scenario's seeded approvals, waiting on them (`seedScenarioApprovals`).
  * The signup seed writes none pending, so the queue holds at most the
@@ -450,8 +593,9 @@ export async function seedScenarioStart(
   orgId: string,
   ownerUserId: string,
   need: DemoNeed,
+  worldId: DemoWorldId = DEMO_DEFAULT_WORLD,
 ): Promise<string[]> {
-  const ids = await seedScenarioApprovals(orgId, need)
+  const ids = await startWorldScenario(worldId, orgId, need, ownerUserId)
   if (ids.length === 0) return ids
   await joinPendingApprovals(orgId, ownerUserId)
   await ensureAppsForOrg(orgId)
@@ -495,6 +639,17 @@ export async function seedScenarioStart(
 // `SeedDemoOrgOptions.personaPassword`.
 //
 //   liaison seed --tier demo --no-reset --passwords "<pw>"
+//
+// `--passwords-env <VAR>` reads the same password from that environment
+// variable, so it never shows in a process list or a shell history. A variable
+// that is not set exits 2 before anything is seeded.
+//
+// `--world <id>` seeds another demo world (`DEMO_WORLDS`) from its pack, as a
+// `visitor` org only: the reserved App Review org is always `products`, so a
+// world other than `products` on a reserved run is refused (exit 2), as is an
+// unknown world or one with no seed pack yet.
+//
+//   liaison seed --tier demo --world saas --slug acme --variant visitor
 
 function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(`--${name}`)
@@ -519,20 +674,54 @@ export interface SeedDemoCliDeps {
 export async function runSeedDemoCli(
   argv: string[],
   deps: SeedDemoCliDeps = {},
-): Promise<{ result: SeedDemoWorldResult; exitCode: 0 | 1 }> {
+): Promise<{ result: SeedDemoWorldResult | null; exitCode: 0 | 1 | 2 }> {
   const seedWorld = deps.seedWorld ?? seedDemoWorld
   const variant = flag(argv, "variant") === "visitor" ? "visitor" : "reserved"
-  const resetContent = argv.includes("--no-reset")
+  const world = flag(argv, "world") ?? DEMO_DEFAULT_WORLD
+  if (!isDemoWorldId(world)) {
+    console.error(`[demo-seed] unknown world '${world}': expected one of ${DEMO_WORLDS.join(", ")}`)
+    return { result: null, exitCode: 2 }
+  }
+  if (world !== "products" && variant === "reserved") {
+    console.error(
+      `[demo-seed] the reserved org is always the products world: seed '${world}' ` +
+        "with --variant visitor",
+    )
+    return { result: null, exitCode: 2 }
+  }
+  if (!findDemoWorldPack(world)) {
+    console.error(`[demo-seed] the '${world}' world has no seed pack yet`)
+    return { result: null, exitCode: 2 }
+  }
+  const passwordsEnv = flag(argv, "passwords-env")
+  const personaPassword = passwordsEnv ? process.env[passwordsEnv] : flag(argv, "passwords")
+  if (passwordsEnv && !personaPassword) {
+    console.error(`[demo-seed] --passwords-env names ${passwordsEnv}, which is not set`)
+    return { result: null, exitCode: 2 }
+  }
+  let resetContent = argv.includes("--no-reset")
     ? false
     : argv.includes("--reset") || variant === "reserved"
   const slug = flag(argv, "slug") ?? DEMO_RESERVED_SLUG
+  // A private box (demo mode off) has no visitors and no reaper, and the
+  // in-place content reset is a demo box's own: a visitor org it seeded before
+  // is deleted and seeded fresh instead, as the lively tier's --replace does.
+  // An org without the demo marker is refused there, before anything is deleted.
+  if (resetContent && variant === "visitor" && !isDemoModeEnabled()) {
+    await replaceSeededDemoOrg(slug, (msg) => console.log(`[demo-seed] ${msg}`), {
+      who: "demo-seed",
+      tier: "demo",
+    })
+    resetContent = false
+  }
   const result = await seedWorld({
     orgSlug: slug,
-    orgName: flag(argv, "name") ?? DEMO_COMPANY_NAME,
+    orgName: flag(argv, "name") ?? (world === "products" ? DEMO_COMPANY_NAME : undefined),
+    worldId: world,
     variant,
     owner: variant === "reserved" ? reservedOwner() : undefined,
     locale: flag(argv, "locale"),
-    personaPassword: flag(argv, "passwords"),
+    personaPassword,
     resetContent,
     log: (msg) => console.log(`[demo-seed] ${msg}`),
   })

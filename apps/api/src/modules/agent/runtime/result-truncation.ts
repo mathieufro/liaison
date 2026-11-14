@@ -110,11 +110,31 @@ export function truncateToolResult(value: unknown, limits: TruncateOptions): unk
   }
 }
 
+/** What a clipped result was cut from, for as long as the clipped value is in use. */
+const uncutResults = new WeakMap<object, unknown>()
+
 export function truncateToolResultForModel(
   value: unknown,
   opts: { visitor?: boolean } = {},
 ): unknown {
-  return truncateToolResult(value, opts.visitor ? VISITOR_RESULT_LIMITS : LIVE_RESULT_LIMITS)
+  const capped = truncateToolResult(
+    value,
+    opts.visitor ? VISITOR_RESULT_LIMITS : LIVE_RESULT_LIMITS,
+  )
+  if (capped !== value && typeof capped === "object" && capped !== null) {
+    uncutResults.set(capped, value)
+  }
+  return capped
+}
+
+/**
+ * The whole result behind a value `truncateToolResultForModel` clipped, or the value itself. The
+ * cap is about what the model is sent: a result card has its own byte bound and reads the whole
+ * result, and it is the only reader of this.
+ */
+export function uncappedToolResult(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) return value
+  return uncutResults.has(value) ? uncutResults.get(value) : value
 }
 
 /** Replay path accepts the persisted result (object or string). */

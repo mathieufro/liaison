@@ -6,9 +6,11 @@
 // scenarios, and every other way out counts as browsing. The answer is the
 // server's, so a reload after it never opens the popup again; the banner's
 // scenario count always does.
-import { DEMO_NEEDS, findTour, type TourListItem, type TourProgress } from "@liaison/shared"
+
+import { DEMO_WORLD_NEEDS, findTour, type TourListItem, type TourProgress } from "@liaison/shared"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { _setDemoWorld } from "~/modules/demo/demo-world"
 import type { TourApi } from "~/modules/tours/tour-api"
 import type { DemoScenarioItem } from "./DemoScenarioRunner"
 
@@ -196,10 +198,11 @@ describe("DemoWelcome", () => {
 
   it("says the company is an example on the first view inside the world", async () => {
     setTourApi(tourApi())
+    _setDemoWorld("products")
     mount()
     await tourStore.load()
     await screen.findByTestId("demo-welcome")
-    expect(screen.getByTestId("demo-welcome-example").textContent).toContain("Resonant Audio Labs")
+    expect(screen.getByTestId("demo-example-line").textContent).toContain("Resonant Audio Labs")
   })
 
   it("skips step 1 when the email is already confirmed", async () => {
@@ -259,6 +262,38 @@ describe("DemoWelcome", () => {
     const rows = screen.getAllByTestId(/^demo-welcome-row-[a-z]+$/)
     expect(rows.map((r) => r.getAttribute("data-need"))).toEqual(["chat", "sales"])
     expect(rows[0]?.textContent).toContain("Agentic team chat")
+  })
+
+  it("a played single-run tour offers Start over, never Start again", async () => {
+    server.verified = true
+    server.queue = [
+      item("support"),
+      { ...item("chat", "completed"), singleRun: true },
+      item("sales"),
+    ]
+    setTourApi(tourApi())
+    mount()
+    await tourStore.load()
+    const row = await screen.findByTestId("demo-welcome-row-chat")
+    expect(row.textContent).toContain("Played")
+    expect(row.textContent).not.toMatch(/Replay|Start again|Play again/)
+    expect(screen.queryByTestId("demo-welcome-row-chat-start")).toBeNull()
+    // A played scenario that is not single-run still replays.
+    expect(screen.getByTestId("demo-welcome-row-sales-start").textContent).toBe("Start")
+    fireEvent.click(screen.getByTestId("demo-welcome-row-chat-start-over"))
+    expect(await screen.findByTestId("demo-start-over")).toBeTruthy()
+  })
+
+  it("a played single-run tour featured when every scenario is played says so and offers Start over", async () => {
+    server.verified = true
+    server.queue = [{ ...item("chat", "completed"), singleRun: true }]
+    setTourApi(tourApi())
+    mount()
+    await tourStore.load()
+    const featured = await screen.findByTestId("demo-welcome-featured")
+    expect(featured.textContent).toContain("Played")
+    expect(screen.queryByTestId("demo-welcome-featured-start")).toBeNull()
+    expect(screen.getByTestId("demo-welcome-featured-start-over")).toBeTruthy()
   })
 
   for (const way of ["browse", "close", "escape"] as const) {
@@ -397,7 +432,7 @@ describe("DemoWelcome", () => {
   })
 
   describe("a new workspace in the same tab", () => {
-    const seven = () => DEMO_NEEDS.map((need) => item(need))
+    const seven = () => DEMO_WORLD_NEEDS.products.map((need) => item(need))
 
     /** Org A answered and finished a scenario; the session then moves to org B. */
     async function answerInOrgA(api: TourApi) {

@@ -46,6 +46,7 @@ import {
 } from "./approval-cards"
 
 import type { BuyerVatFacts } from "./buyer-vat"
+import { formatMoneyGrouped } from "./money"
 import { planTax, type TaxPlanLine } from "./tax-plan"
 
 type ApprovalSummaryShape = ApprovalCard
@@ -588,6 +589,31 @@ export function summarizeDraftUpdate(
     links: openLink(doc?.id, doc),
   })
 }
+/**
+ * Discard a draft. On a month-end run's row the call says how far: this month only, or the
+ * schedule ends after a given month. The card names which one, since the two do different things.
+ */
+export function summarizeDraftDiscard(
+  params: { applies?: unknown; ends_on?: unknown },
+  _ctx?: unknown,
+  meta?: SummarizerMeta,
+): Promise<ApprovalSummaryShape> {
+  const doc = docOf(meta)
+  const named = docWithCustomer(doc, "a draft")
+  const endsOn = text(params.ends_on, 10)
+  const title =
+    params.applies === "end_schedule"
+      ? `End the schedule of ${named}${endsOn ? ` after ${endsOn}` : ""}`
+      : params.applies === "this_month"
+        ? `Take ${named} out of this month's run`
+        : `Discard ${named}`
+  return done({
+    kind: "drafts_discard",
+    title,
+    lines: docFacts(doc, { total: false }),
+    links: openLink(doc?.id, doc),
+  })
+}
 function draftIssueSummarizer(type: string, kind: string) {
   return (
     params: { draft_id?: string; due_at?: string },
@@ -956,6 +982,16 @@ export function summarizeEinvoiceBookBatch(): Promise<ApprovalSummaryShape> {
   })
 }
 
+export function summarizeEinvoiceSendBatch(): Promise<ApprovalSummaryShape> {
+  return done({
+    kind: "einvoice_send_batch",
+    title: "Send the day's e-invoices issued with no person",
+    subtitle:
+      "Each document is transmitted to its buyer's e-invoicing platform. This cannot be undone.",
+    lines: ["The documents and the oldest wait are listed on the batch in the E-invoicing tab"],
+  })
+}
+
 const RECEIVED_VERB: Record<string, string> = {
   refuse: "Refuse",
   dispute: "Dispute",
@@ -1128,5 +1164,236 @@ export function summarizeDeferredTaxOverride(
         ? [`Parked because: ${text(row?.reason, 120)!.replace(/_/g, " ")}`]
         : []),
     ],
+  })
+}
+
+const REPEATS_LABEL: Record<string, string> = {
+  month: "every month",
+  quarter: "every quarter",
+  year: "every year",
+}
+
+function billingDayLabel(billingDay: unknown): string | null {
+  if (billingDay === "last") return "the last day of the period"
+  if (typeof billingDay === "string" && /^\d{1,2}$/.test(billingDay)) return `day ${billingDay}`
+  if (typeof billingDay === "string" && /^\d{2}-\d{2}$/.test(billingDay))
+    return `on ${billingDay.slice(3)}/${billingDay.slice(0, 2)}`
+  return null
+}
+
+function scheduleLines(params: Record<string, unknown>, currency: string | null): string[] {
+  const out: string[] = []
+  const repeats = typeof params.repeats === "string" ? REPEATS_LABEL[params.repeats] : null
+  if (repeats) out.push(`Bills: ${repeats}`)
+  const when = billingDayLabel(params.billing_day)
+  if (when) out.push(`Billing day: ${when}`)
+  const ends = day(params.ends_on)
+  if (ends) out.push(`Last billing: ${ends}`)
+  if (Array.isArray(params.lines)) {
+    const lines = params.lines as Array<CardLineItem & { qty?: unknown }>
+    for (const l of lines.slice(0, 4)) {
+      // The price is shown only with the issuer's currency; without it the card names the line alone.
+      out.push(
+        currency
+          ? lineText(
+              { description: l.description, quantity: l.qty, unit_price_minor: l.unit_price_minor },
+              currency,
+            )
+          : (text(l.description, 80) ?? "(no description)"),
+      )
+    }
+  }
+  if (params.issue_mode === "auto") out.push("Issues by itself, with no card to approve each month")
+  if (params.issue_mode === "review") out.push("Each period is drafted for review")
+  return out
+}
+
+export function summarizeRecurringScheduleCreate(
+  params: Record<string, unknown>,
+  _ctx?: unknown,
+  meta?: SummarizerMeta,
+): Promise<ApprovalSummaryShape> {
+  const issuer = issuerOf(params as { issuer_profile_id?: string }, meta)
+  const currency = typeof issuer?.default_currency === "string" ? issuer.default_currency : null
+  return done({
+    kind: "recurring_schedule_create",
+    title: "Start a recurring invoice schedule",
+    subtitle: "A draft is made each period and a person approves it before it is issued",
+    lines: scheduleLines(params, currency),
+  })
+}
+
+export function summarizeRecurringScheduleUpdate(
+  params: Record<string, unknown>,
+): Promise<ApprovalSummaryShape> {
+  const auto = params.issue_mode === "auto"
+  const ended = params.status === "ended"
+  const lines = scheduleLines(params, null)
+  if (params.status === "active")
+    lines.unshift("Resumes billing from today, without the days it was paused")
+  if (ended) lines.unshift("Ends the schedule: nothing more is billed")
+  return done({
+    kind: "recurring_schedule_update",
+    title: auto
+      ? "Let a recurring schedule issue its invoices by itself"
+      : ended
+        ? "End a recurring invoice schedule"
+        : "Change a recurring invoice schedule",
+    subtitle: auto
+      ? "Invoices under the approval threshold go out with no card to approve; a person must turn this on"
+      : "Drafts already made keep their amounts; the change applies from the next period",
+    lines: lines.length > 0 ? lines : ["No field changes"],
+  })
+}
+
+export function summarizeRecurringSchedulePause(
+  params: Record<string, unknown>,
+): Promise<ApprovalSummaryShape> {
+  const until = day(params.until)
+  return done({
+    kind: "recurring_schedule_pause",
+    title: "Pause a recurring invoice schedule",
+    subtitle: "Nothing is drafted while it is paused",
+    lines: [
+      until
+        ? `Resumes on ${until}, without billing the days in between`
+        : "Stays paused until someone resumes it",
+    ],
+  })
+}
+
+/**
+ * A month-end run card's lines, from its payload items: who is billed, in one line, and the total.
+ * The panel under the card lists each row with its amounts, so the lines do not repeat them. Used
+ * when the card is staged and when its summary is rebuilt after a restage, so both read the same.
+ */
+export function runCardLines(rawItems: unknown): string[] {
+  const items = (Array.isArray(rawItems) ? rawItems : []) as Array<Record<string, unknown>>
+  const names: string[] = []
+  let total = 0n
+  let currency: string | null = null
+  for (const it of items) {
+    total +=
+      typeof it.total_minor === "string" && /^-?\d+$/.test(it.total_minor)
+        ? BigInt(it.total_minor)
+        : 0n
+    const cur = typeof it.currency === "string" ? it.currency : "EUR"
+    currency = currency === null || currency === cur ? cur : "mixed"
+    if (typeof it.customer === "string" && it.customer) names.push(it.customer)
+  }
+  const lines: string[] = []
+  if (names.length > 0) {
+    const shown = names.slice(0, 5).join(", ")
+    lines.push((names.length > 5 ? `${shown} and ${names.length - 5} more` : shown).slice(0, 200))
+  }
+  if (items.length > 0 && currency && currency !== "mixed")
+    lines.push(`Total: ${moneyLine(total, currency)} incl. VAT`)
+  return lines
+}
+
+/**
+ * What the run card reads for these rows. The kernel rebuilds the card with it after a restage,
+ * so the card says the same thing either way.
+ */
+export function runCardSummary(
+  rawItems: unknown,
+  period: string | null,
+): { title: string; subtitle: string; lines: string[] } {
+  const items = Array.isArray(rawItems) ? rawItems : []
+  const lines = runCardLines(items)
+  return {
+    title: `Issue ${items.length} invoice${items.length === 1 ? "" : "s"} for ${period ?? "a month-end run"}`,
+    subtitle: "Numbers are taken on the issue day from 08:00, never at approval",
+    lines: lines.length > 0 ? lines : [period ? `Month-end run for ${period}` : "Month-end run"],
+  }
+}
+
+export function summarizeRecurringRunIssue(
+  params: Record<string, unknown>,
+): Promise<ApprovalSummaryShape> {
+  const period = typeof params.period === "string" && params.period ? params.period : null
+  return done({ kind: "recurring_run_issue", ...runCardSummary(params.items, period) })
+}
+
+function moneyLine(v: bigint, currency: string): string {
+  return `${formatMoneyGrouped(v, currency)} ${currency}`
+}
+
+export function summarizeRecurringItemIssue(
+  params: Record<string, unknown>,
+): Promise<ApprovalSummaryShape> {
+  return done({
+    kind: "recurring_item_issue",
+    title: "Issue one invoice of an approved month-end run",
+    subtitle: "Takes the next number only if the draft still matches what was approved",
+    lines: [`Run item ${String(params.item_id ?? "")}`],
+  })
+}
+
+export function summarizeRecurringRunUnapprove(
+  params: Record<string, unknown>,
+): Promise<ApprovalSummaryShape> {
+  return done({
+    kind: "recurring_run_unapprove",
+    title: "Undo the approval of a month-end run",
+    subtitle: "Every edit is kept and a new card asks again; refused once a number is taken",
+    lines: [`Run ${String(params.run_id ?? "")}`],
+  })
+}
+
+export function summarizeIssuerStreamSet(
+  params: Record<string, unknown>,
+): Promise<ApprovalSummaryShape> {
+  const issuer =
+    params.issuer === "liaison" ? "Liaison" : params.issuer === "stripe" ? "Stripe" : null
+  return done({
+    kind: "issuer_stream_set",
+    title: issuer
+      ? `${issuer} issues the invoices of card subscriptions on Stripe`
+      : "Who issues the invoices of card subscriptions on Stripe?",
+    subtitle: "Starts with the next renewal, after you confirm",
+    lines: [
+      "Liaison: a legal invoice from Liaison for each charge, in your series; Stripe only takes the payment.",
+      "Stripe: Stripe's invoice is the legal one; Liaison keeps a copy marked Issued by Stripe.",
+      "Invoices already issued keep their issuer and numbers. Check the change with your accountant.",
+    ],
+  })
+}
+
+export function summarizeIssuerEmailsConfirm(): Promise<ApprovalSummaryShape> {
+  return done({
+    kind: "issuer_emails_confirm",
+    title: "Confirm that Stripe's emails to customers are off",
+    subtitle: "Liaison cannot read this setting; only a person who checked can say so",
+    lines: [
+      "In Stripe, Settings, Billing: finalized invoices, credit notes and payment receipts should not email customers.",
+    ],
+  })
+}
+
+export function summarizeInvoiceFromStripePayment(
+  params: Record<string, unknown>,
+): Promise<ApprovalSummaryShape> {
+  const id = String(params.stripeInvoiceId ?? params.chargeId ?? "")
+  const rate =
+    typeof params.vatRateBp === "number"
+      ? `${params.vatRateBp / 100}% VAT included in the amount`
+      : null
+  return done({
+    kind: "invoice_from_stripe_payment",
+    title: `Create the invoice of Stripe ${id} now`,
+    subtitle: "It takes the next number of your invoices",
+    lines: [...(rate ? [rate] : []), "One invoice per Stripe payment: a second one is refused."],
+  })
+}
+
+export function summarizePaymentLinkToInvoice(
+  params: Record<string, unknown>,
+): Promise<ApprovalSummaryShape> {
+  return done({
+    kind: "payment_link_to_invoice",
+    title: `Link Stripe payment ${String(params.chargeId ?? "")} to an invoice`,
+    subtitle: "No number is taken and nothing changes in Stripe",
+    lines: [`Invoice ${String(params.documentId ?? "")}`],
   })
 }

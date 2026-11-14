@@ -25,7 +25,7 @@ import {
   B2B_COLUMNS,
   BY_MARKET_COLUMNS,
   type DashboardColumn,
-  EMPTY_STATE,
+  emptyListText,
   toCsv,
 } from "./dashboards/columns"
 import { DataTable } from "./dashboards/DataTable"
@@ -46,7 +46,7 @@ import {
   type DocumentRow,
   filterRowsForTab,
 } from "./dashboards/types"
-import { tr } from "./i18n"
+import { tr, uiLocale } from "./i18n"
 import { Segmented } from "./kit"
 import { documentSearch, searchInPath, setDocumentSearch } from "./search-store"
 import { rememberDocumentLabel } from "./tab-labels"
@@ -319,7 +319,15 @@ export const InvoicingDocumentsList: Component<{ entityId?: string }> = (props) 
         columns={columns()}
         rows={rows()}
         emptyState={
-          group() === "flat" ? EMPTY_STATE.all_sales : tr("No {{noun}} to group.", { noun: noun() })
+          group() === "flat"
+            ? // A date-only ISO string is read as UTC midnight.
+              emptyListText(filter(), tr, (iso) =>
+                new Intl.DateTimeFormat(uiLocale(), {
+                  dateStyle: "medium",
+                  timeZone: "UTC",
+                }).format(new Date(iso)),
+              )
+            : tr("No {{noun}} to group.", { noun: noun() })
         }
         testid="invoicing-documents-table"
         rowTestid={() => "invoicing-documents-row"}

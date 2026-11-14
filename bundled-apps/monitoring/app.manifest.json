@@ -1,7 +1,7 @@
 {
   "name": "monitoring",
   "agentInstructions": "Monitoring ingests external production alerts (uptime probes, error trackers, infrastructure watchdogs) through a signed webhook and tracks them as INCIDENTS with a lifecycle: open → acknowledged → resolved. Reach for it when the question is 'what is broken right now', 'what fired overnight', or to triage/acknowledge/close an alert. Key handles: incident ref (INC-<n>, the short name people use), incident id, source (which system sent the alert), severity (info/warning/critical), status, count (how many times the alert repeated). Use incidents_list to read the board — filter by status:'open' for the live problem set, severity:'critical' for the worst, or source to scope to one system; each row carries count and lastSeenAt so you can tell a flapping alert (high count) from a one-off. Use incidents_get for one incident's full detail. To TRIAGE: incidents_ack marks an incident acknowledged (you are on it — this clears the urgency without closing it); incidents_resolve closes it with an optional resolutionNote saying what fixed it. incidents_get, incidents_ack, incidents_resolve and incidents_comment take either the UUID or the INC-<n> ref from a tool result or from the user in THIS conversation; never invent one. Name incidents by their ref when you report them. Record context a teammate will need (vendor ticket, next step, who is on it) with incidents_comment, in any status; incidents_ack also takes an optional note saved as a comment. incidents_get returns the comments and the archived previous episodes, oldest first. A repeated alert does NOT create duplicate incidents: deliveries sharing (source, dedupKey) fold into one incident whose count increments, so 'the same alert fired 40 times' is ONE incident with count 40, not 40 rows. An alert arriving after its incident was resolved REOPENS that incident (status back to open) — check statusHistory-style fields (reopenedAt/resolvedAt) before claiming something is still fixed. A repeat or reopen refreshes the incident title (and the body when the alert carries one). NEVER fabricate an incident, a count, or a resolution state you did not read from a tool result this turn; an empty list means nothing is tracked, not that monitoring is broken.",
-  "version": "0.4.22",
+  "version": "0.4.23",
   "iconName": "activity",
   "capabilities": ["sequences.allocate"],
   "description": "Production-alert ingestion: a signed webhook turns external monitoring alerts into deduplicated incidents with attention-feed surfacing and an ack/resolve triage lifecycle",
@@ -453,10 +453,12 @@
       "timeoutMs": 20000
     }
   },
+  "outsideTextFields": ["title", "body"],
   "tools": {
     "incidents_list": {
+      "taintSource": true,
       "description": "List incidents, most recently seen first. Filter by status (open/acknowledged/resolved), severity (info/warning/critical), and source. Each row carries id, ref (the incident's short INC-<n> name, null for a few minutes on a brand new incident), source, severity, title, status, count (times the alert fired), firstSeenAt, lastSeenAt, url. The live problem set is status:'open'; a high count marks a flapping alert. Returns a bounded page (default 25) — not an authoritative total.",
-      "searchKeywords": ["alerte", "alertes", "alert", "surveillance", "panne", "down"],
+      "searchKeywords": ["alerte", "alertes", "alert", "surveillance", "panne", "down", "cours", "ouverts", "actifs"],
       "readOnly": true,
       "requiredScopes": ["monitoring:incidents:read"],
       "handler": "incidentsListHandler",
@@ -490,6 +492,7 @@
       }
     },
     "incidents_get": {
+      "taintSource": true,
       "description": "Fetch one incident by its UUID or its INC-<n> ref (from an incidents_list result or from the user, never a guessed one). Returns the full record including body, dedupKey, ack/resolve audit fields and resolutionNote, plus comments (comments and archived previous episodes, oldest first, the newest 200) and commentsTruncated.",
       "searchKeywords": ["alerte", "détail"],
       "readOnly": true,

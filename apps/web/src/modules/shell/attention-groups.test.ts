@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import type { AttentionItem } from "@liaison/shared"
-import { describe, expect, it } from "vitest"
+import enKernel from "@liaison/shared/src/i18n/locales/en/kernel.json"
+import frKernel from "@liaison/shared/src/i18n/locales/fr/kernel.json"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { registerManifestAppData, resetRegistry } from "~/framework/app-registry"
+import { bootstrapKernelApps, resetBootstrap } from "~/framework/bootstrap"
 import {
+  type AttentionGroup,
   alertClusterLabel,
   clusterAlerts,
+  groupLabel,
   groupLabelForApp,
+  groupLabelKeyForApp,
   isNowItem,
   kindCountLabel,
   kindShortLabel,
@@ -29,6 +38,18 @@ function item(over: Partial<AttentionItem>): AttentionItem {
     ...(over.alsoKinds ? { alsoKinds: over.alsoKinds } : {}),
   }
 }
+
+beforeEach(() => {
+  resetRegistry()
+  resetBootstrap()
+  // The six manifests as shipped; the kernel registers its own at bootstrap.
+  for (const [app, file] of Object.entries(MANIFEST_FILES)) {
+    const manifest = JSON.parse(readFileSync(join(ROOT, file), "utf8"))
+    registerManifestAppData(app, { attention: manifest.attention })
+  }
+  bootstrapKernelApps()
+})
+afterEach(() => resetBootstrap())
 
 describe("attention-groups.split", () => {
   it("routes decision kinds to NOW regardless of urgency", () => {
@@ -176,10 +197,25 @@ describe("attention-groups.now-predicate", () => {
 })
 
 describe("attention-groups.labels", () => {
-  it("maps known apps and capitalizes unknown ones", () => {
-    expect(groupLabelForApp("tickets")).toBe("Support")
-    expect(groupLabelForApp("kernel")).toBe("Team")
+  it("a manifest label names the group with no edit in the file", () => {
+    expect(groupLabelForApp("orbit")).toBe("Orbit")
+    registerManifestAppData("orbit", {
+      attention: { groupLabel: { label: "Launches", labelKey: "orbit.groupLaunches" } },
+    })
+    expect(groupLabelForApp("orbit")).toBe("Launches")
+    expect(groupLabelKeyForApp("orbit")).toBe("orbit.groupLaunches")
+    const [group] = splitFeed([
+      item({ app: "orbit", kind: "task_due_this_week", urgency: 10 }),
+    ]).groups
+    expect(group?.label).toBe("Launches")
+    expect(groupLabel((key) => (key === "orbit.groupLaunches" ? "Lancements" : key), group!)).toBe(
+      "Lancements",
+    )
+  })
+
+  it("third-party without one gets the capitalised fallback", () => {
     expect(groupLabelForApp("boxtal")).toBe("Boxtal")
+    expect(groupLabelKeyForApp("boxtal")).toBeUndefined()
   })
 
   it("kindShortLabel humanizes known kinds and manifest kinds", () => {
@@ -425,5 +461,97 @@ describe("alertClusterLabel", () => {
 
   it("falls back to the group-summary phrasing for an unmapped kind", () => {
     expect(alertClusterLabel("shopify:orders.unfulfilled", 4)).toBe("4 unfulfilled")
+  })
+})
+
+// The words a reader sees over each app's group, taken from the shipped
+// catalogs before the labels moved into the manifests.
+const SEVEN_GROUP_WORDS: Array<[app: string, en: string, fr: string]> = [
+  ["tickets", "Support", "Assistance"],
+  ["shopify", "Orders", "Commandes"],
+  ["invoicing", "Invoicing", "Facturation"],
+  ["projects", "Tasks", "Tâches"],
+  ["knowledge", "Knowledge", "Connaissances"],
+  ["kernel", "Team", "Équipe"],
+  ["mail", "Mail", "Mail"],
+]
+
+const ROOT = join(import.meta.dirname, "../../../../..")
+const MANIFEST_FILES: Record<string, string> = {
+  tickets: "apps/api/src/apps/tickets/app.manifest.json",
+  shopify: "bundled-apps/shopify/app.manifest.json",
+  invoicing: "bundled-apps/invoicing/app.manifest.json",
+  projects: "apps/api/src/apps/projects/app.manifest.json",
+  knowledge: "apps/api/src/apps/knowledge/app.manifest.json",
+  mail: "apps/api/src/apps/mail/app.manifest.json",
+}
+
+describe("attention-groups.seven-apps", () => {
+  const tIn = (catalog: Record<string, unknown>) => (key: string) => {
+    const word = catalog[key.replace(/^kernel\./, "")]
+    return typeof word === "string" ? word : key
+  }
+  it("the seven read the same words, en and fr", () => {
+    for (const [app, en, fr] of SEVEN_GROUP_WORDS) {
+      const group = {
+        label: groupLabelForApp(app),
+        labelKey: groupLabelKeyForApp(app),
+      } as AttentionGroup
+      expect(groupLabel(tIn(enKernel), group), app).toBe(en)
+      expect(groupLabel(tIn(frKernel), group), app).toBe(fr)
+    }
+  })
+})
+
+describe("the time and budgets Home lines", () => {
+  const nested =
+    (catalog: Record<string, unknown>) =>
+    (key: string): string => {
+      let node: unknown = catalog
+      for (const part of key.replace(/^kernel\./, "").split(".")) {
+        node = (node as Record<string, unknown> | undefined)?.[part]
+      }
+      return typeof node === "string" ? node : key
+    }
+  it("the first project turned on reads its own words in both languages", () => {
+    const kind = "projects:time_budgets.first_on"
+    const en = { t: nested(enKernel), locale: "en" }
+    const fr = { t: nested(frKernel), locale: "fr" }
+    expect(kindCountLabel(kind, 1, en)).toBe("1 project now using time and budgets")
+    expect(kindCountLabel(kind, 2, en)).toBe("2 projects now using time and budgets")
+    expect(kindCountLabel(kind, 1, fr)).toBe(
+      "1 projet qui utilise désormais le temps et les budgets",
+    )
+    expect(kindShortLabel("projects:time_budgets.dated_on", en)).toBe(
+      "projects now using dated hours",
+    )
+  })
+})
+
+describe("the time and budgets section", () => {
+  it("time lines gather in their own quiet section, apart from tasks, and read their kinds in both languages", () => {
+    const feed = splitFeed([
+      item({ id: "a", app: "projects", kind: "task_overdue", urgency: 60 }),
+      item({
+        id: "b",
+        app: "projects",
+        kind: "projects:time_budgets.capacity_over" as AttentionItem["kind"],
+        urgency: 20,
+      }),
+      item({
+        id: "c",
+        app: "projects",
+        kind: "projects:time_budgets.month_close" as AttentionItem["kind"],
+        urgency: 20,
+      }),
+    ])
+    const time = feed.groups.find((g) => g.key === "projects::time")
+    expect(time?.app).toBe("projects")
+    expect(time?.items.map((i) => i.id)).toEqual(["b", "c"])
+    expect(time?.labelKey).toBe("kernel.homeGroupTime")
+    expect(feed.groups.find((g) => g.key === "projects")?.items.map((i) => i.id)).toEqual(["a"])
+    expect(feed.now).toEqual([])
+    expect((enKernel as Record<string, unknown>).homeGroupTime).toBe("Time and budgets")
+    expect((frKernel as Record<string, unknown>).homeGroupTime).toBe("Temps et budgets")
   })
 })

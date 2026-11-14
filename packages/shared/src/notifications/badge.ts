@@ -92,6 +92,8 @@ export function isBadgeAsk(item: BadgeItem, viewer: BadgeViewer): boolean {
   if (kind === "routine_mailbox_wait") return true
   if (item.metadata?.nodePermissionPromptId || item.metadata?.nodePermission) return true
   if (item.action?.type === "decide_approval" || kind === "approval_pending") {
+    // A row for someone else is one this person can also approve, never their ask.
+    if (item.metadata?.placement === "others") return false
     return item.metadata?.peerSelfApprovable !== true
   }
   return kind.endsWith(CRITICAL_ALERT_KIND_SUFFIX) && (item.urgency ?? NOW_URGENCY) >= NOW_URGENCY

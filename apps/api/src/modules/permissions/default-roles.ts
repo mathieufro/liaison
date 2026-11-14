@@ -40,6 +40,10 @@ export const KERNEL_MEMBER_SCOPES: readonly string[] = [
   "kernel:threads:write",
   "kernel:contacts:read",
   "kernel:contacts:write",
+  // Companies sit beside contacts: whoever writes to people reads and
+  // writes the companies they work at (existing orgs: 0293).
+  "kernel:companies:read",
+  "kernel:companies:write",
   "kernel:products:read",
   "kernel:products:write",
   "kernel:approvals:read",
@@ -88,6 +92,7 @@ export const DEFAULT_ROLES: DefaultRoleSpec[] = [
     scopes: [
       "kernel:threads:read",
       "kernel:contacts:read",
+      "kernel:companies:read",
       "kernel:products:read",
       "kernel:approvals:read",
       "kernel:files:read",

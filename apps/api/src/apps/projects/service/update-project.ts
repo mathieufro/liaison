@@ -17,7 +17,10 @@ import {
   normalizeProjectGroup,
   type ProjectDetail,
 } from "./create-project"
+import { assertVisibleCompany } from "./deals"
+import { planningOffBody } from "./planning"
 import { ProjectsServiceError } from "./statuses"
+import { scheduleTimeBudgetsSync } from "./time-feature"
 
 export interface UpdateProjectPatch {
   name?: string
@@ -28,6 +31,10 @@ export interface UpdateProjectPatch {
   /** Sidebar group heading: trimmed, "" or null clears it. */
   group?: string | null
   checklistOnCards?: boolean
+  /** The project's client: a company the caller can read, or null to clear. */
+  companyId?: string | null
+  /** Time and budgets on this project. Work projects only; the org row follows (time-feature.ts). */
+  timeBudgets?: boolean
 }
 
 export interface UpdateProjectArgs {
@@ -38,6 +45,11 @@ export interface UpdateProjectArgs {
   patch: UpdateProjectPatch
   /** The event's actor type: "agent" when the agent tool made the edit. */
   actorType?: "user" | "agent"
+  /**
+   * When a time and budgets change is recorded. Only a seed laying a world's past passes it (the
+   * day the project started using it); every person's and agent's edit is recorded at now().
+   */
+  recordedAt?: Date
 }
 
 /** Does the project hold any task row, live or in the trash? */
@@ -57,11 +69,36 @@ export async function projectHasTasks(
 }
 
 export async function updateProject(args: UpdateProjectArgs): Promise<ProjectDetail> {
-  const { tx, orgId, projectId, actor, patch } = args
+  return (await updateProjectWithOutcome(args)).detail
+}
+
+export interface UpdateProjectOutcome {
+  detail: ProjectDetail
+  /** Set when this call turned time and budgets on or off; absent when it was already so. */
+  timeBudgetsFlipped?: "on" | "off"
+}
+
+/**
+ * The one writer. A change of `timeBudgets` sets `time_budgets_changed_by` and `_at`,
+ * queues one `time_feature:changed` event (its audit row), and after the commit the org
+ * row is recomputed from the projects. The same value again writes nothing.
+ */
+export async function updateProjectWithOutcome(
+  args: UpdateProjectArgs,
+): Promise<UpdateProjectOutcome> {
+  const { tx, orgId, projectId, actor } = args
+  const { timeBudgets, ...patch } = args.patch
   return tx.transaction(async (innerTx) => {
-    const rows = extractRows<{ id: string; key: string | null; archived_at: Date | string | null }>(
+    const rows = extractRows<{
+      id: string
+      key: string | null
+      name: string
+      kind: "work" | "pipeline"
+      time_budgets_on: boolean
+      archived_at: Date | string | null
+    }>(
       await innerTx.execute(drizzleSql`
-        SELECT id, key, archived_at FROM ${projectsRel("projects")}
+        SELECT id, key, name, kind, time_budgets_on, archived_at FROM ${projectsRel("projects")}
         WHERE id = ${projectId}::uuid AND org_id = ${orgId}::uuid
         LIMIT 1
         FOR UPDATE
@@ -71,6 +108,34 @@ export async function updateProject(args: UpdateProjectArgs): Promise<ProjectDet
     if (!row) throw new ProjectsServiceError(404, "not_found", "project not found")
     if (row.archived_at) {
       throw new ProjectsServiceError(409, "project_archived", "project is archived")
+    }
+    if (timeBudgets === true && row.kind !== "work") {
+      const body = planningOffBody(
+        {
+          id: row.id,
+          key: row.key,
+          name: row.name,
+          kind: row.kind,
+          timeBudgetsOn: false,
+          leadName: null,
+        },
+        actor.scopes,
+      )
+      throw new ProjectsServiceError(409, "planning_off", body.message, body)
+    }
+    const flip =
+      timeBudgets !== undefined && timeBudgets !== row.time_budgets_on ? timeBudgets : undefined
+    const otherFields = Object.values(patch).some((v) => v !== undefined)
+    if (!otherFields) {
+      if (flip !== undefined) await writeFlip(innerTx as RlsClient, args, flip)
+      return {
+        detail: await loadProjectDetail(innerTx as RlsClient, orgId, projectId, {
+          withTimeBudgets: timeBudgets !== undefined,
+        }),
+        ...(flip !== undefined
+          ? { timeBudgetsFlipped: flip ? ("on" as const) : ("off" as const) }
+          : {}),
+      }
     }
     if (patch.name !== undefined && patch.name.trim().length === 0) {
       throw new ProjectsServiceError(400, "invalid_params", "name must not be empty")
@@ -89,6 +154,10 @@ export async function updateProject(args: UpdateProjectArgs): Promise<ProjectDet
     if (normalizedGroup !== undefined) sets.push(drizzleSql`"group" = ${normalizedGroup}`)
     if (patch.checklistOnCards !== undefined) {
       sets.push(drizzleSql`checklist_on_cards = ${patch.checklistOnCards}`)
+    }
+    if (patch.companyId !== undefined) {
+      if (patch.companyId !== null) await assertVisibleCompany(innerTx, orgId, patch.companyId)
+      sets.push(drizzleSql`company_id = ${patch.companyId}::uuid`)
     }
     let normalizedKey: string | undefined
     if (patch.key !== undefined) {
@@ -152,6 +221,37 @@ export async function updateProject(args: UpdateProjectArgs): Promise<ProjectDet
       actorType: args.actorType ?? "user",
       orgId,
     })
-    return loadProjectDetail(innerTx as RlsClient, orgId, projectId)
+    if (flip !== undefined) await writeFlip(innerTx as RlsClient, args, flip)
+    return {
+      detail: await loadProjectDetail(innerTx as RlsClient, orgId, projectId, {
+        withTimeBudgets: timeBudgets !== undefined,
+      }),
+      ...(flip !== undefined
+        ? { timeBudgetsFlipped: flip ? ("on" as const) : ("off" as const) }
+        : {}),
+    }
   })
+}
+
+/** Turn the switch, record who and when, queue its event, and recompute the org row after commit. */
+async function writeFlip(tx: RlsClient, args: UpdateProjectArgs, on: boolean): Promise<void> {
+  const { orgId, projectId, actor } = args
+  await tx.execute(drizzleSql`
+    UPDATE ${projectsRel("projects")}
+    SET time_budgets_on = ${on}, time_budgets_changed_by = ${actor.userId}::uuid,
+        time_budgets_changed_at = ${args.recordedAt ? drizzleSql`${args.recordedAt.toISOString()}::timestamptz` : drizzleSql`now()`},
+        updated_at = now()
+    WHERE id = ${projectId}::uuid AND org_id = ${orgId}::uuid
+  `)
+  await tx.queueEvent({
+    app: "projects",
+    entity: "time_feature",
+    action: "changed",
+    entityId: projectId,
+    data: { projectId, timeBudgets: on },
+    actorId: actor.userId,
+    actorType: args.actorType ?? "user",
+    orgId,
+  })
+  scheduleTimeBudgetsSync(orgId, actor.userId)
 }

@@ -495,6 +495,10 @@
       "remove": "Supprimer",
       "quota": "Quota d'API"
     },
+    "github": {
+      "connectionTitle": "Connexion",
+      "connectionDescription": "Le jeton en lecture seule et l'organisation ou l'utilisateur avec lesquels Liaison lit GitHub."
+    },
     "pennylane": {
       "connectionTitle": "Connexion",
       "connectionDescription": "Le jeton d'API et le périmètre (entreprise ou cabinet) avec lesquels Liaison lit Pennylane."
@@ -509,6 +513,7 @@
   "approvalDenySubmit": "Refuser",
   "approvalDenyTitle": "Pourquoi refusez-vous cette demande ?",
   "approvalEdit": "Modifier",
+  "approvalExpiryHint": "Si personne ne décide d'ici là, la demande expire et rien n'est fait.",
   "approvalExpired": "Expirée",
   "approvalExpiredLine": "{{handle}} a expiré sans décision.",
   "approvalMessageShowLess": "Afficher moins",
@@ -608,6 +613,7 @@
       "contacts": "Contacts",
       "database": "Base de données",
       "files": "Fichiers",
+      "github": "GitHub",
       "gitlab": "GitLab",
       "google-drive": "Google Drive",
       "invoicing": "Facturation",
@@ -617,6 +623,7 @@
       "mcp-manager": "Services connectés",
       "monitoring": "Supervision",
       "pennylane": "Pennylane",
+      "stripe": "Stripe",
       "projects": "Projets",
       "shopify": "Shopify",
       "social": "Réseaux sociaux",
@@ -713,6 +720,7 @@
       "kernel": "Accès complet à l'espace de travail",
       "kernel:users:admin": "Gérer les utilisateurs, les rôles et les invitations",
       "kernel:users:read": "Lire la liste des utilisateurs",
+      "kernel:portal:admin": "Voir et gérer les comptes de portail des clients",
       "kernel:org:admin": "Modifier les réglages de l'organisation",
       "kernel:threads:read": "Lire les discussions",
       "kernel:threads:write": "Écrire dans les discussions",
@@ -878,6 +886,8 @@
   "composeAddAttachment": "Ajouter une pièce jointe",
   "composeAttach": "Joindre",
   "composeEmoji": "Emoji",
+  "composerKeyBlocked": "Cela ressemble à une clé Stripe, le message n’a donc pas été envoyé.",
+  "stripeSecretKeyRefused": "C’est votre clé secrète, je ne l’ai donc pas gardée. Créez une clé restreinte dans Stripe (Développeurs, Clés API, Créer une clé restreinte : elle commence par rk_) et collez celle-ci.",
   "configureOidcProvidersForSingleSign": "Configurez les fournisseurs OIDC pour l'authentification unique.",
   "confirmSetup": "Confirmer la configuration",
   "connect": "Connecter",
@@ -934,6 +944,7 @@
     "mediaAnalysisOff": "Ceci est l'espace de démonstration App Review, qui fonctionne avec un budget quotidien fixe : il n'analyse pas les images, les sons, les vidéos ni les documents. Tout le reste de la démonstration fonctionne sans cela.",
     "signupRateLimited": "Trop d'espaces de démonstration depuis cette adresse. Réessayez plus tard.",
     "shopifyUnsupported": "Ceci est une instance de démonstration : la boutique de démonstration ne reproduit pas cette partie de Shopify. Essayez les commandes, les clients, les produits, les devis ou les retours.",
+    "paymentsUnsupported": "Ceci est une instance de démonstration : le simulateur de paiements par carte ne reproduit pas {{what}}. Les clients, abonnements, factures, paiements, remboursements et litiges peuvent être lus, et les remboursements et résiliations en fin de période n'agissent que sur le simulateur.",
     "shopifyWriteBlocked": "Ceci est une instance de démonstration : cette modification ne peut pas être appliquée à la boutique de démonstration. L'ajout de balises, les notes, l'expédition, les remboursements et la validation d'un devis fonctionnent.",
     "signupInProgress": "Votre espace de démonstration est en cours de préparation. Réessayez dans un instant.",
     "workspaceExpired": "Cet espace de démonstration a expiré. Lancez une nouvelle démonstration pour continuer.",
@@ -1004,7 +1015,9 @@
       "sales": "Ventes et CRM agentiques",
       "commerce": "Opérations e-commerce agentiques",
       "dev": "Sessions de développement agentiques",
-      "knowledge": "Connaissances d'entreprise agentiques"
+      "knowledge": "Connaissances d'entreprise agentiques",
+      "money": "Abonnements et paiements par IA",
+      "client": "Travail client par IA"
     },
     "needShort": {
       "support": "Support client",
@@ -1013,7 +1026,9 @@
       "sales": "Ventes et CRM",
       "commerce": "Commandes et expéditions",
       "dev": "Sessions de développement",
-      "knowledge": "Connaissances de l'entreprise"
+      "knowledge": "Connaissances de l'entreprise",
+      "money": "Abonnements et paiements",
+      "client": "Travail client"
     },
     "needDesc": {
       "support": "Un client écrit : une routine prépare la réponse, vous l'approuvez.",
@@ -1023,12 +1038,15 @@
       "commerce": "Une commande arrive : sa facture est émise, votre agent prépare l'expédition.",
       "dev": "Un agent de code travaille sur un ordinateur portable, et vous approuvez ce qu'il demande.",
       "knowledge": "Manuels, finances et procédures au même endroit : chaque agent ne lit que ce que la personne qui le sollicite peut ouvrir.",
-      "everything": "Les sept, l'un après l'autre."
+      "everything": "Les sept, l'un après l'autre.",
+      "money": "Un paiement par carte échoue : une routine rédige la note au client, vous l'approuvez.",
+      "client": "Un client demande plus : votre agent vérifie le contrat, puis rédige la réponse."
     },
     "needEverything": "Tout",
     "errTurnstile": "Nous n'avons pas pu vérifier ce navigateur. Rechargez la page et réessayez.",
     "errDisposable": "Cette adresse est jetable. Utilisez une adresse que vous consultez.",
     "errDomainCap": "Le nombre maximal de démos confirmées avec ce domaine est atteint pour aujourd'hui. Réessayez demain, ou utilisez une autre adresse.",
+    "needsNotInWorld": "Aucun des sujets choisis ne fait partie de la démo de cette entreprise. Choisissez au moins un des sujets proposés.",
     "verifyTitle": "Confirmez votre mail pour que les agents puissent travailler",
     "verifyBody": "Nous avons envoyé un code à 6 chiffres à {{email}}. Collez-le ici, ou ouvrez le lien de ce mail.",
     "verifyYourAddress": "votre adresse",
@@ -1182,6 +1200,57 @@
       "continue": "Continuer à explorer",
       "close": "Fermer",
       "bannerLink": "Envie de Liaison pour votre entreprise ?"
+    },
+    "world": {
+      "saas": {
+        "companyFacts": "Entreprise fictive · Paris · 14 personnes",
+        "companyExample": "Ceci est une entreprise d'exemple : Tideform, qui édite un logiciel de planning pour les groupes d'hôtellerie-restauration. Votre propre espace contiendrait vos données.",
+        "companyAbout": "Tideform édite un logiciel de planning et de gestion des équipes pour les hôtels, les restaurants et les cantines, vendu par abonnement de 149 € à 1 450 € par mois. 169 clients paient par carte via Stripe, et quelques grands groupes paient par virement.",
+        "companyOps": {
+          "payments": {
+            "title": "Abonnements et paiements",
+            "body": "169 clients paient par carte via Stripe. L'agent Finance Desk surveille les paiements échoués et rédige la note ; Sara l'approuve."
+          },
+          "invoicing": {
+            "title": "Facturation",
+            "body": "Liaison émet chaque facture, sans aucun trou, y compris pour les groupes qui paient par virement."
+          },
+          "support": {
+            "title": "Assistance",
+            "body": "Les mails des clients arrivent dans Tickets. L'agent Support Desk rédige chaque réponse."
+          },
+          "sales": {
+            "title": "Ventes",
+            "body": "Les affaires de Tom sont sur un tableau. Une routine rédige les relances."
+          },
+          "product": {
+            "title": "Produit et messagerie",
+            "body": "L'équipe planifie le travail produit dans Projets et échange dans la messagerie."
+          },
+          "knowledge": {
+            "title": "Connaissances de l'entreprise",
+            "body": "Chaque agent ne lit que ce que la personne qu'il sert peut ouvrir."
+          }
+        },
+        "companyYou": "Vous la dirigez en tant que PDG, avec votre propre agent. Demandez-lui ce que vous demanderiez pour diriger l'entreprise, et regardez les équipes travailler.",
+        "companySimulated": "Seul le monde extérieur est simulé : aucun mail ne part, et le compte Stripe et ses paiements sont fictifs.",
+        "teamRole": {
+          "tom": "Ventes",
+          "elodie": "Responsable de comptes",
+          "ines": "Responsable du support",
+          "yann": "Directeur technique",
+          "sara": "Finances",
+          "lucie": "Responsable produit",
+          "baptiste": "Développement",
+          "amel": "Développement",
+          "jonas": "Développement",
+          "clemence": "Assistance",
+          "nolan": "Assistance",
+          "maxime": "Ventes",
+          "rose": "Responsable du bureau"
+        },
+        "limitConnectors": "Le compte Stripe et ses paiements sont fictifs. Connecter un vrai compte est refusé. Les remboursements et les résiliations ne touchent que ce compte fictif."
+      }
     }
   },
   "deny": "Refuser",
@@ -1337,8 +1406,6 @@
   "hiIMLiaison": "Bonjour, je suis Liaison",
   "home": "Accueil",
   "homeAlso": "aussi",
-  "homeApprovalsHidePeers": "Masquer les demandes des collègues qui peuvent approuver les leurs",
-  "homeApprovalsShowPeers": "Afficher {{count}} de plus, venant de collègues qui peuvent approuver leurs propres demandes",
   "homeCardActivity": "Activité",
   "homeCardAlertsMessages": "Alertes et messages",
   "homeCardApprovals": "Approbations",
@@ -1383,8 +1450,49 @@
   "homeGroupOrders": "Commandes",
   "homeGroupSupport": "Assistance",
   "homeGroupTasks": "Tâches",
+  "homeGroupTime": "Temps et budgets",
   "homeGroupTeam": "Équipe",
   "homeKind": {
+    "issuer_switched": {
+      "one": "facturation carte modifiée avec des factures impayées",
+      "other": "changements de facturation carte avec des factures impayées"
+    },
+    "issuer_undecided": {
+      "one": "facture Stripe en attente du choix de l'émetteur",
+      "other": "factures Stripe en attente du choix de l'émetteur"
+    },
+    "undecided_listed": {
+      "one": "factures Stripe à émettre après le choix",
+      "other": "factures Stripe à émettre après le choix"
+    },
+    "needs_person": {
+      "one": "facture Stripe à traiter par une personne",
+      "other": "factures Stripe à traiter par une personne"
+    },
+    "payment_failed": {
+      "one": "paiement par carte échoué",
+      "other": "paiements par carte échoués"
+    },
+    "voided": {
+      "one": "facture Stripe annulée",
+      "other": "factures Stripe annulées"
+    },
+    "uncollectible": {
+      "one": "facture Stripe irrécouvrable",
+      "other": "factures Stripe irrécouvrables"
+    },
+    "refund_failed": {
+      "one": "remboursement Stripe échoué",
+      "other": "remboursements Stripe échoués"
+    },
+    "refund_waiting": {
+      "one": "remboursement Stripe en attente de sa facture",
+      "other": "remboursements Stripe en attente de leur facture"
+    },
+    "unmatched": {
+      "one": "paiement Stripe sans facture",
+      "other": "paiements Stripe sans facture"
+    },
     "awaiting_agent": {
       "one": "en attente de réponse",
       "other": "en attente de réponse"
@@ -1553,6 +1661,26 @@
       "one": "identité de facturation électronique manquante",
       "other": "identités de facturation électronique manquantes"
     },
+    "partial": {
+      "one": "facture mensuelle non émise",
+      "other": "factures mensuelles non émises"
+    },
+    "due": {
+      "one": "facturation mensuelle à valider",
+      "other": "facturations mensuelles à valider"
+    },
+    "held": {
+      "one": "facturation suspendue par la limite du jour",
+      "other": "facturation suspendue par la limite du jour"
+    },
+    "late": {
+      "one": "facturation mensuelle en retard",
+      "other": "facturations mensuelles en retard"
+    },
+    "issuer_timezone_unset": {
+      "one": "émetteur sans fuseau horaire",
+      "other": "émetteurs sans fuseau horaire"
+    },
     "transmission_refused": {
       "one": "facture électronique refusée",
       "other": "factures électroniques refusées"
@@ -1600,6 +1728,46 @@
     "missing": {
       "one": "étiquette manquante",
       "other": "étiquettes manquantes"
+    },
+    "masked": {
+      "one": "numéro de carte masqué",
+      "other": "numéros de carte masqués"
+    },
+    "problem": {
+      "one": "problème de connexion",
+      "other": "problèmes de connexion"
+    },
+    "send_waiting": {
+      "one": "facture électronique en attente de la carte d'envoi quotidienne",
+      "other": "factures électroniques en attente de la carte d'envoi quotidienne"
+    },
+    "standing_lapsed": {
+      "one": "autorisation permanente d'envoi expirée",
+      "other": "autorisations permanentes d'envoi expirées"
+    },
+    "collection_manual": {
+      "one": "encaissement à déclarer sur votre plateforme",
+      "other": "encaissements à déclarer sur votre plateforme"
+    },
+    "first_on": {
+      "one": "projet qui utilise désormais le temps et les budgets",
+      "other": "projets qui utilisent désormais le temps et les budgets"
+    },
+    "dated_on": {
+      "one": "projet qui utilise désormais les heures datées",
+      "other": "projets qui utilisent désormais les heures datées"
+    },
+    "capacity_over": {
+      "one": "personne avec plus de temps prévu que ce qui rentre",
+      "other": "personnes avec plus de temps prévu que ce qui rentre"
+    },
+    "month_close": {
+      "one": "projet à rapprocher ce mois-ci",
+      "other": "projets à rapprocher ce mois-ci"
+    },
+    "calendar_ended": {
+      "one": "calendrier partagé de jours non travaillés à choisir de nouveau",
+      "other": "calendriers partagés de jours non travaillés à choisir de nouveau"
     }
   },
   "homeMarkAllRead": "Tout marquer comme lu",
@@ -1619,6 +1787,24 @@
   "homeMarkingRead": "Marquage comme lu…",
   "homeMetric": {
     "dueToday": "échéance aujourd'hui",
+    "expiresIn": {
+      "seconds": {
+        "one": "Expire dans {{count}} seconde",
+        "other": "Expire dans {{count}} secondes"
+      },
+      "minutes": {
+        "one": "Expire dans {{count}} minute",
+        "other": "Expire dans {{count}} minutes"
+      },
+      "hours": {
+        "one": "Expire dans {{count}} heure",
+        "other": "Expire dans {{count}} heures"
+      },
+      "days": {
+        "one": "Expire dans {{count}} jour",
+        "other": "Expire dans {{count}} jours"
+      }
+    },
     "daysOver": {
       "one": "{{count}} j de retard",
       "other": "{{count}} j de retard"
@@ -1650,8 +1836,6 @@
     "needsYou": "À traiter",
     "nothingNeedsYou": "Rien à traiter",
     "minutesLeft": "{{count}} min",
-    "peersShow": "Afficher {{count}} de collègues",
-    "peersHide": "Masquer les demandes des collègues",
     "accessRequests": "Demandes d'accès",
     "yourQueues": "Vos files d'attente",
     "queuesChip": "Files d'attente",
@@ -1695,7 +1879,7 @@
   "homeStatusAreaOne": "DOMAINE",
   "homeStatusNeedYouNowMany": "REQUIÈRENT VOTRE ATTENTION",
   "homeStatusNeedYouNowOne": "REQUIERT VOTRE ATTENTION",
-  "homeStatusNothingUrgent": "RIEN D'URGENT",
+  "homeStatusNothingUrgent": "RIEN NE VOUS ATTEND",
   "homeStatusQueuedIn": "EN ATTENTE DANS",
   "homeStatusUpdated": "MIS À JOUR",
   "homeTimeJustNow": "à l'instant",
@@ -1868,9 +2052,11 @@
     "connectionStatus": "État de la connexion : {{status}}",
     "app": {
       "database": "Base de données",
+      "github": "GitHub",
       "gitlab": "GitLab",
       "google-drive": "Google Drive",
       "pennylane": "Pennylane",
+      "stripe": "Stripe",
       "api-connector": "Connecteur API",
       "calls": "Appels"
     },
@@ -1885,6 +2071,7 @@
       "syncedSources": "Sources synchronisées",
       "calendarConnections": "Connexions d'agenda",
       "database": "Base de données",
+      "github": "GitHub",
       "gitlab": "GitLab",
       "googleDrive": "Google Drive",
       "profile": "Profil",
@@ -1986,7 +2173,6 @@
   "noTeammatesYet": "Aucun collègue pour l'instant",
   "noThreadsMatch": "Aucune discussion ne correspond",
   "notYetSupported": "Pas encore pris en charge",
-  "nothingNeedsYouRightNow": "Rien ne requiert votre attention",
   "serverPause": {
     "updating": "Liaison est en cours de mise à jour. Cela prend généralement moins d'une minute.",
     "stillUpdating": "Mise à jour toujours en cours. Si cela dure, vérifiez votre connexion.",
@@ -2107,7 +2293,36 @@
       "localeEs": "Espagnol",
       "localePtBr": "Portugais (Brésil)",
       "localeJa": "Japonais",
-      "localeZhCn": "Chinois (simplifié)"
+      "localeZhCn": "Chinois (simplifié)",
+      "away": {
+        "title": "Absence",
+        "hint": "Indiquez quand vous êtes absent et qui prend le relais. Seules les dates sont gardées, jamais le motif.",
+        "from": "Premier jour",
+        "to": "Dernier jour",
+        "nextInLine": "Relais",
+        "nobody": "Personne",
+        "standing": "Relais par défaut",
+        "standingHint": "Enregistré dès que vous choisissez. Utilisé pour toute absence qui ne nomme personne.",
+        "standInGets": "Pendant votre absence, ce qui vous attend apparaît aussi sur l'accueil de {{name}}. {{name}} ne reçoit aucun nouveau droit. Votre messagerie personnelle, vos conversations directes et votre agent personnel restent privés.",
+        "save": "Me déclarer absent",
+        "question": "Votre agenda contient un événement {{dates}} qui ressemble à une absence. Le compter comme absence ?",
+        "yes": "Oui",
+        "no": "Non",
+        "fromCalendar": "Depuis votre agenda",
+        "endEarly": "Terminer maintenant",
+        "undo": "Annuler",
+        "range": "Du {{from}} au {{to}}",
+        "weekly": "Chaque {{days}} à partir du {{from}}",
+        "oneDay": "{{day}}",
+        "setBy": "Indiqué par {{name}}",
+        "nextInLineIs": "Relais : {{name}}",
+        "awayToo": "{{name}} est aussi absent, jusqu'au {{until}}.",
+        "hasLeft": "{{name}} a quitté l'organisation, choisissez quelqu'un.",
+        "awayUntilOption": "{{name}} (absent jusqu'au {{until}})",
+        "none": "Aucune absence enregistrée.",
+        "failed": "Impossible d'enregistrer votre absence.",
+        "endFailed": "Impossible d'y mettre fin."
+      }
     },
     "languageOrgDefault": "Langue de l'organisation ({{language}})",
     "sections": {
@@ -2371,6 +2586,12 @@
     "expired": "Expirée",
     "withdrawn": "Retirée",
     "lastAttemptFailed": "Dernière tentative échouée :",
+    "cancelledWhy": {
+      "ticketMerged": "Annulée : le ticket a été fusionné dans un autre",
+      "requesterDeleted": "Annulée : le demandeur a supprimé son compte",
+      "soleApproverDeleted": "Annulée : le seul approbateur a supprimé son compte",
+      "taskDeleted": "Annulée : la tâche qu'elle devait modifier a été supprimée"
+    },
     "message": "Écrire",
     "approvalRequestNoLongerExists": "Cette demande d'approbation n'existe plus.",
     "requestedBy": "Demandée par",
@@ -2429,7 +2650,8 @@
       "handlerError": "erreur du gestionnaire",
       "toolRunFailed": "L'exécution de l'outil a échoué : {{cause}}. La demande doit être revue par un opérateur.",
       "outcomeUnclear": "Le résultat de l'outil est incertain, actualisez avant de réessayer.",
-      "nobodyMayRun": "Ni le demandeur ni vous n'avez le droit d'exécuter cet outil."
+      "nobodyMayRun": "Ni le demandeur ni vous n'avez le droit d'exécuter cet outil.",
+      "sendGuardNotHeld": "Ce brouillon n'est plus retenu : une réponse est arrivée, ou la retenue a pris fin. Rien n'a été envoyé. La carte affiche maintenant le résultat du contrôle."
     },
     "copyIdHint": "Cliquez pour copier l'identifiant",
     "copiedId": "{{id}} copié",
@@ -2525,7 +2747,33 @@
     },
     "stepSequence": "Ce qui se passe, dans l'ordre",
     "agentInviteAdd": "Ajouter",
-    "agentInviteDecline": "Ne pas ajouter"
+    "agentInviteDecline": "Ne pas ajouter",
+    "sendGuard": {
+      "theOtherSide": "L'autre partie",
+      "held": "Retenu : {{who}} a envoyé une réponse automatique. Le message attend jusqu'au {{until}}, puis revient tout seul sur l'accueil.",
+      "replied": "Non envoyé : {{who}} a répondu après la rédaction de ce brouillon.",
+      "repliedElsewhere": "Non envoyé : une réponse est arrivée dans une autre boîte mail.",
+      "bounced": "Non envoyé : un échec de livraison est revenu pour cette adresse.",
+      "optedOut": "Envoi impossible : {{who}} a refusé les e-mails commerciaux. Retirez cette personne des destinataires, ou laissez le message non envoyé.",
+      "refStop": "Non envoyé : la fiche concernée par ce message indique de ne pas l'envoyer.",
+      "refStopLabel": "Non envoyé : {{label}}",
+      "unavailable": "Le contrôle avant envoi n'a pas pu s'exécuter. Réessayez dans un instant.",
+      "sendNow": "Envoyer maintenant",
+      "repliedOnTicket": "Non envoyé : une réponse est arrivée sur un ticket.",
+      "badgeStopped": "Non envoyé",
+      "badgeOptedOut": "Envoi impossible",
+      "badgeHeld": "Retenu",
+      "redraft": "Rédiger une nouvelle réponse à son message",
+      "redraftMessage": "Rédige une nouvelle réponse au message que {{who}} a envoyé après ce brouillon : {{title}}",
+      "redraftFailed": "Impossible de joindre votre agent. Réessayez.",
+      "openConversation": "Ouvrir la discussion",
+      "openTicket": "Ouvrir le ticket",
+      "dismiss": "Ignorer",
+      "keepHolding": "Retenir jusqu'au {{until}}",
+      "heldFolded": "Retenu jusqu'au {{until}}. Il revient sur l'accueil ce matin-là.",
+      "discard": "Abandonner",
+      "holdDate": "Jusqu'au {{until}}"
+    }
   },
   "agentUi": {
     "knowledge": "Connaissances",
@@ -2700,6 +2948,10 @@
     "areYouSureYouWantTo2": "Voulez-vous vraiment désactiver",
     "thisUser": "cet utilisateur",
     "theyWillLoseAccessToThe": " ? Cette personne perdra immédiatement l'accès à l'espace de travail.",
+    "accountsToQuestion": "{{name}} est responsable de compte de {{count}} entreprises. Qui les reprend ?",
+    "accountsToGiveTo": "Les confier à",
+    "accountsToChoose": "Choisir une personne",
+    "accountsToNobody": "Les laisser sans responsable de compte",
     "reactivateUser": "Réactiver l'utilisateur",
     "areYouSureYouWantTo3": "Voulez-vous vraiment réactiver",
     "theyWillRegainAccessToThe": " ? Cette personne retrouvera l'accès à l'espace de travail.",
@@ -3041,11 +3293,8 @@
     "filterApprovalsByAction": "Filtrer les approbations par action",
     "noMessagesYet": "Aucun message pour l'instant",
     "projects": "Projets",
-    "openProjects": "Ouvrir Projets",
     "tickets": "Tickets",
-    "openTickets": "Ouvrir Tickets",
     "mail": "Mail",
-    "openMail": "Ouvrir la messagerie",
     "listOfAvailableKeyboardShortcuts": "Liste des raccourcis clavier disponibles",
     "tryAgain": "Réessayer",
     "unknownTabType": "Type d'onglet inconnu « ",
@@ -3156,6 +3405,8 @@
     "routineReportRunLink": "Voir l'exécution complète",
     "routineRunRunning": "La routine {{name}} est en cours",
     "routineRunSucceeded": "La routine {{name}} est terminée",
+    "routineRunSucceededDraftWaiting": "La routine {{name}} est terminée : 1 brouillon attend une personne",
+    "routineRunSucceededDraftsWaiting": "La routine {{name}} est terminée : {{count}} brouillons attendent une personne",
     "routineRunFailed": "La routine {{name}} n'a pas abouti",
     "routineRunWaitingApproval": "La routine {{name}} attend une approbation",
     "reactWith": "Réagir avec {{emoji}}",
@@ -3698,6 +3949,8 @@
     "calendar__admin": "Administrateur de l'agenda : gérer les connexions Google Agenda de l'organisation et le choix des agendas",
     "database__member": "Lecteur du connecteur de base de données : lectures prédéfinies uniquement",
     "database__admin": "Administrateur du connecteur de base de données : lectures prédéfinies et requêtes libres (si le déploiement l'autorise)",
+    "github__member": "Lecteur GitHub : accès en lecture aux dépôts, commits, pull requests et tickets",
+    "github__admin": "Administrateur GitHub : gérer la connexion GitHub",
     "gitlab__member": "Lecteur GitLab : accès en lecture aux projets, commits, tickets et demandes de fusion",
     "gitlab__admin": "Administrateur GitLab : gérer les connexions GitLab",
     "google-drive__member": "Lecteur Google Drive : consulter les comptes Drive connectés, déposer de nouveaux fichiers dans le dossier de rapports de l'application",
@@ -3712,6 +3965,9 @@
     "projects__member": "Contributeur aux projets : lire les projets, lire et modifier les tâches",
     "projects__lead": "Responsable de projet : créer et modifier des projets en plus des droits de membre",
     "projects__admin": "Administrateur des projets : contrôle complet des réglages",
+    "stripe__member": "Lecture Stripe : clients, abonnements, factures, paiements, remboursements et litiges",
+    "stripe__billing": "Facturation Stripe : relier les clients aux entreprises et aux contacts, demander des remboursements et des résiliations par approbation",
+    "stripe__admin": "Administrateur Stripe : connecter le compte, gérer sa clé et son webhook",
     "tickets__support": "Agent de support",
     "tickets__support_lead": "Chef d'équipe : gère les boîtes de réception, les catégories et les comptes, peut clôturer les tickets",
     "tickets__admin": "Administrateur des tickets : contrôle complet des réglages et des comptes",
@@ -3725,11 +3981,13 @@
     "kpi": "Accès au service d'indicateurs du déploiement : registre de formules versionné, provenance complète de chaque chiffre, et modifications de définitions approuvées par une personne, avec essai à blanc et historique des versions",
     "monitoring": "Réception des alertes de production : un webhook signé transforme les alertes externes en incidents dédoublonnés, signalés dans le fil d'attention, avec prise en compte et résolution",
     "pennylane": "Connecteur comptable Pennylane : factures fournisseurs et clients, balance, compte de résultat, trésorerie, transactions, dépenses par catégorie, autonomie financière",
+    "stripe": "Connecteur Stripe : une copie en lecture des clients, abonnements, factures, paiements, remboursements et litiges, tenue à jour par un webhook signé.",
     "shopify": "Intégration Shopify : commandes, clients, produits, marchés, brouillons de commande, remboursements, expéditions, retours",
     "social": "Réseaux sociaux : surveille Facebook, Instagram et YouTube pour repérer ce qui concerne la marque, prépare des réponses soumises à approbation et gère les messages privés.",
     "calendar": "Agenda : vues mois et semaine synchronisées dans les deux sens avec Google Agenda, pour les agendas de l'organisation et personnels.",
     "contacts": "Répertoire des contacts",
     "database": "Connecteur en lecture seule vers la base de données du déploiement, pour le diagnostic et le support : licences et abonnements, modération, santé de l'instance.",
+    "github": "Connecteur GitHub : accès en lecture seule aux dépôts, commits, pull requests, tickets, versions et au code d'une organisation ou d'un utilisateur.",
     "gitlab": "Connecteur GitLab : synchronise les manuels du groupe dans la base de connaissances et donne un accès en lecture aux projets, commits, demandes de fusion, tickets, versions et plus.",
     "google-drive": "Connecteur Google Drive : source de recherche pour les connaissances et outils d'agent (rechercher, lire et importer des fichiers Drive, déposer de nouveaux fichiers dans un dossier « Liaison Reports » ; les fichiers existants ne sont jamais modifiés ni supprimés).",
     "knowledge": "Espace de connaissances pour les documents locaux et les liens vers des sources choisies",
@@ -3749,6 +4007,16 @@
     "approvalDecided": {
       "approved": "Demande {{handle}} approuvée",
       "rejected": "Demande {{handle}} refusée"
+    },
+    "awayNamed": "{{name}} vous a indiqué absent {{dates}}",
+    "routedReminder": "En attente d'une décision depuis plus de {{hours}} heures : {{title}}",
+    "awayCalendar": {
+      "set": "Votre agenda vous indique absent {{dates}}. {{next}}",
+      "moved": "Votre absence a changé : {{dates}}. {{next}}",
+      "asked": "« {{title}} » est-il une absence, {{dates}} ? Rien n’est compté tant que vous n’avez pas répondu Oui.",
+      "askedNoTitle": "Cet événement de l’agenda est-il une absence, {{dates}} ? Rien n’est compté tant que vous n’avez pas répondu Oui.",
+      "next": "Suivant : {{name}}.",
+      "nobody": "Personne n’est désigné : vos éléments restent chez les approbateurs habituels."
     }
   },
   "approvalDecisionLine": {
@@ -4589,6 +4857,9 @@
     "pennylane": {
       "pennylane": "Compte Pennylane"
     },
+    "stripe": {
+      "stripe": "Compte Stripe"
+    },
     "shopify": {
       "shop": "Boutique Shopify"
     },
@@ -4604,6 +4875,9 @@
     "database": {
       "database": "Base de données opérationnelle",
       "warehouse": "Entrepôt en lecture seule"
+    },
+    "github": {
+      "github": "Propriétaire GitHub"
     },
     "gitlab": {
       "gitlab": "Groupe GitLab"
@@ -5659,6 +5933,7 @@
     "saveFailed": "Impossible d'enregistrer le réglage de sécurité des agents. Veuillez réessayer."
   },
   "decisionToast": {
+    "notSent": "Non envoyée : cette décision datait de plus de 15 minutes. Décidez à nouveau.",
     "approvingIn": "Approbation dans {{seconds}} s",
     "rejectingIn": "Refus dans {{seconds}} s",
     "approving": "Approbation en cours…",
@@ -5681,7 +5956,10 @@
     "show": "Afficher les décisions",
     "approvalFallback": "Demande d'approbation",
     "scopeRequestFallback": "Demande d'accès",
-    "sequenceSteps": "{{count}} étapes"
+    "sequenceSteps": "{{count}} étapes",
+    "dismissingIn": "Ignoré dans {{seconds}} s",
+    "dismissing": "En cours…",
+    "dismissed": "Ignoré"
   },
   "aiModels": {
     "title": "Modèles d'IA",
@@ -6436,6 +6714,90 @@
     },
     "hiddenTitle": "Nouveau message dans une discussion",
     "gone": "Son application est désactivée, impossible de l’ouvrir"
+  },
+  "toolCard": {
+    "actionUnreachable": "Rien n'a été exécuté : le serveur est injoignable.",
+    "answeredOnRetry": "Cette fois, la réponse est arrivée. Redemandez pour voir le résultat ici.",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "didNotAnswer": "{{app}} n'a pas répondu",
+    "errorTitle": "Impossible d'exécuter {{tool}}",
+    "howWorkedOut": "Comment ce chiffre est calculé",
+    "noReason": "L'outil n'a donné aucune raison.",
+    "notSaved": "Non enregistré : le serveur est injoignable. Votre texte est conservé.",
+    "readApps": "{{count}} apps lues",
+    "readOneApp": "1 app lue",
+    "readSomeApps": "{{count}} apps lues sur {{total}}",
+    "reading": "Lecture de {{app}}",
+    "retry": "Réessayer",
+    "source": "Source : {{source}}",
+    "suggestionNotSent": "Rien n'est parti : le serveur est injoignable.",
+    "suggestions": "Étapes suggérées",
+    "superseded": "Remplacée par une carte plus récente",
+    "unreachable": "Rien n'a été exécuté : cette carte ne peut pas joindre le serveur ici.",
+    "waitingApproval": "En attente d'approbation. Rien n'a encore été exécuté.",
+    "working": "En cours…"
+  },
+  "entityDiscussion": {
+    "empty": "Aucun message pour l'instant.",
+    "placeholder": "Écrivez à ce sujet, ou @ un agent",
+    "send": "Envoyer",
+    "unavailable": "La discussion n'a pas pu être ouverte.",
+    "retry": "Réessayer",
+    "loading": "Ouverture de la discussion…"
+  },
+  "homeStatusOtherWork": "DANS VOS AUTRES TÂCHES",
+  "homeDecisions": {
+    "notNow": "Plus tard",
+    "setAside": "Mis de côté jusqu'à lundi. Il reviendra alors.",
+    "setAsideFailed": "Impossible de mettre ceci de côté. Réessayez.",
+    "askDraft": "Demander un brouillon à l'agent",
+    "askDraftMessage": "Rédige ce qu'il faut pour ceci : {{summary}}",
+    "askDraftFailed": "Impossible de joindre votre agent. Réessayez.",
+    "askReassign": "Demander à l'agent de les confier",
+    "askReassignMessage": "Aide-moi à confier ces entreprises à un nouveau responsable de compte. {{summary}}. Entreprises : {{companyIds}}",
+    "dismiss": "Retirer",
+    "guardClear": "Ne partira pas si on vous répond d'abord, même après votre accord.",
+    "needsYouTitle": "Vous attend",
+    "everythingForNow": "C'est tout pour l'instant. Vos agents apporteront ici la prochaine demande.",
+    "sourceFailedTitle": "Impossible de charger ce que {{app}} a pour vous",
+    "sourceFailedBody": "{{app}} n'a pas répondu. Ce qui y attend est en sécurité et attend toujours.",
+    "feedFailedTitle": "Impossible de charger ce qui vous attend",
+    "feedFailedBody": "L'accueil n'a pas répondu. Tout ce qui attend est en sécurité et attend toujours.",
+    "retry": "Réessayer",
+    "briefTitle": "Le point du jour",
+    "briefNone": "Aucun point du matin. Demandez-en un à votre agent chaque matin, et dites ce que vous voulez y voir.",
+    "briefSetUp": "Mettre en place un point du matin",
+    "briefOpen": "Ouvrir",
+    "backToFiveDays": "Revenir à 5 jours",
+    "backToFiveDaysFailed": "Impossible de changer vos jours par semaine. Rien n'a été modifié."
+  },
+  "homeRouting": {
+    "othersGroup": "Pour d'autres, vous pouvez aussi approuver",
+    "heldGroup": "Mis de côté jusqu'à leur retour",
+    "someone": "un collègue",
+    "standingIn": "Pour {{name}}, absent jusqu'au {{date}}. Vous êtes son remplaçant.",
+    "othersAsked": "Pour {{name}}, qui l'a demandé et peut l'approuver. Vous aussi : vous avez le droit d'approuver.",
+    "othersOnItem": "Pour {{name}}, à qui c'est attribué. Vous pouvez aussi l'approuver : vous avez le droit d'approuver.",
+    "othersManager": "Pour {{name}}, qui gère ce compte. Vous pouvez aussi l'approuver : vous avez le droit d'approuver.",
+    "blocked": "Pour vous : {{blocked}} ne peut pas approuver ceci pendant l'absence de {{name}}",
+    "mineAsked": "Vous l'avez demandé",
+    "mineOnItem": "Pour vous : attribué à vous",
+    "mineManager": "Pour vous : vous gérez ce compte",
+    "recapApproved": "{{title}} : approuvé par {{name}}",
+    "recapApprovedStandIn": "Approuvé par {{name}}, remplaçant de {{forName}} : {{title}}",
+    "recapDenied": "{{title}} : refusé par {{name}}",
+    "recapDeniedStandIn": "Refusé par {{name}}, remplaçant de {{forName}} : {{title}}",
+    "you": "vous",
+    "recapMore": "et {{count}} de plus",
+    "dismissFailed": "Impossible de fermer ceci. Réessayez.",
+    "awayUntil": "absent jusqu'au {{date}}",
+    "awayToday": "absent aujourd'hui",
+    "awayTodayBack": "absent aujourd'hui, de retour {{day}}",
+    "recapTitle": "Pendant votre absence",
+    "standingInFor": "{{name}} est absent jusqu'au {{date}}. Vous êtes son remplaçant.",
+    "showCovering": "Voir ce que vous couvrez",
+    "coveringTitle": "Ce que vous couvrez"
   },
   "dashboards": {
     "visibilityPersonal": "Personnel",

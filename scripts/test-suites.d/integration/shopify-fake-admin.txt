@@ -1,0 +1,3 @@
+# The fake Shopify Admin API of a labelled private test box, through the real sandbox.
+src/tests/integration/shopify-fake-admin.test.ts
+src/tests/integration/shopify-fake-admin-invoicing.test.ts

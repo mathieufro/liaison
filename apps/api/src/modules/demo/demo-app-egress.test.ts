@@ -29,7 +29,8 @@ import { acquireTestLock, releaseTestLock } from "~/tests/route-test-setup"
 const PENNYLANE = "https://app.pennylane.com/api/external/v1/customer_invoices"
 const VIES = "https://ec.europa.eu/taxation_customs/vies/services/checkVatService"
 const SHOPIFY = `https://${DEMO_SHOP_DOMAIN}/admin/api/2024-10/graphql.json`
-const HOSTS = new Set(["app.pennylane.com", "ec.europa.eu", DEMO_SHOP_DOMAIN])
+const PAYMENTS = "https://api.stripe.com/v1/invoices/in_demo01/pdf"
+const HOSTS = new Set(["app.pennylane.com", "ec.europa.eu", DEMO_SHOP_DOMAIN, "api.stripe.com"])
 
 /** Every request that actually reached the transport. */
 let onTheWire: string[] = []
@@ -41,7 +42,7 @@ function bridgeCtx(orgId: string): BridgeContext {
     appName: "pennylane",
     actorType: "user",
     egress: async () => ({
-      allowedDomains: ["app.pennylane.com", "ec.europa.eu", DEMO_SHOP_DOMAIN],
+      allowedDomains: ["app.pennylane.com", "ec.europa.eu", DEMO_SHOP_DOMAIN, "api.stripe.com"],
       manifest: { name: "pennylane" },
     }),
     callerScopes: [],
@@ -173,6 +174,24 @@ describe("demo app egress lockdown", () => {
     expect(parsed.error.message).toContain("demo instance")
     expect(parsed.error.message).toContain("app.pennylane.com")
     expect(onTheWire).toEqual([])
+  })
+
+  it("a demo org's bulk download from the payments host is refused off the demo box too, never sent", async () => {
+    DemoModeTestAccess.set(false)
+    const raw = await bulkFetch(demoOrgId)(PAYMENTS)
+    const parsed = JSON.parse(raw) as { error?: { code: string; message: string } }
+    expect(parsed.error?.code).toBe("DEMO_RESTRICTED")
+    expect(parsed.error?.message).toContain("cannot store real connector credentials")
+    expect(onTheWire).toEqual([])
+  })
+
+  it("an unmarked org's bulk download from the payments host goes out as before", async () => {
+    DemoModeTestAccess.set(false)
+    const raw = await bulkFetch(normalOrgId)(PAYMENTS)
+    expect((JSON.parse(raw) as { error?: { code: string } }).error?.code).not.toBe(
+      "DEMO_RESTRICTED",
+    )
+    expect(onTheWire).toEqual([PAYMENTS])
   })
 
   // ---- OFF, twice over -------------------------------------------------

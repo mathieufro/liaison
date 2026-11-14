@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-// sprint-board-burndown-velocity proxy substrate: tasks_byProject / tasks_byAssignee surface the
-// assignee's display NAME (`assigneeName`) on every row, joined from kernel.users, so a caller can
-// tally a per-PERSON workload (who's overloaded) from a SINGLE project read and NAME the most-loaded
-// person — without a separate per-id user lookup. The 'sprint burndown / velocity / who's overloaded'
-// ask has no story-points/sprint model (uncomputable); the honest proxy is per-status (terminal flag)
-// + per-assignee task COUNTS, and that per-assignee axis needs the NAME, not an opaque uuid. Fails
-// without the LEFT JOIN kernel.users enrichment (assigneeName would be undefined), passes with it.
+// tasks_byProject / tasks_byAssignee surface the assignee's display NAME (`assigneeName`) on every
+// row, joined from kernel.users, so a readout of a project's tasks says who holds each one without
+// a separate per-id user lookup. The sprint-board proxy is per-status (terminal flag) task counts;
+// people are never ranked or compared by their task counts. Fails without the LEFT JOIN
+// kernel.users enrichment (assigneeName would be undefined), passes with it.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { sql as drizzleSql } from "drizzle-orm"
 import { createProject } from "~/apps/projects/service/create-project"
@@ -92,7 +90,7 @@ beforeAll(async () => {
     projectId = p.id
     openStatusId = p.statuses.find((s) => !s.terminal)!.id
     doneStatusId = p.statuses.find((s) => s.terminal)!.id
-    // Liam = most-loaded (2 open), Sofia = 1 open + 1 done, plus 1 unassigned.
+    // Liam holds 2 open, Sofia 1 open + 1 done, plus 1 unassigned.
     await createTask({
       tx,
       orgId,
@@ -140,19 +138,6 @@ describe("listProjectTasks — assigneeName enrichment (per-person workload prox
       expect(byTitle.get("liam-2")!.assigneeName).toBe("Liam Support")
       expect(byTitle.get("sofia-1")!.assigneeName).toBe("Sofia Editor")
       expect(byTitle.get("unassigned-1")!.assigneeName).toBeNull()
-    })
-  })
-
-  it("lets a single read tally a per-PERSON count and name the most-loaded", async () => {
-    await withRlsContext(actor, async (tx) => {
-      const res = await listProjectTasks({ tx, orgId, projectId } as never)
-      const counts = new Map<string, number>()
-      for (const t of res.items) {
-        if (t.assigneeName) counts.set(t.assigneeName, (counts.get(t.assigneeName) ?? 0) + 1)
-      }
-      const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]
-      expect(top![0]).toBe("Liam Support") // 2 tasks → most-loaded
-      expect(top![1]).toBe(2)
     })
   })
 

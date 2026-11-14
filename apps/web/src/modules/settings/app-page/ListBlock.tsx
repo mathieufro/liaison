@@ -415,6 +415,13 @@ export const ListBlock: Component<{
           </div>
         </div>
       </Show>
+      <Show when={props.block.title}>
+        {(title) => (
+          <h3 class="text-[13px] font-medium text-text" data-testid="settings-list-title">
+            {labelOf(i18n.t, props.block.titleKey, title())}
+          </h3>
+        )}
+      </Show>
       <Show when={pending()}>
         <div class="text-xs text-text-secondary" data-testid="settings-list-pending">
           {i18n.t(`${P}.waitingApproval`)}

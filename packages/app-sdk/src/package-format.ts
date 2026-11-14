@@ -202,6 +202,22 @@ export const packageManifestSchema = z
           .optional(),
       )
       .optional(),
+    // Read-only tools that give a company's or a contact's timeline its rows.
+    // Aligns with the runtime manifest schema's `activitySources`
+    // (apps/api/src/modules/apps/manifest-schema.ts).
+    activitySources: z
+      .array(
+        z
+          .object({
+            tool: z.string().min(1),
+            scope: z.string().regex(scopeShape, "scope must be app:resource[:action]"),
+            label: z.string().min(1),
+            labelKey: z.string().min(1).optional(),
+            filterKey: z.string().regex(/^[a-z][a-z0-9_-]*$/, "filterKey must be lowercase"),
+          })
+          .strict(),
+      )
+      .optional(),
     // The app data store's declared collections (./app-store.ts): what the
     // agent's data tools, dashboard blocks and search may read, under which scope.
     store: appStoreDeclarationSchema.optional(),

@@ -16,6 +16,7 @@ import {
   ROUTINE_RUN_PAUSE_ANSWER_ONLY_RESULT,
   ROUTINE_RUN_PAUSE_NOTE,
 } from "~/modules/agent/runtime/agent-service"
+import { runContextStore } from "~/modules/agent/runtime/run-context"
 import {
   TURN_BUDGET_ANSWER_ONLY_RESULT,
   TURN_BUDGET_CHECK_IN_NOTE,
@@ -381,6 +382,61 @@ describe("an interactive turn's input budget", () => {
       toolResults: [{ toolCallId: "r1", toolName: "tickets__get", output: { id: "t1" } }],
     })
     await prepare(2)
+    expect(result.stepCtx.answerOnly).toBe(ROUTINE_RUN_PAUSE_ANSWER_ONLY_RESULT)
+    await endTurn(result)
+  }, 60_000)
+
+  // A follow-up routine stages drafts and runs on: no pause after a parked
+  // call, no chain-only step, and the loop does not stop there.
+  it("a follow-up routine turn that parks calls in two steps runs on without pausing", async () => {
+    const routineId = "00000000-0000-0000-0000-000000e70009"
+    const result = await runContextStore.run(
+      {
+        runId: "00000000-0000-0000-0000-000000e7000a",
+        parentRunId: null,
+        rootRunId: "00000000-0000-0000-0000-000000e7000a",
+        nestingDepth: 0,
+        background: true,
+        routineId,
+        routineFollowUp: true,
+      },
+      () => startTurn("routine"),
+    )
+    await prepare(0)
+    await capturedParams.onStepFinish({
+      usage: { inputTokens: 1000, outputTokens: 10 },
+      toolResults: [parkedStep.toolResults[0], { ...parkedStep.toolResults[0], toolCallId: "c2" }],
+    })
+    const second = await prepare(1)
+    expect(result.stepCtx.answerOnly).toBeNull()
+    expect(result.stepCtx.chainOnly).toBeNull()
+    expect(JSON.stringify(second.messages ?? [])).not.toContain(
+      JSON.stringify(ROUTINE_RUN_PAUSE_NOTE).slice(1, 60),
+    )
+    await capturedParams.onStepFinish(parkedStep)
+    await prepare(2)
+    expect(result.stepCtx.answerOnly).toBeNull()
+    expect(result.stepCtx.chainOnly).toBeNull()
+    expect(await stops([{}, {}])).toBe(false)
+    await endTurn(result)
+  }, 60_000)
+
+  it("a routine tick frame for another routine does not make this turn a follow-up", async () => {
+    const result = await runContextStore.run(
+      {
+        runId: "00000000-0000-0000-0000-000000e7000b",
+        parentRunId: null,
+        rootRunId: "00000000-0000-0000-0000-000000e7000b",
+        nestingDepth: 0,
+        background: true,
+        routineId: "00000000-0000-0000-0000-000000e7000c",
+        routineFollowUp: true,
+      },
+      () => startTurn("routine"),
+    )
+    await prepare(0)
+    await capturedParams.onStepFinish(parkedStep)
+    await prepare(1)
     expect(result.stepCtx.answerOnly).toBe(ROUTINE_RUN_PAUSE_ANSWER_ONLY_RESULT)
     await endTurn(result)
   }, 60_000)

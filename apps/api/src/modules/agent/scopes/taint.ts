@@ -459,27 +459,145 @@ export async function taintThreadForTriggerEvent(
   await clearTaintFlag(threadId, orgId)
 }
 
+/** A manifest's `taintSourceWhen`: the field of a row read and the value that makes it outside text. */
+export interface TaintSourceRowCondition {
+  field: string
+  equals: string | number | boolean
+  /**
+   * The app's `outsideTextFields`. When given, text beside the rows taints only under one of
+   * these keys (anything else there is the system's: a cursor, a status). When not, only the
+   * keys in `SYSTEM_FIELDS` are the system's, and any other text beside the rows taints.
+   */
+  outsideFields?: readonly string[]
+}
+
 /**
- * Does this successful call of a `taintSource` tool taint the turn? Always, unless the host
- * narrowed the tool with `taintSourceWhen` (analyze_media: only a file from outside the org). A
- * narrowing that cannot answer counts as yes: fail closed.
+ * Keys of a list result that the system fills, never a person: paging, counts and status.
+ * Text under one of them beside the rows is not outside text.
+ */
+export const SYSTEM_FIELDS: ReadonlySet<string> = new Set(
+  [
+    "cursor",
+    "nextCursor",
+    "prevCursor",
+    "previousCursor",
+    "endCursor",
+    "startCursor",
+    "next",
+    "prev",
+    "previous",
+    "nextPageToken",
+    "pageToken",
+    "nextPage",
+    "page",
+    "pageSize",
+    "pages",
+    "offset",
+    "limit",
+    "count",
+    "total",
+    "totalCount",
+    "hasMore",
+    "hasNextPage",
+    "hasPreviousPage",
+    "truncated",
+    "status",
+    "state",
+    "kind",
+    "type",
+    "id",
+    "updatedAt",
+    "asOf",
+    "syncedAt",
+    "source",
+  ].map((key) => key.toLowerCase()),
+)
+
+/** How deep the row walk looks into a result: a row sits in a list, a list in an object or two. */
+const ROW_WALK_DEPTH = 6
+
+/**
+ * Does a result hold a row the condition calls outside text? A row is any object in the result
+ * that carries the condition's field; what sits inside a row belongs to it. One matching row
+ * taints the turn; rows that all carry another value leave it clean. Anything the condition
+ * cannot judge taints (fail closed): a result with no row carrying the field (a projection that
+ * dropped it), an entry of a list outside every row that does not carry it (a `related` list
+ * beside the judged `items`), outside text beside the rows (a `summary`, or a `related`
+ * object holding a body), or a part nested deeper than the walk reads. Beside the rows, text is
+ * outside text under a key the app's `outsideTextFields` name, or, when the app names none,
+ * under any key but the system's (`SYSTEM_FIELDS`: a cursor, a total). Numbers, flags and
+ * nulls there leave it clean.
+ */
+export function rowsMatchTaintCondition(result: unknown, cond: TaintSourceRowCondition): boolean {
+  type Verdict = "match" | "unjudged" | "clean" | "none"
+  const RANK: Record<Verdict, number> = { none: 0, clean: 1, unjudged: 2, match: 3 }
+  const worst = (verdicts: Verdict[]): Verdict =>
+    verdicts.reduce<Verdict>((a, b) => (RANK[b] > RANK[a] ? b : a), "none")
+  const declared = cond.outsideFields?.length ? new Set(cond.outsideFields) : null
+  /** Whether text under `key`, outside every row, is outside text. */
+  const outsideKey = (key: string | null): boolean => {
+    if (declared) return key !== null && declared.has(key)
+    return key === null || !SYSTEM_FIELDS.has(key.toLowerCase())
+  }
+  const judge = (
+    value: unknown,
+    depth: number,
+    inList: boolean,
+    key: string | null,
+    outside: boolean,
+  ): Verdict => {
+    if (value === null || value === undefined) return "none"
+    if (depth > ROW_WALK_DEPTH) return "unjudged"
+    // Text outside every row is outside text unless the system wrote it; a count or a flag
+    // is no text.
+    if (typeof value === "string") return outside || outsideKey(key) ? "unjudged" : "none"
+    if (typeof value !== "object") return inList ? "unjudged" : "none"
+    if (Array.isArray(value)) {
+      return worst(value.map((item) => judge(item, depth + 1, true, key, outside)))
+    }
+    const row = value as Record<string, unknown>
+    if (Object.hasOwn(row, cond.field)) return row[cond.field] === cond.equals ? "match" : "clean"
+    // Under a declared outside field, everything inside is outside text too.
+    const within = outside || (declared !== null && key !== null && declared.has(key))
+    const inside = worst(
+      Object.entries(row).map(([k, child]) => judge(child, depth + 1, false, k, within)),
+    )
+    // An entry of a list with no row of its own is a row that does not say where it came from.
+    return inList && inside === "none" ? "unjudged" : inside
+  }
+  return judge(result, 0, false, null, false) !== "clean"
+}
+
+/**
+ * Does this successful call of a `taintSource` tool taint the turn? Always, unless the tool is
+ * narrowed: by the host's `taintSourceWhen` function (analyze_media: only a file from outside the
+ * org), or by the manifest's row condition read on the result (`taintSourceWhenRow`). A narrowing
+ * that cannot answer counts as yes, and so does a row condition with no result to read: fail closed.
  */
 export async function taintSourceApplies(
   tool: {
     taintSource?: boolean
     taintSourceWhen?: (params: unknown, ctx: { orgId: string }) => Promise<boolean>
+    taintSourceWhenRow?: TaintSourceRowCondition
   },
   params: unknown,
   orgId: string,
+  read?: { result: unknown },
 ): Promise<boolean> {
   if (!tool.taintSource) return false
-  if (!tool.taintSourceWhen) return true
-  try {
-    return await tool.taintSourceWhen(params, { orgId })
-  } catch (err) {
-    log.error({ err }, "taintSourceWhen failed: the turn is marked")
-    return true
+  if (tool.taintSourceWhen) {
+    try {
+      return await tool.taintSourceWhen(params, { orgId })
+    } catch (err) {
+      log.error({ err }, "taintSourceWhen failed: the turn is marked")
+      return true
+    }
   }
+  if (tool.taintSourceWhenRow) {
+    if (!read) return true
+    return rowsMatchTaintCondition(read.result, tool.taintSourceWhenRow)
+  }
+  return true
 }
 
 /**
@@ -496,8 +614,9 @@ export async function markThreadsForTaintSourceResult(
   orgId: string,
   threadIds: ReadonlyArray<string | null | undefined>,
   toolName?: string,
+  read?: { result: unknown },
 ): Promise<boolean> {
-  if (!(await taintSourceApplies(tool, params, orgId))) return false
+  if (!(await taintSourceApplies(tool, params, orgId, read))) return false
   const source = outsideTextSourceOf(toolName) ?? undefined
   for (const threadId of new Set(threadIds.filter((t): t is string => Boolean(t)))) {
     await setTaintFlag(threadId, orgId, source ? { source } : {})

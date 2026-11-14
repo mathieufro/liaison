@@ -18,6 +18,7 @@ import { sql } from "drizzle-orm"
 import { withPrivilegedDb } from "~/db/privileged"
 import { schemaRef } from "~/db/schema-ref"
 import { CryptoContext, encryptSecret } from "~/lib/crypto"
+import { runApprovalExpiry } from "~/modules/approvals/expiry"
 import { DAY_MS, HOUR_MS } from "~/seed/clock"
 import type { SeedContext } from "~/seed/context"
 import { upsertRoleAgent } from "~/seed/factories/agent/agents"
@@ -412,6 +413,16 @@ export async function seedQaApprovals(
     // a pending request raises.
     { seeded: false },
   )
+  // A pending request whose lifetime is over is expired by the server's sweep
+  // (every two minutes, `approval-expiry-sweep`). Left to it, the world a run
+  // reads depended on whether the sweep's minute fell inside the run: the
+  // request still pending, or expired with its "Expired without decision."
+  // line, audit and timeline rows. The seed runs the sweep's own step for it,
+  // so the world is the one the sweep leaves, every run.
+  for (const a of QA_APPROVALS) {
+    if (a.status !== "pending" || a.expiresInHours > 0) continue
+    await runApprovalExpiry({ orgId: ctx.orgId, requestId: ctx.id("qa-approval", a.handle) })
+  }
 }
 
 /** Two personal saved ticket views and one shared with the org. */

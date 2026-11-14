@@ -1,0 +1,25 @@
+{
+  "entry": "preflight:invoice_from_stripe_payment",
+  "params": {
+    "chargeId": "ch_contract_1"
+  },
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)",
+  "expectError": {
+    "reason": "recorded on a contract install with no rows, so the replay pins the nothing_waiting refusal a caller gets when the record it names does not exist (nothing written); the working path is still to record"
+  },
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": ["documents", "{\"where\":{\"external_ref\":\"stripe:ch_contract_1\"},\"limit\":1}"],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": [
+        "deferred_events",
+        "{\"where\":{\"event_id\":\"stripe:ch_contract_1\"},\"limit\":20}"
+      ],
+      "reply": "[]"
+    }
+  ]
+}

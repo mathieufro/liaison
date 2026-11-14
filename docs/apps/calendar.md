@@ -45,6 +45,16 @@ You can bring events from another calendar tool as an `.ics` file. Upload the fi
 
 Attendees are not emailed: changes in Liaison do not send Google invitations. Only the organizer can change an event's guest list. A recurring event cannot be edited here yet, because a change would affect the whole series. An event with a Meet link shows **Join with Google Meet**.
 
+## Away days from your calendar
+
+Your own primary calendar, connected as your personal account, tells Liaison when you are away. Calendars shared with you, a colleague's included, and organization accounts never do.
+
+- An **out-of-office** event you made that covers at least one whole working day (from your work hours) marks you away for those days at once. Home says so with the dates and who is next in line. Part of a day counts for nothing.
+- An all-day event you organise or accepted whose title looks like leave (for example "Congés", "RTT", "Holiday", "PTO") is asked about once on Home and under **Away** on your profile: **Yes** counts it, **No** sets it aside for good. At most three questions are open at once; the others wait.
+- Moving the event moves your away days, with a line on Home. If someone else moves an event you only accepted, it is asked about again. A range longer than 30 days is always asked about.
+- Cancelling the event removes the days, unless you ended them early. A recurring event counts once per occurrence over the next 60 days, kept up to date every day.
+- Disconnecting the account removes the days it added and keeps the ones you said yourself. Event titles are never stored with your away days: Home reads a question's title from your calendar when it shows it.
+
 ## Ask an agent
 
 Ask, for example, "What is on my calendar tomorrow?" or "Book a 30 minute call with orders@resonantaudiolabs.example on Thursday at 10 with a Meet link". The agent can create a real Google Meet link. It cannot create Teams or Zoom links. The calendar tools are not approval-gated, unless your organization adds an approval policy (see [Approve what agents do](../agents/approvals.md)).

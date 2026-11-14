@@ -14,17 +14,25 @@ import { schemaRef } from "~/db/schema-ref"
  *  - `caller`: rows that sit inside conversations and records other people
  *    share (messages, threads, uploaded files). Read under the CALLER's RLS, so
  *    the bundle never carries a conversation the caller could not open.
+ *  - `self`: rows that are the member's alone AND that other people may read only under a
+ *    rule of their own (the time a person entered). In a self-export they are read like a
+ *    `subject` section, all of them; when someone else exports the member they are read under
+ *    the CALLER's RLS, so the requester gets only the rows they could already read (an entry
+ *    on a project's dated sheet, for that project's lead or finance), never the member's
+ *    private ones, whatever authority the requester holds.
  *  - `subject`: rows that are about the member alone (preferences, routines,
- *    approvals, audit entries, connected accounts). Read privileged and filtered
- *    strictly on the member's id; RLS would hide most of them from the member
- *    themself (the audit log, for one), which is exactly what an access request
- *    asks for.
+ *    approvals, audit entries, connected accounts, the app drafts they made and
+ *    the app runs they started). Read privileged and filtered strictly on the
+ *    member's id; RLS would hide most of them from the member themself (the
+ *    audit log, for one, or a draft after they lost the build permission),
+ *    which is exactly what an access request asks for: the right of access does
+ *    not depend on today's permissions.
  *
  * Every section selects named columns only. Tokens, password and TOTP hashes,
  * encrypted credentials and key material are never selected, and free-form
  * JSON (settings, preferences, audit changes) goes through `withoutSecrets`.
  *
- * EXTENSION POINT: a new kind of per-person record (away ranges, for one) is
+ * EXTENSION POINT: a new kind of per-person record (a person's time rows, for one) is
  * one more entry in `MEMBER_SECTIONS`. It then appears in every member bundle
  * with its note, its rows and its count, and nothing else changes.
  */
@@ -35,13 +43,15 @@ export const MEMBER_SECTION_ROW_CAP = 1000
 export interface MemberSectionCtx {
   orgId: string
   subjectUserId: string
+  /** Who asked for the export. A `self` section is read in full only when it is the subject. */
+  callerUserId?: string
 }
 
 export interface MemberSection {
   key: string
   /** One plain sentence saying what the section holds, written into the bundle. */
   note: string
-  via: "caller" | "subject"
+  via: "caller" | "self" | "subject"
   /** Reads at most `limit` rows. `db` is the caller's RLS client or a privileged tx, per `via`. */
   read: (
     db: RlsClient | PrivilegedDb,
@@ -93,6 +103,7 @@ async function rows(db: RlsClient | PrivilegedDb, query: SQL): Promise<Record<st
 }
 
 const K = () => drizzleSql.raw(schemaRef("kernel"))
+const P = () => drizzleSql.raw(schemaRef("app_projects"))
 
 export const MEMBER_SECTIONS: MemberSection[] = [
   {
@@ -355,9 +366,192 @@ export const MEMBER_SECTIONS: MemberSection[] = [
         LIMIT ${limit}`,
       ),
   },
+  {
+    key: "companiesManaged",
+    note: "Companies the member is account manager of, or created: name, domain and which of the two. A company they manage but cannot read shows its id only.",
+    via: "subject",
+    // Being account manager grants nothing: a company the member cannot read
+    // (shared with nobody, not created by them, no grant to them or their
+    // roles) keeps its name, domain and date out of their bundle.
+    read: (db, ctx, limit) =>
+      rows(
+        db,
+        drizzleSql`
+        SELECT c.id::text AS id,
+               CASE WHEN r.readable THEN c.name END AS name,
+               CASE WHEN r.readable THEN c.domain END AS domain,
+               (c.owner_user_id = ${ctx.subjectUserId}::uuid) AS account_manager,
+               (c.created_by = ${ctx.subjectUserId}::uuid) AS created_by_member,
+               CASE WHEN r.readable THEN c.created_at END AS created_at
+        FROM ${K()}.companies c
+        CROSS JOIN LATERAL (
+          SELECT (
+            c.org_access <> 'none'
+            OR c.created_by = ${ctx.subjectUserId}::uuid
+            OR EXISTS (
+              SELECT 1 FROM ${K()}.resource_grants g
+               WHERE g.org_id = c.org_id AND g.resource_type = 'kernel.company'
+                 AND g.resource_id = c.id
+                 AND ((g.grantee_kind = 'user' AND g.grantee = ${ctx.subjectUserId}::text)
+                   OR (g.grantee_kind = 'role' AND g.grantee IN (
+                         SELECT ur.role_id::text FROM ${K()}.user_roles ur
+                          WHERE ur.org_id = c.org_id AND ur.user_id = ${ctx.subjectUserId}::uuid)))
+            )
+          ) AS readable
+        ) r
+        WHERE c.org_id = ${ctx.orgId}
+          AND (c.owner_user_id = ${ctx.subjectUserId}::uuid OR c.created_by = ${ctx.subjectUserId}::uuid)
+        ORDER BY c.created_at, c.id
+        LIMIT ${limit}`,
+      ),
+  },
+  {
+    key: "deals",
+    note: "Deals the member owns (as the task's assignee) or closed: title, pipeline, outcome, when it closed and which of the two.",
+    via: "subject",
+    read: async (db, ctx, limit) => {
+      const P = drizzleSql.raw(schemaRef("app_projects"))
+      // An org database without the projects tables has no deals to list.
+      const present = extractRows<{ ok: boolean }>(
+        await db.execute(
+          drizzleSql`SELECT to_regclass(${`${schemaRef("app_projects")}.deals`}) IS NOT NULL AS ok`,
+        ),
+      )
+      if (present[0]?.ok !== true) return []
+      return rows(
+        db,
+        drizzleSql`
+        SELECT d.task_id::text AS task_id, t.title, p.name AS pipeline, d.outcome, d.closed_at,
+               (t.assignee_id IS NOT DISTINCT FROM ${ctx.subjectUserId}::uuid) AS owner,
+               (d.closed_by IS NOT DISTINCT FROM ${ctx.subjectUserId}::uuid) AS closed_by_member
+        FROM ${P}.deals d
+        JOIN ${P}.tasks t ON t.id = d.task_id AND t.org_id = d.org_id
+        JOIN ${P}.projects p ON p.id = t.project_id AND p.org_id = t.org_id
+        WHERE d.org_id = ${ctx.orgId} AND t.parent_task_id IS NULL
+          AND (t.assignee_id = ${ctx.subjectUserId}::uuid OR d.closed_by = ${ctx.subjectUserId}::uuid)
+        ORDER BY d.created_at
+        LIMIT ${limit}`,
+      )
+    },
+  },
+  {
+    key: "suppressionsAdded",
+    note: "Opt-outs the member recorded: when and how. The address is not kept, only a fingerprint of it, so none is listed.",
+    via: "subject",
+    read: async (db, ctx, limit) => {
+      const { suppressionsAddedBy } = await import("~/modules/mail/suppressions")
+      return (await suppressionsAddedBy(db, ctx.orgId, ctx.subjectUserId, limit)).map((r) => ({
+        reason: r.reason,
+        created_at: iso(r.created_at),
+      }))
+    },
+  },
+  {
+    key: "appDrafts",
+    note: "App drafts the member made, last changed or saved a version of: name, title, status, the published app if any, which versions they saved, and when. The draft's code is not included.",
+    via: "subject",
+    read: (db, ctx, limit) =>
+      rows(
+        db,
+        drizzleSql`
+        SELECT d.id::text AS id, d.base_name, d.title, d.status, d.published_app_name,
+               d.latest_version,
+               COALESCE(d.created_by = ${ctx.subjectUserId}::uuid, false) AS made,
+               COALESCE(d.updated_by = ${ctx.subjectUserId}::uuid, false) AS last_changed,
+               COALESCE((SELECT array_agg(v.n ORDER BY v.n) FROM ${K()}.app_draft_versions v
+                          WHERE v.draft_id = d.id AND v.org_id = d.org_id
+                            AND v.created_by = ${ctx.subjectUserId}::uuid), '{}') AS versions_made,
+               d.created_at, d.updated_at
+        FROM ${K()}.app_drafts d
+        WHERE d.org_id = ${ctx.orgId}
+          AND (d.created_by = ${ctx.subjectUserId}::uuid OR d.updated_by = ${ctx.subjectUserId}::uuid
+               OR EXISTS (SELECT 1 FROM ${K()}.app_draft_versions v
+                           WHERE v.draft_id = d.id AND v.org_id = d.org_id
+                             AND v.created_by = ${ctx.subjectUserId}::uuid))
+        ORDER BY d.created_at, d.id
+        LIMIT ${limit}`,
+      ),
+  },
+  {
+    key: "ownTaskTime",
+    note: "The time the member entered on tasks: the day, the minutes, how it was entered, the task and its project, and whether someone else changed the entry (not who). Nobody else's time is included. Exported by someone else, it holds only the entries that person can already read on a project's dated sheet.",
+    via: "self",
+    read: (db, ctx, limit) =>
+      rows(
+        db,
+        drizzleSql`
+        SELECT tt.work_date::text AS work_date, tt.minutes, tt.entered_via,
+               t.title AS task, p.name AS project,
+               COALESCE(tt.changed_by IS NOT NULL AND tt.changed_by <> tt.user_id, false)
+                 AS changed_by_someone_else,
+               tt.created_at, tt.updated_at
+        FROM ${P()}.task_time tt
+        JOIN ${P()}.tasks t ON t.id = tt.task_id AND t.org_id = tt.org_id
+        JOIN ${P()}.projects p ON p.id = tt.project_id AND p.org_id = tt.org_id
+        WHERE tt.org_id = ${ctx.orgId} AND tt.user_id = ${ctx.subjectUserId}::uuid
+        ORDER BY tt.work_date, tt.created_at
+        LIMIT ${limit}`,
+      ),
+  },
+  {
+    key: "awayRanges",
+    note: "The member's away days: from, to or the weekdays, where they came from, their state and an early end. Who is next in line and who set a range are not included.",
+    via: "subject",
+    read: (db, ctx, limit) =>
+      rows(
+        db,
+        drizzleSql`
+        SELECT starts_on::text AS starts_on, ends_on::text AS ends_on, weekdays, source, status,
+               ended_early_on::text AS ended_early_on,
+               COALESCE(set_by IS NOT NULL AND set_by <> user_id, false) AS set_by_someone_else,
+               created_at, updated_at
+        FROM ${K()}.away_ranges
+        WHERE org_id = ${ctx.orgId} AND user_id = ${ctx.subjectUserId}::uuid
+        ORDER BY starts_on, created_at
+        LIMIT ${limit}`,
+      ),
+  },
+  {
+    key: "daysPerWeek",
+    note: "How many days a week the member works, when that was set.",
+    via: "subject",
+    read: (db, ctx) =>
+      rows(
+        db,
+        drizzleSql`
+        SELECT days_per_week, updated_at
+        FROM ${P()}.person_capacity
+        WHERE org_id = ${ctx.orgId} AND user_id = ${ctx.subjectUserId}::uuid`,
+      ),
+  },
+  {
+    key: "appLogs",
+    note: "App runs started by the member's actions that left log lines, one row per run: the app or draft, how many lines, how many warnings and errors, and when. What the app wrote is not included, as it is written by app code and often about other people.",
+    via: "subject",
+    read: async (db, ctx, limit) =>
+      (
+        await rows(
+          db,
+          drizzleSql`
+          SELECT run_id::text AS run_id, app, draft_id::text AS draft_id,
+                 count(*)::int AS lines,
+                 (count(*) FILTER (WHERE level = 'warn'))::int AS warnings,
+                 (count(*) FILTER (WHERE level = 'error'))::int AS errors,
+                 min(at) AS first_at, max(at) AS last_at
+          FROM ${K()}.app_logs
+          WHERE org_id = ${ctx.orgId} AND actor_user_id = ${ctx.subjectUserId}::uuid
+          GROUP BY run_id, app, draft_id
+          ORDER BY min(at), run_id
+          LIMIT ${limit}`,
+        )
+      ).map((r) => ({ ...r, first_at: iso(r.first_at), last_at: iso(r.last_at) })),
+  },
 ]
 
-/** Reads every section: the `caller` ones on `callerDb`, the `subject` ones in one privileged transaction. */
+/**
+ * Reads every section: the `caller` ones (and `self` ones of someone else's export) on
+ * `callerDb`, the rest in one privileged transaction.
+ */
 export async function readMemberSections(
   callerDb: RlsClient,
   ctx: MemberSectionCtx,
@@ -372,8 +566,12 @@ export async function readMemberSections(
       truncated: got.length > MEMBER_SECTION_ROW_CAP,
     }
   }
-  for (const s of sections) if (s.via === "caller") await take(s, callerDb)
-  const subjectSections = sections.filter((s) => s.via === "subject")
+  // A `self` section is the subject's own read only in a self-export; anyone else reads it
+  // under their own RLS (fail closed: no caller named is someone else).
+  const selfExport = ctx.callerUserId !== undefined && ctx.callerUserId === ctx.subjectUserId
+  const onCaller = (s: MemberSection) => s.via === "caller" || (s.via === "self" && !selfExport)
+  for (const s of sections) if (onCaller(s)) await take(s, callerDb)
+  const subjectSections = sections.filter((s) => !onCaller(s))
   if (subjectSections.length > 0) {
     const { withPrivilegedDb } = await import("~/db/privileged")
     await withPrivilegedDb(ctx.orgId, "data_subject_export member sections", async (tx) => {

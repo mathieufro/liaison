@@ -48,7 +48,7 @@ describe("checkBundledAppPurity (Phase 17 G7)", () => {
     }
   })
 
-  it("flags a raw window.fetch in an app UI, honours the absolute-url opt-out, skips tests", () => {
+  it("flags a raw window.fetch in an app UI, honours the absolute-url opt-out, skips tests and testkits", () => {
     const root = mkdtempSync(join(tmpdir(), "purity-"))
     try {
       const dir = join(root, "myapp", "src", "ui")
@@ -59,6 +59,10 @@ describe("checkBundledAppPurity (Phase 17 G7)", () => {
           `await window.fetch(presign.uploadUrl, { method: "PUT" }) // purity-allow: absolute-url\n`,
       )
       writeFileSync(join(dir, "bad.test.ts"), `window.fetch("/api/x")\n`)
+      writeFileSync(
+        join(dir, "mock.testkit.ts"),
+        `export * from "../../../apps/api/test-support/x"\nwindow.fetch("/api/y")\n`,
+      )
       const issues = checkBundledAppPurity(root)
       expect(issues.length).toBe(1)
       expect(issues[0].reason).toContain("raw window.fetch")

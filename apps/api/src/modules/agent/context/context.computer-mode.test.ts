@@ -14,6 +14,7 @@
 //     and has a real shell, never gets the section.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import type { ClientSurface } from "@liaison/shared"
+import { z } from "zod"
 import { sql } from "~/db"
 import type { UserContext } from "~/db/rls"
 import {
@@ -22,12 +23,14 @@ import {
   composeAgentDefinition,
   LOCAL_MODE_SECTION,
   NODE_MODE_SECTION,
+  personHasNoComputer,
   RUNTIME_CONTEXT_MARKER,
   renderAgentDefinitionText,
   renderClientSurfaceLine,
   resetSystemPromptCache,
   systemPartsToText,
 } from "~/modules/agent/context/context"
+import { toolRegistry } from "~/modules/apps/app-registries"
 import { DemoModeTestAccess } from "~/modules/demo/demo-mode"
 import {
   invalidateDemoMarker,
@@ -368,6 +371,72 @@ describe("node mode (P4, A30)", () => {
       'chooses "Liaison"',
     ]) {
       expect(NODE_MODE_SECTION).toContain(sentence)
+    }
+  })
+})
+
+// A person with no computer was offered kernel__list_my_remote_repos, whose
+// description ("the repositories the person's own computer can reach with its
+// signed-in GitHub CLI") the agent then told her as a fact. The tools that read
+// the person's own computer are in the announced catalog only for a person who
+// has one, and the turn's frame is told so for tool_search.
+describe("tools that read the person's own computer", () => {
+  const TOOL = "list_my_remote_repos"
+  const announced = async () => {
+    const turn = await assembleContext({ threadId: THREAD, orgId: ORG, actor, agentId: AGENT })
+    const tail = turn.messages
+      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .join("\n")
+    return `${systemPartsToText(turn.system)}\n${tail}`
+  }
+  beforeAll(() => {
+    // The catalog is announced only to a turn that can search tools.
+    toolRegistry.set([ORG, "kernel", "tool_search"], {
+      appName: "kernel",
+      name: "tool_search",
+      description: "kernel tool_search",
+      requiredScopes: ["kernel:threads:read"],
+      params: z.object({}),
+      handler: async () => ({ ok: true }),
+    } as unknown as Parameters<typeof toolRegistry.set>[1])
+    toolRegistry.set([ORG, "kernel", "threads_search"], {
+      appName: "kernel",
+      name: "threads_search",
+      description: "kernel threads_search",
+      requiredScopes: ["kernel:threads:read"],
+      deferLoading: true,
+      params: z.object({}),
+      handler: async () => ({ ok: true }),
+    } as unknown as Parameters<typeof toolRegistry.set>[1])
+    toolRegistry.set([ORG, "kernel", TOOL], {
+      appName: "kernel",
+      name: TOOL,
+      description: "kernel list_my_remote_repos",
+      requiredScopes: ["kernel:threads:read"],
+      deferLoading: true,
+      needsOwnComputer: true,
+      params: z.object({}),
+      handler: async () => ({ ok: true }),
+    } as unknown as Parameters<typeof toolRegistry.set>[1])
+  })
+  afterAll(() => toolRegistry.deleteByPrefix([ORG]))
+
+  it("are not announced to a person with no computer", async () => {
+    expect(await personHasNoComputer(ORG, actor)).toBe(true)
+    const text = await announced()
+    // Discriminator: the catalog is there, with the tool that needs no computer.
+    expect(text).toContain("threads_search")
+    expect(text).not.toContain(TOOL)
+  })
+
+  it("are announced to a person with a computer set up", async () => {
+    await sql`INSERT INTO kernel.nodes (org_id, owner_user_id, device_id, name)
+      VALUES (${ORG}, ${USER}, ${`d2.${tag}`}, 'Test Mac')`
+    try {
+      expect(await personHasNoComputer(ORG, actor)).toBe(false)
+      expect(await announced()).toContain(TOOL)
+    } finally {
+      await sql`DELETE FROM kernel.nodes WHERE org_id = ${ORG}`
     }
   })
 })

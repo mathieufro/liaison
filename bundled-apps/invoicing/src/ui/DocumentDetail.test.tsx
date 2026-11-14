@@ -27,12 +27,15 @@ import {
   footerActionResultNote,
   isEditableDocumentStatus,
   mergeTabs,
+  moneyChips,
   pdfNotReadyNote,
   pdfStatusAffordance,
   shopifyOrderUrl,
+  stripeCollection,
   toLoadedDocument,
 } from "./DocumentDetail"
 import { FR as fr } from "./i18n-fr"
+import { einvoiceStatusWord } from "./RecurringStates"
 
 const source = readFileSync(join(import.meta.dir, "DocumentDetail.tsx"), "utf-8")
 
@@ -220,6 +223,24 @@ describe("DocumentDetail (Phase 17 F3)", () => {
     expect(invoicingSlot).toBeDefined()
     expect(invoicingSlot?.document_detail).toBeDefined()
     expect(Array.isArray(invoicingSlot?.document_detail?.tabs)).toBe(true)
+  })
+
+  it("an invoice Stripe collects names its Stripe invoice and customer, and offers no Mark paid", () => {
+    expect(stripeCollection({ stripe_invoice_id: "in_1", stripe_customer_id: "cus_1" })).toEqual({
+      invoiceId: "in_1",
+      customerId: "cus_1",
+    })
+    expect(stripeCollection({ stripe_invoice_id: "in_1" })).toEqual({
+      invoiceId: "in_1",
+      customerId: null,
+    })
+    expect(stripeCollection({})).toBeNull()
+    expect(stripeCollection(undefined)).toBeNull()
+    expect(source).toContain(
+      'doc().type !== "credit_note" && !stripeCollection(doc().external_refs)',
+    )
+    expect(source).toContain("document-detail-open-stripe")
+    expect(source).toContain("document-detail-open-contact")
   })
 
   it("renders footer-action testids in source for E2E pickup", () => {
@@ -673,5 +694,42 @@ describe("toLoadedDocument: an id that resolves to nothing", () => {
 
   it("renders a not-found state when the resource resolves to nothing", () => {
     expect(source).toContain('data-testid="document-detail-not-found"')
+  })
+})
+
+describe("an invoice issued by Liaison and collected elsewhere", () => {
+  const base = {
+    status: "issued",
+    type: "invoice",
+    stream: "card" as const,
+    payment_status: "unpaid",
+    einvoice_state: "sent",
+    collection_state: null,
+  }
+
+  it("Collected shows only after an accepted report", () => {
+    // Paid, but nothing reported yet, or the report failed: never Collected.
+    expect(einvoiceStatusWord({ ...base, payment_status: "paid" })).not.toBe("Collected")
+    expect(
+      einvoiceStatusWord({ ...base, payment_status: "paid", collection_state: "failed" }),
+    ).not.toBe("Collected")
+    expect(
+      einvoiceStatusWord({ ...base, payment_status: "paid", collection_state: "reported" }),
+    ).toBe("Collected")
+  })
+
+  it("chips say who issued and who took the payment, and the payment only once it is in", () => {
+    expect(moneyChips(base)).toEqual(["Issued by Liaison"])
+    expect(moneyChips({ ...base, payment_status: "paid" })).toEqual([
+      "Issued by Liaison",
+      "Collected by Stripe",
+    ])
+    expect(moneyChips({ ...base, stream: "transfer", payment_status: "paid" })).toEqual([
+      "Issued by Liaison",
+    ])
+    // A draft, a quote, or a document from no stream gets no chip.
+    expect(moneyChips({ ...base, status: "draft" })).toEqual([])
+    expect(moneyChips({ ...base, type: "quote" })).toEqual([])
+    expect(moneyChips({ ...base, stream: null })).toEqual([])
   })
 })

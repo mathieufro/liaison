@@ -387,5 +387,25 @@
     "nudgeText": "Texte de la relance",
     "nudgeTextHelp": "Laissez vide pour envoyer le texte par défaut, dans la langue du client.",
     "defaultNudge": "Bonjour,\n\nSans nouvelles de votre part, nous revenons vers vous : notre dernier message a-t-il répondu à votre question, ou pouvons-nous encore vous aider ?\n\nSans réponse de votre part d'ici {{days}} jours, nous clôturerons ce ticket. Vous pourrez toujours répondre à cet e-mail pour le rouvrir.\n\nMerci"
+  },
+  "card": {
+    "pill": "Ticket",
+    "assignee": "Responsable",
+    "category": "Catégorie",
+    "slaDeadline": "Réponse attendue avant",
+    "lastInbound": "Dernier message du client",
+    "messages": "Messages",
+    "statusOpen": "Ouvert",
+    "statusAwaitingCustomer": "En attente du client",
+    "statusAwaitingFollowup": "Reporté",
+    "statusClosed": "Fermé",
+    "backlogPill": "Tickets ouverts",
+    "backlogHow": "Compté par le serveur sur tous les tickets ouverts que vous pouvez voir, et non sur une page de résultats",
+    "runningGet": "Lecture du ticket",
+    "runningBacklog": "Comptage des tickets ouverts"
+  },
+  "companySupport": {
+    "empty": "Aucun ticket ouvert par les personnes de cette entreprise.",
+    "error": "Impossible de lire les tickets de cette entreprise."
   }
 }

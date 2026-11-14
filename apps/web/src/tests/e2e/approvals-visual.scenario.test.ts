@@ -161,6 +161,92 @@ test.describe("Approval Card", () => {
 })
 
 test.describe("Home", () => {
+  // Cold walk 2026-11-08: Details on a Home row opened a long diff and Approve / Reject went
+  // out of view, so a reader could not see how to decide after reading. The opened card now
+  // leads with its decision row, sticky to the top of the scrolling Home while the details
+  // scroll under it; the chat dock owns the bottom of the screen, so the row never sits there.
+  // A layout claim only a browser proves, at desktop and at phone width.
+  for (const vp of [
+    { name: "desktop", width: 1440, height: 760, home: "activity-home", row: "actions-inline-row" },
+    {
+      name: "phone",
+      width: 390,
+      height: 844,
+      home: "phone-tab-home",
+      row: "approval-card-actions",
+    },
+  ]) {
+    test(`details on a long approval keeps approve and reject at the top, in reach (${vp.name})`, async ({
+      page,
+      env,
+      world,
+    }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height })
+      const actor = await createApprovalActor(world, {
+        name: `Visual Details Reader ${vp.name}`,
+        scopes: ["test:gated:write", "test:approve"],
+      })
+      // Someone else asks, so the row is the reader's own decision (not folded as peer noise).
+      const requester = await createApprovalActor(world, {
+        name: `Visual Details Requester ${vp.name}`,
+        scopes: ["test:gated:write"],
+      })
+      // A message long enough that the opened card is taller than the screen.
+      const message = Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} of the reply.`).join(
+        "\n\n",
+      )
+      const seeded = await seedGatedApproval(env, world.org.id, {
+        requesterUserId: requester.id,
+        participantUserIds: [actor.id, requester.id],
+        approverUserIds: [actor.id],
+        title: "Long approval details",
+        toolCallMessage: true,
+        params: { message },
+      })
+      await loginAs(page, env, actor.email, actor.password)
+      await page.getByTestId(vp.home).click()
+      const rowId = `attention-row-kernel-approval_request-${seeded.approvalRequestId}`
+      await expect(page.getByTestId(rowId)).toBeVisible({ timeout: 15000 })
+      await page.getByTestId(`${rowId}-details`).click()
+      const card = page.getByTestId(`${rowId}-expanded`).getByTestId("approval-card")
+      const title = card.getByTestId("approval-card-title")
+      await expect(title).toBeVisible({ timeout: 10000 })
+      const decision = card.getByTestId(vp.row)
+      await expect(decision).toHaveCount(1)
+      // The card is taller than the screen: its end is below the fold.
+      const cardBox = await card.boundingBox()
+      expect((cardBox?.y ?? 0) + (cardBox?.height ?? 0)).toBeGreaterThan(vp.height)
+
+      // The decision leads the card: at its top edge, above its title.
+      const before = await decision.boundingBox()
+      const titleBox = await title.boundingBox()
+      expect(before).not.toBeNull()
+      expect(before?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(titleBox?.y ?? 0)
+      expect((before?.y ?? 0) - (cardBox?.y ?? 0)).toBeLessThanOrEqual(24)
+
+      // Read on: the details scroll under the row, which stays at the top of the Home.
+      await card.hover()
+      await page.mouse.wheel(0, 1200)
+      await expect
+        .poll(async () => (await title.boundingBox())?.y ?? 0)
+        .toBeLessThan((titleBox?.y ?? 0) - 400)
+      const after = await decision.boundingBox()
+      expect(after).not.toBeNull()
+      expect(after?.y ?? -1).toBeGreaterThanOrEqual(0)
+      expect((after?.y ?? 0) + (after?.height ?? 0)).toBeLessThanOrEqual(vp.height / 2)
+      // Approve and Reject are on screen and take the click: nothing (the chat dock included)
+      // lies over them. A trial click runs Playwright's hit-target check without deciding.
+      for (const id of ["approval-card-action-approve", "approval-card-action-deny"]) {
+        const button = card.getByTestId(id).first()
+        const box = await button.boundingBox()
+        expect(box, id).not.toBeNull()
+        expect(box?.y ?? -1, id).toBeGreaterThanOrEqual(0)
+        expect((box?.y ?? 0) + (box?.height ?? 0), id).toBeLessThanOrEqual(vp.height / 2)
+        await button.click({ trial: true, timeout: 5000 })
+      }
+    })
+  }
+
   test("approval card visual home empty state", async ({ page, env, world }) => {
     const actor = await createApprovalActor(world, {
       name: "Visual Empty Home",

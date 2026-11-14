@@ -17,7 +17,7 @@ import {
   ConfirmDialog as SharedConfirmDialog,
 } from "@liaison/app-ui/kit"
 import { type Component, type JSX, Show } from "solid-js"
-import { currencyExponent } from "../money"
+import { formatMoneyGrouped } from "../money"
 import { tr } from "./i18n"
 
 export {
@@ -32,31 +32,24 @@ export {
 } from "@liaison/app-ui/kit"
 
 // ── Money ──────────────────────────────────────────────────────────────────
+/**
+ * Whether an id names a person the host can describe (a user id). A record written by a seed,
+ * an import or the system names its writer with a word ("seed", "system"), which the host's
+ * person preview refuses: asking for it only fails, on every draw.
+ */
+export function isUserId(id: unknown): id is string {
+  return (
+    typeof id === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  )
+}
+
 // Minor units (bigint|number|string) → grouped major string, tabular + mono so
 // columns of figures align. Currency code rendered as a quiet trailing token.
 // The currency's ISO 4217 exponent decides how many minor digits split off:
 // zero-decimal currencies (JPY, KRW, ...) have no fractional unit, so their
 // minor amount IS their major amount and must NOT be divided by 100.
-export function formatMoneyMinor(
-  minor: bigint | number | string | null | undefined,
-  currency?: string,
-): string {
-  if (minor === null || minor === undefined || minor === "") return "-"
-  const n = typeof minor === "bigint" ? Number(minor) : Number(minor)
-  if (!Number.isFinite(n)) return "-"
-  const abs = Math.abs(n)
-  const exp = currency ? currencyExponent(currency) : 2
-  const sign = n < 0 ? "-" : ""
-  if (exp === 0) {
-    const grouped = String(Math.round(abs)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
-    return `${sign}${grouped}`
-  }
-  const scale = 10 ** exp
-  const major = Math.floor(abs / scale)
-  const cents = abs % scale
-  const grouped = String(major).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
-  return `${sign}${grouped}.${String(cents).padStart(exp, "0")}`
-}
+export { formatMoneyGrouped as formatMoneyMinor }
 
 export const Money: Component<{
   minor: bigint | number | string | null | undefined
@@ -75,7 +68,7 @@ export const Money: Component<{
       props.class,
     )}
   >
-    {formatMoneyMinor(props.minor, props.currency)}
+    {formatMoneyGrouped(props.minor, props.currency)}
     <Show when={props.currency && !props.codeless}>
       <span class="ml-1 text-text-tertiary">{props.currency}</span>
     </Show>

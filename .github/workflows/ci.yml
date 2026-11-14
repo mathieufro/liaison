@@ -14,6 +14,9 @@
 #     tsconfig or workflow change, runs both. Hosted runners are the scarce
 #     resource, so a pull request runs them in as few jobs as possible: the api
 #     unit suite over two `unit` jobs, the web unit suite as a step of `static`.
+#     The relation cells (`relations`) run as a step of the first `unit` job
+#     when the map attributes a change to them (that job then runs for them
+#     alone if need be), and on every merge group.
 #   - merge_group: everything, split for wall clock (`unit` over three jobs,
 #     `web-unit` over two). The merge queue tests the exact tree main gets.
 #   - push to main: `static` only. The merge group already tested that tree.
@@ -51,6 +54,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       unit: ${{ steps.tests.outputs.unit }}
+      relations: ${{ steps.tests.outputs.relations }}
       unit_of: ${{ steps.tests.outputs.unit_of }}
       unit_parts: ${{ steps.tests.outputs.unit_parts }}
       web: ${{ steps.tests.outputs.web }}
@@ -265,7 +269,7 @@ jobs:
   unit:
     name: unit ${{ matrix.part }}/${{ needs.scope.outputs.unit_of }}
     needs: scope
-    if: needs.scope.outputs.unit == 'true'
+    if: needs.scope.outputs.unit == 'true' || needs.scope.outputs.relations == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -310,6 +314,7 @@ jobs:
       - name: Bring up test infra (Postgres, Redis, MeiliSearch, SeaweedFS)
         run: bun run infra:up
       - name: Unit tests (part ${{ matrix.part }} of ${{ needs.scope.outputs.unit_of }})
+        if: needs.scope.outputs.unit == 'true'
         # The default memory reserve doesn't fit a hosted runner, and the runner
         # runs nothing else, so the whole budget is this job's.
         env:
@@ -317,6 +322,15 @@ jobs:
           LIAISON_TEST_SLOTS: "1"
           TEST_UNIT_PART: ${{ matrix.part }}/${{ needs.scope.outputs.unit_of }}
         run: bun run scripts/test-run.ts unit
+      # The relation cells (scripts/test-run.ts `relations`): every link between objects the
+      # tree builds, against each event that can break it, and the schema guard that fails
+      # on a reference column no link names. About 120 tests in under two minutes.
+      - name: Relation cells
+        if: needs.scope.outputs.relations == 'true' && matrix.part == 1
+        env:
+          TEST_MEM_RESERVE_MB: "2048"
+          LIAISON_TEST_SLOTS: "1"
+        run: bun run scripts/test-run.ts relations
       - name: Keep the run's logs
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

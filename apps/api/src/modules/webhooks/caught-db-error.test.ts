@@ -64,6 +64,7 @@ async function register(trusted: boolean): Promise<void> {
         _format: "manifest",
         _bundlePath: bundlePath,
         trusted,
+        scopes: [`${appName(trusted)}:claims:read`],
         schema: {
           claims: { fields: { key: "string" }, constraints: { unique: [["key"]] } },
         },

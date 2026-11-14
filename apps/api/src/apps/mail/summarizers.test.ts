@@ -495,6 +495,38 @@ describe("mail approval summarizers", () => {
   })
 
   describe("summarizeMailCompose", () => {
+    it("links the To recipients' contacts, so the request is about them and their company", async () => {
+      const [contact] = extractRows<{ id: string }>(
+        await db.execute(drizzleSql`
+        INSERT INTO kernel.contacts (org_id, handle, name, email, org_access)
+        VALUES (${orgId}, 'tomoko-arai', 'Tomoko Arai', 'tomoko.arai@hanabi.example', 'editor')
+        RETURNING id
+      `),
+      )
+      const result = await withRlsContext(
+        {
+          actorType: "user",
+          userId,
+          orgId,
+          scopes: ["mail:conversations:read", "mail:accounts:read", "kernel:contacts:read"],
+          dimensionGrants: { "mail:inbox": [accountId] },
+        },
+        (tx) =>
+          summarizeMailCompose(
+            {
+              accountId,
+              to: ["Tomoko.Arai@hanabi.example", "nobody@unknown.example"],
+              subject: "Hello",
+              textBody: "Hi Tomoko",
+            },
+            { tx, orgId, userId },
+          ),
+      )
+      expect(result.links).toEqual([
+        { label: "Tomoko Arai", app: "kernel", entityType: "contact", entityId: contact.id },
+      ])
+    })
+
     it("uses the subject as title and to-list as line[0]", async () => {
       const result = await withRlsContext(
         {

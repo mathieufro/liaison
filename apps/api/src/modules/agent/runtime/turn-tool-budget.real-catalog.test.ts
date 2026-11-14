@@ -10,18 +10,30 @@ import { asSchema, jsonSchema, tool } from "ai"
 import { z } from "zod"
 import { sql } from "~/db"
 import {
+  type AppGuideInput,
+  normalizeAppGuide,
+  renderAppGuideBlock,
+  selectAppGuideParts,
+} from "~/modules/agent/context/app-guide"
+import {
   estimateToolSchemaTokens,
   TURN_TOOL_SCHEMA_TOKEN_CAP,
 } from "~/modules/agent/context/context"
+import { renderIndexedToolsBlock } from "~/modules/agent/context/guide-notes"
+import { unwrapCallTool, validateLoadedToolInput } from "~/modules/agent/providers/fixed-tool-list"
 import {
   actsOnEntity,
   entityRank,
   FOCUS_ENTITY_TOOLS_CEILING_FACTOR,
+  focusCorePreload,
   focusHeadroomFill,
   focusOverflow,
   type TurnFocus,
 } from "~/modules/agent/runtime/turn-focus"
-import { planTurnToolBudget } from "~/modules/agent/runtime/turn-tool-budget"
+import {
+  FOCUS_PRELOAD_TOKEN_SHARE,
+  planTurnToolBudget,
+} from "~/modules/agent/runtime/turn-tool-budget"
 import { isDeferredTool, providerInputSchemaOf } from "~/modules/agent/tools/tool-bridge"
 import {
   agentInstructionsRegistry,
@@ -32,14 +44,22 @@ import {
 const ORG_ID = "00000000-0000-0000-0000-000000db0003"
 const REPO_ROOT = resolve(import.meta.dir, "../../../../../..")
 
-type ToolDef = { description?: string; inputSchema?: unknown }
+type ToolDef = { description?: string; inputSchema?: unknown; focusCore?: boolean | string }
 type ToolDefs = Record<string, ToolDef>
 
 /** A manifest's agent-visible tools, as the bridge hands them to a provider. */
 function manifestTools(manifestPath: string): ToolDefs {
   const manifest = JSON.parse(readFileSync(resolve(REPO_ROOT, manifestPath), "utf8")) as {
     name: string
-    tools: Record<string, { description: string; params?: unknown; agentVisible?: boolean }>
+    tools: Record<
+      string,
+      {
+        description: string
+        params?: unknown
+        agentVisible?: boolean
+        focusCore?: boolean | string
+      }
+    >
   }
   const out: ToolDefs = {}
   for (const [name, def] of Object.entries(manifest.tools)) {
@@ -47,9 +67,19 @@ function manifestTools(manifestPath: string): ToolDefs {
     out[`${manifest.name}__${name}`] = {
       description: def.description,
       inputSchema: providerInputSchemaOf(def.params),
+      ...(def.focusCore !== undefined ? { focusCore: def.focusCore } : {}),
     }
   }
   return out
+}
+
+/** A manifest's guide, as registered: its core and its sections. */
+function manifestGuide(manifestPath: string): AppGuideInput {
+  return (
+    JSON.parse(readFileSync(resolve(REPO_ROOT, manifestPath), "utf8")) as {
+      agentInstructions: AppGuideInput
+    }
+  ).agentInstructions
 }
 
 /** What the provider receives for one tool, by the product's characters-over-four estimate. */
@@ -76,6 +106,28 @@ const hardFocus = (app: string, entity: string): TurnFocus =>
 
 const kernelTools: ToolDefs = {}
 const coreTools: string[] = []
+/** The load a thread's heaviest kernel tools put on a turn: about one large app's worth. */
+const HEAVY_LOAD_TOKENS = 5000
+/**
+ * The deferred kernel tools a thread loaded, heaviest first, until together
+ * they cost more than HEAVY_LOAD_TOKENS on the wire. Picked from the real
+ * catalog, not by name, so a tool whose own text shrinks does not take the
+ * pressure out of these tests.
+ */
+const heavyKernelLoad: string[] = []
+/** Every deferred kernel tool, heaviest first. */
+const deferredByWeight: string[] = []
+/** The heaviest deferred kernel tools, until together they cost more than `tokens`. */
+function kernelLoadOver(tokens: number): string[] {
+  const out: string[] = []
+  let load = 0
+  for (const name of deferredByWeight) {
+    if (load > tokens) break
+    out.push(name)
+    load += wireTokens(name, kernelTools[name])
+  }
+  return out
+}
 
 beforeAll(async () => {
   const { registerKernelAgentTools } = await import("~/modules/agent/tools/kernel-tools")
@@ -89,6 +141,13 @@ beforeAll(async () => {
     }
     if (!isDeferredTool(key[1], def as { deferLoading?: boolean })) coreTools.push(name)
   }
+  deferredByWeight.push(
+    ...Object.entries(kernelTools)
+      .filter(([name]) => !coreTools.includes(name))
+      .sort(([a, x], [b, y]) => wireTokens(b, y) - wireTokens(a, x))
+      .map(([name]) => name),
+  )
+  heavyKernelLoad.push(...kernelLoadOver(HEAVY_LOAD_TOKENS))
 })
 
 afterAll(async () => {
@@ -167,39 +226,41 @@ describe("a hard focus turn on a large app", () => {
   }
 })
 
-describe("a thread holding a kernel tool whose cost the meter used to miss", () => {
+describe("a thread holding kernel tools whose cost the meter used to miss", () => {
   const app = LARGE_APPS.find((a) => a.app === "tickets")
   const plan = (recency: Map<string, number>) => {
     const appTools = manifestTools(app?.manifest ?? "")
     const names = Object.keys(appTools)
     const tools = { ...kernelTools, ...appTools }
-    const heavy = "kernel__create_routine"
+    const heavy = heavyKernelLoad
     const out = planTurnToolBudget({
-      visible: [...coreTools, heavy, ...names],
+      visible: [...coreTools, ...heavy, ...names],
       tools,
-      droppable: (n) => n === heavy || n in appTools,
+      droppable: (n) => heavy.includes(n) || n in appTools,
       preloaded: new Set(names),
       hardFocusApps: new Set(["tickets"]),
       focus: hardFocus("tickets", "ticket"),
       recency,
       cap: TURN_TOOL_SCHEMA_TOKEN_CAP,
     })
-    return { ...out, heavy, cost: wireTokens(heavy, tools[heavy]) }
+    const cost = heavy.reduce((n, name) => n + wireTokens(name, tools[name]), 0)
+    return { ...out, heavy, cost }
   }
+  const usedLastTurn = () => new Map(heavyKernelLoad.map((name) => [name, 0]))
 
-  it("is a large tool on the wire", () => {
-    expect(plan(new Map()).cost).toBeGreaterThan(5000)
+  it("is a large load on the wire", () => {
+    expect(plan(new Map()).cost).toBeGreaterThan(HEAVY_LOAD_TOKENS)
   })
 
-  it("sheds it first when the last turns did not use it, and the app keeps its room", () => {
+  it("sheds them first when the last turns did not use them, and the app keeps its room", () => {
     const out = plan(new Map())
-    expect(out.drop).toContain(out.heavy)
+    for (const name of out.heavy) expect(out.drop).toContain(name)
     expect(out.toolSchemaTokens).toBeLessThanOrEqual(TURN_TOOL_SCHEMA_TOKEN_CAP)
   })
 
-  it("keeps it when the last turn used it, beside the tools acting on the ticket", () => {
-    const out = plan(new Map([["kernel__create_routine", 0]]))
-    expect(out.drop).not.toContain(out.heavy)
+  it("keeps them when the last turn used them, beside the tools acting on the ticket", () => {
+    const out = plan(usedLastTurn())
+    for (const name of out.heavy) expect(out.drop).not.toContain(name)
     for (const name of ["reply", "get", "addNote"]) {
       expect(out.drop).not.toContain(`tickets__${name}`)
     }
@@ -295,22 +356,32 @@ describe("the tool order on a real entity page", () => {
     const appTools = projectTools()
     const names = Object.keys(appTools)
     const tools = { ...kernelTools, ...appTools }
-    const heavy = "kernel__create_routine"
+    const tokensOf = (ns: readonly string[]) =>
+      ns.reduce((n, name) => n + wireTokens(name, tools[name]), 0)
+    // The thread loaded enough to put the turn over the cap, however small the
+    // app's own tools are.
+    const heavy = kernelLoadOver(
+      Math.max(
+        HEAVY_LOAD_TOKENS,
+        TURN_TOOL_SCHEMA_TOKEN_CAP - tokensOf(coreTools) - tokensOf(names),
+      ),
+    )
+    expect(tokensOf([...coreTools, ...heavy, ...names])).toBeGreaterThan(TURN_TOOL_SCHEMA_TOKEN_CAP)
     const plan = planTurnToolBudget({
-      visible: [...coreTools, heavy, ...names],
+      visible: [...coreTools, ...heavy, ...names],
       tools,
-      droppable: (n) => n === heavy || n in appTools,
+      droppable: (n) => heavy.includes(n) || n in appTools,
       preloaded: new Set(names),
       hardFocusApps: new Set(["projects"]),
       focus: hardFocus("projects", "task"),
-      recency: new Map([[heavy, 0]]),
+      recency: new Map(heavy.map((name) => [name, 0])),
       cap: TURN_TOOL_SCHEMA_TOKEN_CAP,
     })
     for (const name of ["comment", "comments", "get", "update"]) {
       expect(plan.drop).not.toContain(`projects__${name}`)
     }
     expect(plan.drop).toContain("projects__createProject")
-    expect(plan.drop).not.toContain(heavy)
+    for (const name of heavy) expect(plan.drop).not.toContain(name)
   })
 
   it("loads the tools of the entity in view first when only a little room is left", () => {
@@ -332,6 +403,198 @@ describe("the tool order on a real entity page", () => {
     const lastActing = out.findLastIndex((n) => entityRank(n, tools, focus) === 1)
     expect(lastActing).toBeGreaterThanOrEqual(0)
     if (firstOther !== -1) expect(lastActing).toBeLessThan(firstOther)
+  })
+})
+
+describe("a hard focus on an app with a core list", () => {
+  const appOf = (app: string) => {
+    const found = LARGE_APPS.find((a) => a.app === app)
+    if (!found) throw new Error(`no such app in the list: ${app}`)
+    return found
+  }
+  /** The app's tools as if its manifest declared no core list (the turn before this key). */
+  const withoutCore = (defs: ToolDefs): ToolDefs =>
+    Object.fromEntries(
+      Object.entries(defs).map(([name, { description, inputSchema }]) => [
+        name,
+        { description, inputSchema },
+      ]),
+    )
+  /** One hard focus turn as the agent loop plans it: preload, then the budget. */
+  const turn = (
+    app: string,
+    opts: { core?: boolean; heavy?: readonly string[]; recency?: Map<string, number> } = {},
+  ) => {
+    const { manifest, entity } = appOf(app)
+    const appTools =
+      opts.core === false ? withoutCore(manifestTools(manifest)) : manifestTools(manifest)
+    const names = Object.keys(appTools)
+    const tools = { ...kernelTools, ...appTools }
+    const focus = hardFocus(app, entity)
+    const { preload, indexOnly } = focusCorePreload({ candidates: names, tools, focus })
+    const heavy = opts.heavy ?? []
+    const plan = planTurnToolBudget({
+      visible: [...coreTools, ...heavy, ...preload],
+      tools,
+      droppable: (n) => heavy.includes(n) || n in appTools,
+      preloaded: new Set(preload),
+      hardFocusApps: new Set([app]),
+      focus,
+      recency: opts.recency ?? new Map(),
+      cap: TURN_TOOL_SCHEMA_TOKEN_CAP,
+    })
+    const dropped = new Set(plan.drop)
+    const kept = preload.filter((n) => !dropped.has(n))
+    return { app, manifest, appTools, tools, focus, preload, indexOnly, plan, kept }
+  }
+  const appWire = (t: ReturnType<typeof turn>, names: readonly string[]) =>
+    names.reduce((n, name) => n + wireTokens(name, t.tools[name]), 0)
+  /**
+   * Under pressure: enough of the heaviest kernel tools, used by the last
+   * turn (so they are shed last), to put the turn over the cap with the app's
+   * core list in.
+   */
+  const pressed = (app: string) => {
+    const preload = turn(app).preload
+    const load = (ns: readonly string[]) =>
+      ns.reduce(
+        (n, name) =>
+          n + wireTokens(name, { ...kernelTools, ...manifestTools(appOf(app).manifest) }[name]),
+        0,
+      )
+    const heavy = kernelLoadOver(
+      Math.max(HEAVY_LOAD_TOKENS, TURN_TOOL_SCHEMA_TOKEN_CAP - load(coreTools) - load(preload)),
+    )
+    const t = turn(app, { heavy, recency: new Map(heavy.map((name) => [name, 0])) })
+    expect(load([...coreTools, ...heavy, ...preload])).toBeGreaterThan(TURN_TOOL_SCHEMA_TOKEN_CAP)
+    console.log(
+      `${app} under pressure: shed ${t.plan.drop.filter((n) => n.startsWith(`${app}__`)).join(", ") || "none"}`,
+    )
+    return t
+  }
+
+  it("invoicing's hard focus is at or under 10,000 wire tokens with a document in view", () => {
+    const t = turn("invoicing")
+    const wire = appWire(t, t.preload)
+    console.log(`invoicing core list on a document: ${t.preload.length} tools, ${wire} wire tokens`)
+    expect(t.preload.length).toBe(13)
+    expect(t.plan.drop).toEqual([])
+    expect(wire).toBeLessThanOrEqual(10_000)
+  })
+
+  it("projects' hard focus is under its share of the budget", () => {
+    const t = turn("projects")
+    const wire = appWire(t, t.preload)
+    const share = Math.round(TURN_TOOL_SCHEMA_TOKEN_CAP * FOCUS_PRELOAD_TOKEN_SHARE)
+    console.log(`projects core list on a task: ${t.preload.length} tools, ${wire} of ${share}`)
+    expect(t.preload.length).toBe(11)
+    expect(t.plan.drop).toEqual([])
+    expect(wire).toBeLessThan(share)
+  })
+
+  it("lists every other tool of the app by name, and loads no tool of another app", () => {
+    for (const { app } of LARGE_APPS) {
+      const t = turn(app)
+      expect(t.indexOnly.length).toBeGreaterThan(0)
+      expect([...t.preload, ...t.indexOnly].sort()).toEqual(Object.keys(t.appTools).sort())
+    }
+  })
+
+  // One tool per app, off its core list, with arguments that fit it. The
+  // agent loop holds such a tool for the SDK and leaves it off the list sent
+  // to the provider, so the call reaches it through kernel__call_tool.
+  const INDEXED_CALLS: Array<{ app: string; tool: string; args: Record<string, unknown> }> = [
+    { app: "invoicing", tool: "received_einvoices_list", args: { limit: 5 } },
+    { app: "projects", tool: "delete", args: { taskId: "3f2b8c1e-6a4d-4e9b-8f10-2c7d5e9a1b34" } },
+    { app: "tickets", tool: "create", args: { subject: "The printer jams on page two" } },
+    { app: "shopify", tool: "customers_get", args: { id: "gid://shopify/Customer/1001" } },
+    { app: "boxtal", tool: "packages_list", args: {} },
+  ]
+
+  for (const { app, tool: bare, args } of INDEXED_CALLS) {
+    it(`each indexed tool is callable: a first call with fitting arguments runs (${app})`, async () => {
+      const t = turn(app)
+      const name = `${app}__${bare}`
+      expect(t.indexOnly).toContain(name)
+      const held = [...coreTools, ...t.preload, ...t.indexOnly]
+      const call = unwrapCallTool(JSON.stringify({ name, arguments: args }), held)
+      expect(call).toEqual({ toolName: name, input: JSON.stringify(args) })
+      const built = tool({
+        description: t.tools[name].description ?? "",
+        inputSchema: t.tools[name].inputSchema as never,
+      })
+      expect(await validateLoadedToolInput(built, args)).toEqual({ ok: true })
+    })
+  }
+
+  it("on an invoice's thread documents_get, drafts_update, invoice_issue survive shedding", () => {
+    const t = pressed("invoicing")
+    for (const name of ["documents_get", "drafts_update", "invoice_issue"]) {
+      expect(t.preload).toContain(`invoicing__${name}`)
+      expect(t.plan.drop).not.toContain(`invoicing__${name}`)
+    }
+  })
+
+  it("on a task's thread comment, comments, get, update survive shedding", () => {
+    const t = pressed("projects")
+    for (const name of ["comment", "comments", "get", "update"]) {
+      expect(t.preload).toContain(`projects__${name}`)
+      expect(t.plan.drop).not.toContain(`projects__${name}`)
+    }
+  })
+
+  it("on a ticket's thread reply, get, addNote survive shedding", () => {
+    const t = pressed("tickets")
+    for (const name of ["reply", "get", "addNote"]) {
+      expect(t.preload).toContain(`tickets__${name}`)
+      expect(t.plan.drop).not.toContain(`tickets__${name}`)
+    }
+  })
+
+  it("at least one tool is ranked as acting on the entity, on a task, a ticket and an invoice", () => {
+    for (const app of ["projects", "tickets", "invoicing"]) {
+      const t = turn(app)
+      const acting = t.preload.filter((n) => entityRank(n, t.tools, t.focus) === 2)
+      expect(acting.length).toBeGreaterThan(0)
+    }
+    const invoice = turn("invoicing")
+    expect(entityRank("invoicing__drafts_update", invoice.tools, invoice.focus)).toBe(2)
+    expect(entityRank("invoicing__invoice_issue", invoice.tools, invoice.focus)).toBe(2)
+  })
+
+  it("prints what a hard focus turn sends on a task, a ticket and an invoice, before and after", () => {
+    const tokens = (text: string) => Math.ceil(text.length / 4)
+    const guideOf = (t: ReturnType<typeof turn>, loaded: readonly string[]) =>
+      tokens(
+        renderAppGuideBlock(
+          t.app,
+          selectAppGuideParts(t.app, normalizeAppGuide(manifestGuide(t.manifest)), new Set(loaded)),
+        ),
+      )
+    for (const app of ["projects", "tickets", "invoicing"]) {
+      const before = turn(app, { core: false })
+      const after = turn(app)
+      const beforeSchemas = appWire(before, before.kept)
+      const beforeGuide = guideOf(before, before.kept)
+      const afterSchemas = appWire(after, after.kept)
+      const afterIndex = tokens(
+        renderIndexedToolsBlock(
+          after.indexOnly.map((name) => ({
+            name,
+            description: after.tools[name].description ?? "",
+          })),
+        ),
+      )
+      const afterGuide = guideOf(after, after.kept)
+      const b = beforeSchemas + beforeGuide
+      const a = afterSchemas + afterIndex + afterGuide
+      console.log(
+        `${app}: before ${before.kept.length} tools ${beforeSchemas} + guide ${beforeGuide} = ${b}; ` +
+          `after ${after.kept.length} tools ${afterSchemas} + ${after.indexOnly.length} index lines ${afterIndex} + guide ${afterGuide} = ${a}; ` +
+          `delta ${a - b}; tool budget ${TURN_TOOL_SCHEMA_TOKEN_CAP}`,
+      )
+      expect(afterSchemas).toBeLessThanOrEqual(TURN_TOOL_SCHEMA_TOKEN_CAP)
+    }
   })
 })
 
@@ -403,5 +666,49 @@ describe("the schema a model is sent, over the real catalog", () => {
     const { validate } = asSchema(kernelTools[`${key[1]}__${key[2]}`].inputSchema as never)
     expect((await validate?.({ [id]: "not-a-uuid" }))?.success).toBe(false)
     expect((await validate?.({ [id]: "3f2b8c1e-6a4d-4e9b-8f10-2c7d5e9a1b34" }))?.success).toBe(true)
+  })
+})
+
+describe("a hard focus on a payments customer tab", () => {
+  const manifest = "bundled-apps/stripe/app.manifest.json"
+  const turn = (heavy: readonly string[] = []) => {
+    const appTools = manifestTools(manifest)
+    const names = Object.keys(appTools)
+    const tools = { ...kernelTools, ...appTools }
+    const focus = hardFocus("stripe", "customer")
+    const { preload } = focusCorePreload({ candidates: names, tools, focus })
+    const plan = planTurnToolBudget({
+      visible: [...coreTools, ...heavy, ...preload],
+      tools,
+      droppable: (n) => heavy.includes(n) || n in appTools,
+      preloaded: new Set(preload),
+      hardFocusApps: new Set(["stripe"]),
+      focus,
+      recency: new Map(heavy.map((name) => [name, 0])),
+      cap: TURN_TOOL_SCHEMA_TOKEN_CAP,
+    })
+    return { tools, focus, preload, plan }
+  }
+
+  it("ranks customers_get as acting on the focused customer", () => {
+    const t = turn()
+    expect(entityRank("stripe__customers_get", t.tools, t.focus)).toBe(2)
+  })
+
+  it("keeps customers_get, card_update_link and payments_search through shedding", () => {
+    const base = turn()
+    const load = (ns: readonly string[]) =>
+      ns.reduce((n, name) => n + wireTokens(name, { ...kernelTools, ...base.tools }[name]), 0)
+    const heavy = kernelLoadOver(
+      Math.max(
+        HEAVY_LOAD_TOKENS,
+        TURN_TOOL_SCHEMA_TOKEN_CAP - load(coreTools) - load(base.preload),
+      ),
+    )
+    const t = turn(heavy)
+    for (const name of ["customers_get", "card_update_link", "payments_search"]) {
+      expect(t.preload).toContain(`stripe__${name}`)
+      expect(t.plan.drop).not.toContain(`stripe__${name}`)
+    }
   })
 })

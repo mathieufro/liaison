@@ -24,6 +24,7 @@ function manifest(version: string, unique?: string[][]) {
     version,
     _format: "manifest" as const,
     _bundlePath: "/apps/uq-drift-app/handlers.js",
+    scopes: [`${APP}:rows:read`],
     schema: {
       rows: { fields: { title: "string" }, ...(unique ? { constraints: { unique } } : {}) },
     },

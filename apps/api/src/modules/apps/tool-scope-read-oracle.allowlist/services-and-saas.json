@@ -1,0 +1,52 @@
+[
+  [
+    "apps/api/src/modules/agent/context/context-providers.ts",
+    "if (!hasScope(decl.scope, [...input.grants])) return null",
+    "a context provider declaration, whose scope is checked against its tool's requiredScopes"
+  ],
+  [
+    "apps/api/src/modules/contacts/activity.ts",
+    "if (!hasScope(decl.scope, actor.scopes ?? [])) continue",
+    "an activity source declaration, whose scope is checked against its tool's requiredScopes"
+  ],
+  [
+    "apps/api/src/modules/contacts/activity.ts",
+    "hasScope(COMPANY_SOURCE.scope, actor.scopes ?? [])",
+    "an activity source declaration, whose scope is checked against its tool's requiredScopes"
+  ],
+  [
+    "apps/api/src/modules/agent/context/context-providers.ts",
+    "...new Set([decl.scope, ...resolveRequiredScopes(tool)]),",
+    "a context provider declaration, whose scope is checked against its tool's requiredScopes"
+  ],
+  [
+    "apps/api/src/modules/apps/contract.ts",
+    "if (!required.includes(p.scope)) {",
+    "a context provider declaration, whose scope is checked against its tool's requiredScopes"
+  ],
+  [
+    "apps/api/src/modules/apps/contract.ts",
+    "errors.push(`${at}.scope: '${p.scope}' is not in the requiredScopes of '${p.tool}'`)",
+    "a context provider declaration, whose scope is checked against its tool's requiredScopes"
+  ],
+  [
+    "apps/api/src/modules/apps/contract.ts",
+    "if (!required.includes(s.scope)) {",
+    "an activity source declaration, whose scope is checked against its tool's requiredScopes"
+  ],
+  [
+    "apps/api/src/modules/apps/contract.ts",
+    "errors.push(`${at}.scope: '${s.scope}' is not in the requiredScopes of '${s.tool}'`)",
+    "an activity source declaration, whose scope is checked against its tool's requiredScopes"
+  ],
+  [
+    "bundled-apps/invoicing/src/handlers/stripe-refund-created.ts",
+    "(fresh.scope as string | null) ?? null,",
+    "an invoice document's goods or software split"
+  ],
+  [
+    "bundled-apps/github/src/tools.ts",
+    "const searchKind = params.scope",
+    "the GitHub search tool's own kind of result (code, commits, issues, pull requests)"
+  ]
+]

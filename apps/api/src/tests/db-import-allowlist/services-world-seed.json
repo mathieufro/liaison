@@ -1,0 +1,5 @@
+{
+  "privileged": {
+    "seed/worlds/studio/layer.ts": "The services world's seed: after the product wrote its tasks, one UPDATE scoped to the org its SeedContext names sets a closed task's updated_at to its close day, which no product path writes back in time. Seed only, never reached from a request."
+  }
+}

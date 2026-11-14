@@ -1,0 +1,62 @@
+# Test files the services and software-company work adds to this suite.
+# The role scopes, the routines' scope sets and the recurring
+# schedules the demo seed writes, pinned without a database.
+src/seed/tiers/demo/role-scopes.test.ts
+src/seed/tiers/demo/seed-routine-scopes.test.ts
+src/seed/factories/commerce/recurring-schedules.test.ts
+# What a visitor's picks install and write, per world (the
+# products plan pinned), and the worlds' seed packs.
+src/seed/tiers/demo/seed-plan.test.ts
+src/seed/worlds/worlds.test.ts
+# The world packs' story clock (dates from the anchor, on the
+# company's calendar) and the guard that keeps literal dates and
+# relative day words out of pack prose.
+src/seed/worlds/story-clock.test.ts
+src/seed/worlds/prose-guard.test.ts
+# The software world's plan held to its invariants at anchors
+# across a year, with no database.
+src/seed/worlds/saas/plan-invariants.test.ts
+# Its desks' prompts against the products desks they are built from.
+src/seed/worlds/saas/desk-prompts.test.ts
+# The owner's Morning brief, computed from the plan.
+src/seed/worlds/saas/brief.test.ts
+# The services world's plan for time and budgets, held to its
+# invariants at anchors across a year, with no database.
+src/seed/worlds/studio/plan-invariants.test.ts
+# No world's text holds another world's names.
+src/seed/worlds/literals.test.ts
+# Every door claim about a world maps to a criterion.
+src/seed/worlds/world-claims.test.ts
+# The software world's card mirror read back through the
+# payments stand-in rebuilds to the rows it was seeded with.
+src/seed/factories/payments/stripe-mirror-roundtrip.test.ts
+# The software world seeded once and read through the product's
+# own tools: pipeline, companies, team, agents, routines, MRR,
+# invoice numbers, schedules and the money decisions on Home.
+src/seed/worlds/saas/stripe-world-reads.saas.integration.test.ts
+# The owner's question about the hotel group, played through the
+# real agent loop with a scripted model: it reaches the company,
+# customer, documents, tickets and deals reads, and the company card.
+src/seed/worlds/saas/owner-question-reach.saas.integration.test.ts
+# A visitor's first turn on a prospect with no card customer, played
+# through the real agent loop with a scripted model: every read answers.
+src/seed/worlds/saas/visitor-first-turn.saas.integration.test.ts
+src/seed/worlds/saas/seed-without-owner.saas.integration.test.ts
+# The money scenario's recovered card: the outside state and the
+# processor's events through the payments app's own handler, the
+# figures moved, and the waiting reminder stopped by its own check.
+src/modules/demo/worlds/saas/stripe-payment-recovered.integration.test.ts
+# The software world's workspace ended and reaped: nothing of it
+# remains in any table, at the payments stand-in or in search.
+src/seed/worlds/saas/stripe-world-reset.saas.integration.test.ts
+# The persona passwords, the support seed's wait on a lock and the
+# size of a visitor's first turn.
+src/seed/tiers/demo/seed-personas-password.integration.test.ts
+src/seed/tiers/demo/seed-support-lock-wait.integration.test.ts
+src/seed/tiers/demo/visitor-turn-size.integration.test.ts
+# The services world's figures, read through the projects tools on a
+# freshly seeded workspace at the board date.
+src/seed/worlds/studio/world-figures.studio.integration.test.ts
+# The projects factory on the database: board numbers, timeboxes through
+# the task plan writer, time in one write, re-runs that adopt.
+src/seed/factories/projects/projects.integration.test.ts

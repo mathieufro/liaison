@@ -305,3 +305,45 @@ describe("searchMailConversations category", () => {
     )
   })
 })
+
+describe("searchMailConversations lastInboundAt", () => {
+  it("lastInboundAt ignores our outbound", async () => {
+    const subject = `last-inbound-${crypto.randomUUID()}`
+    const id = await seedConv({ subject, textBody: "Their question." })
+    const inboundAt = "2026-03-02T09:00:00.000Z"
+    await withSystemDb("mail-search-test-outbound", async (tx) => {
+      await tx.execute(drizzleSql`
+        UPDATE app_mail.messages SET sent_at = ${inboundAt}::timestamptz WHERE conversation_id = ${id}`)
+      // Our answer, later: it moves the conversation's last message, never its last inbound.
+      await tx.execute(drizzleSql`
+        INSERT INTO app_mail.messages (
+          id, org_id, conversation_id, account_id, owner_type, subject, text_body,
+          direction, is_read, is_starred, sent_at, created_at, updated_at
+        ) VALUES (
+          gen_random_uuid(), ${orgId}, ${id}, ${accountId}, 'org', ${subject},
+          'Our answer.', 'outbound', true, false, '2026-03-05T09:00:00Z'::timestamptz, now(), now()
+        )`)
+    })
+    const res = await run({ query: subject })
+    const row = res.items.find((item) => item.id === id)
+    expect(row).toBeDefined()
+    expect(new Date(row?.last_inbound_at ?? 0).toISOString()).toBe(inboundAt)
+  })
+
+  it("a conversation with only our outbound has no lastInboundAt", async () => {
+    const subject = `outbound-only-${crypto.randomUUID()}`
+    const id = await seedConv({ subject })
+    await withSystemDb("mail-search-test-outbound-only", async (tx) => {
+      await tx.execute(drizzleSql`
+        INSERT INTO app_mail.messages (
+          id, org_id, conversation_id, account_id, owner_type, subject, text_body,
+          direction, is_read, is_starred, sent_at, created_at, updated_at
+        ) VALUES (
+          gen_random_uuid(), ${orgId}, ${id}, ${accountId}, 'org', ${subject},
+          'Our first mail.', 'outbound', true, false, now(), now(), now()
+        )`)
+    })
+    const row = (await run({ query: subject })).items.find((item) => item.id === id)
+    expect(row?.last_inbound_at).toBeNull()
+  })
+})

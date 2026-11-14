@@ -1,0 +1,59 @@
+{
+  "entry": "import:recurring-schedule",
+  "params": {
+    "runId": "00000000-0000-4000-8000-0000000a1002",
+    "kind": "recurring-schedule",
+    "sourceLabel": "Previous billing tool (CSV)",
+    "records": [
+      {
+        "dedupValue": "legacy:SUB-0007",
+        "record": {
+          "externalRef": "legacy:SUB-0007",
+          "contactId": "00000000-0000-4000-8000-0000000c0a01",
+          "issuerProfileId": "fac17f6b-32fd-4cab-b857-853d17ae824d",
+          "repeats": "month",
+          "billingDay": "1",
+          "covers": "period_ended",
+          "paidBy": "transfer",
+          "dueRule": "days_30",
+          "lines": [
+            {
+              "description": "Support plan, monthly",
+              "quantity": 1,
+              "unitPriceMinor": 12000,
+              "taxRateBp": 2000,
+              "lineKind": "service"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "recordedFrom": "a contract org with the Shopify development store, scripts/contract/record-invoicing.ts",
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": [
+        "recurring_schedules",
+        "{\"where\":{\"external_ref\":\"legacy:SUB-0007\"},\"limit\":1}"
+      ],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": [
+        "issuer_profiles",
+        "{\"where\":{\"id\":\"fac17f6b-32fd-4cab-b857-853d17ae824d\"},\"limit\":1}"
+      ],
+      "reply": "[{\"id\":\"fac17f6b-32fd-4cab-b857-853d17ae824d\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 10:41:37.75083+00\",\"updated_at\":\"2026-11-12 10:41:37.827752+00\",\"legal_name\":\"Resonance Studio SARL\",\"country\":\"FR\",\"vat_id\":\"FR86902000009\",\"tax_registration_id\":null,\"address\":\"1 rue de Test, 75001 Paris, France\",\"iban\":\"FR7630006000011234567890189\",\"swift_bic\":\"AGRIFRPP\",\"bank_name\":\"Banque Exemple Paris\",\"logo_file_id\":null,\"default_currency\":\"EUR\",\"default_language\":\"fr\",\"default_payment_terms_days\":30,\"prefix_invoice\":\"FAC-{YYYY}-\",\"prefix_quote\":\"DEV-{YYYY}-\",\"prefix_proforma\":\"PRO-{YYYY}-\",\"prefix_po\":\"BC-{YYYY}-\",\"prefix_credit_note\":\"AV-{YYYY}-\",\"invoice_approval_threshold_minor\":null,\"po_approval_threshold_minor\":null,\"require_two_eyes\":false,\"auto_email_enabled\":false,\"prices_include_tax\":false,\"mail_account_id\":null,\"timezone\":\"Europe/Paris\",\"email_templates\":{},\"shopify_shop_id\":\"contract-shop.myshopify.com\",\"archived_at\":null,\"siren\":\"902000009\",\"siret\":null,\"legal_form\":null,\"share_capital\":null,\"rcs_city\":null,\"routing_address\":\"902000009\",\"address_line1\":\"1 rue de Test\",\"address_line2\":null,\"postcode\":\"75001\",\"city\":\"Paris\",\"country_code\":\"FR\",\"vat_on_debits_default\":null}]"
+    },
+    {
+      "method": "db_insert",
+      "args": [
+        "recurring_schedules",
+        "{\"issuer_profile_id\":\"fac17f6b-32fd-4cab-b857-853d17ae824d\",\"company_id\":null,\"contact_id\":\"00000000-0000-4000-8000-0000000c0a01\",\"status\":\"draft\",\"repeats\":\"month\",\"billing_day\":\"1\",\"ends_on\":null,\"covers\":\"period_ended\",\"issue_mode\":\"review\",\"paid_by\":\"transfer\",\"due_rule\":\"days_30\",\"due_days\":null,\"language\":\"fr\",\"lines\":[{\"description\":\"Support plan, monthly\",\"qty\":1,\"unit_price_minor\":12000,\"vat_bp\":2000,\"line_kind\":\"service\"}],\"notes\":null,\"external_ref\":\"legacy:SUB-0007\",\"next_issue_on\":null,\"next_draft_on\":null,\"version\":1,\"created_by\":\"import\"}"
+      ],
+      "reply": "{\"id\":\"4209ced4-7ff0-4ce3-892d-efbd516ff403\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 10:41:42.96765+00\",\"updated_at\":\"2026-11-12 10:41:42.96765+00\",\"issuer_profile_id\":\"fac17f6b-32fd-4cab-b857-853d17ae824d\",\"company_id\":null,\"contact_id\":\"00000000-0000-4000-8000-0000000c0a01\",\"status\":\"draft\",\"repeats\":\"month\",\"billing_day\":\"1\",\"ends_on\":null,\"covers\":\"period_ended\",\"issue_mode\":\"review\",\"auto_enabled_by\":null,\"auto_enabled_at\":null,\"paid_by\":\"transfer\",\"card_link_url\":null,\"due_rule\":\"days_30\",\"due_days\":null,\"language\":\"fr\",\"lines\":[{\"qty\":1,\"vat_bp\":2000,\"line_kind\":\"service\",\"description\":\"Support plan, monthly\",\"unit_price_minor\":12000}],\"notes\":null,\"bills_other_than_stripe\":null,\"bills_other_by\":null,\"paused_until\":null,\"next_issue_on\":null,\"next_draft_on\":null,\"version\":1,\"last_document_id\":null,\"created_by\":\"import\",\"external_ref\":\"legacy:SUB-0007\"}"
+    }
+  ]
+}

@@ -129,7 +129,14 @@ function makeCtx(): { ctx: MutationsCtx; readsCtx: ReadsCtx; db: MockDb } {
     },
     requestApproval: async () => ({ approval_id: "appr-1" }),
     decideApproval: async () => ({ status: "error", error: { code: "not_found", message: "n/a" } }),
-    executeTool: async () => ({ status: "completed", result: { dispatched: true } }),
+    executeTool: async (name: string) =>
+      // No Stripe app here: the kernel answers an absent app's tool as not found.
+      name.startsWith("stripe:")
+        ? {
+            status: "error" as const,
+            error: { code: "tool_not_found", message: "tool not registered" },
+          }
+        : { status: "completed", result: { dispatched: true } },
     emit: async () => {},
   }
   const readsCtx: ReadsCtx = {

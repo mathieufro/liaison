@@ -38,7 +38,8 @@ import { and, eq } from "drizzle-orm"
 import { withPrivilegedDb } from "~/db/privileged"
 import { routines, threads } from "~/db/schema/kernel"
 import { estimateToolSchemaTokens } from "~/modules/agent/context/context"
-import { entityRegistry, viewRegistry } from "~/modules/apps/app-registries"
+import { sdkToolName } from "~/modules/agent/tools/tool-bridge"
+import { entityRegistry, toolRegistry, viewRegistry } from "~/modules/apps/app-registries"
 import { tabEntity } from "~/modules/threads/reference-display"
 
 export interface FocusApp {
@@ -186,7 +187,15 @@ export function actsOnEntity(inputSchema: unknown, entityTypes: ReadonlySet<stri
   })
 }
 
-type ToolDefs = Record<string, { description?: string; inputSchema?: unknown }>
+type ToolDefs = Record<
+  string,
+  {
+    description?: string
+    inputSchema?: unknown
+    /** The manifest's `focusCore`, when the tool declares one (focusCorePreload). */
+    focusCore?: boolean | string
+  }
+>
 
 /**
  * How far past the tool schema cap the tools acting on a server-read entity
@@ -199,10 +208,76 @@ export const FOCUS_ENTITY_TOOLS_CEILING_FACTOR = 1.5
 export function entityRank(name: string, tools: ToolDefs, focus: TurnFocus): 0 | 1 | 2 {
   const f = focus.get(appOfSdkToolName(name))
   if (!f) return 0
+  const core = tools[name]?.focusCore
+  if (typeof core === "string" && f.verifiedEntityTypes.has(core)) return 2
   const schema = tools[name]?.inputSchema
   if (actsOnEntity(schema, f.verifiedEntityTypes)) return 2
   if (actsOnEntity(schema, f.viewEntityTypes)) return 1
   return 0
+}
+
+/** Whether a tool is on its app's core list for this focus: `true`, or the entity type the server read. */
+function isFocusCore(name: string, tools: ToolDefs, focus: TurnFocus): boolean {
+  const core = tools[name]?.focusCore
+  if (core === true) return true
+  return (
+    typeof core === "string" &&
+    focus.get(appOfSdkToolName(name))?.verifiedEntityTypes.has(core) === true
+  )
+}
+
+/**
+ * The turn's tools with the `focusCore` their manifests declare, for the apps
+ * in `apps` (the hard focus ones). The tool set the provider gets carries no
+ * manifest keys, so the budget reads them here. Tools that declare none are
+ * handed back unchanged.
+ */
+export function withFocusCore(orgId: string, apps: ReadonlySet<string>, tools: ToolDefs): ToolDefs {
+  if (apps.size === 0) return tools
+  let out: ToolDefs | null = null
+  for (const [key, def] of toolRegistry.entriesOf(orgId)) {
+    const core = (def as { focusCore?: unknown }).focusCore
+    if (!apps.has(key[1]) || (core !== true && typeof core !== "string")) continue
+    const name = sdkToolName(key[1], key[2])
+    const tool = tools[name]
+    if (!tool) continue
+    out ??= { ...tools }
+    out[name] = { description: tool.description, inputSchema: tool.inputSchema, focusCore: core }
+  }
+  return out ?? tools
+}
+
+/**
+ * What a hard focus app loads from the first step. An app whose manifest
+ * declares a core list (`focusCore` on its tools) loads that list with its
+ * schemas, and its other tools are known by name and purpose only
+ * (`indexOnly`): a turn about an invoice holds the dozen tools that act on
+ * documents, not the 65 of the app, of which the budget then shed the largest,
+ * the very ones the turn was for. A tool known by name still runs on a first
+ * call with fitting arguments, and its schema follows once the model asks
+ * for it. An app with no core list loads every tool, as before.
+ * `candidates`: the deferred tools of the hard focus apps the turn has not
+ * loaded; `tools`: every tool of the turn, to read each app's declarations.
+ */
+export function focusCorePreload(params: {
+  candidates: readonly string[]
+  tools: ToolDefs
+  focus: TurnFocus
+}): { preload: string[]; indexOnly: string[] } {
+  const { tools, focus } = params
+  const declaring = new Set<string>()
+  for (const [name, def] of Object.entries(tools)) {
+    if (def?.focusCore === true || typeof def?.focusCore === "string")
+      declaring.add(appOfSdkToolName(name))
+  }
+  const preload: string[] = []
+  const indexOnly: string[] = []
+  for (const name of params.candidates) {
+    if (!declaring.has(appOfSdkToolName(name)) || isFocusCore(name, tools, focus))
+      preload.push(name)
+    else indexOnly.push(name)
+  }
+  return { preload, indexOnly }
 }
 
 /**

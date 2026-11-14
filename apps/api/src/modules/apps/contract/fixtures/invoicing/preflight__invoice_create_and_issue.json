@@ -1,7 +1,7 @@
 {
   "entry": "preflight:invoice_create_and_issue",
   "params": {
-    "issuer_profile_id": "99444731-e2a2-460c-ab40-a9348f2a7121",
+    "issuer_profile_id": "2db28a22-5cc2-4088-84a1-9ab09b313ab1",
     "counterparty": {
       "legal_name": "Harbor Lane Recording LLC",
       "country": "US",
@@ -29,16 +29,26 @@
   "calls": [
     {
       "method": "db_findMany",
+      "args": ["stripe_streams", "{\"limit\":100}"],
+      "reply": "[]"
+    },
+    {
+      "method": "executeTool",
+      "args": ["stripe:billing_status_for_counterparty", "{\"emails\":[\"person1@example.com\"]}"],
+      "reply": "{\"status\":\"error\",\"error\":{\"code\":\"tool_not_found\",\"message\":\"tool stripe:billing_status_for_counterparty not registered\",\"retryable\":false}}"
+    },
+    {
+      "method": "db_findMany",
       "args": [
         "issuer_profiles",
-        "{\"where\":{\"id\":\"99444731-e2a2-460c-ab40-a9348f2a7121\"},\"limit\":1}"
+        "{\"where\":{\"id\":\"2db28a22-5cc2-4088-84a1-9ab09b313ab1\"},\"limit\":1}"
       ],
-      "reply": "[{\"id\":\"99444731-e2a2-460c-ab40-a9348f2a7121\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 09:09:21.008996+00\",\"updated_at\":\"2026-11-12 09:09:21.108678+00\",\"legal_name\":\"Resonance Atelier SARL\",\"country\":\"FR\",\"vat_id\":\"FR86902000009\",\"tax_registration_id\":null,\"address\":\"1 rue de Test, 75001 Paris, France\",\"iban\":\"FR7630006000011234567890189\",\"swift_bic\":\"AGRIFRPP\",\"bank_name\":\"Banque Exemple Paris\",\"logo_file_id\":null,\"default_currency\":\"EUR\",\"default_language\":\"fr\",\"default_payment_terms_days\":30,\"prefix_invoice\":\"FAC-{YYYY}-\",\"prefix_quote\":\"DEV-{YYYY}-\",\"prefix_proforma\":\"PRO-{YYYY}-\",\"prefix_po\":\"BC-{YYYY}-\",\"prefix_credit_note\":\"AV-{YYYY}-\",\"invoice_approval_threshold_minor\":null,\"po_approval_threshold_minor\":null,\"require_two_eyes\":false,\"auto_email_enabled\":false,\"prices_include_tax\":false,\"mail_account_id\":null,\"timezone\":\"Europe/Paris\",\"email_templates\":{},\"shopify_shop_id\":null,\"archived_at\":null,\"siren\":\"902000009\",\"siret\":null,\"legal_form\":null,\"share_capital\":null,\"rcs_city\":null,\"routing_address\":\"902000009\",\"address_line1\":\"1 rue de Test\",\"address_line2\":null,\"postcode\":\"75001\",\"city\":\"Paris\",\"country_code\":\"FR\",\"vat_on_debits_default\":null}]"
+      "reply": "[{\"id\":\"2db28a22-5cc2-4088-84a1-9ab09b313ab1\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 10:41:00.495344+00\",\"updated_at\":\"2026-11-12 10:41:00.576403+00\",\"legal_name\":\"Resonance Atelier SARL\",\"country\":\"FR\",\"vat_id\":\"FR86902000009\",\"tax_registration_id\":null,\"address\":\"1 rue de Test, 75001 Paris, France\",\"iban\":\"FR7630006000011234567890189\",\"swift_bic\":\"AGRIFRPP\",\"bank_name\":\"Banque Exemple Paris\",\"logo_file_id\":null,\"default_currency\":\"EUR\",\"default_language\":\"fr\",\"default_payment_terms_days\":30,\"prefix_invoice\":\"FAC-{YYYY}-\",\"prefix_quote\":\"DEV-{YYYY}-\",\"prefix_proforma\":\"PRO-{YYYY}-\",\"prefix_po\":\"BC-{YYYY}-\",\"prefix_credit_note\":\"AV-{YYYY}-\",\"invoice_approval_threshold_minor\":null,\"po_approval_threshold_minor\":null,\"require_two_eyes\":false,\"auto_email_enabled\":false,\"prices_include_tax\":false,\"mail_account_id\":null,\"timezone\":\"Europe/Paris\",\"email_templates\":{},\"shopify_shop_id\":null,\"archived_at\":null,\"siren\":\"902000009\",\"siret\":null,\"legal_form\":null,\"share_capital\":null,\"rcs_city\":null,\"routing_address\":\"902000009\",\"address_line1\":\"1 rue de Test\",\"address_line2\":null,\"postcode\":\"75001\",\"city\":\"Paris\",\"country_code\":\"FR\",\"vat_on_debits_default\":null}]"
     },
     {
       "method": "db_findMany",
       "args": ["einvoicing_settings", "{\"limit\":1}"],
-      "reply": "[{\"id\":\"93b8a2d3-78ab-41e6-8209-039bc86406b0\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 09:09:21.361897+00\",\"updated_at\":\"2026-11-12 09:09:21.361897+00\",\"gate_mode\":\"warn\",\"gate_mode_source\":\"tool\",\"cibs_switch_date\":null,\"changed_by\":\"00000000-0000-4000-8000-00000000c0df\",\"provider_app\":null,\"cutover_date\":\"2026-09-01\",\"send_enabled\":false,\"book_enabled\":null}]"
+      "reply": "[{\"id\":\"9e1e124f-d2cc-4fe9-9390-2cd93f628881\",\"org_id\":\"00000000-0000-4000-8000-00000000c0de\",\"created_at\":\"2026-11-12 10:41:00.823546+00\",\"updated_at\":\"2026-11-12 10:41:00.823546+00\",\"gate_mode\":\"warn\",\"gate_mode_source\":\"tool\",\"cibs_switch_date\":null,\"changed_by\":\"00000000-0000-4000-8000-00000000c0df\",\"provider_app\":null,\"cutover_date\":\"2026-09-01\",\"send_enabled\":false,\"book_enabled\":null}]"
     }
   ]
 }

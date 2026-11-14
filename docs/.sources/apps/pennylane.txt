@@ -45,7 +45,6 @@ cash_position -> bundled-apps/pennylane/app.manifest.json:758
 transactions_list -> bundled-apps/pennylane/app.manifest.json:768
 spend_by_category -> bundled-apps/pennylane/app.manifest.json:804
 runway_estimate -> bundled-apps/pennylane/app.manifest.json:819
-home_load -> bundled-apps/pennylane/app.manifest.json:829
 supplier_invoice_upload gated -> bundled-apps/pennylane/app.manifest.json:844
 bill amounts are whole minor units, refused before approval -> bundled-apps/pennylane/src/upload.ts:64
 Token added host-side; scope and company id readable; webhook verified by config key -> bundled-apps/pennylane/src/lib/get-client.ts (getClient) ; bundled-apps/pennylane/src/lib/pennylane-client.ts (PENNYLANE_AUTH) ; bundled-apps/pennylane/src/einvoicing/webhooks.ts (verifyEinvoicingWebhook)

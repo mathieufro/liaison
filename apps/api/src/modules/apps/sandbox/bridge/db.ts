@@ -27,6 +27,7 @@ import {
   resolveContact as resolveContactService,
 } from "~/modules/contacts/service"
 import { assertDemoAppFetchAllowed } from "~/modules/demo/demo-egress"
+import { maybeDemoPaymentsResponse } from "~/modules/demo/worlds/saas/payments/provider"
 
 /** The app's own tables (db_*), kernel reads, contact resolution and bulk blobs. */
 /** The mail tables whose rows belong to one account and die with a reset. */
@@ -559,7 +560,22 @@ export function createDbMethods(
               await validateSandboxFetchUrl(next, allowedDomains, allowPrivateHostsInTest, appName)
             },
           })) as typeof fetch
-        const result = await fetchToBlob(bulkBlobScope(orgId, appName), url, opts, pinnedBulkFetch)
+        // Off demo mode the check above lets everything through: a demo org's bulk download from
+        // the payments host is still the card-payments stand-in's, answered or refused
+        // in-process and never put on the wire, whatever app asks.
+        const standIn = await maybeDemoPaymentsResponse({
+          orgId,
+          appName,
+          allowedDomains,
+          url,
+          method: "GET",
+          body: undefined,
+          headers: opts.headers,
+        })
+        const blobFetch = standIn
+          ? ((async () => standIn) as unknown as typeof fetch)
+          : pinnedBulkFetch
+        const result = await fetchToBlob(bulkBlobScope(orgId, appName), url, opts, blobFetch)
         // Track which iterators are open per blobId — first iteration starts at offset 0.
         bulkIteratorCursors.set(result.blobId, { iterator: null, done: false })
         return JSON.stringify(result)

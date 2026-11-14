@@ -350,3 +350,29 @@ export function formatMinorAsMajorInput(minor: bigint | string | number, currenc
   const fraction = (abs % scale).toString().padStart(exp, "0")
   return `${sign}${major.toString()}.${fraction}`
 }
+
+/**
+ * Minor units (bigint, number or string) as a grouped major-unit string, the one money format of the
+ * app: the screens and the approval cards read the same figure. The currency's ISO 4217 exponent
+ * decides how many minor digits split off; a zero-decimal currency has no fractional unit.
+ */
+export function formatMoneyGrouped(
+  minor: bigint | number | string | null | undefined,
+  currency?: string,
+): string {
+  if (minor === null || minor === undefined || minor === "") return "-"
+  const n = typeof minor === "bigint" ? Number(minor) : Number(minor)
+  if (!Number.isFinite(n)) return "-"
+  const abs = Math.abs(n)
+  const exp = currency ? currencyExponent(currency) : 2
+  const sign = n < 0 ? "-" : ""
+  if (exp === 0) {
+    const grouped = String(Math.round(abs)).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
+    return `${sign}${grouped}`
+  }
+  const scale = 10 ** exp
+  const major = Math.floor(abs / scale)
+  const cents = abs % scale
+  const grouped = String(major).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
+  return `${sign}${grouped}.${String(cents).padStart(exp, "0")}`
+}

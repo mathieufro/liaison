@@ -47,6 +47,7 @@ export const BROAD_SUITES = [
   "integration",
   "integration-extra",
   "integration-mocked",
+  "relations",
   "e2e-parallel",
   "security",
   "web-unit",
@@ -87,8 +88,10 @@ export const GATE_LANES: Record<string, number> = {
   "bundled-database": 1,
   "bundled-google-drive": 1,
   "bundled-gitlab": 1,
+  "bundled-github": 1,
   "bundled-api-connector": 1,
   "bundled-pennylane": 1,
+  "bundled-stripe": 1,
   "bundled-calls": 1,
   "bundled-social": 1,
   // The vitest suites do not take --shard: one runner each.
@@ -101,7 +104,8 @@ export const GATE_LANES: Record<string, number> = {
 
 /**
  * The suites the per-PR `ci` workflow already runs on every pull request (root,
- * guards, unit, web-unit): the gate leaves them out. Every other suite the test
+ * guards, unit, web-unit, and the relation cells as a step of its `unit` job): the
+ * gate leaves them out. Every other suite the test
  * map names must be a {@link GATE_LANES} key, or the gate would plan it and
  * never run it (scripts/test-gate.test.ts pins that).
  */
@@ -114,7 +118,7 @@ export const NOT_HOSTED_SUITES: Record<string, string> = {
     "its session-broker tests drive the Mac shell's zsh shims, sockets and signed app bundle; they hang on a Linux runner",
 }
 
-export const PR_CI_SUITES = ["unit", "web-unit", "root", "guards"]
+export const PR_CI_SUITES = ["unit", "web-unit", "root", "guards", "relations"]
 
 export interface GateShard {
   suite: string
@@ -152,6 +156,7 @@ export const DB_SUITES = new Set([
   "integration",
   "integration-extra",
   "integration-mocked",
+  "relations",
   "live",
   "e2e",
   "e2e-parallel",
@@ -216,7 +221,16 @@ export interface GatePlan {
 
 const isTestFile = (p: string) => /\.test\.tsx?$/.test(p)
 
+/**
+ * A bundled app's rendered-screen suite (`bundled-<app>-ui`) is vitest over its
+ * `src/**\/*.vitest.tsx` only (each app's vitest.config.ts `include`). Its cwd is
+ * the app's directory, which also holds the app's bun tests: those belong to
+ * `bundled-<app>`, and handed to vitest as filters they match nothing.
+ */
+const BUNDLED_UI_SUITE = /^bundled-[\w-]+-ui$/
+
 function belongs(file: string, suite: string, info: SuiteInfo | undefined): boolean {
+  if (BUNDLED_UI_SUITE.test(suite) && !file.endsWith(".vitest.tsx")) return false
   if (suite === "e2e-parallel" || suite === "e2e") {
     return (
       file.startsWith("apps/api/src/tests/e2e/") &&

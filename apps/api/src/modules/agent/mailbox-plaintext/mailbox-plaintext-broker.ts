@@ -49,6 +49,7 @@
 //      turn leaks neither a promise nor an entry.
 
 import { randomUUID } from "node:crypto"
+import { maskHtmlWithNote, maskPaymentSecrets, maskWithNote } from "@liaison/shared"
 import { broadcastEphemeral } from "~/infra/events/event-bus"
 import { getWsManager } from "~/infra/websocket"
 import type { MailboxAnswerers, MailboxUnlockEntry } from "~/infra/websocket-state/types"
@@ -666,8 +667,8 @@ function deliverMailboxOutcome(
     const quote: Record<string, { quotedBody: string | null; resolvedSubject: string | null }> = {}
     for (const item of items) {
       quote[item.messageId] = {
-        quotedBody: item.quotedBody ?? item.textBody ?? null,
-        resolvedSubject: item.resolvedSubject ?? item.subject ?? null,
+        quotedBody: maskOrNull(item.quotedBody ?? item.textBody ?? null),
+        resolvedSubject: maskLineOrNull(item.resolvedSubject ?? item.subject ?? null),
       }
     }
     state.releasedMessages += items.length
@@ -684,9 +685,9 @@ function deliverMailboxOutcome(
     > = {}
     for (const item of items) {
       messages[item.messageId] = {
-        subject: item.subject ?? null,
-        textBody: item.textBody ?? null,
-        htmlBody: item.htmlBody ?? null,
+        subject: maskLineOrNull(item.subject ?? null),
+        textBody: maskOrNull(item.textBody ?? null),
+        htmlBody: item.htmlBody ? maskHtmlWithNote(item.htmlBody).text : null,
       }
     }
     state.releasedMessages += items.length
@@ -741,6 +742,16 @@ function deliverMailboxOutcome(
   }
 }
 
+/** Plain text masked with its note, or null. */
+function maskOrNull(text: string | null): string | null {
+  return text ? maskWithNote(text).text : null
+}
+
+/** A one-line value (a subject) masked, with no note, or null. */
+function maskLineOrNull(text: string | null): string | null {
+  return text ? maskPaymentSecrets(text).text : null
+}
+
 function renderContextBlock(
   items: Array<{
     messageId: string
@@ -750,10 +761,13 @@ function renderContextBlock(
   }>,
 ): string {
   const parts = items.map((item) => {
+    // A sealed mailbox's text is masked here, the one place it meets the
+    // agent: the server stores none of it, so this is where its card numbers
+    // and payment keys are taken out.
     const lines = [`### message ${item.messageId}`]
-    if (item.subject) lines.push(`Subject: ${item.subject}`)
-    if (item.textBody) lines.push("", item.textBody)
-    else if (item.htmlBody) lines.push("", item.htmlBody)
+    if (item.subject) lines.push(`Subject: ${maskPaymentSecrets(item.subject).text}`)
+    if (item.textBody) lines.push("", maskWithNote(item.textBody).text)
+    else if (item.htmlBody) lines.push("", maskHtmlWithNote(item.htmlBody).text)
     return lines.join("\n")
   })
   return [

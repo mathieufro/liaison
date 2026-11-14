@@ -32,6 +32,8 @@ Measured on a live install with a coding agent running the AGENT steps: about 9 
 | GitLab: a read-only access token | 2 to 4 min |  |
 | Boxtal: two API key pairs | 4 to 7 min |  |
 | Pennylane: an API token | 3 to 6 min |  |
+| GitHub: a read-only fine-grained token *(on top)* | 3 to 5 min |  |
+| Stripe: a restricted key and a webhook *(on top)* | 5 to 10 min |  |
 | Webhook sources (call transcripts, monitoring alerts, CI status): one signed webhook each in your own system *(on top)* | 15 to 30 min |  |
 | A database: a read-only role and its catalog *(on top)* | 10 to 20 min |  |
 | Another system's API (a CRM, an ERP): an adapter written and tested with your coding agent *(on top)* | 20 to 40 min |  |
@@ -306,6 +308,29 @@ A second, direct-only database connection for raw read-only SELECT (an analytics
 
 Provider docs: <docs/database-connector.md>
 
+### github
+
+#### github/github
+
+Credentials. Steps on your server: `liaison guide github/github`.
+
+Connect a GitHub organization or user read-only with a fine-grained personal access token. Liaison refuses a token that can write.
+
+1. **HUMAN** (1 min) On github.com, open your avatar → **Settings → Developer settings → Personal access tokens → Fine-grained tokens** and choose **Generate new token**.
+   Open: <https://github.com/settings/personal-access-tokens/new>
+2. **HUMAN** (1 min) Under **Resource owner**, pick the organization (or yourself), and under **Repository access** the repositories Liaison may read.
+   Open: <https://github.com/settings/personal-access-tokens/new>
+3. **HUMAN** (1 min) Under **Repository permissions**, set **Contents**, **Metadata**, **Pull requests** and **Issues** to **Read-only**. Leave everything else at No access: never Read and write, never Administration. A classic token with the `repo` scope can write and is refused.
+   Open: <https://github.com/settings/personal-access-tokens/new>
+4. **HUMAN** Set the longest expiry your organization allows. An expired token answers 401 and every GitHub read stops until you paste a new one.
+   Open: <https://github.com/settings/personal-access-tokens/new>
+5. **HUMAN** Copy the `github_pat_…` value and paste it into the **token** field.
+6. **HUMAN** (1 min) In **owner**, enter the organization or user name exactly as in its GitHub URL (e.g. `maison-example`).
+7. **HUMAN** Rotating later: come back to this same form and paste the new token. It REPLACES the stored credential rather than adding a second connection.
+8. **AGENT** The owner pastes the secret values into deploy/.setup-secrets.env (never the chat); put the values in the config: an `apps` entry { name: github, connection: { name: github, credentials: { token (secret), owner } } }, secrets as ${ENV} references to the secrets file, then run `liaison config apply` and `liaison config verify --app github`.
+
+Provider docs: <https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens>
+
 ### gitlab
 
 #### gitlab/gitlab
@@ -496,6 +521,22 @@ Preview: reads pending verification, so the account connects but the app does no
 13. **AGENT** The owner pastes the app's client ID and client secret into deploy/.setup-secrets.env (never the chat); reference them as ${NAME} in the config: an `apps` entry { name: social, connection: { name: instagram_unified, oauthClient: { clientId, clientSecret } } } (repeat the app's entry once per connection), run `liaison config apply`, then `liaison connect social/instagram_unified --config <path>` and open the URL it prints to approve.
 
 Provider docs: <https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-unified-login>
+
+### stripe
+
+#### stripe/stripe
+
+Credentials. Steps on your server: `liaison guide stripe/stripe`.
+
+Stripe connects with a restricted key that reads customers, subscriptions, invoices, charges, disputes, payment methods, products, prices and events, and writes refunds, plus a webhook to this workspace.
+
+1. **HUMAN** (3 min) In the Stripe Dashboard, open **Developers → API keys → Create restricted key**. Give **Read** to Customers, Subscriptions, Invoices, Charges, Disputes, Payment methods, Products, Prices and Events, and **Write** to Refunds. Leave everything else at None.
+   Open: <https://dashboard.stripe.com/apikeys>
+2. **HUMAN** (1 min) Paste the restricted key (it starts with `rk_`) into **Restricted key**. Never paste the secret key (`sk_`).
+3. **HUMAN** (3 min) In **Developers → Webhooks**, add an endpoint at the webhook address Liaison shows, selecting the Customer, Invoice and Charge events, then give Liaison its signing secret.
+   Open: <https://dashboard.stripe.com/webhooks>
+4. **HUMAN** This server receives the app's `events` webhook at https://liaison.example.com/webhooks/<org-id>/stripe/events (the steps above say who registers it).
+5. **AGENT** The owner pastes the secret values into deploy/.setup-secrets.env (never the chat); put the values in the config: an `apps` entry { name: stripe, connection: { name: stripe, credentials: { restrictedKey (secret) } } }, secrets as ${ENV} references to the secrets file, then run `liaison config apply` and `liaison config verify --app stripe`.
 
 ### tickets
 

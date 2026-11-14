@@ -1,0 +1,354 @@
+{
+  "version": 1,
+  "title": "Fix the payroll export that stops after the fourth venue",
+  "prompt": "The payroll export of the rota stops after the fourth venue of a group, so a customer's payroll file is incomplete. Find out why in tideform-planner, fix it with a test, and open a pull request. This session is recorded for the demo.",
+  "repo": "tideform-planner",
+  "model": "claude-sonnet-4-5",
+  "branch": "fix/export-venue-paging",
+  "events": [
+    {
+      "delayMs": 400,
+      "type": "system",
+      "payload": {
+        "subtype": "start",
+        "text": "Recorded session started",
+        "data": {
+          "sessionId": "recorded-tideform-planner-0001",
+          "claudeCode": "recorded session",
+          "branch": "fix/export-venue-paging"
+        }
+      }
+    },
+    {
+      "delayMs": 600,
+      "type": "user_message",
+      "payload": {
+        "text": "The payroll export of the rota stops after the fourth venue of a group, so a customer's payroll file is incomplete. Find out why in tideform-planner, fix it with a test, and open a pull request. This session is recorded for the demo."
+      }
+    },
+    {
+      "delayMs": 2200,
+      "type": "thinking",
+      "payload": {
+        "text": "An export that stops at a fixed number of venues usually pages its query with a fixed page size and never asks for the next page. Start at the export, then look at how venues are loaded."
+      }
+    },
+    {
+      "delayMs": 1500,
+      "type": "assistant_text",
+      "payload": {
+        "text": "I'll start by finding where the payroll export loads the venues of a group."
+      }
+    },
+    {
+      "delayMs": 900,
+      "type": "tool_call",
+      "payload": {
+        "id": "toolu_01",
+        "name": "Grep",
+        "input": {
+          "pattern": "loadVenues",
+          "path": "src"
+        }
+      }
+    },
+    {
+      "delayMs": 1100,
+      "type": "tool_result",
+      "payload": {
+        "id": "toolu_01",
+        "isError": false,
+        "output": "src/export/payroll.ts:27:  const venues = await loadVenues(group.id)\nsrc/venues/repository.ts:14:export async function loadVenues(groupId: string, cursor?: string)\nsrc/export/timesheets.ts:19:  const venues = await loadVenues(group.id)"
+      }
+    },
+    {
+      "delayMs": 1300,
+      "type": "tool_call",
+      "payload": {
+        "id": "toolu_02",
+        "name": "Read",
+        "input": {
+          "file_path": "src/venues/repository.ts"
+        }
+      }
+    },
+    {
+      "delayMs": 1200,
+      "type": "tool_result",
+      "payload": {
+        "id": "toolu_02",
+        "isError": false,
+        "output": "10  const PAGE_SIZE = 4\n11\n12  /** One page of a group's venues, in name order. */\n13  export async function loadVenues(groupId: string, cursor?: string) {\n14    const rows = await db.venues.list({ groupId, after: cursor, limit: PAGE_SIZE })\n15    return { venues: rows, next: rows.length === PAGE_SIZE ? rows[rows.length - 1].id : null }\n16  }"
+      }
+    },
+    {
+      "delayMs": 2600,
+      "type": "assistant_text",
+      "payload": {
+        "text": "`loadVenues` returns one page of four venues and a cursor for the next. Let me look at how the payroll export uses it."
+      }
+    },
+    {
+      "delayMs": 900,
+      "type": "tool_call",
+      "payload": {
+        "id": "toolu_03",
+        "name": "Read",
+        "input": {
+          "file_path": "src/export/payroll.ts",
+          "offset": 20,
+          "limit": 20
+        }
+      }
+    },
+    {
+      "delayMs": 1000,
+      "type": "tool_result",
+      "payload": {
+        "id": "toolu_03",
+        "isError": false,
+        "output": "20  export async function payrollRows(group: Group, month: string) {\n...\n27    const { venues } = await loadVenues(group.id)\n28    return venues.flatMap((v) => rowsFor(v, month))\n29  }"
+      }
+    },
+    {
+      "delayMs": 3000,
+      "type": "assistant_text",
+      "payload": {
+        "text": "Found it. The export reads the first page only and drops the cursor, so a group with more than four venues is cut after the fourth. I'll load every page and add a test with six venues."
+      }
+    },
+    {
+      "delayMs": 800,
+      "type": "todo",
+      "payload": {
+        "from": "TodoWrite",
+        "items": [
+          {
+            "content": "Read every page of venues in the payroll export",
+            "status": "in_progress",
+            "activeForm": "Reading every page of venues"
+          },
+          {
+            "content": "Add a test with more venues than one page",
+            "status": "pending",
+            "activeForm": "Adding a multi-page test"
+          },
+          {
+            "content": "Run the test suite",
+            "status": "pending",
+            "activeForm": "Running the test suite"
+          },
+          {
+            "content": "Push the branch and open a pull request",
+            "status": "pending",
+            "activeForm": "Opening a pull request"
+          }
+        ]
+      }
+    },
+    {
+      "delayMs": 1400,
+      "type": "tool_call",
+      "payload": {
+        "id": "toolu_04",
+        "name": "Edit",
+        "input": {
+          "file_path": "src/export/payroll.ts",
+          "old_string": "  const { venues } = await loadVenues(group.id)",
+          "new_string": "  const venues = await loadAllVenues(group.id)"
+        }
+      }
+    },
+    {
+      "delayMs": 700,
+      "type": "tool_result",
+      "payload": {
+        "id": "toolu_04",
+        "isError": false,
+        "output": "The file src/export/payroll.ts has been updated."
+      }
+    },
+    {
+      "delayMs": 1300,
+      "type": "tool_call",
+      "payload": {
+        "id": "toolu_05",
+        "name": "Write",
+        "input": {
+          "file_path": "tests/payroll-export.test.ts",
+          "content": "import { expect, test } from \"bun:test\"\nimport { payrollRows } from \"../src/export/payroll\"\nimport { groupWithVenues } from \"./fakes/venues\"\n\ntest(\"the payroll export covers every venue of a group, not only the first page\", async () => {\n  const group = await groupWithVenues(6)\n  const rows = await payrollRows(group, \"2026-10\")\n  expect(new Set(rows.map((r) => r.venueId)).size).toBe(6)\n})\n"
+        }
+      }
+    },
+    {
+      "delayMs": 700,
+      "type": "tool_result",
+      "payload": {
+        "id": "toolu_05",
+        "isError": false,
+        "output": "File created successfully at: tests/payroll-export.test.ts"
+      }
+    },
+    {
+      "delayMs": 900,
+      "type": "todo",
+      "payload": {
+        "from": "TodoWrite",
+        "items": [
+          {
+            "content": "Read every page of venues in the payroll export",
+            "status": "completed",
+            "activeForm": "Reading every page of venues"
+          },
+          {
+            "content": "Add a test with more venues than one page",
+            "status": "completed",
+            "activeForm": "Adding a multi-page test"
+          },
+          {
+            "content": "Run the test suite",
+            "status": "in_progress",
+            "activeForm": "Running the test suite"
+          },
+          {
+            "content": "Push the branch and open a pull request",
+            "status": "pending",
+            "activeForm": "Opening a pull request"
+          }
+        ]
+      }
+    },
+    {
+      "delayMs": 1000,
+      "type": "tool_call",
+      "payload": {
+        "id": "toolu_06",
+        "name": "Bash",
+        "input": {
+          "command": "bun test",
+          "description": "Run the planner's tests"
+        }
+      }
+    },
+    {
+      "delayMs": 4200,
+      "type": "tool_result",
+      "payload": {
+        "id": "toolu_06",
+        "isError": false,
+        "output": "payroll-export.test.ts: 1 pass\nvenues.test.ts: 5 pass\nswaps.test.ts: 9 pass\n\n15 pass, 0 fail"
+      }
+    },
+    {
+      "delayMs": 1100,
+      "type": "tool_call",
+      "payload": {
+        "id": "toolu_07",
+        "name": "Bash",
+        "input": {
+          "command": "git checkout -b fix/export-venue-paging && git commit -am \"export: read every page of a group's venues\"",
+          "description": "Commit the fix on a branch"
+        }
+      }
+    },
+    {
+      "delayMs": 1000,
+      "type": "tool_result",
+      "payload": {
+        "id": "toolu_07",
+        "isError": false,
+        "output": "Switched to a new branch 'fix/export-venue-paging'\n[fix/export-venue-paging 7b1d4a9] export: read every page of a group's venues\n 2 files changed, 18 insertions(+), 1 deletion(-)\n create mode 100644 tests/payroll-export.test.ts"
+      }
+    },
+    {
+      "delayMs": 2400,
+      "type": "assistant_text",
+      "payload": {
+        "text": "All 15 tests pass and the fix is committed. Pushing the branch needs your permission."
+      }
+    },
+    {
+      "delayMs": 900,
+      "type": "permission_request",
+      "payload": {
+        "requestId": "recorded-permission-1",
+        "tool": "Bash",
+        "input": {
+          "command": "git push -u origin fix/export-venue-paging && gh pr create --fill",
+          "description": "Push the branch and open a pull request"
+        },
+        "reason": "Push the branch to the shared repository and open a pull request."
+      }
+    },
+    {
+      "delayMs": 1100,
+      "type": "tool_call",
+      "payload": {
+        "id": "toolu_08",
+        "name": "Bash",
+        "input": {
+          "command": "git push -u origin fix/export-venue-paging && gh pr create --fill",
+          "description": "Push the branch and open a pull request"
+        }
+      }
+    },
+    {
+      "delayMs": 1000,
+      "type": "tool_result",
+      "payload": {
+        "id": "toolu_08",
+        "isError": false,
+        "output": "branch 'fix/export-venue-paging' set up to track 'origin/fix/export-venue-paging'.\nCreating pull request for fix/export-venue-paging into main in tideform/planner\n\nhttps://github-standin.example/tideform/planner/pull/412"
+      }
+    },
+    {
+      "delayMs": 600,
+      "type": "usage",
+      "payload": {
+        "tokensIn": 41870,
+        "tokensOut": 3120,
+        "model": "claude-sonnet-4-5",
+        "cacheRead": 28400
+      }
+    },
+    {
+      "delayMs": 1500,
+      "type": "assistant_text",
+      "payload": {
+        "text": "Done. The export read the first page of venues only, so any group with more than four venues was cut. It now reads every page, a test covers a group of six venues, and the pull request is open."
+      }
+    },
+    {
+      "delayMs": 500,
+      "type": "result",
+      "payload": {
+        "text": "Fixed the payroll export that stopped after the fourth venue: it now reads every page of a group's venues. Added tests/payroll-export.test.ts; all 15 tests pass. Pull request opened (recorded session).",
+        "isError": false,
+        "subtype": "success",
+        "branch": "fix/export-venue-paging",
+        "pushed": true,
+        "prUrl": "https://github-standin.example/tideform/planner/pull/412"
+      }
+    }
+  ],
+  "denied": [
+    {
+      "delayMs": 1000,
+      "type": "assistant_text",
+      "payload": {
+        "text": "Understood, I won't push. The fix and its test are committed on the local branch fix/export-venue-paging, so you can review them and push when you are ready."
+      }
+    },
+    {
+      "delayMs": 500,
+      "type": "result",
+      "payload": {
+        "text": "Stopped by you before pushing. The fix is committed on the local branch fix/export-venue-paging; nothing left this computer (recorded session).",
+        "isError": false,
+        "subtype": "success",
+        "branch": "fix/export-venue-paging",
+        "pushed": false
+      }
+    }
+  ]
+}

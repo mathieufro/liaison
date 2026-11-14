@@ -1053,6 +1053,66 @@ describe("mail agent handlers", () => {
     expect(smtpCalls[0].to).toEqual(["Hans <hans@example.com>"])
   })
 
+  it("a reply the demo captured says it was captured and not delivered, never that it was sent", async () => {
+    const bridge = {
+      ...makeReplyBridge({ onSmtp: () => {} }),
+      smtp_send: async () =>
+        JSON.stringify({
+          messageId: "<captured@demo>",
+          deliveryState: "delivered",
+          captured: true,
+        }),
+    }
+    const result = (await runMail({
+      exportName: "agentMailReply",
+      params: { conversationId: "conv-1", textBody: "Reply body" },
+      bridge,
+    })) as any
+    expect(result.captured).toBe(true)
+    expect(result.delivered).toBe(false)
+    expect(result.note).toStartWith("Captured, not delivered: this is a demo workspace")
+    expect(result.note).toContain("Nobody received it.")
+    expect(result.note).not.toMatch(/^Sent to/)
+  })
+
+  it("a reply that went out says it was sent, with no captured mark", async () => {
+    const result = (await runMail({
+      exportName: "agentMailReply",
+      params: { conversationId: "conv-1", textBody: "Reply body" },
+      bridge: makeReplyBridge({ onSmtp: () => {} }),
+    })) as any
+    expect(result.captured).toBeUndefined()
+    expect(result.note).toStartWith(
+      "Sent to hans@example.com from support@acme.com, in conversation conv-1.",
+    )
+  })
+
+  it("a new mail the demo captured says it was captured and not delivered", async () => {
+    const bridge = {
+      ...makeReplyBridge({ onSmtp: () => {} }),
+      smtp_send: async () =>
+        JSON.stringify({
+          messageId: "<captured@demo>",
+          deliveryState: "delivered",
+          captured: true,
+        }),
+    }
+    const result = (await runMail({
+      exportName: "agentMailCompose",
+      params: {
+        accountId: "account-1",
+        to: ["noor@brasserie.example"],
+        subject: "A question",
+        textBody: "Why are you leaving?",
+      },
+      bridge,
+    })) as any
+    expect(result.captured).toBe(true)
+    expect(result.note).toStartWith(
+      "Captured, not delivered: this is a demo workspace, so the mail to noor@brasserie.example from support@acme.com",
+    )
+  })
+
   it("agentMailReply records the landed send before post-send work, so a cut-off run still names it", async () => {
     const recorded: any[] = []
     const bridge = {

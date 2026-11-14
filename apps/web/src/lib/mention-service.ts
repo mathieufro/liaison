@@ -14,6 +14,8 @@ export interface MentionResult {
   id: string
   label: string
   secondaryLabel?: string
+  /** A colleague away today: until when (the last day of their run of away days). */
+  away?: { until: string | null } | null
   app?: string
   entityType?: string
   threadId?: string

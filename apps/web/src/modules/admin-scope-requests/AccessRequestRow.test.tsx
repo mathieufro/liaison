@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 const queued = vi.hoisted(() => ({ calls: [] as unknown[][] }))
 vi.mock("~/modules/approvals/decision-queue", () => ({
   isDecisionInFlight: () => false,
+  isDecisionNotSent: (_kind: string, id: string) => id === "8c41e0d2-0000-4000-8000-0000000000aa",
   isDecisionUndone: () => false,
   queueDecision: vi.fn(async (...args: unknown[]) => {
     queued.calls.push(args)
@@ -107,6 +108,15 @@ describe("an access request in the approvals list", () => {
     expect(lines).toContain("Allows: ")
     expect(lines).toContain("Why: “To check order status before answering.”")
     expect(screen.getByTestId(`${T}-meta`).textContent).toContain("Sales agent")
+  })
+
+  it("a decision dropped at boot as too old says on its row that it was not sent", () => {
+    setShellTier("desktop")
+    renderRow({ ...scopeItem(), entityId: "8c41e0d2-0000-4000-8000-0000000000aa" })
+    const T2 = "attention-row-kernel-scope_request-8c41e0d2-0000-4000-8000-0000000000aa"
+    expect(screen.getByTestId(`${T2}-lines`).textContent).toContain(
+      "Not sent: this decision was more than 15 minutes old. Decide again.",
+    )
   })
 
   it("shows Grant (primary) and Deny on the collapsed desktop row", () => {

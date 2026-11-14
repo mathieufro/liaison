@@ -219,6 +219,12 @@ export interface InvoicingDocumentSpec {
   poNumber?: string
   notes?: string
   incoterm?: string
+  /** The document's links to records outside invoicing (a payment processor's invoice). */
+  externalRefs?: Record<string, string>
+  /** The project the document bills (a services company's invoice). */
+  billingProjectId?: string
+  /** A credit note: the key of the document it corrects. */
+  correctsKey?: string
 }
 
 /** Prefix per document type: the issuer profile's own defaults. */
@@ -564,10 +570,14 @@ export async function seedInvoicingHistory(
         pdf_file_id: null,
         // The app's own "render me on demand" state: see the header note.
         pdf_status: issued ? "pending" : null,
-        external_refs: jsonCell({}),
+        external_refs: jsonCell(d.spec.externalRefs ?? {}),
         po_number: d.spec.poNumber ?? null,
         notes: d.spec.notes ?? null,
         lifecycle_log: jsonCell(buildLifecycleLog(d)),
+        ...(d.spec.billingProjectId ? { billing_project_id: d.spec.billingProjectId } : {}),
+        ...(d.spec.correctsKey
+          ? { original_document_id: ctx.id("document", d.spec.correctsKey) }
+          : {}),
         created_at: iso(d.issuedAt ?? shiftTime(now, -1, 16)),
         updated_at: iso(d.paidAt ?? d.issuedAt ?? shiftTime(now, -1, 16)),
       }
@@ -624,4 +634,81 @@ export async function seedInvoicingHistory(
     }
     return { issuerProfileId: profileId }
   })
+}
+
+// ── Recurring schedules ──────────────────────────────────────────────────────
+
+export interface RecurringScheduleSpec {
+  /** Keys the schedule's deterministic id: `ctx.id("recurring_schedule", key)`. */
+  key: string
+  contactId: string
+  companyId?: string | null
+  repeats: "month" | "quarter" | "year"
+  /** `last`, a day from 1 to 28, or `MM-DD` for a year. */
+  billingDay: string
+  status: "draft" | "active" | "paused" | "ended"
+  lines: readonly { description: string; qty: number; unitPriceMinor: number; vatBp: number }[]
+  /** The civil dates the app would have computed from the schedule's cadence. */
+  nextIssueOn: string | null
+  nextDraftOn: string | null
+  language?: string
+  pausedUntil?: string | null
+}
+
+/** The `recurring_schedules` rows the app would have written: always `review`, never automatic. */
+export function recurringScheduleRows(
+  ctx: SeedContext,
+  issuerId: string,
+  specs: readonly RecurringScheduleSpec[],
+): Array<Record<string, AppCell> & { id: string; org_id: string }> {
+  return specs.map((s) => ({
+    id: ctx.id("recurring_schedule", s.key),
+    org_id: ctx.orgId,
+    issuer_profile_id: issuerId,
+    company_id: s.companyId ?? null,
+    contact_id: s.contactId,
+    status: s.status,
+    repeats: s.repeats,
+    billing_day: s.billingDay,
+    ends_on: null,
+    covers: "period_ended",
+    issue_mode: "review",
+    auto_enabled_by: null,
+    auto_enabled_at: null,
+    paid_by: "transfer",
+    card_link_url: null,
+    due_rule: "days_30",
+    due_days: null,
+    language: s.language ?? "en",
+    lines: jsonCell(
+      s.lines.map((l) => ({
+        description: l.description,
+        qty: l.qty,
+        unit_price_minor: l.unitPriceMinor,
+        vat_bp: l.vatBp,
+        line_kind: "service",
+      })),
+    ),
+    notes: null,
+    paused_until: s.pausedUntil ?? null,
+    next_issue_on: s.status === "active" ? s.nextIssueOn : null,
+    next_draft_on: s.status === "active" ? s.nextDraftOn : null,
+    version: 1,
+    created_by: "seed",
+    created_at: iso(shiftTime(ctx.now, -60)),
+    updated_at: iso(shiftTime(ctx.now, -30)),
+  }))
+}
+
+/** Recurring schedules for an issuer. Idempotent. */
+export async function seedRecurringSchedules(
+  ctx: SeedContext,
+  issuerId: string,
+  specs: readonly RecurringScheduleSpec[],
+): Promise<number> {
+  const rows = recurringScheduleRows(ctx, issuerId, specs)
+  await withSystemDb("seed-invoicing-recurring", async (tx) => {
+    for (const row of rows) await upsertAppRow(tx, "invoicing", "recurring_schedules", row)
+  })
+  return rows.length
 }

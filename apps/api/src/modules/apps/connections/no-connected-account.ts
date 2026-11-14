@@ -44,8 +44,12 @@ export class NoConnectedAccountError extends Error {
   }
 }
 
-const NO_CONNECTED_ACCOUNT_MESSAGE = /No connected account for connection "/
-const NO_CONNECTED_ACCOUNT_PARTS = /No connected account for connection "([^"]*)"(?:: ([^\n]*))?/
+// Anchored: the message starts with the prefix (after an `Error: ` the sandbox may put
+// before it), so error text that only quotes the phrase (an upstream body, a handler's
+// own wording) never becomes this typed error.
+const NO_CONNECTED_ACCOUNT_MESSAGE = /^(?:\w*Error: )?No connected account for connection "/
+const NO_CONNECTED_ACCOUNT_PARTS =
+  /^(?:\w*Error: )?No connected account for connection "([^"]*)"(?:: ([^\n]*))?/
 
 /** True for a `NoConnectedAccountError`, including one whose message crossed the sandbox. */
 export function isNoConnectedAccountError(err: unknown): boolean {

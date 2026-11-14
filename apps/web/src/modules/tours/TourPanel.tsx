@@ -15,6 +15,7 @@ import {
 import { Check, ChevronDown, ChevronUp, Ellipsis, X } from "lucide-solid"
 import {
   type Component,
+  createEffect,
   createMemo,
   createSignal,
   For,
@@ -33,6 +34,7 @@ import { pluralFormFor } from "~/modules/projects/plural"
 import { refusalCodeInThread } from "~/modules/threads/turn-refusal"
 import { Button } from "~/ui/Button"
 import { PopupMenu } from "~/ui/PopupMenu"
+import { createBeatFigures } from "./beat-figures"
 import { tourBeatGate, tourCompletedAction, tourRefusalGate } from "./beat-gates"
 import { tourCopyVars } from "./copy-vars"
 import { createPanelLayout } from "./panel-layout"
@@ -175,6 +177,9 @@ export function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`
 }
+
+/** How long a step waits for its routine's run to show up before saying it has not started. */
+export const ROUTINE_START_GRACE_MS = 90_000
 
 /** What the working line says, by what the beat waits on. */
 const WORKING_KEY = {
@@ -403,8 +408,10 @@ export const TourPanel: Component<TourPanelProps> = (props) => {
   })
   /** The ⋯ menu holding the less used actions (Take me there, Play, Pause, Skip). */
   const [menuOpen, setMenuOpen] = createSignal(false)
-  /** Step copy in the person's language, with the names it may carry (their own agent's). */
-  const copy = (key: string) => i18n.t(key, tourCopyVars())
+  /** The figures the step's copy names, read from the tool the screen reads (`beat.figures`). */
+  const figures = createBeatFigures(() => props.beat)
+  /** Step copy in the person's language, with the names and figures it may carry. */
+  const copy = (key: string) => i18n.t(key, { ...tourCopyVars(), ...figures() })
   /** The approval waits out its undo window: what the step says meanwhile. */
   const undo = () => (props.undoing ? (props.beat.undo ?? null) : null)
   const stepNumber = () => Math.min(props.progress.beatIndex + 1, props.progress.beatCount)
@@ -535,6 +542,25 @@ export const TourPanel: Component<TourPanelProps> = (props) => {
     return null
   }
 
+  /**
+   * A step a routine does whose run never showed up: after a grace the line says the routine has
+   * not started and Skip this step is on the card, instead of a spinner that waits for ever.
+   */
+  const waitsOnUnstartedRoutine = () =>
+    waitsOn() === "routine" && status() === "working" && !routineLine()
+  const [unstartedSince, setUnstartedSince] = createSignal<number | null>(null)
+  const [unstartedNow, setUnstartedNow] = createSignal(Date.now())
+  createEffect(on(waitsOnUnstartedRoutine, (waits) => setUnstartedSince(waits ? Date.now() : null)))
+  createEffect(() => {
+    if (unstartedSince() === null) return
+    const timer = setInterval(() => setUnstartedNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const routineNotStarted = () => {
+    const since = unstartedSince()
+    return since !== null && unstartedNow() - since >= ROUTINE_START_GRACE_MS
+  }
+
   /** The hop to take now, while the step's element is away: one line, "n/m". */
   const hop = () => {
     const way = props.way
@@ -651,6 +677,14 @@ export const TourPanel: Component<TourPanelProps> = (props) => {
               />
             )}
           </For>
+          {/* The step in words beside the dashes: "Step 1 of 6". */}
+          <span
+            aria-hidden="true"
+            data-testid="tour-step-label"
+            class="ml-1 shrink-0 whitespace-nowrap text-[11px] tabular-nums text-text-tertiary"
+          >
+            {stepLabel()}
+          </span>
         </span>
         <span class="flex-1" />
         <Show when={layout.canFold()}>
@@ -762,7 +796,9 @@ export const TourPanel: Component<TourPanelProps> = (props) => {
             <span>
               {i18n.t(
                 line() === "working"
-                  ? WORKING_KEY[waitsOn() ?? "agent"]
+                  ? routineNotStarted()
+                    ? "tours.engine.routineNotStarted"
+                    : WORKING_KEY[waitsOn() ?? "agent"]
                   : line() === "agentFailed" && props.beat.kind === "show"
                     ? "tours.engine.agentNoAnswer"
                     : STATUS_KEY[line()],
@@ -834,6 +870,8 @@ export const TourPanel: Component<TourPanelProps> = (props) => {
             {doMyselfButton()}
             <Show when={skipBeatInline()}>{skipBeatButton()}</Show>
           </Match>
+          {/* A routine that never started: skip this step to go on. */}
+          <Match when={routineNotStarted()}>{skipBeatButton()}</Match>
           {/* The agent, a routine or a replay does it: Next, once it is done. */}
           <Match when={waitsOnRunningWork(props.beat)}>{nextButton(() => true)}</Match>
           {/* ONE state: the agent or the tour is on it (working, or a step the

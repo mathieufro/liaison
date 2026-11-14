@@ -6,7 +6,11 @@ import { createEffect, createMemo, Show } from "solid-js"
 import { runTool } from "~/lib/run-tool"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { useApi } from "~/modules/shell/ApiContext"
-import { applyTicketSummaryResult, ticketDetailStore } from "~/modules/tickets/ticket-detail-store"
+import {
+  applyTicketSummaryResult,
+  ticketDetailStore,
+  ticketSummaryVersion,
+} from "~/modules/tickets/ticket-detail-store"
 import {
   handleTicketSummaryEvent,
   isCollapsed,
@@ -40,19 +44,25 @@ export const TicketSummaryCard: Component<Props> = (props) => {
     const ticketId = props.ticketId
     if (requested || !ticketId) return
     requested = true
+    // A live summary event that lands while this is in flight is newer: the
+    // answer is then dropped instead of putting the old summary back.
+    const version = ticketSummaryVersion(ticketId)
     void runTool(api, "tickets:ensureSummary", { ticketId })
       .then((out) => {
-        applyTicketSummaryResult(ticketId, out)
-        handleTicketSummaryEvent({ ticketId, ...(out as Record<string, unknown>) })
+        if (applyTicketSummaryResult(ticketId, out, version)) {
+          handleTicketSummaryEvent({ ticketId, ...(out as Record<string, unknown>) })
+        }
       })
       .catch(() => {})
   })
 
   async function regenerate(): Promise<void> {
     try {
+      const version = ticketSummaryVersion(props.ticketId)
       const out = await runTool(api, "tickets:regenerateSummary", { ticketId: props.ticketId })
-      applyTicketSummaryResult(props.ticketId, out)
-      handleTicketSummaryEvent({ ticketId: props.ticketId, ...(out as Record<string, unknown>) })
+      if (applyTicketSummaryResult(props.ticketId, out, version)) {
+        handleTicketSummaryEvent({ ticketId: props.ticketId, ...(out as Record<string, unknown>) })
+      }
     } catch {
       // non-fatal
     }

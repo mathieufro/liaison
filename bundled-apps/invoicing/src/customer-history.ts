@@ -5,7 +5,8 @@
 // document, the name inside its address (an invoice made out to a company often names the person
 // only there), the email, the linked contact, and the store's orders by name, email or the order
 // numbers on the documents found. Each document comes with its lines and unit prices, and the
-// most recent line of the asked product is picked out as `last_sale`.
+// most recent line of the asked product is picked out as `last_sale`. The recurring schedules
+// that bill the customer come with it: a price said to hold from now on is the schedule's.
 
 import { normaliseAddress } from "./address-match"
 import { shopifyAbsent, shopifyTerm } from "./buyer-vat"
@@ -59,6 +60,15 @@ export interface CustomerHistoryOrder {
   items: Array<{ title: string | null; quantity: number }>
 }
 
+/** A recurring schedule that bills the customer, as its next invoices will read. */
+export interface CustomerHistorySchedule {
+  id: string
+  status: string
+  repeats: string
+  next_issue_on: string | null
+  lines: Array<{ description: string; quantity: string; unit_price_minor: string }>
+}
+
 export interface CustomerHistoryResult {
   customer: string | null
   /** The latest sale of `product` (or the latest line of any product when none is asked). */
@@ -76,6 +86,8 @@ export interface CustomerHistoryResult {
     issued_at: string | null
   } | null
   documents: CustomerHistoryDocument[]
+  /** The schedules (not ended) that bill this customer: the price of their next invoices. */
+  recurring_schedules: CustomerHistorySchedule[]
   shopify_orders: CustomerHistoryOrder[]
   /** "checked", "not connected", or why the store could not be read. */
   shopify: string
@@ -234,6 +246,42 @@ async function shopifyOrders(
   }
 }
 
+/** The schedules, not ended, of the customer's contacts. */
+async function schedulesOf(
+  ctx: ReadsCtx,
+  contactIds: Array<string | null>,
+): Promise<CustomerHistorySchedule[]> {
+  const out: CustomerHistorySchedule[] = []
+  for (const id of new Set(contactIds.filter((c): c is string => !!c))) {
+    const rows = (await ctx.db.findMany("recurring_schedules", {
+      where: { contact_id: id },
+      orderBy: { next_issue_on: "asc" },
+      limit: 10,
+    })) as Array<Record<string, unknown>>
+    for (const r of rows) {
+      if (r.status === "ended") continue
+      const raw = typeof r.lines === "string" ? (JSON.parse(r.lines) as unknown) : r.lines
+      const lines = (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>
+      const day =
+        r.next_issue_on instanceof Date
+          ? r.next_issue_on.toISOString().slice(0, 10)
+          : (str(r.next_issue_on)?.slice(0, 10) ?? null)
+      out.push({
+        id: String(r.id),
+        status: String(r.status),
+        repeats: String(r.repeats ?? ""),
+        next_issue_on: day,
+        lines: lines.map((l) => ({
+          description: String(l.description ?? ""),
+          quantity: String(l.qty ?? l.quantity ?? "1"),
+          unit_price_minor: String(l.unit_price_minor ?? "0"),
+        })),
+      })
+    }
+  }
+  return out
+}
+
 export async function customerHistory(
   ctx: ReadsCtx,
   input: CustomerHistoryInput = {},
@@ -301,11 +349,27 @@ export async function customerHistory(
         }
       : null
 
+  const recurring_schedules = await schedulesOf(ctx, [
+    contactId,
+    ...docs.map((d) => d.counterparty_contact_id),
+  ])
   const shop = await shopifyOrders(ctx, customer, docs, product)
   const who = customer ?? contactId ?? "this customer"
-  const note =
-    documents.length === 0 && shop.orders.length === 0
+  const found_note =
+    documents.length === 0 && shop.orders.length === 0 && recurring_schedules.length === 0
       ? `Nothing found for "${who}"${product ? ` with "${product}"` : ""}. Try the company name, the email, a word of the address, or the product alone.`
       : `For "same price as last time" use last_sale.unit_price: the price paid per unit, after the line's discount, before VAT. A line's unit_price is the list price printed before its discount; net_unit_price is what was paid.`
-  return { customer, last_sale, documents, shopify_orders: shop.orders, shopify: shop.status, note }
+  const note =
+    recurring_schedules.length > 0
+      ? `${found_note} A recurring schedule bills this customer: a price that holds from now on is changed on it with recurring_schedule_update; a draft already made is changed with drafts_update.`
+      : found_note
+  return {
+    customer,
+    last_sale,
+    documents,
+    recurring_schedules,
+    shopify_orders: shop.orders,
+    shopify: shop.status,
+    note,
+  }
 }

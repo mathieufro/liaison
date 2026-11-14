@@ -47,6 +47,8 @@ function bundledDescriptor(name: string): Record<string, unknown> {
 const ORG = "00000000-0000-4000-8000-0000000e8001"
 const USER = "00000000-0000-4000-8000-0000000e8002"
 const THREAD = "00000000-0000-4000-8000-0000000e8003"
+// A conversation that read nothing from outside the organisation.
+const CLEAN_THREAD = "00000000-0000-4000-8000-0000000e8004"
 const CONTACT_A = "00000000-0000-4000-8000-0000000e8011" // the S4b counterparty
 const CONTACT_B = "00000000-0000-4000-8000-0000000e8012" // the parked order's buyer
 const CONTACT_C = "00000000-0000-4000-8000-0000000e8013" // a contact an agent tries to mislabel
@@ -131,13 +133,17 @@ const registryFetch = (async (input: Parameters<typeof fetch>[0]) => {
 
 type Data = Record<string, unknown>
 
-async function callTool(toolName: string, params: Record<string, unknown>) {
+async function callTool(
+  toolName: string,
+  params: Record<string, unknown>,
+  threadId: string = THREAD,
+) {
   return executeTool({
     toolName,
     orgId: ORG,
     actor,
     params,
-    threadId: THREAD,
+    threadId,
     origin: "in-app-agent",
   })
 }
@@ -173,12 +179,17 @@ describe("invoicing identity tools (real Postgres, CEO scopes)", () => {
     await sql`INSERT INTO kernel.users (id, org_id, email, password_hash, name, status)
       VALUES (${USER}, ${ORG}, 'identity-tools@test.com', 'hash', 'Identity Tester', 'active')
       ON CONFLICT (id) DO NOTHING`
-    await sql`INSERT INTO kernel.threads (id, org_id, handle, type, created_by)
-      VALUES (${THREAD}, ${ORG}, 'identity-tools-thread', 'agent_chat', ${USER}) ON CONFLICT (id) DO NOTHING`
-    await sql`INSERT INTO kernel.thread_participants (thread_id, user_id, org_id, role)
-      VALUES (${THREAD}, ${USER}, ${ORG}, 'admin') ON CONFLICT DO NOTHING`
-    await sql`INSERT INTO kernel.user_thread_state (user_id, thread_id, org_id)
-      VALUES (${USER}, ${THREAD}, ${ORG}) ON CONFLICT DO NOTHING`
+    for (const [id, handle] of [
+      [THREAD, "identity-tools-thread"],
+      [CLEAN_THREAD, "identity-tools-clean-thread"],
+    ] as const) {
+      await sql`INSERT INTO kernel.threads (id, org_id, handle, type, created_by)
+        VALUES (${id}, ${ORG}, ${handle}, 'agent_chat', ${USER}) ON CONFLICT (id) DO NOTHING`
+      await sql`INSERT INTO kernel.thread_participants (thread_id, user_id, org_id, role)
+        VALUES (${id}, ${USER}, ${ORG}, 'admin') ON CONFLICT DO NOTHING`
+      await sql`INSERT INTO kernel.user_thread_state (user_id, thread_id, org_id)
+        VALUES (${USER}, ${id}, ${ORG}) ON CONFLICT DO NOTHING`
+    }
     await sql`DELETE FROM kernel.user_scope_grants WHERE org_id = ${ORG} AND user_id = ${USER}`
     for (const scope of CEO_ROLE_SCOPES) {
       await sql`INSERT INTO kernel.user_scope_grants (user_id, org_id, scope)
@@ -378,18 +389,24 @@ describe("invoicing identity tools (real Postgres, CEO scopes)", () => {
   }, 120_000)
 
   it("a draft named after another company never confirms that company's SIREN (two-call bypass)", async () => {
-    // drafts_create is ungated: an agent can name a draft for any contact after any company.
-    const draft = await callTool("invoicing:drafts_create", {
-      type: "invoice",
-      counterparty_contact_id: CONTACT_C,
-      counterparty_name: "Autre Entreprise Fictive SAS",
-      counterparty_address: "3 avenue Fictive, 33000 Bordeaux",
-      counterparty_email: "compta@autre-fictive.example",
-      counterparty_country: "FR",
-      issuer_profile_id: issuerId,
-      currency: "EUR",
-      items: [{ description: "Widget", quantity: "1", unit_price_minor: 10000 }],
-    })
+    // In a conversation that read nothing from outside, drafts_create runs at once: an agent can
+    // name a draft for any contact after any company. (In one that did, the draft itself waits for
+    // a person.) The identity call then comes from the conversation that read the web.
+    const draft = await callTool(
+      "invoicing:drafts_create",
+      {
+        type: "invoice",
+        counterparty_contact_id: CONTACT_C,
+        counterparty_name: "Autre Entreprise Fictive SAS",
+        counterparty_address: "3 avenue Fictive, 33000 Bordeaux",
+        counterparty_email: "compta@autre-fictive.example",
+        counterparty_country: "FR",
+        issuer_profile_id: issuerId,
+        currency: "EUR",
+        items: [{ description: "Widget", quantity: "1", unit_price_minor: 10000 }],
+      },
+      CLEAN_THREAD,
+    )
     expect((draft.data as Data).draft_id).toBeTruthy()
     const before = await approvalCount()
     const res = await callTool("invoicing:counterparty_identity_set", {

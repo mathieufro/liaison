@@ -32,6 +32,7 @@ import path from "node:path"
 import { sql } from "drizzle-orm"
 import { searchTickets } from "~/apps/tickets/search"
 import { withPrivilegedDb } from "~/db/privileged"
+import { aggregateAttentionItems } from "~/modules/apps/attention-aggregator"
 import { DemoModeTestAccess } from "~/modules/demo/demo-mode"
 import { resetDemoOrgContent } from "~/modules/demo/demo-reset"
 import { DEMO_REVIEWER_EMAIL } from "~/modules/demo/demo-seeder"
@@ -39,12 +40,28 @@ import { DEMO_SHOP_DOMAIN } from "~/modules/demo/shopify"
 import { hasOverlay, orderPatch } from "~/modules/demo/shopify/overlay"
 import { DEMO_WAREHOUSE_DSN_ENV } from "~/modules/demo/warehouse"
 import { loadEffectivePermissions } from "~/modules/permissions/permissions"
+import { seedContext } from "~/seed/context"
+import { actorFor } from "~/seed/factories/people/actors"
+import { installFromDist } from "../../../../test-support/seed/install-dist-apps"
 import { ACTIVITY_THREAD_TITLES } from "./seed-agent-native"
 import { type SeedDemoWorldResult, seedDemoWorld } from "./seed-demo"
 
 const ORG_SLUG = process.env.DEMO_WORLD_TEST_SLUG ?? "demo-world-integration"
 const DB_URL = process.env.DATABASE_URL ?? ""
 const BASE_TIME = new Date("2026-09-16T09:00:00.000Z")
+/** The demo apps shipped as catalog bundles, installed the way a demo box has them. */
+const CATALOG_DEMO_APPS = [
+  "invoicing",
+  "social",
+  "pennylane",
+  "boxtal",
+  "shopify",
+  "monitoring",
+  "stripe",
+  // The oracle layer's headless app: a catalog app on a demo box like the others, so a
+  // database with no catalog holding it would enable it for the org without registering it.
+  "database",
+]
 
 /**
  * The org's OWNER: the one account a seeded demo org can be signed into. On the
@@ -58,7 +75,7 @@ const OWNER = {
   password: "ReviewOwner1!Seed",
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   if (DB_URL === "") throw new Error("DATABASE_URL must be set for this test")
   if (/liaison_dev|liaison_test(?!_)/.test(DB_URL)) {
     throw new Error("refusing to seed a shared database: use liaison_hardening_test")
@@ -89,6 +106,9 @@ beforeAll(() => {
       "apps",
     )
   }
+  // A demo box has every catalog app installed before any seed; a fresh database has none, and the
+  // commerce layer writes into their tables.
+  for (const app of CATALOG_DEMO_APPS) await installFromDist(app, crypto.randomUUID())
 })
 
 /**
@@ -428,6 +448,30 @@ describe("seedDemoWorld: one org holding the whole demo", () => {
           WHERE org_id = ${orgId} AND status = 'pending' AND ${userId}::uuid = ANY(notify_user_ids)`,
     )
     expect(Number(pending ?? 0)).toBeGreaterThan(0)
+  })
+
+  // The Home feed reads an app's stored attention list and runs no app code, so
+  // a seed that did not store the lists opens on empty queues.
+  it("opens the owner's Home with the seeded support and knowledge queues already stored", async () => {
+    const orgId = world.orgId
+    const userId = world.org.ownerUserId ?? ""
+    const stored = await withPrivilegedDb(orgId, "demo-world-test-attention", async (tx) => {
+      const r = await tx.execute(
+        sql`SELECT app FROM kernel.app_attention_items
+            WHERE org_id = ${orgId} AND user_id = ${userId}::uuid AND error IS NULL`,
+      )
+      return (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Array<{
+        app: string
+      }>
+    })
+    expect(stored.map((r) => r.app)).toEqual(expect.arrayContaining(["tickets", "knowledge"]))
+
+    const actor = await actorFor(seedContext({ orgId, now: BASE_TIME }), userId)
+    const feed = await aggregateAttentionItems({ orgId, actor })
+    expect(feed.errors ?? []).toEqual([])
+    const count = (app: string) => feed.items.filter((i) => i.app === app).length
+    expect(count("tickets")).toBeGreaterThan(0)
+    expect(count("knowledge")).toBeGreaterThan(0)
   })
 
   // THE TWO LAYERS AGREE ON THE WORLD. The activity timeline points at threads

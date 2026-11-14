@@ -23,7 +23,9 @@ test.describe("the demo welcome popup on a phone", () => {
     await expect(dialog).toHaveAttribute("data-variant", "sheet")
     await expect(dialog).toHaveAttribute("data-step", "agents")
     await expect(page.getByTestId("demo-welcome-handle")).toBeVisible()
-    await expect(page.getByTestId("demo-welcome-example")).toContainText("example company")
+    await expect(page.getByTestId("demo-welcome").getByTestId("demo-example-line")).toContainText(
+      "example company",
+    )
     const viewport = page.viewportSize() ?? { width: 390, height: 844 }
 
     // The sheet sits on the bottom edge, full width.

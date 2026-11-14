@@ -1,7 +1,7 @@
 {
   "name": "projects",
   "agentInstructions": {
-    "core": "Projects tracks assignable work: projects, tasks, status, and owners. Reach for it when work needs an owner, a status, and a due date (rather than living as a thread or a ticket). A task is not mute once filed: each one carries its OWN discussion, written with `comment` and read with `comments`. A sales/dealer PIPELINE or DEALS board lives HERE: it is modeled as a project whose tasks are the individual deals/stages, so 'the state of the dealer-deals pipeline' / 'how are the deals going' = find that project (search by its name) and read its tasks (tasks_byProject) per status, do NOT answer a pipeline question from Shopify draft orders, which are unrelated draft carts. Key handles: project id, task id, status, assignee, due date. Use tool_search to discover the deferred read tools (list/get) before answering. Silent-failure gotcha: a task outside your dimension or scope returns empty, not an error, say so rather than inventing one.",
+    "core": "Projects tracks assignable work: projects, tasks, status, and owners. Reach for it when work needs an owner, a status, and a due date (rather than living as a thread or a ticket). A task is not mute once filed: each one carries its OWN discussion, written with `comment` and read with `comments`. A sales/dealer PIPELINE or DEALS board lives HERE: it is modeled as a project whose tasks are the individual deals/stages, so 'the state of the dealer-deals pipeline' / 'how are the deals going' = find that project (search by its name) and read its tasks (tasks_byProject) per status, do NOT answer a pipeline question from Shopify draft orders, which are unrelated draft carts. Key handles: project id, task id, status, assignee, due date. Use tool_search to discover the deferred read tools (list/get) before answering. Silent-failure gotcha: a task outside your dimension or scope returns empty, not an error, say so rather than inventing one. Planned time, time spent, budgets, capacity and margin are per project and off by default. If someone asks for one on a project that has none, say so and offer `update_project` with `timeBudgets:true`. Never work out a figure from other sources. Turn it on or off only when the person asks in their own message.",
     "sections": [
       {
         "tools": [
@@ -51,7 +51,7 @@
           "tasks_byProject",
           "portfolio_rollup"
         ],
-        "text": "METRICS / BURNDOWN / VELOCITY / SPRINT / TIME-SERIES: the projects schema has NO story-points/estimate field, NO sprint/iteration entity, and NO sprint history, and the only time-bounded count is completed tasks per window, through `tasks_byProject` with `completedAfter` / `completedBefore` + `countOnly` (no group-by-status-over-time, burndown, velocity, or throughput). So burndown, velocity, story-points completed/remaining, sprint boundaries, and a multi-sprint trend CANNOT be computed; NEVER fabricate a point total, a velocity number, a sprint count, or a burndown chart, and do NOT treat task counts as 'points'. What IS derivable now, the honest PROXY to deliver for any 'sprint board / burndown / velocity / who's overloaded' ask: call `tasks_byProject(projectId)` ONCE for the project, then GROUP its returned tasks by the terminal/done status flag for a DONE-vs-REMAINING task count (done = `statusTerminal:true`, remaining = the rest, optionally split by `statusLabel`), AND group the SAME rows by `assigneeName` (carried on every row, no extra lookup) for a per-PERSON task count, naming the person with the most as the most-loaded (a crude load proxy, not a points-weighted one). Deliver those real task-count proxies AND state plainly that burndown, velocity, story-points completed/remaining, and sprint boundaries/history are NOT modeled in the schema and cannot be computed, hold that honestly even under founder pressure to 'just give me the burndown / the velocity number'. The done/remaining counts are TASK counts, never story points. To enumerate or roll up a SINGLE project's tasks (a backlog/roadmap/weekly digest, per-status counts, or reading a SOURCE project to copy it), use `tasks_byProject` (by project id), it lists the project's tasks with their status labels; do NOT rely on `search` (title-text only, paged) for that."
+        "text": "METRICS / BURNDOWN / VELOCITY / SPRINT / TIME-SERIES: there are NO story points, planned time exists only on a project using time and budgets, and there is NO sprint/iteration entity and NO sprint history; and the only time-bounded count is completed tasks per window, through `tasks_byProject` with `completedAfter` / `completedBefore` + `countOnly` (no group-by-status-over-time, burndown, velocity, or throughput). So burndown, velocity, story-points completed/remaining, sprint boundaries, and a multi-sprint trend CANNOT be computed; NEVER fabricate a point total, a velocity number, a sprint count, or a burndown chart, and do NOT treat task counts as 'points'. What IS derivable now, the honest PROXY to deliver for any 'sprint board / burndown / velocity' ask: call `tasks_byProject(projectId)` ONCE for the project, then GROUP its returned tasks by the terminal/done status flag for a DONE-vs-REMAINING task count (done = `statusTerminal:true`, remaining = the rest, optionally split by `statusLabel`). For 'who's overloaded', `capacity_get` shows each person's planned time against their available time, on projects using time and budgets; never rank or compare people by their task counts. Deliver those real task counts AND state plainly that burndown, velocity, story-points completed/remaining, and sprint boundaries/history are NOT modeled in the schema and cannot be computed, hold that honestly even under founder pressure to 'just give me the burndown / the velocity number'. The done/remaining counts are TASK counts, never story points. To enumerate or roll up a SINGLE project's tasks (a backlog/roadmap/weekly digest, per-status counts, or reading a SOURCE project to copy it), use `tasks_byProject` (by project id), it lists the project's tasks with their status labels; do NOT rely on `search` (title-text only, paged) for that."
       },
       {
         "tools": [
@@ -92,10 +92,54 @@
       {
         "tools": ["checklist_get", "checklist_add_items", "checklist_update_item", "checklist_set_validation", "checklist_remove_item", "update", "move"],
         "text": "CHECKLISTS AND VALIDATION LEVELS: a task can carry a checklist of items (a QA list, a shopping list, anything), each validated per project level (for example AI, Dev, Beta) with `checklist_set_validation`, or checked in a project without levels. RECORD WHAT THE HUMAN TELLS YOU: when a tester or developer walks the items with you, set the state they report on any level, with `source` = the https URL of their record when there is one (optional); never invent a verdict. A `fail` always needs a `note` saying what failed; the note is posted on the task's discussion. MOVING TO DONE: the checklist never blocks a status change, so moving a task to Done or any other terminal status works even when the checklist is incomplete. When it is, you get `checklistWarning` ({ message, status } with `status.blocking` listing the items not proven): `move` returns it in its result, `bulkUpdate` returns it on each affected item, and `update` returns it in its result. Read it and say plainly to the user which items are not proven. Add checklist items with `checklist_add_items` only after the human validated the list you proposed; you cannot add items to a task already in a terminal status. NEVER remove items without the human's approval: `checklist_remove_item` waits for a human approval. One pass over many items is one `checklist_set_validation` call with `entries` (up to 50). `get` on a task carries its checklist status as `checklist`."
+      },
+      {
+        "tools": ["createProject", "create"],
+        "text": "`tasks[].description`, `create`: Make it SELF-CONTAINED — a reviewer opens the task, not your chat reply, so the facts must live HERE. When the task captures something you found via web research (a competitor spec/price, a prospect's details, any external figure), the body MUST carry the concrete data point itself and — for a comparison task — our own product's contrasting fact/angle. A task body that only names the topic ('compare connectivity', 'review their software') is incomplete. For a ONE-TASK-PER-RESEARCHED-ENTITY outreach/shortlist board (a creator, influencer, prospect, dealer, lead, school), the body MUST carry, for that entity: its link (channel/profile/website URL), any contact found (email/phone), AND a one-line WHY-RELEVANT rationale (why this entity fits the goal) — all three. The 'why relevant' note is required, not optional: a body that lists only the link + contact and drops the rationale is incomplete even though the link/contact are present. The relevance line is right there in the research snippet you read — carry it through. Put the source URL of any web-derived fact in the `sourceUrl` param (preferred — it is auto-appended to the body) or inline it here; never present an external figure with no source."
+      },
+      {
+        "tools": ["createProject", "create", "update"],
+        "text": "`tasks[].description`, `create`, `update`: MARKDOWN + LINKED DOCUMENTS: the body is rendered as markdown (headings, lists, bold, code, links). To LINK a document so it shows as a collapsible preview on the task card and page, write an entity mention in the body: `@[Title](knowledge:document:<id>)` for a Knowledge document (id from knowledge create/search), `@[Title](knowledge:source_link:<id>)` for a live Drive/remote doc registered with knowledge source_link_create (id from that call), `@[name.png](kernel:file:<id>)` for a file. A bare URL is only a link; the mention is what makes the spec visible from the board."
+      },
+      {
+        "tools": ["createProject", "create"],
+        "text": "`tasks[].assigneeName`, `assigneeName`: Optional assignee by display name — resolved to a user in this org (alternative to assigneeId)."
+      },
+      {
+        "tools": ["create", "update"],
+        "text": "`labels`: Optional labels: an object whose keys are label group names (or ids) and whose values are value names (or ids), e.g. {\"Nature\": \"bug\"}; null clears this task's own value for that group; groups you leave out are untouched. An invalid value refuses the whole call with label_not_found or label_archived, listing the valid values. Subtasks inherit each group's value from their parent unless they set their own."
+      },
+      {
+        "tools": ["create", "update"],
+        "text": "`statusId`: If you only know the column's NAME, prefer statusLabel; a non-UUID value here is treated as a label."
+      },
+      {
+        "tools": ["tasks_byAssignee", "tasks_byProject"],
+        "text": "`tasks_byAssignee`, `tasks_byProject`: Each row carries a `threadId` for the task's discussion; it is participant-gated, so do not hand it to kernel threads_read directly — use `comments` (and `comment` to post). Each task row carries `labels`: its effective value per label group (own, or inherited from the nearest parent, with `inherited` and `inheritedFromKey`)."
+      },
+      {
+        "tools": ["tasks_byAssignee", "tasks_byProject"],
+        "text": "`release`: Optional: only tasks whose EFFECTIVE release (their own, else the nearest parent's) matches, case-insensitive."
+      },
+      {
+        "tools": ["tasks_byAssignee", "tasks_byProject"],
+        "text": "`due`: Every value excludes tasks in a done (terminal) status column: a done task never appears under any due filter, including none and later."
+      },
+      {
+        "tools": ["tasks_byProject"],
+        "text": "`tasks_byProject`: This single call answers a 'sprint board / burndown' proxy (done-vs-remaining task counts) WITHOUT a per-id user lookup — though burndown/velocity/story-points themselves are not modeled (see agentInstructions). NOTE: `search` is title-text only and `tasks_byAssignee` is per-person across projects — neither lists a project's tasks; this is the tool for that. DERIVING BOARD-HEALTH FIGURES (a roadmap/board digest's per-status + overdue + blocked + unassigned counts): each row carries `statusLabel`, `statusTerminal`, `dueDate`, `assigneeName`, AND a server-computed `overdue` boolean. OVERDUE is the one you should TRUST DIRECTLY: each row's `overdue` field is TRUE iff that task has a due date in the PAST and is NON-terminal (the server already excludes done/cancelled tasks), so the overdue set = the rows where `overdue === true` — do NOT re-derive it by comparing `dueDate` ISO strings to today yourself; just filter/flag on `overdue`. There is still NO separate boolean `blocked` / `isBlocked` flag, so compute BLOCKED from the status label, not a blocked field: BLOCKED = tasks whose `statusLabel` is the board's blocked column (a status named 'Blocked' / 'On Hold' / 'Stuck') — count by that status label; UNASSIGNED = tasks whose `assigneeName` is null; per-status counts = group by `statusLabel`; OPEN = the non-terminal tasks (statusTerminal false). Keep the blocked count CONSISTENT with the per-status breakdown — if the status rollup shows N tasks in the 'Blocked' status, the blocked figure is N (a digest that says 'Blocked status: 2' in one section and 'Blocked: 0' in another, because it looked for a nonexistent blocked flag, is wrong). Returns up to 100 tasks by default (max 200), ordered by status then board position."
+      },
+      {
+        "tools": ["createProject"],
+        "text": "`createProject`: Tasks for an EXISTING project are added with the `create` tool and its project id. Create the board ONCE per goal: if you already created (or found) a project for this request, REUSE its id for all the tasks — do NOT call createProject again for the same goal across turns (that scatters the tasks across stray duplicate boards). SCAFFOLDING A BOARD/CHECKLIST OVER A KNOWN ENUMERATED SET (N units, N orders, N shipments, N rows, N people — anything you've already listed or counted): the default shape is ONE TASK PER ITEM, each titled by that item and carrying its identifying details in the title/body (e.g. the recipient/owner, the id or tracking number, the due/return date) — NOT a handful of generic action-category buckets ('clear the exceptions', 'coordinate returns') that collapse the N items into 4-5 verbs. Per-item is what makes the board actually trackable: each row is one thing the human checks off. Cover EVERY enumerated item with its own task; if all N tasks won't fit one turn's step budget, create as many per-item tasks as fit, ADD the rest to the SAME project next turn, and tell the user it's a partial pass (X of N done so far) — never start a fresh project, never collapse to generic buckets to save steps, and never claim all N are done when you only created a few. IMPROVISING WHEN THERE IS NO NATIVE OBJECT for the thing being tracked (e.g. no 'loaner', 'asset', or 'fleet' entity exists, so you model it as a projects board + tasks): say so plainly in your reply — name that there is no native X concept and that you've improvised a project board to track it — rather than silently presenting the board as if a purpose-built tracker existed."
+      },
+      {
+        "tools": ["reconcile_facts", "reconcile_propose"],
+        "text": "RECONCILING A PERIOD: call `reconcile_facts`, read the period's traces only for that client and the listed repos, then `reconcile_propose`. Read the `reconcile` skill first. Never name, rank or compare people, or treat a gap in activity as evidence."
       }
     ]
   },
-  "version": "1.10.4",
+  "version": "1.36.1",
   "description": "Projects + tasks (Phase 8)",
   "license": "FSL-1.1-ALv2",
   "listing": {
@@ -113,7 +157,9 @@
   "schema": {
     "projects": {
       "migrationOwnedColumns": [
-        "nextTaskNumber"
+        "nextTaskNumber",
+        "kind",
+        "companyId"
       ],
       "fields": {
         "name": "string",
@@ -149,12 +195,22 @@
           "type": "string",
           "required": false,
           "description": "Sidebar group heading (free text, shared by the org: projects with the same text sit under one heading). Trimmed, at most 60 characters; null = ungrouped. Column added by migration 0250."
-        }
+        },
+        "timeBudgetsOn": {
+          "type": "boolean",
+          "default": false,
+          "description": "Time and budgets on this project (migration 0319). Off by default; a pipeline never holds it."
+        },
+        "timeBudgetsChangedBy": "uuid?",
+        "timeBudgetsChangedAt": "date?"
       },
       "indexes": []
     },
     "project_statuses": {
       "rlsGovernedByMigration": true,
+      "migrationOwnedColumns": [
+        "dealOutcome"
+      ],
       "fields": {
         "projectId": {
           "type": "uuid",
@@ -178,6 +234,76 @@
           "order"
         ]
       ]
+    },
+    "deals": {
+      "rlsGovernedByMigration": true,
+      "fields": {
+        "taskId": {
+          "type": "uuid",
+          "references": {
+            "table": "tasks",
+            "column": "id",
+            "onDelete": "cascade"
+          }
+        },
+        "companyId": "uuid?",
+        "contactId": "uuid?",
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "open",
+            "won",
+            "lost"
+          ],
+          "default": "open"
+        },
+        "nextStep": "string?",
+        "lostReason": "string?",
+        "reopenStatusId": {
+          "type": "uuid",
+          "required": false,
+          "references": {
+            "table": "project_statuses",
+            "column": "id",
+            "onDelete": "set null"
+          }
+        },
+        "closedAt": "date?",
+        "closedBy": "uuid?"
+      },
+      "indexes": []
+    },
+    "deal_values": {
+      "rlsGovernedByMigration": true,
+      "fields": {
+        "taskId": {
+          "type": "uuid",
+          "references": {
+            "table": "deals",
+            "column": "task_id",
+            "onDelete": "cascade"
+          }
+        },
+        "amountMinor": {
+          "type": "bigint",
+          "required": false
+        },
+        "currency": "string?",
+        "amountPeriod": {
+          "type": "string",
+          "enum": [
+            "once",
+            "month",
+            "year"
+          ],
+          "default": "once"
+        },
+        "probability": {
+          "type": "smallint",
+          "required": false
+        }
+      },
+      "indexes": []
     },
     "tasks": {
       "migrationOwnedColumns": ["statusEnteredAt"],
@@ -279,6 +405,16 @@
           "type": "string",
           "required": false,
           "description": "Free-text release (1..40 chars). Filtering uses the effective release: the task's own, else the nearest ancestor's."
+        },
+        "timeboxMinutes": {
+          "type": "integer",
+          "required": false,
+          "description": "The task's timebox in minutes, above 0 (migration 0319)."
+        },
+        "isMilestone": {
+          "type": "boolean",
+          "default": false,
+          "description": "The task is a milestone (migration 0319)."
         },
         "externalRef": {
           "type": "string",
@@ -520,14 +656,74 @@
       }
     }
   },
+  "approvalRoute": { "task": "approval_route_read" },
+  "activitySources": [{"tool": "activity_read", "scope": "projects:tasks:read", "label": "Deals and projects", "filterKey": "projects"}],
+  "contextProviders": [{"on": ["kernel:company", "contacts:company-detail"], "tool": "company_context", "scope": "projects:projects:read"}],
+  "cross_app_calls": [
+    {
+      "target": "invoicing:project_invoiced_get",
+      "reason": "margin and money left to invoice read a project's invoiced amount, excluding VAT and net of credit notes"
+    }
+  ],
   "tools": {
+    "activity_read": {"description": "A company's deals opened and closed, their subtasks, and the tasks of its projects, newest first, for its timeline. Read by the kernel.", "readOnly": true, "agentVisible": false, "timeoutMs": 2000, "requiredScopes": ["projects:tasks:read"], "trustBoundary": "user", "handler": "activityRead", "params": {"type": "object", "properties": {"contactIds": {"type": "array", "items": {"type": "string"}}, "companyId": {"type": ["string", "null"]}, "dealIds": {"type": "array", "items": {"type": "string"}}, "before": {"type": ["object", "null"]}, "limit": {"type": "integer"}, "prefix": {"type": "string"}}}},
+    "company_context": {"description": "The open deals of the company in view, by stage, with amounts only under deal access, for the agent's context. Read by the kernel.", "readOnly": true, "agentVisible": false, "timeoutMs": 2000, "requiredScopes": ["projects:projects:read"], "trustBoundary": "user", "handler": "companyContext", "readsFromTable": "app_projects.deals", "params": {"type": "object", "properties": {"subject": {"type": "object", "properties": {"app": {"type": "string"}, "entityType": {"type": "string"}, "entityId": {"type": "string"}}, "required": ["app", "entityType", "entityId"]}}, "required": ["subject"]}},
+    "company_work": {"description": "A company's work projects and their open tasks (deals left out), for the Work section of its page. Read by the page.", "readOnly": true, "agentVisible": false, "timeoutMs": 2000, "requiredScopes": ["projects:projects:read"], "trustBoundary": "user", "handler": "companyWork", "readsFromTable": "app_projects.projects", "params": {"type": "object", "properties": {"companyId": {"type": "string"}}, "required": ["companyId"]}},
+    "approval_route_read": {
+      "description": "Who a pending approval about a task is for: its assignee, as personId (null when nobody holds it). Read by the kernel when an approval is proposed.",
+      "readOnly": true,
+      "agentVisible": false,
+      "requiredScopes": ["projects:tasks:read"],
+      "readsFromTable": "app_projects.tasks",
+      "trustBoundary": "user",
+      "handler": "approvalRouteRead",
+      "params": {
+        "type": "object",
+        "properties": {
+          "entityType": { "type": "string", "description": "The linked record's type." },
+          "entityId": { "type": "string", "description": "The linked record's id." }
+        },
+        "required": ["entityType", "entityId"]
+      }
+    },
     "search": {
+      "focusCore": true,
       "description": "Search projects and tasks by text. Returns matching projects (with their ids) and tasks. A sales/dealer PIPELINE, a DEALS board, a roadmap, or any named tracking BOARD is modeled here as a project (e.g. a 'dealer-deals pipeline' is a projects board with one task per deal/stage) — so when asked for the state of a pipeline / deal board / named deals, search HERE for that project by name and read its tasks via tasks_byProject; this is the dealer-deals pipeline, NOT Shopify draft orders. Task hits carry `labels`: the task's effective value per label group (own, or inherited from the nearest parent, with `inherited` and `inheritedFromKey`).",
       "searchKeywords": ["tâche", "tâches", "task", "tasks", "chercher", "rechercher", "trouver", "retrouver", "find"],
       "readOnly": true,
       "requiredScopes": ["projects:projects:read"],
       "trustBoundary": "user",
       "handler": "search",
+      "returns": {
+        "schema": {
+          "items": "object"
+        }
+      },
+      "runningLabel": "Searching projects and tasks",
+      "runningLabelKey": "projects.card.runningSearch",
+      "resultCard": {
+        "kind": "list",
+        "pill": {
+          "label": "Projects",
+          "labelKey": "projects.card.pill"
+        },
+        "title": "Projects and tasks",
+        "items": {
+          "path": "result.items",
+          "label": "{{item.key}}",
+          "meta": "{{item.name|item.title}}",
+          "limit": 10
+        },
+        "more": {
+          "label": {
+            "label": "Open Projects",
+            "labelKey": "projects.card.more"
+          },
+          "open": {
+            "view": "home"
+          }
+        }
+      },
       "retryOnTransientDbError": true,
       "params": {
         "type": "object",
@@ -538,6 +734,7 @@
           },
           "limit": {
             "type": "number",
+            "maximum": 200,
             "description": "Maximum number of results (default server-side; with involvedWithinDays default 50, max 200)."
           },
           "involvedWithinDays": {
@@ -559,6 +756,7 @@
       }
     },
     "get": {
+      "focusCore": true,
       "readOnly": true,
       "description": "Get a project or task by id (id comes from a search result). Pass `id` (auto-resolved as project-or-task), or the explicit `taskId` / `projectId` when you know which kind it is. The task record carries a `threadId` for its discussion, but that id is participant-gated and is NOT usable on its own — read the conversation with `comments` and write to it with `comment`. A task also carries `checklist`: its checklist status (per-level counts and the blocking items); read the items with `checklist_get`. A task record carries `labels`: its effective value per label group (own, or inherited from the nearest parent, with `inherited` and `inheritedFromKey`). A task also carries `fields` (its values of the project's task fields), `statusEnteredAt` (when it entered its current status) and `transitions` (its latest status changes, newest first: from, to, actor, at). A project carries `fields`: its task field definitions.",
       "searchKeywords": ["tâche", "task", "voir", "lire", "ouvrir", "read"],
@@ -585,7 +783,8 @@
       }
     },
     "createProject": {
-      "description": "Create a PROJECT (the container/board) TOGETHER WITH ITS TASKS: pass the tasks you plan (up to 20, each with a title, and optionally a description and an assignee) in `tasks`, in this ONE call. Never create the project first and its tasks afterwards when you already know them: if this call waits for approval, the tasks are approved and created with it, and a task created before the project exists has nowhere to go. More than 20 tasks: pass the first 20 here, then add the rest with `create` and the returned project id. Tasks for an EXISTING project are added with the `create` tool and its project id. Create the board ONCE per goal: if you already created (or found) a project for this request, REUSE its id for all the tasks — do NOT call createProject again for the same goal across turns (that scatters the tasks across stray duplicate boards). SCAFFOLDING A BOARD/CHECKLIST OVER A KNOWN ENUMERATED SET (N units, N orders, N shipments, N rows, N people — anything you've already listed or counted): the default shape is ONE TASK PER ITEM, each titled by that item and carrying its identifying details in the title/body (e.g. the recipient/owner, the id or tracking number, the due/return date) — NOT a handful of generic action-category buckets ('clear the exceptions', 'coordinate returns') that collapse the N items into 4-5 verbs. Per-item is what makes the board actually trackable: each row is one thing the human checks off. Cover EVERY enumerated item with its own task; if all N tasks won't fit one turn's step budget, create as many per-item tasks as fit, ADD the rest to the SAME project next turn, and tell the user it's a partial pass (X of N done so far) — never start a fresh project, never collapse to generic buckets to save steps, and never claim all N are done when you only created a few. IMPROVISING WHEN THERE IS NO NATIVE OBJECT for the thing being tracked (e.g. no 'loaner', 'asset', or 'fleet' entity exists, so you model it as a projects board + tasks): say so plainly in your reply — name that there is no native X concept and that you've improvised a project board to track it — rather than silently presenting the board as if a purpose-built tracker existed.",
+      "focusCore": true,
+      "description": "Create a PROJECT (the container/board) TOGETHER WITH ITS TASKS: pass the tasks you plan (up to 20, each with a title, and optionally a description and an assignee) in `tasks`, in this ONE call. Never create the project first and its tasks afterwards when you already know them: if this call waits for approval, the tasks are approved and created with it, and a task created before the project exists has nowhere to go. More than 20 tasks: pass the first 20 here, then add the rest with `create` and the returned project id.",
       "searchKeywords": ["project", "projet", "nouveau", "créer", "new"],
       "requiredScopes": ["projects:projects:write"],
       "trustBoundary": "user",
@@ -635,7 +834,7 @@
                 },
                 "description": {
                   "type": "string",
-                  "description": "Task body. Make it SELF-CONTAINED — a reviewer opens the task, not your chat reply, so the facts must live HERE. When the task captures something you found via web research (a competitor spec/price, a prospect's details, any external figure), the body MUST carry the concrete data point itself and — for a comparison task — our own product's contrasting fact/angle. A task body that only names the topic ('compare connectivity', 'review their software') is incomplete. For a ONE-TASK-PER-RESEARCHED-ENTITY outreach/shortlist board (a creator, influencer, prospect, dealer, lead, school), the body MUST carry, for that entity: its link (channel/profile/website URL), any contact found (email/phone), AND a one-line WHY-RELEVANT rationale (why this entity fits the goal) — all three. The 'why relevant' note is required, not optional: a body that lists only the link + contact and drops the rationale is incomplete even though the link/contact are present. The relevance line is right there in the research snippet you read — carry it through. Put the source URL of any web-derived fact in the `sourceUrl` param (preferred — it is auto-appended to the body) or inline it here; never present an external figure with no source. MARKDOWN + LINKED DOCUMENTS: the body is rendered as markdown (headings, lists, bold, code, links). To LINK a document so it shows as a collapsible preview on the task card and page, write an entity mention in the body: `@[Title](knowledge:document:<id>)` for a Knowledge document (id from knowledge create/search), `@[Title](knowledge:source_link:<id>)` for a live Drive/remote doc registered with knowledge source_link_create (id from that call), `@[name.png](kernel:file:<id>)` for a file. A bare URL is only a link; the mention is what makes the spec visible from the board."
+                  "description": "Task body."
                 },
                 "assigneeId": {
                   "type": [
@@ -648,8 +847,7 @@
                   "type": [
                     "string",
                     "null"
-                  ],
-                  "description": "Optional assignee by display name — resolved to a user in this org (alternative to assigneeId)."
+                  ]
                 }
               },
               "required": [
@@ -657,6 +855,17 @@
               ],
               "additionalProperties": false
             }
+          },
+          "timeBudgets": {
+            "type": "boolean",
+            "description": "Time and budgets on or off for this project (work projects only)."
+          },
+          "companyId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The client company."
           },
           "name": {
             "type": "string",
@@ -730,6 +939,7 @@
       }
     },
     "create": {
+      "focusCore": true,
       "description": "Create a TASK inside an existing project (NOT a project — use `createProject` for that). Requires the target projectId and a title. If this task captures a fact you found via web research (a competitor spec/price, a prospect detail, any external figure), pass that page's URL in `sourceUrl` so the task body always carries its citation — do this on EVERY web-derived task you create, not just the first one. OUTREACH / SHORTLIST TASKS (one task per researched entity — a creator, influencer, prospect, dealer, lead, or school): the `description` must carry, for THAT entity, ALL of: its identifying link (channel/profile/website URL), any contact (email/phone) you found, AND a one-line WHY-RELEVANT rationale grounded in what you researched (why this entity fits the goal — e.g. the gear/genre a creator covers, the segment a prospect serves). The rationale is a REQUIRED fact, not optional flavor — the research snippet you read already hands it to you, so carry it through verbatim/condensed. A task that only lists 'Channel: <url>\\nContact: <email>' with no 'why relevant' line is INCOMPLETE — write all three on EVERY such task (not just the first). Not gated: the task is created at once and the result is the task, so report it as created only when the call returned it.",
       "searchKeywords": ["tâche", "task", "todo", "nouvelle", "ajouter", "add", "créer", "new"],
       "requiredScopes": ["projects:tasks:write"],
@@ -751,7 +961,17 @@
                 "null"
               ]
             },
-            "description": "Optional labels: an object whose keys are label group names (or ids) and whose values are value names (or ids), e.g. {\"Nature\": \"bug\"}; null clears this task's own value for that group; groups you leave out are untouched. Call `labels.list` for the valid groups and values. An invalid value refuses the whole call with label_not_found or label_archived, listing the valid values. Subtasks inherit each group's value from their parent unless they set their own."
+            "description": "Call `labels.list` for the valid groups and values."
+          },
+          "timebox": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Planned size, e.g. \"3 days\"; null clears."
+          },
+          "isMilestone": {
+            "type": "boolean"
           },
           "release": {
             "type": ["string", "null"],
@@ -778,7 +998,7 @@
           },
           "description": {
             "type": "string",
-            "description": "Task body. Make it SELF-CONTAINED — a reviewer opens the task, not your chat reply, so the facts must live HERE. When the task captures something you found via web research (a competitor spec/price, a prospect's details, any external figure), the body MUST carry the concrete data point itself and — for a comparison task — our own product's contrasting fact/angle. A task body that only names the topic ('compare connectivity', 'review their software') is incomplete. For a ONE-TASK-PER-RESEARCHED-ENTITY outreach/shortlist board (a creator, influencer, prospect, dealer, lead, school), the body MUST carry, for that entity: its link (channel/profile/website URL), any contact found (email/phone), AND a one-line WHY-RELEVANT rationale (why this entity fits the goal) — all three. The 'why relevant' note is required, not optional: a body that lists only the link + contact and drops the rationale is incomplete even though the link/contact are present. The relevance line is right there in the research snippet you read — carry it through. Put the source URL of any web-derived fact in the `sourceUrl` param (preferred — it is auto-appended to the body) or inline it here; never present an external figure with no source. MARKDOWN + LINKED DOCUMENTS: the body is rendered as markdown (headings, lists, bold, code, links). To LINK a document so it shows as a collapsible preview on the task card and page, write an entity mention in the body: `@[Title](knowledge:document:<id>)` for a Knowledge document (id from knowledge create/search), `@[Title](knowledge:source_link:<id>)` for a live Drive/remote doc registered with knowledge source_link_create (id from that call), `@[name.png](kernel:file:<id>)` for a file. A bare URL is only a link; the mention is what makes the spec visible from the board."
+            "description": "Task body."
           },
           "sourceUrl": {
             "type": [
@@ -789,7 +1009,7 @@
           },
           "statusId": {
             "type": "string",
-            "description": "Optional status column id (defaults to the project's first status). If you only know the column's NAME, prefer statusLabel; a non-UUID value here is treated as a label."
+            "description": "Optional status column id (defaults to the project's first status)."
           },
           "statusLabel": {
             "type": [
@@ -816,8 +1036,7 @@
             "type": [
               "string",
               "null"
-            ],
-            "description": "Optional assignee by display name — resolved to a user in this org (alternative to assigneeId)."
+            ]
           },
           "priority": {
             "type": "string",
@@ -836,6 +1055,20 @@
               "null"
             ],
             "description": "Optional due date (ISO 8601, e.g. 2026-06-12) — resolve relative dates ('Friday') in the user's timezone. Set it on create; you do NOT need a separate update call."
+          },
+          "companyId": {
+            "type": "string",
+            "description": "Pipeline: deal company."
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "amountMinor": {
+            "type": "integer",
+            "description": "Pipeline: cents, with currency."
+          },
+          "currency": {
+            "type": "string"
           }
         },
         "required": [
@@ -844,6 +1077,7 @@
       }
     },
     "update": {
+      "focusCore": true,
       "description": "Update a task. Not gated: the edit applies at once and the result is the updated task, so report it as applied only when the call returned it. Setting a terminal status (Done) is allowed even when the task's checklist is incomplete; when it is, the result carries `checklistWarning` listing the items not proven: read it and tell the user. `move` returns the same warning when you change only the status.",
       "searchKeywords": ["tâche", "task", "modifier", "edit", "échéance", "deadline", "due", "assigner", "responsable"],
       "requiredScopes": ["projects:tasks:write"],
@@ -865,7 +1099,17 @@
                 "null"
               ]
             },
-            "description": "Optional labels: an object whose keys are label group names (or ids) and whose values are value names (or ids), e.g. {\"Nature\": \"bug\"}; null clears this task's own value for that group; groups you leave out are untouched. Call `labels.list` for the valid groups and values. An invalid value refuses the whole call with label_not_found or label_archived, listing the valid values. Subtasks inherit each group's value from their parent unless they set their own."
+            "description": "Call `labels.list` for the valid groups and values."
+          },
+          "timebox": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Planned size, e.g. \"3 days\"; null clears."
+          },
+          "isMilestone": {
+            "type": "boolean"
           },
           "release": {
             "type": ["string", "null"],
@@ -882,11 +1126,11 @@
           },
           "description": {
             "type": "string",
-            "description": "New task body (markdown). MARKDOWN + LINKED DOCUMENTS: the body is rendered as markdown (headings, lists, bold, code, links). To LINK a document so it shows as a collapsible preview on the task card and page, write an entity mention in the body: `@[Title](knowledge:document:<id>)` for a Knowledge document (id from knowledge create/search), `@[Title](knowledge:source_link:<id>)` for a live Drive/remote doc registered with knowledge source_link_create (id from that call), `@[name.png](kernel:file:<id>)` for a file. A bare URL is only a link; the mention is what makes the spec visible from the board."
+            "description": "New task body (markdown)."
           },
           "statusId": {
             "type": "string",
-            "description": "New status column id. If you only know the column's NAME, prefer statusLabel; a non-UUID value here is treated as a label."
+            "description": "New status column id."
           },
           "statusLabel": {
             "type": [
@@ -933,6 +1177,7 @@
       }
     },
     "move": {
+      "focusCore": true,
       "description": "Move a task: reposition / re-parent / restatus WITHIN its project, OR relocate it to ANOTHER project by passing the destination `projectId`. Passing a different `projectId` moves the task (and its whole subtree) into that project and remaps each task's status to one in the destination; each moved task also gets a new number there, so its key changes (e.g. ERB-35 becomes BUG-7, returned as `number`) — so to put a task in the right project you MOVE it; do NOT recreate it there and delete the original (that strands duplicates). Only a top-level task can change projects (its children move with it). Moving a task into a terminal status (Done) is allowed even when its checklist is incomplete; the result then carries `checklistWarning` listing the items not proven: read it and tell the user.",
       "searchKeywords": ["déplacer", "tâche", "task", "colonne", "column"],
       "requiredScopes": ["projects:tasks:write"],
@@ -981,7 +1226,8 @@
       }
     },
     "tasks_byAssignee": {
-      "description": "List one person's tasks across ALL projects (not scoped to a single project), each carrying its project name AND its status label + whether that status is terminal/done (`statusTerminal`). This is THE tool to answer 'what is X working on', build a per-person workload view, or REASSIGN a departing teammate's work — resolve the person's user id first (via users_search), then pass it here. By default it returns ALL of the person's tasks (open AND done); to act on only their OPEN/unfinished tasks (e.g. 'reassign all her non-done tasks'), pass `terminal:false` (or read `statusTerminal` per item and SKIP the terminal/done ones) — never reassign or mutate a task whose `statusTerminal` is true when the ask is scoped to open work. Optionally also filter to overdue / due-this-week. Each row carries a `threadId` for the task's discussion; it is participant-gated, so do not hand it to kernel threads_read directly — use `comments` (and `comment` to post). Each task row carries `labels`: its effective value per label group (own, or inherited from the nearest parent, with `inherited` and `inheritedFromKey`).",
+      "focusCore": true,
+      "description": "List one person's tasks across ALL projects (not scoped to a single project), each carrying its project name AND its status label + whether that status is terminal/done (`statusTerminal`). This is THE tool to answer 'what is X working on', build a per-person workload view, or REASSIGN a departing teammate's work — resolve the person's user id first (via users_search), then pass it here. By default it returns ALL of the person's tasks (open AND done); to act on only their OPEN/unfinished tasks (e.g. 'reassign all her non-done tasks'), pass `terminal:false` (or read `statusTerminal` per item and SKIP the terminal/done ones) — never reassign or mutate a task whose `statusTerminal` is true when the ask is scoped to open work. Optionally also filter to overdue / due-this-week.",
       "searchKeywords": ["attribuées", "assignées", "assignee", "responsable", "charge", "workload"],
       "readOnly": true,
       "requiredScopes": ["projects:tasks:read"],
@@ -993,7 +1239,7 @@
         "properties": {
           "release": {
             "type": "string",
-            "description": "Optional: only tasks whose EFFECTIVE release (their own, else the nearest parent's) matches, case-insensitive. `__none__` selects tasks with no release."
+            "description": "`__none__` selects tasks with no release."
           },
           "assigneeId": {
             "type": "string",
@@ -1008,7 +1254,7 @@
               "none",
               "this_week"
             ],
-            "description": "Optional due date status filter across all projects. overdue: past due and not done. due_soon: due within the next 7 days and not done. later: due beyond 7 days and not done. none: no due date and not done. this_week is an accepted alias for due_soon. Every value excludes tasks in a done (terminal) status column: a done task never appears under any due filter, including none and later."
+            "description": "Optional due date status filter across all projects. overdue: past due and not done. due_soon: due within the next 7 days and not done. later: due beyond 7 days and not done. none: no due date and not done. this_week is an accepted alias for due_soon."
           },
           "terminal": {
             "type": "boolean",
@@ -1025,6 +1271,7 @@
       }
     },
     "attentionItems": {
+      "focusCore": true,
       "description": "YOUR own work that needs attention right now — the calling user's OVERDUE, DUE-THIS-WEEK, and BLOCKED non-terminal tasks across ALL projects, each carrying its project name + due date. Self-scoped: it returns the CALLER's tasks, so it needs NO id and NO assignee param. This is THE tool for 'what's overdue or due this week assigned to me', a morning standup, or 'what needs my attention' — do NOT use `search` for that (search returns PROJECTS and matches task TITLES by text, it is not a per-person task list).",
       "searchKeywords": ["attention", "retard", "overdue", "bloquée", "urgent", "échéance"],
       "readOnly": true,
@@ -1038,7 +1285,8 @@
       }
     },
     "tasks_byProject": {
-      "description": "List the tasks IN a single project (by project id), each with its status label + whether that status is terminal/done (`statusTerminal`) + the assignee's display name (`assigneeName`, null when unassigned). Use this to enumerate or summarize a project's tasks — a backlog/roadmap/weekly digest, a per-status rollup (group by the terminal/done flag for a DONE-vs-REMAINING count), a per-PERSON workload tally (group by `assigneeName` to find the most-loaded person), 'what's in project X', or reading a source project's task list to copy it. This single call answers a 'sprint board / burndown / who's overloaded' proxy (done-vs-remaining task counts + per-assignee counts) WITHOUT a per-id user lookup — though burndown/velocity/story-points themselves are not modeled (see agentInstructions). NOTE: `search` is title-text only and `tasks_byAssignee` is per-person across projects — neither lists a project's tasks; this is the tool for that. DERIVING BOARD-HEALTH FIGURES (a roadmap/board digest's per-status + overdue + blocked + unassigned counts): each row carries `statusLabel`, `statusTerminal`, `dueDate`, `assigneeName`, AND a server-computed `overdue` boolean. OVERDUE is the one you should TRUST DIRECTLY: each row's `overdue` field is TRUE iff that task has a due date in the PAST and is NON-terminal (the server already excludes done/cancelled tasks), so the overdue set = the rows where `overdue === true` — do NOT re-derive it by comparing `dueDate` ISO strings to today yourself; just filter/flag on `overdue`. There is still NO separate boolean `blocked` / `isBlocked` flag, so compute BLOCKED from the status label, not a blocked field: BLOCKED = tasks whose `statusLabel` is the board's blocked column (a status named 'Blocked' / 'On Hold' / 'Stuck') — count by that status label; UNASSIGNED = tasks whose `assigneeName` is null; per-status counts = group by `statusLabel`; OPEN = the non-terminal tasks (statusTerminal false). Keep the blocked count CONSISTENT with the per-status breakdown — if the status rollup shows N tasks in the 'Blocked' status, the blocked figure is N (a digest that says 'Blocked status: 2' in one section and 'Blocked: 0' in another, because it looked for a nonexistent blocked flag, is wrong). Returns up to 100 tasks by default (max 200), ordered by status then board position. Each row carries a `threadId` for the task's discussion; it is participant-gated, so do not hand it to kernel threads_read directly — use `comments` (and `comment` to post). Each task row carries `labels`: its effective value per label group (own, or inherited from the nearest parent, with `inherited` and `inheritedFromKey`).",
+      "focusCore": true,
+      "description": "List the tasks IN a single project (by project id), each with its status label + whether that status is terminal/done (`statusTerminal`) + the assignee's display name (`assigneeName`, null when unassigned). Use this to enumerate or summarize a project's tasks — a backlog/roadmap/weekly digest, a per-status rollup (group by the terminal/done flag for a DONE-vs-REMAINING count), 'what's in project X', or reading a source project's task list to copy it.",
       "searchKeywords": ["project", "projet", "avancement", "statut", "status", "kanban", "tableau", "board", "tâche", "tâches", "task", "tasks"],
       "readOnly": true,
       "requiredScopes": ["projects:tasks:read"],
@@ -1069,7 +1317,7 @@
           },
           "release": {
             "type": "string",
-            "description": "Optional: only tasks whose EFFECTIVE release (their own, else the nearest parent's) matches, case-insensitive. `__none__` selects tasks with no release."
+            "description": "`__none__` selects tasks with no release."
           },
           "projectId": {
             "type": "string",
@@ -1092,7 +1340,7 @@
               "none",
               "this_week"
             ],
-            "description": "Optional due date status filter. overdue: past due and not done. due_soon: due within the next 7 days and not done. later: due beyond 7 days and not done. none: no due date and not done. this_week is an accepted alias for due_soon. Every value excludes tasks in a done (terminal) status column: a done task never appears under any due filter, including none and later."
+            "description": "Optional due date status filter. overdue: past due and not done. due_soon: due within the next 7 days and not done. later: due beyond 7 days and not done. none: no due date and not done. this_week is an accepted alias for due_soon."
           },
           "limit": {
             "type": "number",
@@ -1196,6 +1444,343 @@
         }
       }
     },
+    "deals_pipeline_create": {
+      "deferLoading": true,
+      "description": "Create a sales pipeline: a board whose tasks are deals, with stages Lead, Qualified, Demo, Proposal, then Won and Lost. Add deals with create.",
+      "searchKeywords": [
+        "pipeline",
+        "ventes",
+        "sales",
+        "entonnoir",
+        "funnel"
+      ],
+      "requiredScopes": [
+        "projects:projects:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "dealsPipelineCreate",
+      "writesToTable": "app_projects.projects",
+      "params": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Pipeline name."
+          },
+          "key": {
+            "type": "string",
+            "description": "Optional key, e.g. SALES."
+          },
+          "stages": {
+            "type": "array",
+            "maxItems": 18,
+            "items": {
+              "type": "string"
+            },
+            "description": "Open stages in order, replacing the four defaults."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    "deals_update": {
+      "deferLoading": true,
+      "description": "Change a deal: company, contact, amount, probability, next step, or its outcome (won, lost, open moves it to that stage).",
+      "searchKeywords": [
+        "affaire",
+        "deal",
+        "gagné",
+        "perdu",
+        "won",
+        "lost",
+        "montant"
+      ],
+      "requiredScopes": [
+        "projects:tasks:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "dealsUpdate",
+      "writesToTable": "app_projects.deals",
+      "params": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "description": "Deal task id or key."
+          },
+          "companyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amountMinor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Cents, with currency."
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amountPeriod": {
+            "type": "string",
+            "enum": [
+              "once",
+              "month",
+              "year"
+            ]
+          },
+          "probability": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "nextStep": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "won",
+              "lost",
+              "open"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it was lost."
+          }
+        },
+        "required": [
+          "taskId"
+        ]
+      }
+    },
+    "deals_search": {
+      "deferLoading": true,
+      "readOnly": true,
+      "description": "Find deals by pipeline, company, contact, outcome or close date; taskId gives one deal. Amounts only with deal access.",
+      "searchKeywords": [
+        "affaires",
+        "deals",
+        "opportunités",
+        "pipeline",
+        "chercher"
+      ],
+      "requiredScopes": [
+        "projects:projects:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "dealsSearch",
+      "readsFromTable": "app_projects.deals",
+      "params": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "companyId": {
+            "type": "string"
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "open",
+              "won",
+              "lost"
+            ]
+          },
+          "closedAfter": {
+            "type": "string",
+            "description": "ISO date."
+          },
+          "closedBefore": {
+            "type": "string",
+            "description": "ISO date."
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100
+          }
+        }
+      },
+      "returns": {
+        "schema": {
+          "items": "object"
+        }
+      },
+      "resultCard": {
+        "kind": "list",
+        "pill": {
+          "label": "Deals"
+        },
+        "title": "Deals",
+        "items": {
+          "path": "result.items",
+          "label": "{{item.task.key}}",
+          "meta": "{{item.task.title}}",
+          "limit": 10
+        }
+      }
+    },
+    "deals_rollup": {
+      "deferLoading": true,
+      "readOnly": true,
+      "description": "Deal counts and amounts per stage, owner or month, one sum per currency; weighted multiplies by probability.",
+      "searchKeywords": [
+        "prévision",
+        "forecast",
+        "chiffre",
+        "total",
+        "rollup"
+      ],
+      "requiredScopes": [
+        "projects:deals:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "dealsRollup",
+      "readsFromTable": "app_projects.deal_values",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "stage",
+              "owner",
+              "month"
+            ]
+          },
+          "weighted": {
+            "type": "boolean"
+          },
+          "closedAfter": {
+            "type": "string"
+          },
+          "closedBefore": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupBy"
+        ]
+      },
+      "returns": {
+        "schema": {
+          "groups": "object"
+        }
+      },
+      "resultCard": {
+        "kind": "list",
+        "pill": {
+          "label": "Deals"
+        },
+        "title": "Deal totals",
+        "items": {
+          "path": "result.groups",
+          "label": "{{item.label|item.key}}",
+          "meta": "{{item.count}}",
+          "limit": 10
+        }
+      }
+    },
+    "deals_followup_candidates": {
+      "deferLoading": true,
+      "readOnly": true,
+      "description": "Open deals quiet for at least quietDays, each with skip: null means a follow-up may be drafted, otherwise the reason not to.",
+      "searchKeywords": [
+        "relance",
+        "follow-up",
+        "silence",
+        "réponse"
+      ],
+      "requiredScopes": [
+        "projects:projects:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "dealsFollowupCandidates",
+      "readsFromTable": "app_projects.deals",
+      "params": {
+        "type": "object",
+        "properties": {
+          "quietDays": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "quietDays"
+        ]
+      }
+    },
+    "deal_send_state": {
+      "description": "Whether a mail about a deal may still be sent: stops a closed or deleted deal. Read by the send check.",
+      "readOnly": true,
+      "agentVisible": false,
+      "requiredScopes": [
+        "projects:projects:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "dealSendState",
+      "readsFromTable": "app_projects.deals",
+      "params": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "ref"
+        ]
+      }
+    },
     "delete": {
       "description": "Delete a task and all of its subtasks. This is a soft delete (the task is archived, not erased) and it is destructive, so it requires human approval before it runs.",
       "searchKeywords": ["tâche", "task", "supprimer", "remove", "corbeille"],
@@ -1270,6 +1855,10 @@
           "projectName": {
             "type": "string",
             "description": "Name for the new project."
+          },
+          "timeBudgets": {
+            "type": "boolean",
+            "description": "Time and budgets on or off for this project (work projects only)."
           }
         },
         "required": [
@@ -1408,6 +1997,1668 @@
         "properties": {}
       }
     },
+    "task_time_set": {
+      "description": "Record the CALLER's own real time on a task (Took), exactly as they said it: time \"2 h\", \"1h30\", \"half a day\" or \"2 days\"; null clears it. Only when the person states their own time in their own message; pass their exact words as `quote`. Never propose, estimate or round a figure, in chat or from a coding agent. With dated hours, date (YYYY-MM-DD) defaults to today.",
+      "searchKeywords": [
+        "took",
+        "temps",
+        "saisir",
+        "heures",
+        "hours"
+      ],
+      "writesToTable": "app_projects.task_time",
+      "humanTurnOnly": true,
+      "contentParams": [],
+      "sinkReadersSelf": true,
+      "requiredScopes": [
+        "projects:tasks:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "taskTimeSet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "description": "Task id or key (e.g. ATLAS-12)."
+          },
+          "time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Duration as said; null clears your entry."
+          },
+          "date": {
+            "type": "string",
+            "description": "Day worked, YYYY-MM-DD (dated hours only)."
+          },
+          "quote": {
+            "type": "string",
+            "description": "The person's own words stating the time."
+          }
+        },
+        "required": [
+          "taskId",
+          "time"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "task_time_get": {
+      "description": "Your own Took entries on a task (date, minutes, how entered) and the task's total. Never anyone else's part.",
+      "searchKeywords": [
+        "took",
+        "temps",
+        "heures",
+        "hours",
+        "logged"
+      ],
+      "readOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:projects:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "taskTimeGet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "description": "Task id or key."
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "timesheet_get": {
+      "description": "A project's dated sheet for one month: each day's time by person and task, and the total. Only on a project with dated hours, for its lead and finance.",
+      "searchKeywords": [
+        "timesheet",
+        "dated",
+        "feuille"
+      ],
+      "readOnly": true,
+      "humanTurnOnly": true,
+      "dmOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:dated_sheet:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "timesheetGet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project id. Optional when projectName is given."
+          },
+          "projectName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project by name (alternative to projectId)."
+          },
+          "month": {
+            "type": "string",
+            "description": "YYYY-MM. Default: this month."
+          }
+        },
+        "additionalProperties": false
+      },
+      "returns": {
+        "schema": {
+          "projectId": "string",
+          "projectName": "string",
+          "month": "string",
+          "period": "object",
+          "lines": "object",
+          "totalMinutes": "number",
+          "total": "string",
+          "coverage": "object",
+          "partial": "boolean",
+          "coverageLine": "string",
+          "note": "string",
+          "message": "string"
+        }
+      }
+    },
+    "timesheet_export": {
+      "description": "The dated sheet of one project and month as a PDF or CSV file for you. A partial sheet answers needsConfirm until acceptPartial.",
+      "searchKeywords": [
+        "timesheet",
+        "export",
+        "pdf",
+        "csv",
+        "feuille"
+      ],
+      "readOnly": true,
+      "humanTurnOnly": true,
+      "dmOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:dated_sheet:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "timesheetExport",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project id. Optional when projectName is given."
+          },
+          "projectName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project by name (alternative to projectId)."
+          },
+          "month": {
+            "type": "string",
+            "description": "YYYY-MM. Default: this month."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "csv"
+            ]
+          },
+          "acceptPartial": {
+            "type": "boolean",
+            "description": "True once the person said to export a partial sheet as it is."
+          }
+        },
+        "required": [
+          "format"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "margin_get": {
+      "description": "One project's margin: what is invoiced (excl. VAT, net of credit notes) minus its time at cost, one figure, with coverage and what it leaves out. Finance only, in a DM; never per person.",
+      "searchKeywords": [
+        "margin",
+        "marge",
+        "profit",
+        "rentabilité",
+        "cost"
+      ],
+      "readOnly": true,
+      "dmOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:margin:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "marginGet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project id. Optional when projectName is given."
+          },
+          "projectName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project by name (alternative to projectId)."
+          },
+          "month": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One month, YYYY-MM: that month's invoices and hours only. Omit for the whole project."
+          }
+        },
+        "additionalProperties": false
+      },
+      "returns": {
+        "schema": {
+          "projectId": "string",
+          "projectName": "string",
+          "margin": "number",
+          "invoiced": "number",
+          "cost": "number",
+          "currency": "string",
+          "partial": "boolean",
+          "coverage": "object",
+          "line": "string",
+          "how": "string",
+          "leftOut": "object",
+          "title": "string",
+          "sub": "string",
+          "marginText": "string",
+          "delta": "string"
+        }
+      },
+      "resultCard": {
+        "kind": "number",
+        "pill": {
+          "label": "Margin",
+          "labelKey": "projects.card.margin"
+        },
+        "title": "{{result.title}}",
+        "value": "{{result.marginText}}",
+        "delta": "{{result.delta}}",
+        "sub": "{{result.sub}}",
+        "how": {
+          "label": "Invoices linked to the project, excl. VAT and net of credit notes, minus each hour taken at the cost rate on that day",
+          "labelKey": "projects.card.marginHow"
+        },
+        "source": "Invoicing and time spent on tasks"
+      }
+    },
+    "cost_rates_list": {
+      "description": "The org's cost rates: each person's cost per hour and the day it applies from. Finance only.",
+      "searchKeywords": [
+        "cost",
+        "rates",
+        "taux",
+        "coût"
+      ],
+      "readOnly": true,
+      "dmOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:margin:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "costRatesList",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "cost_rate_set": {
+      "description": "Set a person's cost per hour from a date on; hours before that date keep their old cost. Finance only.",
+      "searchKeywords": [
+        "cost",
+        "taux",
+        "coût"
+      ],
+      "writesToTable": "app_projects.cost_rates",
+      "dmOnly": true,
+      "humanTurnOnly": true,
+      "requiredScopes": [
+        "projects:cost_rates:write",
+        "projects:margin:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "costRateSet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "The person's user id."
+          },
+          "rate": {
+            "type": "number",
+            "description": "Cost per hour, in major units (60 for 60.00)."
+          },
+          "from": {
+            "type": "string",
+            "description": "The day it applies from, YYYY-MM-DD."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO currency code, like EUR."
+          }
+        },
+        "required": [
+          "userId",
+          "rate",
+          "from"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "budget_get": {
+      "description": "A project's planned time against its real time, in one line, with how many tasks have real time entered. Price only with the money scope.",
+      "searchKeywords": [
+        "budget",
+        "budgets",
+        "coverage",
+        "planned",
+        "real",
+        "left",
+        "milestones",
+        "temps"
+      ],
+      "readOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:projects:read"
+      ],
+      "resultTaintWhen": { "fields": ["money"], "scopes": ["projects:money:read"] },
+      "trustBoundary": "user",
+      "handler": "budgetGet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project id. Optional when projectName is given."
+          },
+          "projectName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project by name (alternative to projectId)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "returns": {
+        "schema": {
+          "projectId": "string",
+          "projectName": "string",
+          "line": "string",
+          "real": "number",
+          "partial": "boolean",
+          "coverage": "object",
+          "milestones": "object",
+          "notInNumbers": "object",
+          "datedHours": "boolean",
+          "groups": "object",
+          "totals": "object"
+        }
+      },
+      "resultCard": {
+        "kind": "groups",
+        "pill": {
+          "label": "Budget",
+          "labelKey": "projects.card.budget"
+        },
+        "title": "{{result.line}}",
+        "cover": "Real time entered on {{result.coverage.withEntries}} of {{result.coverage.total}} tasks",
+        "status": {
+          "path": "result.partial",
+          "map": {
+            "true": {
+              "label": {
+                "label": "partial",
+                "labelKey": "projects.card.partial"
+              },
+              "tone": "muted"
+            }
+          }
+        },
+        "columns": [
+          {
+            "key": "planned",
+            "label": {
+              "label": "Planned",
+              "labelKey": "projects.card.planned"
+            },
+            "format": "hours"
+          },
+          {
+            "key": "real",
+            "label": {
+              "label": "Real",
+              "labelKey": "projects.card.real"
+            },
+            "format": "hours"
+          }
+        ],
+        "groups": {
+          "path": "result.groups",
+          "label": "{{group.label}}",
+          "rows": {
+            "path": "group.rows",
+            "id": "row.id",
+            "name": "{{row.name}}",
+            "tag": "{{row.state}}",
+            "cells": {
+              "planned": "row.plannedMinutes",
+              "real": "row.realMinutes"
+            }
+          }
+        },
+        "tot": {
+          "path": "result.totals",
+          "k": "{{item.k}}",
+          "v": "{{item.text}}"
+        },
+        "notes": {
+          "path": "result.notInNumbers",
+          "text": "{{item.text}}"
+        }
+      }
+    },
+    "reconcile_facts": {
+      "description": "Start a reconcile of one project and period (month YYYY-MM, or from and to): the tasks closed in it with planned and real time, the client's markers and what is already billed. No person is named. Then read the period's traces with your own tools and call reconcile_propose.",
+      "searchKeywords": [
+        "reconcile",
+        "reconciliation",
+        "rapprocher",
+        "facturer",
+        "rapprochement"
+      ],
+      "readOnly": true,
+      "humanTurnOnly": true,
+      "dmOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:reconcile:read"
+      ],
+      "resultTaintWhen": { "fields": ["terms", "amount", "amountExclVat", "rateMinor"], "scopes": ["projects:money:read"] },
+      "trustBoundary": "user",
+      "handler": "reconcileFacts",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project id, key or name, or its client's name."
+          },
+          "month": {
+            "type": "string",
+            "description": "YYYY-MM. Default: this month."
+          },
+          "from": {
+            "type": "string",
+            "description": "YYYY-MM-DD, with to."
+          },
+          "to": {
+            "type": "string",
+            "description": "YYYY-MM-DD, with from."
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reconcile_propose": {
+      "description": "Save the reconcile card for a project and period from reconcile_facts and the traces you read: lines group tasks, with wording and proofs only. The server works out planned, real and bill; never send a figure. Asked again, the same card is updated.",
+      "searchKeywords": [
+        "reconcile",
+        "reconciliation",
+        "rapprocher",
+        "card"
+      ],
+      "writesToTable": "app_projects.reconciliations",
+      "humanTurnOnly": true,
+      "dmOnly": true,
+      "sinkReadersSelf": true,
+      "requiredScopes": [
+        "projects:reconcile:read"
+      ],
+      "resultTaintWhen": { "fields": ["terms", "amount", "amountExclVat", "rateMinor"], "scopes": ["projects:money:read"] },
+      "trustBoundary": "user",
+      "handler": "reconcilePropose",
+      "feature": "time_budgets",
+      "returns": {
+        "schema": {
+          "reconciliationId": "string",
+          "revision": "number",
+          "state": "string",
+          "title": "string",
+          "end": "string",
+          "sub": "string",
+          "fit": "string",
+          "groups": "object",
+          "cardNotes": "object",
+          "tot": "object",
+          "cover": "any",
+          "notice": "any",
+          "connectGithub": "any",
+          "fixedPrice": "any",
+          "editable": "any",
+          "foot": "any"
+        }
+      },
+      "resultCard": {
+        "kind": "groups",
+        "pill": {
+          "label": "Projects: reconcile"
+        },
+        "icon": "briefcase",
+        "title": "{{result.title}}",
+        "end": "{{result.end}}",
+        "sub": "{{result.sub}}",
+        "status": {
+          "path": "result.fit",
+          "map": {
+            "fits": {
+              "label": {
+                "label": "Fits the plan"
+              },
+              "tone": "success"
+            },
+            "over": {
+              "label": {
+                "label": "Over the plan"
+              },
+              "tone": "warning"
+            },
+            "estimated": {
+              "label": {
+                "label": "Time spent mostly estimated"
+              },
+              "tone": "muted"
+            },
+            "fixed": {
+              "label": {
+                "label": "Fixed price"
+              },
+              "tone": "muted"
+            },
+            "nothing": {
+              "label": {
+                "label": "Nothing to check"
+              },
+              "tone": "muted"
+            },
+            "billed": {
+              "label": {
+                "label": "Invoiced"
+              },
+              "tone": "accent"
+            }
+          }
+        },
+        "cover": "{{result.cover}}",
+        "notice": {
+          "when": {
+            "path": "result.notice",
+            "exists": true
+          },
+          "icon": "plug",
+          "title": "{{result.notice.title}}",
+          "text": "{{result.notice.text}}"
+        },
+        "columns": [
+          {
+            "key": "planned",
+            "label": {
+              "label": "Planned"
+            }
+          },
+          {
+            "key": "realNote",
+            "label": {
+              "label": "Time spent"
+            }
+          },
+          {
+            "key": "bill",
+            "label": {
+              "label": "Billed"
+            },
+            "when": {
+              "path": "result.fixedPrice",
+              "exists": false
+            }
+          },
+          {
+            "key": "amount",
+            "label": {
+              "label": "Amount"
+            },
+            "format": "money",
+            "when": {
+              "path": "result.fixedPrice",
+              "exists": false
+            }
+          }
+        ],
+        "groups": {
+          "path": "result.groups",
+          "label": "{{group.label}}",
+          "rows": {
+            "path": "group.rows",
+            "id": "row.id",
+            "name": "{{row.name}}",
+            "tag": "{{row.tag}}",
+            "why": "{{row.why}}",
+            "cells": {
+              "planned": "row.planned",
+              "realNote": "row.real",
+              "bill": "row.bill",
+              "amount": "row.amount"
+            },
+            "links": {
+              "path": "row.proof",
+              "label": "{{item.label}}",
+              "urlPath": "item.href",
+              "limit": 3
+            },
+            "act": {
+              "kind": "tool",
+              "label": { "label": "Move it" },
+              "labelPath": "row.moveLabel",
+              "tool": "move",
+              "params": { "taskId": "row.moveTaskId", "projectId": "row.moveProjectId" }
+            }
+          }
+        },
+        "tot": {
+          "path": "result.tot",
+          "k": "{{item.k}}",
+          "v": "{{item.v}}",
+          "format": "money"
+        },
+        "notes": {
+          "path": "result.cardNotes",
+          "text": "{{item.text}}"
+        },
+        "foot": "{{result.foot}}",
+        "actions": [
+          {
+            "kind": "open",
+            "label": {
+              "label": "Connect GitHub"
+            },
+            "view": "settings",
+            "idPath": "result.connectGithub",
+            "when": {
+              "path": "result.connectGithub",
+              "exists": true
+            }
+          }
+        ],
+        "edit": {
+          "when": {
+            "path": "result.editable",
+            "equals": "yes"
+          },
+          "openLabel": {
+            "label": "Change lines"
+          },
+          "doneLabel": {
+            "label": "Done changing"
+          },
+          "tool": "reconcile_line_update",
+          "params": {
+            "reconciliationId": "result.reconciliationId",
+            "revision": "result.revision"
+          },
+          "rowParam": "lineId",
+          "fields": [
+            {
+              "param": "bill",
+              "label": {
+                "label": "Billed"
+              },
+              "kind": "quantity",
+              "valuePath": "row.billValue",
+              "unitPath": "row.unit"
+            },
+            {
+              "param": "realNote",
+              "label": {
+                "label": "Time spent, only for you"
+              },
+              "kind": "quantity",
+              "valuePath": "row.realValue",
+              "unitPath": "row.unit",
+              "private": true
+            }
+          ]
+        },
+        "latestKey": "reconcile:{{result.reconciliationId}}",
+        "supersededLabel": {
+          "label": "First version"
+        }
+      },
+      "params": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project id, key or name, as for reconcile_facts."
+          },
+          "month": {
+            "type": "string",
+            "description": "YYYY-MM."
+          },
+          "from": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "YYYY-MM-DD."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "The work, never who did it."
+                },
+                "why": {
+                  "type": "string"
+                },
+                "taskIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "our_mistake",
+                    "client_asked",
+                    "other_client"
+                  ]
+                },
+                "otherProjectKey": {
+                  "type": "string"
+                },
+                "traceEstimate": {
+                  "type": "string",
+                  "description": "Only on a line with no real time, from its proofs."
+                },
+                "proofs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "task",
+                          "commit",
+                          "pull_request",
+                          "merge_request",
+                          "calendar_event",
+                          "knowledge_doc",
+                          "mail",
+                          "ticket",
+                          "note"
+                        ]
+                      },
+                      "ref": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "occurredOn": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "ref"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "excluded": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "client_own"
+                  ]
+                }
+              },
+              "required": [
+                "taskId",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "notSeen": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "sources": {
+            "type": "object",
+            "description": "Counts of what you read: closedTasks, commits, pullRequests, meetings."
+          }
+        },
+        "required": [
+          "project",
+          "lines"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reconcile_line_update": {
+      "description": "Change one line of your own proposed reconcile card: what it bills (bill, in the card's unit), its wording, or a time-spent note only you see (realNote). Send the card's revision; the card comes back updated.",
+      "searchKeywords": [
+        "reconcile",
+        "line",
+        "bill",
+        "change",
+        "ligne"
+      ],
+      "writesToTable": "app_projects.reconciliation_lines",
+      "humanTurnOnly": true,
+      "dmOnly": true,
+      "sinkReadersSelf": true,
+      "requiredScopes": [
+        "projects:reconcile:read"
+      ],
+      "resultTaintWhen": { "fields": ["terms", "amount", "amountExclVat", "rateMinor"], "scopes": ["projects:money:read"] },
+      "trustBoundary": "user",
+      "handler": "reconcileLineUpdate",
+      "feature": "time_budgets",
+      "returns": {
+        "schema": {
+          "reconciliationId": "string",
+          "revision": "number",
+          "state": "string",
+          "title": "string",
+          "end": "string",
+          "sub": "string",
+          "fit": "string",
+          "groups": "object",
+          "cardNotes": "object",
+          "tot": "object",
+          "cover": "any",
+          "notice": "any",
+          "connectGithub": "any",
+          "fixedPrice": "any",
+          "editable": "any",
+          "foot": "any"
+        }
+      },
+      "resultCard": {
+        "kind": "groups",
+        "pill": {
+          "label": "Projects: reconcile"
+        },
+        "icon": "briefcase",
+        "title": "{{result.title}}",
+        "end": "{{result.end}}",
+        "sub": "{{result.sub}}",
+        "status": {
+          "path": "result.fit",
+          "map": {
+            "fits": {
+              "label": {
+                "label": "Fits the plan"
+              },
+              "tone": "success"
+            },
+            "over": {
+              "label": {
+                "label": "Over the plan"
+              },
+              "tone": "warning"
+            },
+            "estimated": {
+              "label": {
+                "label": "Time spent mostly estimated"
+              },
+              "tone": "muted"
+            },
+            "fixed": {
+              "label": {
+                "label": "Fixed price"
+              },
+              "tone": "muted"
+            },
+            "nothing": {
+              "label": {
+                "label": "Nothing to check"
+              },
+              "tone": "muted"
+            },
+            "billed": {
+              "label": {
+                "label": "Invoiced"
+              },
+              "tone": "accent"
+            }
+          }
+        },
+        "cover": "{{result.cover}}",
+        "notice": {
+          "when": {
+            "path": "result.notice",
+            "exists": true
+          },
+          "icon": "plug",
+          "title": "{{result.notice.title}}",
+          "text": "{{result.notice.text}}"
+        },
+        "columns": [
+          {
+            "key": "planned",
+            "label": {
+              "label": "Planned"
+            }
+          },
+          {
+            "key": "realNote",
+            "label": {
+              "label": "Time spent"
+            }
+          },
+          {
+            "key": "bill",
+            "label": {
+              "label": "Billed"
+            },
+            "when": {
+              "path": "result.fixedPrice",
+              "exists": false
+            }
+          },
+          {
+            "key": "amount",
+            "label": {
+              "label": "Amount"
+            },
+            "format": "money",
+            "when": {
+              "path": "result.fixedPrice",
+              "exists": false
+            }
+          }
+        ],
+        "groups": {
+          "path": "result.groups",
+          "label": "{{group.label}}",
+          "rows": {
+            "path": "group.rows",
+            "id": "row.id",
+            "name": "{{row.name}}",
+            "tag": "{{row.tag}}",
+            "why": "{{row.why}}",
+            "cells": {
+              "planned": "row.planned",
+              "realNote": "row.real",
+              "bill": "row.bill",
+              "amount": "row.amount"
+            },
+            "links": {
+              "path": "row.proof",
+              "label": "{{item.label}}",
+              "urlPath": "item.href",
+              "limit": 3
+            },
+            "act": {
+              "kind": "tool",
+              "label": { "label": "Move it" },
+              "labelPath": "row.moveLabel",
+              "tool": "move",
+              "params": { "taskId": "row.moveTaskId", "projectId": "row.moveProjectId" }
+            }
+          }
+        },
+        "tot": {
+          "path": "result.tot",
+          "k": "{{item.k}}",
+          "v": "{{item.v}}",
+          "format": "money"
+        },
+        "notes": {
+          "path": "result.cardNotes",
+          "text": "{{item.text}}"
+        },
+        "foot": "{{result.foot}}",
+        "actions": [
+          {
+            "kind": "open",
+            "label": {
+              "label": "Connect GitHub"
+            },
+            "view": "settings",
+            "idPath": "result.connectGithub",
+            "when": {
+              "path": "result.connectGithub",
+              "exists": true
+            }
+          }
+        ],
+        "edit": {
+          "when": {
+            "path": "result.editable",
+            "equals": "yes"
+          },
+          "openLabel": {
+            "label": "Change lines"
+          },
+          "doneLabel": {
+            "label": "Done changing"
+          },
+          "tool": "reconcile_line_update",
+          "params": {
+            "reconciliationId": "result.reconciliationId",
+            "revision": "result.revision"
+          },
+          "rowParam": "lineId",
+          "fields": [
+            {
+              "param": "bill",
+              "label": {
+                "label": "Billed"
+              },
+              "kind": "quantity",
+              "valuePath": "row.billValue",
+              "unitPath": "row.unit"
+            },
+            {
+              "param": "realNote",
+              "label": {
+                "label": "Time spent, only for you"
+              },
+              "kind": "quantity",
+              "valuePath": "row.realValue",
+              "unitPath": "row.unit",
+              "private": true
+            }
+          ]
+        },
+        "latestKey": "reconcile:{{result.reconciliationId}}",
+        "supersededLabel": {
+          "label": "First version"
+        }
+      },
+      "params": {
+        "type": "object",
+        "properties": {
+          "reconciliationId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number",
+            "description": "The card's revision."
+          },
+          "lineId": {
+            "type": "string",
+            "description": "A lineId of the card."
+          },
+          "bill": {
+            "type": [
+              "number",
+              "string"
+            ],
+            "description": "3.5, or 3.5 days, 28 h."
+          },
+          "wording": {
+            "type": "string",
+            "description": "The work, never who did it."
+          },
+          "realNote": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "reconciliationId",
+          "revision",
+          "lineId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reconcile_get": {
+      "description": "Read a stored reconcile card by its reconciliationId, as it stands.",
+      "searchKeywords": [
+        "reconcile",
+        "card",
+        "carte",
+        "rapprochement"
+      ],
+      "readOnly": true,
+      "dmOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:reconcile:read"
+      ],
+      "resultTaintWhen": { "fields": ["terms", "amount", "amountExclVat", "rateMinor"], "scopes": ["projects:money:read"] },
+      "trustBoundary": "user",
+      "handler": "reconcileGet",
+      "feature": "time_budgets",
+      "returns": {
+        "schema": {
+          "reconciliationId": "string",
+          "revision": "number",
+          "state": "string",
+          "title": "string",
+          "end": "string",
+          "sub": "string",
+          "fit": "string",
+          "groups": "object",
+          "cardNotes": "object",
+          "tot": "object",
+          "cover": "any",
+          "notice": "any",
+          "connectGithub": "any",
+          "fixedPrice": "any",
+          "editable": "any",
+          "foot": "any"
+        }
+      },
+      "resultCard": {
+        "kind": "groups",
+        "pill": {
+          "label": "Projects: reconcile"
+        },
+        "icon": "briefcase",
+        "title": "{{result.title}}",
+        "end": "{{result.end}}",
+        "sub": "{{result.sub}}",
+        "status": {
+          "path": "result.fit",
+          "map": {
+            "fits": {
+              "label": {
+                "label": "Fits the plan"
+              },
+              "tone": "success"
+            },
+            "over": {
+              "label": {
+                "label": "Over the plan"
+              },
+              "tone": "warning"
+            },
+            "estimated": {
+              "label": {
+                "label": "Time spent mostly estimated"
+              },
+              "tone": "muted"
+            },
+            "fixed": {
+              "label": {
+                "label": "Fixed price"
+              },
+              "tone": "muted"
+            },
+            "nothing": {
+              "label": {
+                "label": "Nothing to check"
+              },
+              "tone": "muted"
+            },
+            "billed": {
+              "label": {
+                "label": "Invoiced"
+              },
+              "tone": "accent"
+            }
+          }
+        },
+        "cover": "{{result.cover}}",
+        "notice": {
+          "when": {
+            "path": "result.notice",
+            "exists": true
+          },
+          "icon": "plug",
+          "title": "{{result.notice.title}}",
+          "text": "{{result.notice.text}}"
+        },
+        "columns": [
+          {
+            "key": "planned",
+            "label": {
+              "label": "Planned"
+            }
+          },
+          {
+            "key": "realNote",
+            "label": {
+              "label": "Time spent"
+            }
+          },
+          {
+            "key": "bill",
+            "label": {
+              "label": "Billed"
+            },
+            "when": {
+              "path": "result.fixedPrice",
+              "exists": false
+            }
+          },
+          {
+            "key": "amount",
+            "label": {
+              "label": "Amount"
+            },
+            "format": "money",
+            "when": {
+              "path": "result.fixedPrice",
+              "exists": false
+            }
+          }
+        ],
+        "groups": {
+          "path": "result.groups",
+          "label": "{{group.label}}",
+          "rows": {
+            "path": "group.rows",
+            "id": "row.id",
+            "name": "{{row.name}}",
+            "tag": "{{row.tag}}",
+            "why": "{{row.why}}",
+            "cells": {
+              "planned": "row.planned",
+              "realNote": "row.real",
+              "bill": "row.bill",
+              "amount": "row.amount"
+            },
+            "links": {
+              "path": "row.proof",
+              "label": "{{item.label}}",
+              "urlPath": "item.href",
+              "limit": 3
+            },
+            "act": {
+              "kind": "tool",
+              "label": { "label": "Move it" },
+              "labelPath": "row.moveLabel",
+              "tool": "move",
+              "params": { "taskId": "row.moveTaskId", "projectId": "row.moveProjectId" }
+            }
+          }
+        },
+        "tot": {
+          "path": "result.tot",
+          "k": "{{item.k}}",
+          "v": "{{item.v}}",
+          "format": "money"
+        },
+        "notes": {
+          "path": "result.cardNotes",
+          "text": "{{item.text}}"
+        },
+        "foot": "{{result.foot}}",
+        "actions": [
+          {
+            "kind": "open",
+            "label": {
+              "label": "Connect GitHub"
+            },
+            "view": "settings",
+            "idPath": "result.connectGithub",
+            "when": {
+              "path": "result.connectGithub",
+              "exists": true
+            }
+          }
+        ],
+        "edit": {
+          "when": {
+            "path": "result.editable",
+            "equals": "yes"
+          },
+          "openLabel": {
+            "label": "Change lines"
+          },
+          "doneLabel": {
+            "label": "Done changing"
+          },
+          "tool": "reconcile_line_update",
+          "params": {
+            "reconciliationId": "result.reconciliationId",
+            "revision": "result.revision"
+          },
+          "rowParam": "lineId",
+          "fields": [
+            {
+              "param": "bill",
+              "label": {
+                "label": "Billed"
+              },
+              "kind": "quantity",
+              "valuePath": "row.billValue",
+              "unitPath": "row.unit"
+            },
+            {
+              "param": "realNote",
+              "label": {
+                "label": "Time spent, only for you"
+              },
+              "kind": "quantity",
+              "valuePath": "row.realValue",
+              "unitPath": "row.unit",
+              "private": true
+            }
+          ]
+        },
+        "latestKey": "reconcile:{{result.reconciliationId}}",
+        "supersededLabel": {
+          "label": "First version"
+        }
+      },
+      "params": {
+        "type": "object",
+        "properties": {
+          "reconciliationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reconciliationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "task_time_correct": {
+      "description": "Change one Took entry of another person on a project with dated hours: only its lead or finance. The person then sees who changed it.",
+      "searchKeywords": [
+        "corriger",
+        "correct",
+        "timesheet"
+      ],
+      "writesToTable": "app_projects.task_time",
+      "humanTurnOnly": true,
+      "requiredScopes": [
+        "projects:tasks:write",
+        "projects:dated_sheet:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "taskTimeCorrect",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "entryId": {
+            "type": "string",
+            "description": "Entry id from the timesheet."
+          },
+          "time": {
+            "type": "string",
+            "description": "Corrected duration, e.g. \"3 h\"."
+          },
+          "date": {
+            "type": "string",
+            "description": "Corrected day, YYYY-MM-DD."
+          },
+          "quote": {
+            "type": "string",
+            "description": "The person's own words stating the time."
+          }
+        },
+        "required": [
+          "entryId",
+          "time"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "time_plan_set": {
+      "description": "Set a project's plan: basis (none, hourly, daily, fixed, retainer), whole-project timebox (\"40 days\"; null clears), biller, source repositories, and datedHours (on: its lead and finance see dated entries made from now on).",
+      "searchKeywords": [
+        "budget",
+        "plan",
+        "forfait",
+        "régie",
+        "timebox",
+        "dated"
+      ],
+      "writesToTable": "app_projects.project_time_plan",
+      "externalEffect": true,
+      "requiredScopes": [
+        "projects:projects:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "timePlanSet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project id. Optional when projectName is given."
+          },
+          "projectName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project by name (alternative to projectId)."
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "none",
+              "hourly",
+              "daily",
+              "fixed",
+              "retainer"
+            ]
+          },
+          "timebox": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Planned size of the whole project."
+          },
+          "billerId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "User id of who bills it."
+          },
+          "sourceRepos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "github",
+                    "gitlab"
+                  ]
+                },
+                "repo": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "repo"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "datedHours": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    "billing_terms_set": {
+      "description": "Set how a project is billed: rate (per hour or day, per its basis) or fixedPrice, never both; amounts in major units, currency ISO code.",
+      "searchKeywords": [
+        "tarif",
+        "taux",
+        "rate",
+        "prix",
+        "TJM"
+      ],
+      "writesToTable": "app_projects.project_billing_terms",
+      "requiredScopes": [
+        "projects:money:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "billingTermsSet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project id. Optional when projectName is given."
+          },
+          "projectName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project by name (alternative to projectId)."
+          },
+          "rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "fixedPrice": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    "period_timebox_set": {
+      "description": "Set a project's timebox for one month (YYYY-MM) or a from-to period, e.g. a retainer month; timebox null removes it.",
+      "searchKeywords": [
+        "mois",
+        "period",
+        "timebox",
+        "retainer"
+      ],
+      "writesToTable": "app_projects.project_timeboxes",
+      "requiredScopes": [
+        "projects:projects:write"
+      ],
+      "trustBoundary": "user",
+      "handler": "periodTimeboxSet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project id. Optional when projectName is given."
+          },
+          "projectName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project by name (alternative to projectId)."
+          },
+          "month": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}$"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "timebox": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Planned size for the period; null removes it."
+          }
+        },
+        "required": [
+          "timebox"
+        ],
+        "additionalProperties": false
+      }
+    },
     "update_project": {
       "description": "Edit an existing PROJECT (the board itself, not a task): its name, description, icon, colour, group or key. Identify it by projectId or projectName. Fields you leave out are untouched; description, icon, color and group accept null to clear. The KEY (the prefix of every task key, e.g. ERB in ERB-12) changes only while the project has no task at all: once it holds a task, a key change is refused with project_key_locked, so say so instead of retrying. An archived project is refused with project_archived. Not gated: the edit applies at once and the result is the updated project, so report it as applied only when the call returned it.",
       "searchKeywords": ["projet", "archiver", "renommer", "rename", "archive", "modifier", "edit"],
@@ -1426,6 +3677,17 @@
               "null"
             ],
             "description": "Project id. Optional when projectName is given."
+          },
+          "timeBudgets": {
+            "type": "boolean",
+            "description": "Time and budgets on or off for this project (work projects only)."
+          },
+          "companyId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Client; null clears."
           },
           "projectName": {
             "type": [
@@ -1638,6 +3900,7 @@
       }
     },
     "comment": {
+      "focusCore": true,
       "description": "Write a comment on a task — the task's own discussion thread, the same one the task detail pane shows. Use it to record a finding, ask the assignee something, or hand work over WITHOUT changing the task's fields: a comment is the durable place for the reasoning, `update` is for the state. Identify the task by id or by display key (e.g. RAI-12). The comment is posted under the calling identity and is visible to everyone who can read the task. Returns the task's `threadId`, which you can then read back with `comments` (or kernel threads_read — reading the task enrols you as a participant of its thread, which is what makes that work).",
       "searchKeywords": ["commenter", "commentaire", "tâche", "task", "discussion", "écrire", "write", "add"],
       "requiredScopes": ["projects:tasks:write"],
@@ -1664,6 +3927,7 @@
       }
     },
     "comments": {
+      "focusCore": true,
       "readOnly": true,
       "description": "Read a task's discussion — the comments on its own thread, newest last. This is the ONLY way to reach a task's conversation without already being a participant: task threads are participant-gated, so a `threadId` taken from tasks_byProject and handed straight to kernel threads_read answers 'not a participant'. Reading the task through this tool enrols you, after which threads_read works too. Identify the task by id or display key (e.g. RAI-12).",
       "searchKeywords": ["commentaire", "commentaires", "tâche", "task", "discussion", "lire", "read"],
@@ -2078,6 +4342,338 @@
           "nodes"
         ]
       }
+    },
+    "capacity_get": {
+      "description": "Planned time against available time per person for one ISO week, in name order, on projects that use time and budgets. With taskId, who could take that task. Planned comes from timeboxes only; available from hours in a day, days per week, company days off and away days.",
+      "searchKeywords": [
+        "capacity",
+        "charge",
+        "workload",
+        "availability",
+        "disponibilité",
+        "free",
+        "overloaded",
+        "staffing"
+      ],
+      "readOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:capacity:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "capacityGet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "week": {
+            "type": "string",
+            "pattern": "^\\d{4}-W\\d{2}$",
+            "description": "ISO week, e.g. 2026-W48; default this week."
+          },
+          "taskId": {
+            "type": "string",
+            "description": "A task id: adds candidates who could take it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "returns": {
+        "schema": {
+          "week": "string",
+          "from": "string",
+          "to": "string",
+          "availableMinutes": "number",
+          "plannedMinutes": "number",
+          "people": "object",
+          "left": "object",
+          "overLine": "any",
+          "covers": "string",
+          "title": "string",
+          "groups": "object",
+          "totals": "object"
+        }
+      },
+      "resultCard": {
+        "kind": "groups",
+        "pill": {
+          "label": "Capacity",
+          "labelKey": "projects.card.capacity"
+        },
+        "title": "{{result.title}}",
+        "columns": [
+          {
+            "key": "planned",
+            "label": {
+              "label": "Planned",
+              "labelKey": "projects.card.planned"
+            },
+            "format": "hours"
+          },
+          {
+            "key": "available",
+            "label": {
+              "label": "Available",
+              "labelKey": "projects.card.available"
+            },
+            "format": "hours"
+          }
+        ],
+        "groups": {
+          "path": "result.groups",
+          "label": "{{group.label}}",
+          "rows": {
+            "path": "group.rows",
+            "id": "row.id",
+            "name": "{{row.name}}",
+            "why": "{{row.note}}",
+            "cells": {
+              "planned": "row.plannedMinutes",
+              "available": "row.availableMinutes"
+            }
+          }
+        },
+        "tot": {
+          "path": "result.totals",
+          "k": "{{item.k}}",
+          "v": "{{item.text}}"
+        }
+      }
+    },
+    "capacity_move": {
+      "description": "The capacity board's Move to button: gives a task to another person and tells the person who had it and the person who has it now. Its timebox and dates stay. Read by the board.",
+      "agentVisible": false,
+      "useInstead": "update",
+      "requiredScopes": [
+        "projects:tasks:write",
+        "projects:capacity:read"
+      ],
+      "writesToTable": "app_projects.tasks",
+      "trustBoundary": "user",
+      "handler": "capacityMove",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "description": "The task id or key."
+          },
+          "toUserId": {
+            "type": ["string", "null"],
+            "description": "The person who takes it, or null to leave it unassigned (how a move from unassigned is undone)."
+          }
+        },
+        "required": [
+          "taskId",
+          "toUserId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "days_off_set": {
+      "description": "Record a company day off for everyone: one day (on), a range (from, to) or an ISO week, with an optional label and yearly. One person's days go through kernel set_away instead. Always state the exact dates recorded, with weekdays.",
+      "searchKeywords": [
+        "holiday",
+        "holidays",
+        "férié",
+        "fériés",
+        "fermeture",
+        "closure",
+        "pont"
+      ],
+      "writesToTable": "app_projects.days_off",
+      "requiredScopes": [
+        "projects:settings:admin"
+      ],
+      "trustBoundary": "user",
+      "handler": "daysOffSet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "string",
+            "description": "One day, YYYY-MM-DD, or MM-DD for its next occurrence."
+          },
+          "from": {
+            "type": "string",
+            "description": "First day of a range (YYYY-MM-DD or MM-DD)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last day of the range, included."
+          },
+          "week": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 53,
+            "description": "ISO week number."
+          },
+          "weekYear": {
+            "type": "integer",
+            "description": "Year of the ISO week; default this year's, or next if it has ended."
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60,
+            "description": "Optional name, e.g. Christmas."
+          },
+          "yearly": {
+            "type": "boolean",
+            "description": "Repeats on the same dates every year (not with week)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "days_off_list": {
+      "description": "The company days off, each with its dates, label, yearly and fromCalendar (a day read from the shared calendar, shown without its title). Company rows only.",
+      "searchKeywords": [
+        "holidays",
+        "fériés",
+        "closures"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "projects:projects:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "daysOffList",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "From this day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "To this day, YYYY-MM-DD."
+          }
+        },
+        "additionalProperties": false
+      },
+      "returns": {
+        "schema": {
+          "rows": "object"
+        }
+      }
+    },
+    "days_off_remove": {
+      "description": "Remove company days off by id, or every typed row covering a day (on). A day read from the shared calendar stays and is answered in fromCalendar.",
+      "searchKeywords": [
+        "holiday",
+        "férié",
+        "remove",
+        "closure"
+      ],
+      "writesToTable": "app_projects.days_off",
+      "requiredScopes": [
+        "projects:settings:admin"
+      ],
+      "trustBoundary": "user",
+      "handler": "daysOffRemove",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The day off's id."
+          },
+          "on": {
+            "type": "string",
+            "description": "A day, YYYY-MM-DD: removes the typed rows covering it."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "time_settings_get": {
+      "description": "Hours in a day, the shared days-off calendar and how many projects use time and budgets; with userId, that person's days per week.",
+      "searchKeywords": [
+        "settings",
+        "hours",
+        "day",
+        "partiel"
+      ],
+      "readOnly": true,
+      "retryOnTransientDbError": true,
+      "requiredScopes": [
+        "projects:projects:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "timeSettingsGet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "A person's id, for their days per week."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "time_settings_set": {
+      "description": "Set hours in a day or the shared days-off calendar (settings admin), or a person's days per week, a whole number from 1 to 5 (their own, or with user admin or capacity write). No weekday and no reason is stored.",
+      "searchKeywords": [
+        "part",
+        "partiel",
+        "semaine",
+        "weekly",
+        "days",
+        "hours",
+        "day"
+      ],
+      "writesToTable": "app_projects.person_capacity",
+      "requiredScopes": [
+        "projects:projects:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "timeSettingsSet",
+      "feature": "time_budgets",
+      "params": {
+        "type": "object",
+        "properties": {
+          "hoursPerDay": {
+            "type": [
+              "number",
+              "string"
+            ],
+            "description": "Hours in a day, e.g. 7 or \"7h30\"."
+          },
+          "daysOffCalendarId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A selected calendar to read company days off from; null stops reading it."
+          },
+          "userId": {
+            "type": "string",
+            "description": "Whose days per week; default you."
+          },
+          "daysPerWeek": {
+            "type": "integer",
+            "description": "1 to 5."
+          }
+        }
+      }
+    }
+  },
+  "sendGuardProviders": {
+    "projects:deal": {
+      "tool": "deal_send_state",
+      "pill": {
+        "label": "Deal follow-up"
+      }
     }
   },
   "export": {
@@ -2422,6 +5018,92 @@
           "app_projects.tasks"
         ]
       },
+      "deal": {
+        "label": "Deals",
+        "schema": {
+          "type": "object",
+          "required": ["externalRef", "pipeline", "title"],
+          "additionalProperties": false,
+          "properties": {
+            "externalRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pipeline": {
+              "type": "string",
+              "description": "The pipeline's name: found, or created with the default stages (Lead, Qualified, Demo, Proposal, Won, Lost)."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "stage": {
+              "type": ["string", "null"],
+              "description": "The stage's label in that pipeline; none puts the deal in the first stage."
+            },
+            "description": {
+              "type": ["string", "null"]
+            },
+            "companyName": {
+              "type": ["string", "null"],
+              "description": "The company: found by domain, else by name, else created."
+            },
+            "companyDomain": {
+              "type": ["string", "null"]
+            },
+            "contactEmail": {
+              "type": ["string", "null"],
+              "description": "An existing contact, by email; an unknown one is reported and the deal is still imported."
+            },
+            "ownerEmail": {
+              "type": ["string", "null"],
+              "description": "The deal owner, by email of an active member."
+            },
+            "amountMinor": {
+              "type": ["integer", "null"],
+              "description": "Whole minor units (cents), with currency. Needs deal access."
+            },
+            "currency": {
+              "type": ["string", "null"],
+              "description": "Three-letter code such as EUR."
+            },
+            "amountPeriod": {
+              "type": "string",
+              "enum": ["once", "month", "year"]
+            },
+            "probability": {
+              "type": ["integer", "null"],
+              "description": "Whole percent from 0 to 100."
+            },
+            "nextStep": {
+              "type": ["string", "null"]
+            },
+            "lostReason": {
+              "type": ["string", "null"],
+              "description": "Kept when the stage is a lost one."
+            },
+            "createdAt": {
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "handler": "importDeals",
+        "dedupKey": "externalRef",
+        "tables": [
+          "app_projects.tasks",
+          "app_projects.projects",
+          "app_projects.project_statuses",
+          "app_projects.deals",
+          "app_projects.deal_values",
+          "kernel.threads",
+          "kernel.thread_participants",
+          "kernel.companies"
+        ],
+        "writeScopes": [
+          "projects:tasks:write",
+          "projects:projects:write"
+        ]
+      },
       "template": {
         "label": "Project templates",
         "schema": {
@@ -2550,7 +5232,11 @@
       "label:updated",
       "label:archived",
       "label:restored",
-      "label:reordered"
+      "label:reordered",
+      "deal:closed",
+      "deal:reopened",
+      "time_feature:changed",
+      "reconciliation:proposed"
     ]
   },
   "kind": "app",
@@ -2594,13 +5280,133 @@
             "maxDepth": 2
           }
         ]
+      },
+      {
+        "id": "time",
+        "title": "Time and budgets",
+        "titleKey": "projects.settingsPage.time.title",
+        "description": "Hours in a day and company days off, for the projects that use time and budgets. Each project turns it on in its own settings. Reconcile reads only what the person asking can already read.",
+        "descriptionKey": "projects.settingsPage.time.description",
+        "scope": "org",
+        "adminScope": "projects:settings:admin",
+        "feature": "time_budgets",
+        "blocks": [
+          {
+            "block": "field",
+            "key": "hoursPerDay",
+            "type": "number",
+            "label": "Hours in a day",
+            "labelKey": "projects.settingsPage.time.hoursPerDay",
+            "validation": {
+              "min": 1,
+              "max": 24
+            },
+            "source": {
+              "tool": {
+                "get": "time_settings_get",
+                "set": "time_settings_set"
+              }
+            }
+          },
+          {
+            "block": "field",
+            "key": "daysOffCalendarId",
+            "type": "select",
+            "label": "Read a shared calendar",
+            "labelKey": "projects.settingsPage.time.calendar",
+            "help": "None by default. Whole-day events of the chosen calendar become company days off.",
+            "helpKey": "projects.settingsPage.time.calendarHelp",
+            "optionsTool": "time_settings_get",
+            "source": {
+              "tool": {
+                "get": "time_settings_get",
+                "set": "time_settings_set"
+              }
+            }
+          },
+          {
+            "block": "list",
+            "title": "Company days off",
+            "titleKey": "projects.settingsPage.time.daysOff",
+            "ops": {
+              "list": "days_off_list",
+              "create": "days_off_set",
+              "archive": "days_off_remove"
+            },
+            "columns": [
+              {
+                "key": "from",
+                "label": "From",
+                "labelKey": "projects.settingsPage.time.from"
+              },
+              {
+                "key": "to",
+                "label": "To",
+                "labelKey": "projects.settingsPage.time.to"
+              },
+              {
+                "key": "label",
+                "label": "Label",
+                "labelKey": "projects.settingsPage.time.label"
+              },
+              {
+                "key": "source",
+                "label": "Read from",
+                "labelKey": "projects.settingsPage.time.source",
+                "format": "enum",
+                "options": [
+                  {
+                    "value": "calendar",
+                    "label": "The shared calendar",
+                    "labelKey": "projects.settingsPage.time.sourceCalendar"
+                  }
+                ]
+              }
+            ],
+            "createFields": [
+              {
+                "key": "from",
+                "type": "date",
+                "label": "From",
+                "labelKey": "projects.settingsPage.time.from",
+                "validation": {
+                  "required": true
+                }
+              },
+              {
+                "key": "to",
+                "type": "date",
+                "label": "To",
+                "labelKey": "projects.settingsPage.time.to",
+                "validation": {
+                  "required": true
+                }
+              },
+              {
+                "key": "label",
+                "type": "text",
+                "label": "Label",
+                "labelKey": "projects.settingsPage.time.label"
+              },
+              {
+                "key": "yearly",
+                "type": "toggle",
+                "label": "Every year",
+                "labelKey": "projects.settingsPage.time.yearly"
+              }
+            ],
+            "archiveLabel": "Remove",
+            "archiveLabelKey": "projects.settingsPage.time.remove"
+          }
+        ]
       }
     ]
   },
   "views": {
     "attentionItems": {
       "handler": "computeAttentionItems",
-      "scope": "projects:tasks:read"
+      "scope": "projects:tasks:read",
+      "passesOn": true
     },
     "tabTypes": {
       "home": {
@@ -2631,6 +5437,28 @@
         "resolveLabel": "resolveTaskTabLabel",
         "referenceable": true
       },
+      "capacity": {
+        "component": "CapacityView",
+        "sidebar": "ProjectsSidebar",
+        "label": "Capacity",
+        "labelKey": "projects.capacity.tab",
+        "icon": "ProjectsIcon",
+        "urlPattern": "/projects/capacity",
+        "singleton": true,
+        "referenceable": false,
+        "feature": "time_budgets"
+      },
+      "timesheet": {
+        "component": "TimesheetView",
+        "sidebar": "ProjectsSidebar",
+        "label": "Dated hours",
+        "labelKey": "projects.timesheet.tab",
+        "icon": "ProjectsIcon",
+        "urlPattern": "/projects/timesheet/:entityId",
+        "entity": "project",
+        "referenceable": false,
+        "feature": "time_budgets"
+      },
       "automations": {
         "component": "ProjectAutomations",
         "entity": "project",
@@ -2645,7 +5473,7 @@
       "icon": "ProjectsIcon",
       "label": "Projects",
       "labelKey": "kernel.nav.projects",
-      "order": 12,
+      "order": 14,
       "tabAction": {
         "type": "home",
         "entityId": "projects-home",
@@ -2661,6 +5489,18 @@
     }
   },
   "slots": {
+    "company_detail": {
+      "panels": [
+        {
+          "id": "projects-work",
+          "label": "Work",
+          "component": "CompanyWorkPanel",
+          "group": "work",
+          "order": 30,
+          "visibility_scope": "projects:projects:read"
+        }
+      ]
+    },
     "project:task:tabs": {
       "position": "tabs"
     },
@@ -2741,7 +5581,8 @@
       ],
       "agentTool": "bulkUpdate",
       "itemResultFields": [
-        "checklistWarning"
+        "checklistWarning",
+        "timeBudgetsNote"
       ]
     },
     "assign": {
@@ -2766,20 +5607,61 @@
       "customForm": "SetTaskLabelsForm"
     }
   },
+  "features": {
+    "time_budgets": {
+      "adminScope": "projects:projects:write",
+      "labelKey": "projects.timeBudgets.label",
+      "offMessageKey": "projects.timeBudgets.offMessage",
+      "offNextKey": "projects.timeBudgets.offNext"
+    }
+  },
   "roles": {
     "member": {
-      "description": "Project contributor: read projects, read and write tasks",
+      "description": "Project contributor: read projects, read and write tasks, and the dated sheet of the projects they own",
       "scopes": [
         "projects:projects:read",
         "projects:tasks:read",
-        "projects:tasks:write"
+        "projects:tasks:write",
+        "projects:dated_sheet:read"
+      ]
+    },
+    "sales": {
+      "description": "Sales: member rights plus reading and editing deal amounts",
+      "extends": "member",
+      "scopes": [
+        "projects:deals:read",
+        "projects:deals:write"
       ]
     },
     "lead": {
-      "description": "Project lead: create and edit projects in addition to member rights",
+      "description": "Project lead: create and edit projects, deal amounts, project money, reconciling, capacity and the dated sheet of the projects they lead, in addition to member rights",
       "extends": "member",
       "scopes": [
-        "projects:projects:write"
+        "projects:projects:write",
+        "projects:deals:read",
+        "projects:deals:write",
+        "projects:money:read",
+        "projects:money:write",
+        "projects:reconcile:read",
+        "projects:reconcile:write",
+        "projects:capacity:read",
+        "projects:capacity:write",
+        "projects:dated_sheet:read"
+      ]
+    },
+    "finance": {
+      "description": "Finance: member rights plus project money, reconciling, margin, cost rates, the dated timesheet and capacity",
+      "extends": "member",
+      "scopes": [
+        "projects:money:read",
+        "projects:money:write",
+        "projects:reconcile:read",
+        "projects:reconcile:write",
+        "projects:margin:read",
+        "projects:cost_rates:write",
+        "projects:timesheet:read",
+        "projects:dated_sheet:read",
+        "projects:capacity:read"
       ]
     },
     "admin": {
@@ -2792,12 +5674,22 @@
     }
   },
   "skills": {
+    "reconcile": {
+      "description": "Reconcile a project's period into client lines from planned time, real time and traces.",
+      "body": "1. Read `reconcile_facts`. Read traces with the ordinary tools, only for that client and period, only the source repos listed. If a repo is not listed, ask once which one.\n2. Group tasks into lines the client would recognise. Name no person. Never rank, count or compare people. Never mention who did or did not enter time.\n3. Leave out work by the client's own people, using `clientMarkers`.\n4. Unplanned lines say why: our mistake, client asked, or belongs to another client.\n5. Absence of activity is never evidence of anything. Never shorten, question or flag time from a gap.\n6. Never propose or estimate real time for a person. `traceEstimate` is for a line with no real time and only from what the proofs show.\n7. Say what you could not see.",
+      "kind": "playbook",
+      "feature": "time_budgets"
+    },
     "diagnose-routine-state": {
       "description": "Diagnose why a routine is not ticking or is stuck (paused/scope/credits).",
       "body": "When a routine is not producing the work you expect, diagnose before re-creating it. 1. Check its state: a routine paused paused_no_credits needs org credit topped up; paused_scope_mismatch means its granted scopes no longer cover the tools it calls — re-grant or narrow the routine. 2. For an EVENT-kind routine, confirm the triggering event actually fires (the domain mutation must queueEvent the (app,entity,action) the routine subscribes to) — no event, no tick; a coalesce/debounce window means a burst yields ONE tick, not many. 3. For a SCHEDULED/RECURRING routine, confirm the cron is due and the last tick did not error. 4. A duplicate event delivery is idempotent (same jobId) — do not treat a single tick on a burst as a bug. Report the specific blocking state; never silently recreate the routine.",
       "kind": "playbook",
       "enabledByDefault": false
     }
+  },
+  "attention": {
+    "groupLabel": { "label": "Tasks", "labelKey": "kernel.homeGroupTasks" },
+    "translations": []
   },
   "routines": {
     "assign-on-status": {

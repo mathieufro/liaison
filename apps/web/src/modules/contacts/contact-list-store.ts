@@ -25,6 +25,12 @@ export interface Contact {
   // only with specific people / a mailbox's members), else the organisation's.
   orgAccess?: "none" | "viewer" | "editor"
   ownerUserId?: string | null
+  /** What commercial mail to them rests on, when recorded. */
+  lawfulBasis?: "consent" | "customer" | "professional_interest" | "generic_address" | null
+  /** When the basis was recorded. */
+  lawfulBasisAt?: string | null
+  /** The company the contact belongs to, when it has one. */
+  companyId?: string | null
 }
 
 interface ContactListState {

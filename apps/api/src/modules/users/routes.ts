@@ -14,6 +14,7 @@ import { paginated, success } from "~/lib/response"
 import { zValidator } from "~/lib/validate"
 import { idParam } from "~/lib/validators"
 import { requireScope } from "~/middleware/require-scope"
+import { deactivateWithCompanies } from "~/modules/apps/kernel-bulk"
 import { broadcastReadState } from "~/modules/threads/read-state-broadcast"
 import {
   AVATAR_STORED_MIME,
@@ -34,7 +35,6 @@ import {
 } from "~/modules/users/merge-placeholder"
 import { getHiddenSidebarApps, updateHiddenSidebarApps } from "~/modules/users/preferences-service"
 import {
-  deactivateUser,
   getProfile,
   getUserDetail,
   getUserPreview,
@@ -215,19 +215,29 @@ adminUserRoutes.post("/:id/deactivate", zValidator("param", idParam), async (c) 
     throw new HTTPException(400, { message: "Cannot deactivate yourself" })
   }
 
+  // The companies they manage go with the answer to the one question, as the tool does.
+  const body = (await c.req.json().catch(() => ({}))) as { accountsTo?: unknown }
+  const accountsTo =
+    body.accountsTo === null || typeof body.accountsTo === "string" ? body.accountsTo : undefined
   const actorScopes = (c.get("scopes") as string[] | undefined) ?? []
-  let result: Awaited<ReturnType<typeof deactivateUser>>
-  try {
-    result = await withPrivilegedDb(orgId, "admin-deactivate-user", (tx) =>
-      deactivateUser(tx, { targetId, actorId, orgId, actorScopes }),
-    )
-  } catch (err) {
-    if (err instanceof UserAuthorityError) {
-      throw new HTTPException(err.code === "LAST_ADMIN" ? 409 : 403, { message: err.message })
-    }
-    throw err
+  const result = await deactivateWithCompanies({
+    orgId,
+    actorId,
+    actorScopes,
+    userId: targetId,
+    ...(accountsTo !== undefined ? { accountsTo } : {}),
+  })
+  if ("error" in result) {
+    const status =
+      result.error.code === "not_found"
+        ? 404
+        : result.error.code === "forbidden"
+          ? 403
+          : result.error.code === "accounts_to_required" || result.error.code === "last_admin"
+            ? 409
+            : 422
+    return c.json({ error: { message: result.error.message, code: result.error.code } }, status)
   }
-  if (!result) throw new HTTPException(404, { message: "User not found" })
   return success(c, result)
 })
 
@@ -317,7 +327,7 @@ async function memberInOrg(tx: PrivilegedDb, orgId: string, userId: string): Pro
   const [row] = await tx
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.id, userId), eq(users.orgId, orgId)))
+    .where(and(eq(users.id, userId), eq(users.orgId, orgId), eq(users.userType, "member")))
     .limit(1)
   return Boolean(row)
 }

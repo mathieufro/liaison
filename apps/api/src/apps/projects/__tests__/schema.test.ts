@@ -39,15 +39,29 @@ describe("projects.schema", () => {
   it("projects.schema.tables-exist", async () => {
     const tables = await listTables("app_projects")
     expect(tables.sort()).toEqual([
+      "billing_claims",
+      "cost_rates",
+      "days_off",
+      "deal_values",
+      "deals",
       "labels",
+      "person_capacity",
+      "project_billing_terms",
       "project_statuses",
       "project_templates",
+      "project_time_plan",
+      "project_timeboxes",
       "projects",
+      "reconciliation_lines",
+      "reconciliation_proofs",
+      "reconciliations",
       "task_checklist_items",
       "task_dependencies",
       "task_labels",
+      "task_time",
       "task_transitions",
       "tasks",
+      "time_settings",
     ])
   })
 
@@ -96,8 +110,15 @@ describe("projects.schema", () => {
         "validations",
         "created_by",
       ],
-      projects: ["validation_levels", "checklist_on_cards", "task_fields"],
-      tasks: ["release", "fields"],
+      projects: [
+        "validation_levels",
+        "checklist_on_cards",
+        "time_budgets_on",
+        "time_budgets_changed_by",
+        "time_budgets_changed_at",
+        "task_fields",
+      ],
+      tasks: ["release", "timebox_minutes", "is_milestone", "fields"],
       task_transitions: ["task_id", "from_status_id", "to_status_id", "actor_type", "at"],
     }
     for (const { table, drizzle } of pairs) {

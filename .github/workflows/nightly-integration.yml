@@ -181,7 +181,7 @@ jobs:
         # suite resolves Solid from there, and bundled-freeze builds only three.
         if: steps.changed.outputs.run == 'true'
         run: |
-          for app in ads shopify invoicing boxtal monitoring pennylane calls social; do
+          for app in ads shopify invoicing boxtal monitoring pennylane stripe calls social; do
             bash scripts/build-bundled-app.sh "$app" --skip-sign --skip-typecheck
           done
       - name: bundled-ads
@@ -211,6 +211,9 @@ jobs:
       - name: bundled-pennylane
         if: "!cancelled() && steps.changed.outputs.run == 'true'"
         run: bun run scripts/test-run.ts bundled-pennylane
+      - name: bundled-stripe
+        if: "!cancelled() && steps.changed.outputs.run == 'true'"
+        run: bun run scripts/test-run.ts bundled-stripe
       - name: bundled-calls
         if: "!cancelled() && steps.changed.outputs.run == 'true'"
         run: bun run scripts/test-run.ts bundled-calls

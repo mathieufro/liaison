@@ -1,0 +1,23 @@
+{
+  "entry": "job:recurring-issue",
+  "params": {},
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": [
+        "recurring_runs",
+        "{\"where\":{\"status\":{\"in\":[\"drafted\",\"approved\",\"issuing\",\"partial\"]}},\"orderBy\":{\"issue_on\":\"asc\"},\"limit\":50}"
+      ],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": [
+        "recurring_runs",
+        "{\"where\":{\"status\":{\"in\":[\"approved\",\"issuing\",\"rejected\"]}},\"orderBy\":{\"issue_on\":\"asc\"},\"limit\":50}"
+      ],
+      "reply": "[]"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

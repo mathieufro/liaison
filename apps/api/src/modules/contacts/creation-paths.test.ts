@@ -147,7 +147,7 @@ describe("contact creation paths", () => {
     expect(ensure).toMatch(/INSERT INTO kernel\.contacts[^;]*VALUES \([^;]*'none',/)
   })
 
-  it("only the store and invoicing apps may add their customers to the organisation", () => {
+  it("only the store, payments and invoicing apps may add their customers to the organisation", () => {
     const declaring = readdirSync(BUNDLED)
       .filter((app) => {
         try {
@@ -160,7 +160,7 @@ describe("contact creation paths", () => {
         }
       })
       .sort()
-    expect(declaring).toEqual(["invoicing", "shopify"])
+    expect(declaring).toEqual(["invoicing", "shopify", "stripe"])
     for (const app of ["mail", "tickets", "calendar"]) {
       const manifest = JSON.parse(
         readFileSync(path.join(SRC, "apps", app, "app.manifest.json"), "utf8"),

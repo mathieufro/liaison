@@ -1,0 +1,2679 @@
+[
+  {
+    "id": "kernel.scenario-support",
+    "app": "kernel",
+    "title": "tours.scenarios.support.title",
+    "summary": "tours.scenarios.support.summary",
+    "requires": {
+      "apps": ["tickets"]
+    },
+    "demoOnly": true,
+    "beats": [
+      {
+        "id": "inbox",
+        "kind": "show",
+        "title": "tours.scenarios.support.inbox.title",
+        "body": "tours.scenarios.support.inbox.body",
+        "anchor": "tickets-inbox",
+        "role": "tours.scenarios.support.inbox.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railTickets",
+            "rail": true
+          }
+        ],
+        "route": "/tickets"
+      },
+      {
+        "id": "live-ticket",
+        "kind": "world",
+        "title": "tours.scenarios.support.liveTicket.title",
+        "body": "tours.scenarios.support.liveTicket.body",
+        "anchor": "tickets-list",
+        "role": "tours.scenarios.support.liveTicket.role",
+        "route": "/tickets",
+        "injector": "support-ticket"
+      },
+      {
+        "id": "open",
+        "kind": "show",
+        "title": "tours.scenarios.support.open.title",
+        "body": "tours.scenarios.support.open.body",
+        "anchor": "tickets-detail[data-ticket-id={live-ticket}]",
+        "role": "tours.scenarios.support.open.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railTickets",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.support.open.way2",
+            "anchor": "tickets-list-row-{live-ticket}",
+            "anchorPhone": "tickets-card-{live-ticket}"
+          }
+        ],
+        "route": "/tickets/{live-ticket}"
+      },
+      {
+        "id": "routine-note",
+        "kind": "do",
+        "title": "tours.scenarios.support.routineNote.title",
+        "body": "tours.scenarios.support.routineNote.body",
+        "anchor": "tickets-message-*[data-kind=note]",
+        "role": "tours.scenarios.support.routineNote.role",
+        "route": "/tickets/{live-ticket}",
+        "event": {
+          "app": "tickets",
+          "entity": "note",
+          "action": "create",
+          "match": {
+            "ticketId": "{live-ticket}"
+          },
+          "actor": "any"
+        },
+        "autoplay": [
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "routine-draft",
+        "kind": "do",
+        "title": "tours.scenarios.support.routineDraft.title",
+        "body": "tours.scenarios.support.routineDraft.body",
+        "anchor": "tickets-detail-approval-card[data-tool-name=tickets:reply]",
+        "role": "tours.scenarios.support.routineDraft.role",
+        "route": "/tickets/{live-ticket}",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "create",
+          "match": {
+            "toolName": "tickets:reply",
+            "currentPayload.ticketId": "{live-ticket}"
+          },
+          "actor": "any"
+        },
+        "autoplay": [
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "approve",
+        "kind": "do",
+        "title": "tours.scenarios.support.approve.title",
+        "body": "tours.scenarios.support.approve.body",
+        "anchor": "tickets-detail-approval-card[data-approval-id={routine-draft}]",
+        "role": "tours.scenarios.support.approve.role",
+        "undo": {
+          "title": "tours.scenarios.common.undoTitle",
+          "role": "tours.scenarios.common.undoRole",
+          "body": "tours.scenarios.support.approve.undo"
+        },
+        "route": "/tickets/{live-ticket}",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "update",
+          "match": {
+            "status": "approved",
+            "toolName": "tickets:reply",
+            "currentPayload.ticketId": "{live-ticket}"
+          },
+          "sameEntityAs": "routine-draft"
+        },
+        "autoplay": [
+          {
+            "waitFor": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "routine-draft",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "routine-draft",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "routine"
+      },
+      {
+        "id": "sent",
+        "kind": "show",
+        "title": "tours.scenarios.support.sent.title",
+        "body": "tours.scenarios.support.sent.body",
+        "anchor": "tickets-conversation",
+        "role": "tours.scenarios.support.sent.role",
+        "route": "/tickets/{live-ticket}"
+      },
+      {
+        "id": "ask-agent",
+        "kind": "do",
+        "title": "tours.scenarios.support.askAgent.title",
+        "body": "tours.scenarios.support.askAgent.body",
+        "anchor": "compose-field[data-personal-agent=true]",
+        "role": "tours.scenarios.support.askAgent.role",
+        "path": [
+          {
+            "label": "tours.scenarios.support.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.support.askAgent.way2",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.support.askAgent.say",
+          "text": "tours.scenarios.support.askAgent.text"
+        },
+        "route": "/tickets/{live-ticket}",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat"
+          }
+        },
+        "autoplay": [
+          {
+            "click": "dock-chats",
+            "unlessVisible": {
+              "testid": "chats-personal-agent-row",
+              "where": {
+                "attr": "data-in-dock",
+                "value": "true"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "chats-personal-agent-row",
+              "where": {
+                "attr": "data-in-dock",
+                "value": "true"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "where": {
+                "attr": "data-personal-agent",
+                "value": "true"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.support.askAgent.text",
+              "where": {
+                "attr": "data-personal-agent",
+                "value": "true"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "where": {
+                "attr": "data-personal-agent",
+                "value": "true"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "autoplayPhone": [
+          {
+            "click": "phone-tab-chats",
+            "unlessVisible": "chats-personal-agent-row"
+          },
+          {
+            "click": "chats-personal-agent-row"
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "where": {
+                "attr": "data-personal-agent",
+                "value": "true"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.support.askAgent.text",
+              "where": {
+                "attr": "data-personal-agent",
+                "value": "true"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "where": {
+                "attr": "data-personal-agent",
+                "value": "true"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "answer",
+        "kind": "show",
+        "title": "tours.scenarios.support.answer.title",
+        "body": "tours.scenarios.support.answer.body",
+        "anchor": "agent-answer[data-turn-id={ask-agent}]",
+        "role": "tours.scenarios.support.answer.role",
+        "path": [
+          {
+            "label": "tours.scenarios.support.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.support.askAgent.way2",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.support.answer.way3"
+          }
+        ],
+        "route": "/tickets/{live-ticket}",
+        "waitsOn": "agent"
+      },
+      {
+        "id": "done",
+        "kind": "show",
+        "title": "tours.scenarios.support.done.title",
+        "body": "tours.scenarios.support.done.body",
+        "role": "tours.scenarios.support.done.role"
+      }
+    ]
+  },
+  {
+    "id": "kernel.scenario-projects",
+    "app": "kernel",
+    "title": "tours.scenarios.projects.title",
+    "summary": "tours.scenarios.projects.summary",
+    "requires": {
+      "apps": ["projects"]
+    },
+    "demoOnly": true,
+    "talksToAgent": true,
+    "beats": [
+      {
+        "id": "home",
+        "kind": "show",
+        "title": "tours.scenarios.projects.home.title",
+        "body": "tours.scenarios.projects.home.body",
+        "anchor": "projects-home",
+        "role": "tours.scenarios.projects.home.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railProjects",
+            "rail": true
+          }
+        ],
+        "route": "/projects"
+      },
+      {
+        "id": "teammate",
+        "kind": "world",
+        "title": "tours.scenarios.projects.teammate.title",
+        "body": "tours.scenarios.projects.teammate.body",
+        "anchor": "projects-home",
+        "role": "tours.scenarios.projects.teammate.role",
+        "route": "/projects",
+        "injector": "projects-comment"
+      },
+      {
+        "id": "my-task",
+        "kind": "show",
+        "title": "tours.scenarios.projects.myTask.title",
+        "body": "tours.scenarios.projects.myTask.body",
+        "anchor": "task-detail.thread",
+        "role": "tours.scenarios.projects.myTask.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railProjects",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.projects.myTask.way2",
+            "anchor": "projects-home-row-*[data-project-name=Kestrel Field Preamp launch]"
+          },
+          {
+            "label": "tours.scenarios.projects.myTask.way3",
+            "anchor": "project-list-view.row[data-task-id={teammate}]"
+          },
+          {
+            "label": "tours.scenarios.projects.myTask.way4"
+          }
+        ],
+        "route": "/projects/tasks/{teammate}"
+      },
+      {
+        "id": "ask-agent",
+        "kind": "do",
+        "title": "tours.scenarios.projects.askAgent.title",
+        "body": "tours.scenarios.projects.askAgent.body",
+        "anchor": "compose-field[data-thread-id={conversation}]",
+        "role": "tours.scenarios.projects.askAgent.role",
+        "path": [
+          {
+            "label": "tours.scenarios.projects.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.projects.askAgent.say",
+          "text": "tours.scenarios.projects.askAgent.text"
+        },
+        "route": "/projects/tasks/{teammate}",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat",
+            "threadId": "{conversation}"
+          }
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.projects.askAgent.text",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "subtasks",
+        "kind": "do",
+        "title": "tours.scenarios.projects.subtasks.title",
+        "body": "tours.scenarios.projects.subtasks.body",
+        "anchor": "agent-answer[data-turn-id={ask-agent}]",
+        "role": "tours.scenarios.projects.subtasks.role",
+        "path": [
+          {
+            "label": "tours.scenarios.projects.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.projects.subtasks.way3"
+          }
+        ],
+        "route": "/projects/tasks/{teammate}",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "projects",
+          "entity": "task",
+          "action": "created",
+          "actor": "user-or-agent",
+          "causedBy": "ask-agent",
+          "heldAs": "projects:create"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "reply",
+        "kind": "do",
+        "title": "tours.scenarios.projects.reply.title",
+        "body": "tours.scenarios.projects.reply.body",
+        "anchor": "task-detail.thread",
+        "role": "tours.scenarios.projects.reply.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railProjects",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.projects.myTask.way2",
+            "anchor": "projects-home-row-*[data-project-name=Kestrel Field Preamp launch]"
+          },
+          {
+            "label": "tours.scenarios.projects.myTask.way3",
+            "anchor": "project-list-view.row[data-task-id={teammate}]"
+          },
+          {
+            "label": "tours.scenarios.projects.reply.way3"
+          }
+        ],
+        "route": "/projects/tasks/{teammate}",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadOrigin": "projects:task"
+          },
+          "actor": "user-or-agent",
+          "causedBy": "ask-agent",
+          "heldAs": "projects:comment"
+        },
+        "autoplay": [
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "approve-subtasks",
+        "kind": "do",
+        "title": "tours.scenarios.common.held.title",
+        "body": "tours.scenarios.common.held.body",
+        "anchor": "approval-card[data-request-id={subtasks}]",
+        "role": "tours.scenarios.common.held.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.held.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.held.way3"
+          }
+        ],
+        "undo": {
+          "title": "tours.scenarios.common.undoTitle",
+          "role": "tours.scenarios.common.undoRole",
+          "body": "tours.scenarios.common.held.undo"
+        },
+        "route": "/projects/tasks/{teammate}",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "update",
+          "match": {
+            "status": "approved"
+          },
+          "sameEntityAs": "subtasks"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "subtasks",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "subtasks",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "agent",
+        "whenHeld": "subtasks"
+      },
+      {
+        "id": "approve-reply",
+        "kind": "do",
+        "title": "tours.scenarios.common.held.title",
+        "body": "tours.scenarios.common.held.body",
+        "anchor": "approval-card[data-request-id={reply}]",
+        "role": "tours.scenarios.common.held.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.held.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.held.way3"
+          }
+        ],
+        "undo": {
+          "title": "tours.scenarios.common.undoTitle",
+          "role": "tours.scenarios.common.undoRole",
+          "body": "tours.scenarios.common.held.undo"
+        },
+        "route": "/projects/tasks/{teammate}",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "update",
+          "match": {
+            "status": "approved"
+          },
+          "sameEntityAs": "reply"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "reply",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "reply",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "agent",
+        "whenHeld": "reply"
+      },
+      {
+        "id": "review",
+        "kind": "show",
+        "title": "tours.scenarios.projects.review.title",
+        "body": "tours.scenarios.projects.review.body",
+        "anchor": "task-detail",
+        "role": "tours.scenarios.projects.review.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railProjects",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.projects.myTask.way2",
+            "anchor": "projects-home-row-*[data-project-name=Kestrel Field Preamp launch]"
+          },
+          {
+            "label": "tours.scenarios.projects.myTask.way3",
+            "anchor": "project-list-view.row[data-task-id={teammate}]"
+          },
+          {
+            "label": "tours.scenarios.projects.review.way3"
+          }
+        ],
+        "route": "/projects/tasks/{teammate}"
+      },
+      {
+        "id": "board",
+        "kind": "show",
+        "title": "tours.scenarios.projects.board.title",
+        "body": "tours.scenarios.projects.board.body",
+        "anchor": "project-list-view.row[data-parent-task-id={teammate}]",
+        "anchorAll": true,
+        "role": "tours.scenarios.projects.board.role",
+        "path": [
+          {
+            "label": "tours.scenarios.projects.board.way1",
+            "anchor": "task-detail.breadcrumb-project"
+          },
+          {
+            "label": "tours.scenarios.projects.board.way2"
+          }
+        ],
+        "route": "/projects/tasks/{teammate}",
+        "reach": [
+          {
+            "click": "task-detail.breadcrumb-project",
+            "unlessVisible": "project-workspace.toolbar"
+          },
+          {
+            "click": "project-view-list",
+            "unlessActive": true
+          }
+        ]
+      },
+      {
+        "id": "done",
+        "kind": "show",
+        "title": "tours.scenarios.projects.done.title",
+        "body": "tours.scenarios.projects.done.body",
+        "role": "tours.scenarios.projects.done.role"
+      }
+    ]
+  },
+  {
+    "id": "kernel.scenario-chat",
+    "app": "kernel",
+    "title": "tours.scenarios.chat.title",
+    "summary": "tours.scenarios.chat.summary",
+    "demoOnly": true,
+    "talksToAgent": true,
+    "beats": [
+      {
+        "id": "channels",
+        "kind": "show",
+        "title": "tours.scenarios.chat.channels.title",
+        "body": "tours.scenarios.chat.channels.body",
+        "anchor": "activity-messages",
+        "anchorPhone": "phone-tab-chats",
+        "role": "tours.scenarios.chat.channels.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railChats",
+            "rail": true
+          }
+        ],
+        "route": "/chats"
+      },
+      {
+        "id": "question",
+        "kind": "world",
+        "title": "tours.scenarios.chat.question.title",
+        "body": "tours.scenarios.chat.question.body",
+        "anchor": "activity-messages",
+        "anchorPhone": "phone-tab-chats",
+        "role": "tours.scenarios.chat.question.role",
+        "route": "/chats",
+        "injector": "chat-question"
+      },
+      {
+        "id": "read-question",
+        "kind": "show",
+        "title": "tours.scenarios.chat.readQuestion.title",
+        "body": "tours.scenarios.chat.readQuestion.body",
+        "anchor": "message-row[data-thread-id={question}]",
+        "role": "tours.scenarios.chat.readQuestion.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railChats",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.chat.readQuestion.way2",
+            "anchor": "thread-item[data-thread-id={question}]",
+            "anchorPhone": "chat-row[data-thread-id={question}]"
+          },
+          {
+            "label": "tours.scenarios.chat.readQuestion.way3"
+          }
+        ],
+        "route": "/threads/{question}"
+      },
+      {
+        "id": "ask-agent",
+        "kind": "do",
+        "title": "tours.scenarios.chat.askAgent.title",
+        "body": "tours.scenarios.chat.askAgent.body",
+        "anchor": "compose-field[data-thread-id={conversation}]",
+        "role": "tours.scenarios.chat.askAgent.role",
+        "path": [
+          {
+            "label": "tours.scenarios.chat.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.chat.askAgent.say",
+          "text": "tours.scenarios.chat.askAgent.text"
+        },
+        "route": "/threads/{question}",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat",
+            "threadId": "{conversation}"
+          }
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.chat.askAgent.text",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "searching",
+        "kind": "show",
+        "title": "tours.scenarios.chat.searching.title",
+        "body": "tours.scenarios.chat.searching.body",
+        "anchor": "agent-answer[data-turn-id={ask-agent}]",
+        "role": "tours.scenarios.chat.searching.role",
+        "path": [
+          {
+            "label": "tours.scenarios.chat.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.chat.searching.way3"
+          }
+        ],
+        "route": "/threads/{question}",
+        "routePhone": "/threads/{conversation}",
+        "waitsOn": "agent"
+      },
+      {
+        "id": "sources",
+        "kind": "show",
+        "title": "tours.scenarios.chat.sources.title",
+        "body": "tours.scenarios.chat.sources.body",
+        "anchor": "message-citations[data-turn-id={ask-agent}]",
+        "role": "tours.scenarios.chat.sources.role",
+        "path": [
+          {
+            "label": "tours.scenarios.chat.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.chat.sources.way3"
+          }
+        ],
+        "route": "/threads/{question}",
+        "routePhone": "/threads/{conversation}",
+        "waitsOn": "agent"
+      },
+      {
+        "id": "follow-up",
+        "kind": "do",
+        "title": "tours.scenarios.chat.followUp.title",
+        "body": "tours.scenarios.chat.followUp.body",
+        "anchor": "compose-field[data-thread-id={conversation}]",
+        "role": "tours.scenarios.chat.followUp.role",
+        "path": [
+          {
+            "label": "tours.scenarios.chat.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.chat.followUp.say",
+          "text": "tours.scenarios.chat.followUp.text"
+        },
+        "route": "/threads/{question}",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat",
+            "threadId": "{conversation}"
+          }
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.chat.followUp.text",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "optional": {
+          "whenApp": "projects"
+        }
+      },
+      {
+        "id": "task",
+        "kind": "do",
+        "title": "tours.scenarios.chat.task.title",
+        "body": "tours.scenarios.chat.task.body",
+        "anchor": "tool-call-row[data-turn-id={follow-up}]",
+        "role": "tours.scenarios.chat.task.role",
+        "path": [
+          {
+            "label": "tours.scenarios.chat.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.chat.searching.way3"
+          }
+        ],
+        "route": "/threads/{question}",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "projects",
+          "entity": "task",
+          "action": "created",
+          "actor": "user-or-agent",
+          "causedBy": "follow-up",
+          "heldAs": ["projects:create", "projects:createProject"]
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "optional": {
+          "whenApp": "projects"
+        }
+      },
+      {
+        "id": "approve-task",
+        "kind": "do",
+        "title": "tours.scenarios.common.held.title",
+        "body": "tours.scenarios.common.held.body",
+        "anchor": "approval-card[data-request-id={task}]",
+        "role": "tours.scenarios.common.held.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.held.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.held.way3"
+          }
+        ],
+        "undo": {
+          "title": "tours.scenarios.common.undoTitle",
+          "role": "tours.scenarios.common.undoRole",
+          "body": "tours.scenarios.common.held.undo"
+        },
+        "route": "/threads/{question}",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "update",
+          "match": {
+            "status": "approved"
+          },
+          "sameEntityAs": "task"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "task",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "task",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "agent",
+        "whenHeld": "task",
+        "optional": {
+          "whenApp": "projects"
+        }
+      },
+      {
+        "id": "reply-tobias",
+        "kind": "do",
+        "title": "tours.scenarios.chat.replyTobias.title",
+        "body": "tours.scenarios.chat.replyTobias.body",
+        "anchor": "compose-field[data-thread-id={conversation}]",
+        "role": "tours.scenarios.chat.replyTobias.role",
+        "path": [
+          {
+            "label": "tours.scenarios.chat.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.chat.replyTobias.say",
+          "text": "tours.scenarios.chat.replyTobias.text"
+        },
+        "route": "/threads/{question}",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat",
+            "threadId": "{conversation}"
+          }
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.chat.replyTobias.text",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "optional": {
+          "whenApp": "projects"
+        }
+      },
+      {
+        "id": "posting",
+        "kind": "do",
+        "title": "tours.scenarios.chat.posting.title",
+        "body": "tours.scenarios.chat.posting.body",
+        "anchor": "tool-call-row[data-turn-id={reply-tobias}]",
+        "role": "tours.scenarios.chat.posting.role",
+        "path": [
+          {
+            "label": "tours.scenarios.chat.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.chat.searching.way3"
+          }
+        ],
+        "route": "/threads/{question}",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadId": "{question}",
+            "authorType": "agent"
+          },
+          "actor": "user-or-agent",
+          "causedBy": "reply-tobias"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "optional": {
+          "whenApp": "projects"
+        }
+      },
+      {
+        "id": "reply-in-channel",
+        "kind": "show",
+        "title": "tours.scenarios.chat.replyInChannel.title",
+        "body": "tours.scenarios.chat.replyInChannel.body",
+        "anchor": "message-row[data-message-id={posting}]",
+        "role": "tours.scenarios.chat.replyInChannel.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railChats",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.chat.readQuestion.way2",
+            "anchor": "thread-item[data-thread-id={question}]",
+            "anchorPhone": "chat-row[data-thread-id={question}]"
+          },
+          {
+            "label": "tours.scenarios.chat.replyInChannel.way3"
+          }
+        ],
+        "route": "/threads/{question}",
+        "optional": {
+          "whenApp": "projects"
+        }
+      },
+      {
+        "id": "done",
+        "kind": "show",
+        "title": "tours.scenarios.chat.done.title",
+        "body": "tours.scenarios.chat.done.body",
+        "role": "tours.scenarios.chat.done.role"
+      }
+    ]
+  },
+  {
+    "id": "kernel.scenario-sales",
+    "app": "kernel",
+    "title": "tours.scenarios.sales.title",
+    "summary": "tours.scenarios.sales.summary",
+    "requires": {
+      "apps": ["mail"]
+    },
+    "demoOnly": true,
+    "talksToAgent": true,
+    "beats": [
+      {
+        "id": "crm",
+        "kind": "show",
+        "title": "tours.scenarios.sales.crm.title",
+        "body": "tours.scenarios.sales.crm.body",
+        "anchor": "customer-card",
+        "role": "tours.scenarios.sales.crm.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railMail",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.sales.crm.way2",
+            "anchor": "conversation-row"
+          }
+        ],
+        "route": "/mail",
+        "reach": [
+          {
+            "click": "conversation-row",
+            "unlessVisible": "customer-card"
+          }
+        ]
+      },
+      {
+        "id": "routine",
+        "kind": "show",
+        "title": "tours.scenarios.sales.routine.title",
+        "body": "tours.scenarios.sales.routine.body",
+        "anchor": "routines-list",
+        "role": "tours.scenarios.sales.routine.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railAgents",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.sales.routine.way2",
+            "anchor": "agent-sidebar-row-*[data-agent-mine=true]"
+          },
+          {
+            "label": "tours.scenarios.sales.routine.way3",
+            "anchor": "agent-page-tab-routines"
+          }
+        ],
+        "route": "/agents/self/routines"
+      },
+      {
+        "id": "enable",
+        "kind": "do",
+        "title": "tours.scenarios.sales.enable.title",
+        "body": "tours.scenarios.sales.enable.body",
+        "anchor": "routines-list",
+        "role": "tours.scenarios.sales.enable.role",
+        "route": "/agents/self/routines",
+        "event": {
+          "app": "kernel",
+          "entity": "routine",
+          "action": "update",
+          "match": {
+            "enabled": true,
+            "name": "Research interested prospects"
+          }
+        },
+        "autoplay": [
+          {
+            "waitFor": "routine-enable-toggle-Research interested prospects"
+          },
+          {
+            "click": "routine-enable-toggle-Research interested prospects",
+            "unlessActive": true
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "live-email",
+        "kind": "world",
+        "title": "tours.scenarios.sales.liveEmail.title",
+        "body": "tours.scenarios.sales.liveEmail.body",
+        "anchor": "mail-inbox",
+        "role": "tours.scenarios.sales.liveEmail.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railMail",
+            "rail": true
+          }
+        ],
+        "route": "/mail",
+        "injector": "sales-email"
+      },
+      {
+        "id": "researching",
+        "kind": "do",
+        "title": "tours.scenarios.sales.researching.title",
+        "body": "tours.scenarios.sales.researching.body",
+        "role": "tours.scenarios.sales.researching.role",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "create",
+          "match": {
+            "toolName": "mail:reply",
+            "metadata.originRoutineId": "{enable}"
+          },
+          "actor": "any"
+        },
+        "autoplay": [
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "routine"
+      },
+      {
+        "id": "bundle",
+        "kind": "show",
+        "title": "tours.scenarios.sales.bundle.title",
+        "body": "tours.scenarios.sales.bundle.body",
+        "anchor": "attention-row-*[data-tool-name=api-connector:connector_write|invoicing:quote_create_and_issue]",
+        "role": "tours.scenarios.sales.bundle.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railHome",
+            "rail": true
+          }
+        ],
+        "route": "/",
+        "waitsOn": "routine"
+      },
+      {
+        "id": "bundle-steps",
+        "kind": "show",
+        "title": "tours.scenarios.sales.bundleSteps.title",
+        "body": "tours.scenarios.sales.bundleSteps.body",
+        "anchor": "approval-card[data-tool-name=api-connector:connector_write|invoicing:quote_create_and_issue]",
+        "role": "tours.scenarios.sales.bundleSteps.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railHome",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.sales.bundleSteps.way2",
+            "anchor": "attention-row-*[data-tool-name=api-connector:connector_write|invoicing:quote_create_and_issue]"
+          }
+        ],
+        "route": "/",
+        "reach": [
+          {
+            "waitFor": {
+              "testid": "attention-row-*",
+              "where": {
+                "attr": "data-tool-name",
+                "value": ["api-connector:connector_write", "invoicing:quote_create_and_issue"]
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "attention-row-*",
+              "where": {
+                "attr": "data-tool-name",
+                "value": ["api-connector:connector_write", "invoicing:quote_create_and_issue"]
+              }
+            },
+            "unlessVisible": {
+              "testid": "approval-card",
+              "where": {
+                "attr": "data-tool-name",
+                "value": ["api-connector:connector_write", "invoicing:quote_create_and_issue"]
+              }
+            }
+          }
+        ],
+        "waitsOn": "routine"
+      },
+      {
+        "id": "approve",
+        "kind": "do",
+        "title": "tours.scenarios.sales.approve.title",
+        "body": "tours.scenarios.sales.approve.body",
+        "anchor": "approval-card-action-approve[data-tool-name=api-connector:connector_write|invoicing:quote_create_and_issue]",
+        "role": "tours.scenarios.sales.approve.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railHome",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.sales.approve.way2",
+            "anchor": "attention-row-*[data-tool-name=api-connector:connector_write|invoicing:quote_create_and_issue]"
+          }
+        ],
+        "undo": {
+          "title": "tours.scenarios.common.undoTitle",
+          "role": "tours.scenarios.common.undoRole",
+          "body": "tours.scenarios.sales.approve.undo"
+        },
+        "route": "/",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "update",
+          "match": {
+            "status": "approved",
+            "toolName": "mail:reply",
+            "currentPayload.conversationId": "{live-email}"
+          }
+        },
+        "autoplay": [
+          {
+            "waitFor": {
+              "testid": "attention-row-*",
+              "where": {
+                "attr": "data-tool-name",
+                "value": ["api-connector:connector_write", "invoicing:quote_create_and_issue"]
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "attention-row-*",
+              "where": {
+                "attr": "data-tool-name",
+                "value": ["api-connector:connector_write", "invoicing:quote_create_and_issue"]
+              }
+            },
+            "unlessVisible": {
+              "testid": "approval-card-action-approve",
+              "where": {
+                "attr": "data-tool-name",
+                "value": ["api-connector:connector_write", "invoicing:quote_create_and_issue"]
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "approval-card-action-approve",
+              "where": {
+                "attr": "data-tool-name",
+                "value": ["api-connector:connector_write", "invoicing:quote_create_and_issue"]
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "approval-card-action-approve",
+              "where": {
+                "attr": "data-tool-name",
+                "value": ["api-connector:connector_write", "invoicing:quote_create_and_issue"]
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "routine"
+      },
+      {
+        "id": "brief",
+        "kind": "show",
+        "title": "tours.scenarios.sales.brief.title",
+        "body": "tours.scenarios.sales.brief.body",
+        "anchor": "message-row[data-routine-report-thread={conversation}]",
+        "role": "tours.scenarios.sales.brief.role",
+        "path": [
+          {
+            "label": "tours.scenarios.sales.brief.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.sales.brief.way3"
+          }
+        ],
+        "route": "/",
+        "routePhone": "/threads/{conversation}",
+        "reach": [
+          {
+            "openRunConversation": true
+          }
+        ],
+        "waitsOn": "routine"
+      },
+      {
+        "id": "card",
+        "kind": "show",
+        "title": "tours.scenarios.sales.card.title",
+        "body": "tours.scenarios.sales.card.body",
+        "anchor": "customer-card",
+        "role": "tours.scenarios.sales.card.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railMail",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.sales.card.way2",
+            "anchor": "conversation-row[data-conversation-id={live-email}]"
+          }
+        ],
+        "route": "/mail/{live-email}"
+      },
+      {
+        "id": "done",
+        "kind": "show",
+        "title": "tours.scenarios.sales.done.title",
+        "body": "tours.scenarios.sales.done.body",
+        "role": "tours.scenarios.sales.done.role"
+      }
+    ]
+  },
+  {
+    "id": "kernel.scenario-commerce",
+    "app": "kernel",
+    "title": "tours.scenarios.commerce.title",
+    "summary": "tours.scenarios.commerce.summary",
+    "requires": {
+      "apps": ["shopify"]
+    },
+    "demoOnly": true,
+    "talksToAgent": true,
+    "agent": "@operations",
+    "beats": [
+      {
+        "id": "orders",
+        "kind": "show",
+        "title": "tours.scenarios.commerce.orders.title",
+        "body": "tours.scenarios.commerce.orders.body",
+        "anchor": "shopify-orders-list",
+        "role": "tours.scenarios.commerce.orders.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railShopify",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.commerce.orders.way2",
+            "anchor": "shopify-sidebar-link-orders"
+          }
+        ],
+        "route": "/shopify/orders"
+      },
+      {
+        "id": "live-order",
+        "kind": "world",
+        "title": "tours.scenarios.commerce.liveOrder.title",
+        "body": "tours.scenarios.commerce.liveOrder.body",
+        "anchor": "shopify-orders-list",
+        "role": "tours.scenarios.commerce.liveOrder.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railShopify",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.commerce.orders.way2",
+            "anchor": "shopify-sidebar-link-orders"
+          }
+        ],
+        "route": "/shopify/orders",
+        "injector": "commerce-order"
+      },
+      {
+        "id": "new-order",
+        "kind": "show",
+        "title": "tours.scenarios.commerce.newOrder.title",
+        "body": "tours.scenarios.commerce.newOrder.body",
+        "anchor": "shopify-orders-row-{live-order}",
+        "role": "tours.scenarios.commerce.newOrder.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railShopify",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.commerce.orders.way2",
+            "anchor": "shopify-sidebar-link-orders"
+          }
+        ],
+        "route": "/shopify/orders"
+      },
+      {
+        "id": "invoice",
+        "kind": "show",
+        "title": "tours.scenarios.commerce.invoice.title",
+        "body": "tours.scenarios.commerce.invoice.body",
+        "anchor": "invoicing-documents-row[data-shopify-order-id={live-order}]",
+        "role": "tours.scenarios.commerce.invoice.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railInvoicing",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.commerce.invoice.way2",
+            "anchor": "invoicing-sidebar-link-invoices"
+          }
+        ],
+        "route": "/invoicing/documents/invoices",
+        "optional": {
+          "whenApp": "invoicing"
+        }
+      },
+      {
+        "id": "ask-agent",
+        "kind": "do",
+        "title": "tours.scenarios.commerce.askAgent.title",
+        "body": "tours.scenarios.commerce.askAgent.body",
+        "anchor": "compose-field[data-thread-id={conversation}]",
+        "role": "tours.scenarios.commerce.askAgent.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railShopify",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.commerce.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.commerce.askAgent.way2",
+            "anchor": "chats-agent-row[data-agent-name=Operations Desk]"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.commerce.askAgent.say",
+          "text": "tours.scenarios.commerce.askAgent.text"
+        },
+        "route": "/shopify/orders",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat",
+            "threadId": "{conversation}"
+          }
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.commerce.askAgent.text",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "prepare",
+        "kind": "do",
+        "title": "tours.scenarios.commerce.prepare.title",
+        "body": "tours.scenarios.commerce.prepare.body",
+        "anchor": "approval-card[data-turn-id={ask-agent}]",
+        "role": "tours.scenarios.commerce.prepare.role",
+        "path": [
+          {
+            "label": "tours.scenarios.commerce.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.commerce.askAgent.way2",
+            "anchor": "chats-agent-row[data-agent-name=Operations Desk]"
+          },
+          {
+            "label": "tours.scenarios.commerce.prepare.way3"
+          }
+        ],
+        "route": "/shopify/orders",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "create",
+          "match": {
+            "toolName": "boxtal:create_shipment"
+          },
+          "actor": "user-or-agent",
+          "causedBy": "ask-agent"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "approve",
+        "kind": "do",
+        "title": "tours.scenarios.commerce.approve.title",
+        "body": "tours.scenarios.commerce.approve.body",
+        "anchor": "approval-card[data-request-id={prepare}]",
+        "role": "tours.scenarios.commerce.approve.role",
+        "path": [
+          {
+            "label": "tours.scenarios.commerce.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.commerce.askAgent.way2",
+            "anchor": "chats-agent-row[data-agent-name=Operations Desk]"
+          },
+          {
+            "label": "tours.scenarios.common.held.way3"
+          }
+        ],
+        "undo": {
+          "title": "tours.scenarios.common.undoTitle",
+          "role": "tours.scenarios.common.undoRole",
+          "body": "tours.scenarios.commerce.approve.undo"
+        },
+        "route": "/shopify/orders",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "kernel",
+          "entity": "approval_request",
+          "action": "update",
+          "match": {
+            "status": "approved"
+          },
+          "sameEntityAs": "prepare"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "prepare",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "approval-card-action-approve",
+              "created": {
+                "beat": "prepare",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "agent"
+      },
+      {
+        "id": "done",
+        "kind": "show",
+        "title": "tours.scenarios.commerce.done.title",
+        "body": "tours.scenarios.commerce.done.body",
+        "role": "tours.scenarios.commerce.done.role"
+      }
+    ]
+  },
+  {
+    "id": "kernel.scenario-dev",
+    "app": "kernel",
+    "title": "tours.scenarios.dev.title",
+    "summary": "tours.scenarios.dev.summary",
+    "demoOnly": true,
+    "talksToAgent": true,
+    "beats": [
+      {
+        "id": "intro",
+        "kind": "show",
+        "title": "tours.scenarios.dev.intro.title",
+        "body": "tours.scenarios.dev.intro.body",
+        "role": "tours.scenarios.dev.intro.role"
+      },
+      {
+        "id": "computers",
+        "kind": "show",
+        "title": "tours.scenarios.dev.computers.title",
+        "body": "tours.scenarios.dev.computers.body",
+        "anchor": "node-line",
+        "role": "tours.scenarios.dev.computers.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railSessions",
+            "rail": true
+          }
+        ],
+        "route": "/sessions"
+      },
+      {
+        "id": "ask-bugs",
+        "kind": "do",
+        "title": "tours.scenarios.dev.askBugs.title",
+        "body": "tours.scenarios.dev.askBugs.body",
+        "anchor": "compose-field[data-thread-id={conversation}]",
+        "role": "tours.scenarios.dev.askBugs.role",
+        "path": [
+          {
+            "label": "tours.scenarios.dev.askBugs.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.dev.askBugs.say",
+          "text": "tours.scenarios.dev.askBugs.text"
+        },
+        "route": "/sessions",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat",
+            "threadId": "{conversation}"
+          }
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.dev.askBugs.text",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "bugs",
+        "kind": "show",
+        "title": "tours.scenarios.dev.bugs.title",
+        "body": "tours.scenarios.dev.bugs.body",
+        "anchor": "agent-answer[data-turn-id={ask-bugs}]",
+        "role": "tours.scenarios.dev.bugs.role",
+        "path": [
+          {
+            "label": "tours.scenarios.dev.askBugs.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.dev.bugs.way3"
+          }
+        ],
+        "route": "/sessions",
+        "routePhone": "/threads/{conversation}",
+        "waitsOn": "agent"
+      },
+      {
+        "id": "ask-dispatch",
+        "kind": "do",
+        "title": "tours.scenarios.dev.askDispatch.title",
+        "body": "tours.scenarios.dev.askDispatch.body",
+        "anchor": "compose-field[data-thread-id={conversation}]",
+        "role": "tours.scenarios.dev.askDispatch.role",
+        "path": [
+          {
+            "label": "tours.scenarios.dev.askBugs.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.dev.askDispatch.say",
+          "text": "tours.scenarios.dev.askDispatch.text"
+        },
+        "route": "/sessions",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat",
+            "threadId": "{conversation}"
+          }
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.dev.askDispatch.text",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "dispatch",
+        "kind": "do",
+        "title": "tours.scenarios.dev.dispatch.title",
+        "body": "tours.scenarios.dev.dispatch.body",
+        "anchor": "agent-answer[data-turn-id={ask-dispatch}]",
+        "role": "tours.scenarios.dev.dispatch.role",
+        "path": [
+          {
+            "label": "tours.scenarios.dev.askBugs.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.dev.dispatch.way3"
+          }
+        ],
+        "route": "/sessions",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "kernel",
+          "entity": "node_session",
+          "action": "create",
+          "match": {
+            "source": "dispatch"
+          },
+          "actor": "user-or-agent",
+          "causedBy": "ask-dispatch",
+          "heldAs": "kernel:run_on_my_computer"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "agent"
+      },
+      {
+        "id": "approve-dispatch",
+        "kind": "do",
+        "title": "tours.scenarios.common.held.title",
+        "body": "tours.scenarios.common.held.body",
+        "anchor": "node-dispatch-approval[data-request-id={dispatch}]",
+        "role": "tours.scenarios.common.held.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.held.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.held.way3"
+          }
+        ],
+        "undo": {
+          "title": "tours.scenarios.common.undoTitle",
+          "role": "tours.scenarios.common.undoRole",
+          "body": "tours.scenarios.common.held.undo"
+        },
+        "route": "/sessions",
+        "routePhone": "/threads/{conversation}",
+        "event": {
+          "app": "kernel",
+          "entity": "node_session",
+          "action": "create",
+          "match": {
+            "source": "dispatch",
+            "sourceThreadId": "{conversation}"
+          },
+          "actor": "user-or-agent"
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "node-dispatch-approval-approve",
+              "created": {
+                "beat": "dispatch",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "node-dispatch-approval-approve",
+              "created": {
+                "beat": "dispatch",
+                "attr": "data-entity-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "agent",
+        "whenHeld": "dispatch"
+      },
+      {
+        "id": "stream",
+        "kind": "do",
+        "title": "tours.scenarios.dev.stream.title",
+        "body": "tours.scenarios.dev.stream.body",
+        "anchor": "session-row",
+        "role": "tours.scenarios.dev.stream.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railSessions",
+            "rail": true
+          }
+        ],
+        "route": "/sessions",
+        "event": {
+          "app": "kernel",
+          "entity": "node_session",
+          "action": "replay_step",
+          "match": {
+            "replayStep": "asked",
+            "sessionId": "{dispatch}"
+          },
+          "actor": "any"
+        },
+        "autoplay": [
+          {
+            "click": {
+              "testid": "session-row",
+              "created": {
+                "beat": "dispatch",
+                "attr": "data-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "replay"
+      },
+      {
+        "id": "permission",
+        "kind": "do",
+        "title": "tours.scenarios.dev.permission.title",
+        "body": "tours.scenarios.dev.permission.body",
+        "anchor": "request-card",
+        "role": "tours.scenarios.dev.permission.role",
+        "path": [
+          {
+            "label": "tours.scenarios.dev.permission.way1",
+            "anchor": "session-row[data-id={dispatch}]"
+          }
+        ],
+        "route": "/sessions/{dispatch}",
+        "event": {
+          "app": "kernel",
+          "entity": "node_session",
+          "action": "replay_step",
+          "match": {
+            "replayStep": "approved",
+            "sessionId": "{dispatch}"
+          }
+        },
+        "autoplay": [
+          {
+            "click": {
+              "testid": "session-row",
+              "created": {
+                "beat": "dispatch",
+                "attr": "data-id"
+              }
+            },
+            "unlessVisible": "node-permission-allow"
+          },
+          {
+            "waitFor": "node-permission-allow"
+          },
+          {
+            "click": "node-permission-allow"
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "result",
+        "kind": "show",
+        "title": "tours.scenarios.dev.result.title",
+        "body": "tours.scenarios.dev.result.body",
+        "anchor": "result-card",
+        "role": "tours.scenarios.dev.result.role",
+        "route": "/sessions/{dispatch}",
+        "waitsOn": "replay"
+      },
+      {
+        "id": "report",
+        "kind": "show",
+        "title": "tours.scenarios.dev.report.title",
+        "body": "tours.scenarios.dev.report.body",
+        "anchor": "message-row[data-session-result={dispatch}]",
+        "role": "tours.scenarios.dev.report.role",
+        "path": [
+          {
+            "label": "tours.scenarios.dev.askBugs.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.dev.report.way3"
+          }
+        ],
+        "route": "/sessions/{dispatch}",
+        "routePhone": "/threads/{conversation}",
+        "reach": [
+          {
+            "openRunConversation": true
+          }
+        ],
+        "waitsOn": "replay"
+      },
+      {
+        "id": "pair",
+        "kind": "show",
+        "title": "tours.scenarios.dev.pair.title",
+        "body": "tours.scenarios.dev.pair.body",
+        "anchor": "demo-pair-computer",
+        "role": "tours.scenarios.dev.pair.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railSessions",
+            "rail": true
+          }
+        ],
+        "route": "/sessions"
+      },
+      {
+        "id": "done",
+        "kind": "show",
+        "title": "tours.scenarios.dev.done.title",
+        "body": "tours.scenarios.dev.done.body",
+        "role": "tours.scenarios.dev.done.role"
+      }
+    ]
+  },
+  {
+    "id": "kernel.scenario-knowledge",
+    "app": "kernel",
+    "title": "tours.scenarios.knowledge.title",
+    "summary": "tours.scenarios.knowledge.summary",
+    "demoOnly": true,
+    "talksToAgent": true,
+    "beats": [
+      {
+        "id": "sources",
+        "kind": "show",
+        "title": "tours.scenarios.knowledge.sources.title",
+        "body": "tours.scenarios.knowledge.sources.body",
+        "anchor": "knowledge-sidebar",
+        "anchorPhone": "knowledge-home",
+        "role": "tours.scenarios.knowledge.sources.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railKnowledge",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.knowledge.sources.way2"
+          }
+        ],
+        "route": "/knowledge"
+      },
+      {
+        "id": "open-pl",
+        "kind": "show",
+        "title": "tours.scenarios.knowledge.openPl.title",
+        "body": "tours.scenarios.knowledge.openPl.body",
+        "anchor": "knowledge-document-view[data-doc-title=Q3 2026 P&L]",
+        "role": "tours.scenarios.knowledge.openPl.role",
+        "path": [
+          {
+            "label": "tours.scenarios.knowledge.openPl.way1",
+            "anchor": "knowledge-recent-*[data-doc-title=Q3 2026 P&L]"
+          },
+          {
+            "label": "tours.scenarios.knowledge.openPl.way2"
+          }
+        ],
+        "route": "/knowledge",
+        "reach": [
+          {
+            "click": {
+              "testid": "knowledge-recent-*",
+              "where": {
+                "attr": "data-doc-title",
+                "value": "Q3 2026 P&L"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "share",
+        "kind": "show",
+        "title": "tours.scenarios.knowledge.share.title",
+        "body": "tours.scenarios.knowledge.share.body",
+        "anchor": "knowledge-share-dialog",
+        "role": "tours.scenarios.knowledge.share.role",
+        "path": [
+          {
+            "label": "tours.scenarios.knowledge.share.way1",
+            "anchor": "knowledge-share-button"
+          },
+          {
+            "label": "tours.scenarios.knowledge.share.way2"
+          }
+        ],
+        "route": "/knowledge",
+        "reach": [
+          {
+            "click": {
+              "testid": "knowledge-recent-*",
+              "where": {
+                "attr": "data-doc-title",
+                "value": "Q3 2026 P&L"
+              }
+            },
+            "unlessVisible": "knowledge-share-button"
+          },
+          {
+            "click": "knowledge-share-button"
+          }
+        ]
+      },
+      {
+        "id": "ask-agent",
+        "kind": "do",
+        "title": "tours.scenarios.knowledge.askAgent.title",
+        "body": "tours.scenarios.knowledge.askAgent.body",
+        "anchor": "compose-field[data-thread-id={conversation}]",
+        "role": "tours.scenarios.knowledge.askAgent.role",
+        "path": [
+          {
+            "label": "tours.scenarios.knowledge.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.common.sendBelow"
+          }
+        ],
+        "say": {
+          "lead": "tours.scenarios.knowledge.askAgent.say",
+          "text": "tours.scenarios.knowledge.askAgent.text"
+        },
+        "route": "/knowledge",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadType": "agent_chat",
+            "threadId": "{conversation}"
+          }
+        },
+        "autoplay": [
+          {
+            "openRunConversation": true
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "type": {
+              "testid": "compose-field",
+              "text": "tours.scenarios.knowledge.askAgent.text",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitFor": {
+              "testid": "compose-field",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "click": {
+              "testid": "compose-send",
+              "created": {
+                "beat": "conversation",
+                "attr": "data-thread-id"
+              }
+            }
+          },
+          {
+            "waitEvent": true
+          }
+        ]
+      },
+      {
+        "id": "answer",
+        "kind": "show",
+        "title": "tours.scenarios.knowledge.answer.title",
+        "body": "tours.scenarios.knowledge.answer.body",
+        "anchor": "agent-answer[data-turn-id={ask-agent}]",
+        "role": "tours.scenarios.knowledge.answer.role",
+        "path": [
+          {
+            "label": "tours.scenarios.knowledge.askAgent.way1",
+            "anchor": "dock-chats",
+            "anchorPhone": "phone-tab-chats"
+          },
+          {
+            "label": "tours.scenarios.common.openRunConversation",
+            "anchor": "chats-personal-agent-row[data-in-dock=true]",
+            "anchorPhone": "chats-personal-agent-row"
+          },
+          {
+            "label": "tours.scenarios.knowledge.answer.way3"
+          }
+        ],
+        "route": "/knowledge",
+        "waitsOn": "agent"
+      },
+      {
+        "id": "lucas-asks",
+        "kind": "world",
+        "title": "tours.scenarios.knowledge.lucasAsks.title",
+        "body": "tours.scenarios.knowledge.lucasAsks.body",
+        "anchor": "activity-messages",
+        "anchorPhone": "phone-tab-chats",
+        "role": "tours.scenarios.knowledge.lucasAsks.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railChats",
+            "rail": true
+          }
+        ],
+        "route": "/chats",
+        "injector": "knowledge-lucas-asks"
+      },
+      {
+        "id": "lucas-answer",
+        "kind": "do",
+        "title": "tours.scenarios.knowledge.lucasAnswer.title",
+        "body": "tours.scenarios.knowledge.lucasAnswer.body",
+        "anchor": "message-scroll-container",
+        "role": "tours.scenarios.knowledge.lucasAnswer.role",
+        "path": [
+          {
+            "label": "tours.scenarios.common.railChats",
+            "rail": true
+          },
+          {
+            "label": "tours.scenarios.knowledge.lucasAnswer.way2",
+            "anchor": "thread-item[data-thread-id={lucas-asks}]",
+            "anchorPhone": "chat-row[data-thread-id={lucas-asks}]"
+          },
+          {
+            "label": "tours.scenarios.knowledge.lucasAnswer.way3"
+          }
+        ],
+        "route": "/threads/{lucas-asks}",
+        "event": {
+          "app": "kernel",
+          "entity": "message",
+          "action": "create",
+          "match": {
+            "threadId": "{lucas-asks}",
+            "authorType": "agent",
+            "parentMessageId": null
+          },
+          "actor": "any",
+          "turnsEnded": true
+        },
+        "autoplay": [
+          {
+            "waitEvent": true
+          }
+        ],
+        "waitsOn": "agent"
+      },
+      {
+        "id": "done",
+        "kind": "show",
+        "title": "tours.scenarios.knowledge.done.title",
+        "body": "tours.scenarios.knowledge.done.body",
+        "role": "tours.scenarios.knowledge.done.role"
+      }
+    ]
+  }
+]

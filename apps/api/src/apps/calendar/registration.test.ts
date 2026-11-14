@@ -60,6 +60,18 @@ describe("calendar app registration", () => {
     }
   })
 
+  it("a fresh instance has app_calendar.events.event_type after registration", async () => {
+    // The table comes from the manifest, so this column has to as well: a
+    // migration alone finds no table on a new instance. Taken away first, so only
+    // the registration can bring it back.
+    await sql`ALTER TABLE app_calendar.events DROP COLUMN IF EXISTS event_type`
+    await registerCalendarAppForTest()
+    const rows = await sql`
+      SELECT data_type, is_nullable FROM information_schema.columns
+       WHERE table_schema = 'app_calendar' AND table_name = 'events' AND column_name = 'event_type'`
+    expect(rows.map((r: any) => [r.data_type, r.is_nullable])).toEqual([["text", "YES"]])
+  })
+
   it("creates accounts table with ownerType/ownerId/syncStatus columns", async () => {
     const cols = await sql`
       SELECT column_name FROM information_schema.columns

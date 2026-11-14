@@ -1,0 +1,3 @@
+An empty list names the dates it looked at, or says No documents yet -> bundled-apps/invoicing/src/ui/dashboards/columns.ts (emptyListText)
+The empty line is used by the documents list -> bundled-apps/invoicing/src/ui/DocumentsList.tsx (DocumentsList)
+Invoicing settings at the foot of the side panel, for people who may read the settings -> bundled-apps/invoicing/src/ui/sidebar.tsx (SETTINGS_PATH, InvoicingSidebar)

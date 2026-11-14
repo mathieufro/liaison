@@ -2,7 +2,8 @@
 // The demo scenarios: one demoOnly tour per need, never offered to a regular
 // org, each world beat naming its injector, every copy key present in en and fr.
 import { describe, expect, it } from "bun:test"
-import { DEMO_NEED_SPECS, DEMO_NEEDS } from "../../demo/needs"
+import { z } from "zod"
+import { DEMO_WORLD_NEEDS, demoScenarioTourId } from "../../demo/worlds"
 import en from "../../i18n/locales/en/tours.json"
 import fr from "../../i18n/locales/fr/tours.json"
 import { findTour, TOURS, tourCatalogue } from "../index"
@@ -18,11 +19,20 @@ import {
   type Tour,
   type TourEventBinding,
   type TourPathHop,
+  TourSchema,
   type TourStep,
   tourCopyKeys,
 } from "../schema"
-import { SCENARIO_TOURS } from "./index"
-import { PROSPECT_ROUTINE_NAME } from "./sales"
+import { buildChatTour } from "./chat"
+import { buildCommerceTour } from "./commerce"
+import { buildDevTour, PRODUCTS_DEV_CFG } from "./dev"
+import { DEMO_SCENARIO_TOURS, SCENARIO_TOURS } from "./index"
+import { buildKnowledgeTour, PRODUCTS_KNOWLEDGE_CFG } from "./knowledge"
+import productsSnapshot from "./products-tours.snapshot.json"
+import { buildProjectsTour } from "./projects"
+import { buildSalesTour, PRODUCTS_SALES_CFG, PROSPECT_ROUTINE_NAME } from "./sales"
+import { PRODUCTS_CFG } from "./shared"
+import { buildSupportTour } from "./support"
 
 /** Each scenario's live event; the developer scenario has none (its agent dispatches for real). */
 const INJECTORS: Record<string, string | undefined> = {
@@ -33,6 +43,13 @@ const INJECTORS: Record<string, string | undefined> = {
   "kernel.scenario-commerce": "commerce-order",
   "kernel.scenario-dev": undefined,
   "kernel.scenario-knowledge": "knowledge-lucas-asks",
+  "kernel.scenario-saas-support": "saas-support-ticket",
+  "kernel.scenario-saas-projects": "saas-projects-comment",
+  "kernel.scenario-saas-chat": "saas-chat-question",
+  "kernel.scenario-saas-sales": "saas-sales-email",
+  "kernel.scenario-saas-money": "saas-payment-recovered",
+  "kernel.scenario-saas-dev": undefined,
+  "kernel.scenario-saas-knowledge": "saas-knowledge-asks",
 }
 
 function lookup(dict: unknown, key: string): unknown {
@@ -51,28 +68,31 @@ function lookup(dict: unknown, key: string): unknown {
 describe("demo scenarios", () => {
   it("one per need, in need order, each the need's scenario tour", () => {
     expect(SCENARIO_TOURS.map((t) => t.id)).toEqual(
-      DEMO_NEEDS.map((n) => DEMO_NEED_SPECS[n].scenarioTourId),
+      DEMO_WORLD_NEEDS.products.map((n) => demoScenarioTourId("products", n)),
     )
     for (const tour of SCENARIO_TOURS) expect(findTour(tour.id)).toBe(tour)
   })
 
   it("are demoOnly: a regular org is never offered one, a demo org is", () => {
-    for (const tour of SCENARIO_TOURS) {
+    for (const tour of DEMO_SCENARIO_TOURS) {
       expect(tour.demoOnly).toBe(true)
       const apps = tour.requires?.apps ?? []
-      expect(isTourAvailable(tour, { installedApps: apps, scopes: ["*"] })).toBe(false)
-      expect(isTourAvailable(tour, { installedApps: apps, scopes: ["*"], isDemo: false })).toBe(
-        false,
-      )
-      expect(isTourAvailable(tour, { installedApps: apps, scopes: ["*"], isDemo: true })).toBe(true)
+      const worldId = tour.world
+      expect(isTourAvailable(tour, { installedApps: apps, scopes: ["*"], worldId })).toBe(false)
+      expect(
+        isTourAvailable(tour, { installedApps: apps, scopes: ["*"], isDemo: false, worldId }),
+      ).toBe(false)
+      expect(
+        isTourAvailable(tour, { installedApps: apps, scopes: ["*"], isDemo: true, worldId }),
+      ).toBe(true)
     }
     // "Show me how" lists TOURS; the scenarios are only in the catalogue.
     for (const tour of TOURS) expect(tour.demoOnly).toBeUndefined()
-    expect(tourCatalogue().filter((t) => t.demoOnly)).toHaveLength(SCENARIO_TOURS.length)
+    expect(tourCatalogue().filter((t) => t.demoOnly)).toHaveLength(DEMO_SCENARIO_TOURS.length)
   })
 
   it("each has at most one world beat, naming its injector, played in a demo org only", () => {
-    for (const tour of SCENARIO_TOURS) {
+    for (const tour of DEMO_SCENARIO_TOURS) {
       const world = tour.beats.filter((b) => b.kind === "world")
       const injector = INJECTORS[tour.id]
       if (injector === undefined) {
@@ -81,11 +101,14 @@ describe("demo scenarios", () => {
       }
       expect(world.map((b) => b.injector)).toEqual([injector])
       const apps = [...(tour.requires?.apps ?? []), "projects", "invoicing"]
+      const worldId = tour.world
       expect(
-        effectiveBeats(tour, { installedApps: apps, isDemo: true }).some((b) => b.kind === "world"),
+        effectiveBeats(tour, { installedApps: apps, isDemo: true, worldId }).some(
+          (b) => b.kind === "world",
+        ),
       ).toBe(true)
       expect(
-        effectiveBeats(tour, { installedApps: apps, isDemo: false }).some(
+        effectiveBeats(tour, { installedApps: apps, isDemo: false, worldId }).some(
           (b) => b.kind === "world",
         ),
       ).toBe(false)
@@ -93,7 +116,7 @@ describe("demo scenarios", () => {
   })
 
   it("every do beat's autoplay ends waiting for its event", () => {
-    for (const tour of SCENARIO_TOURS) {
+    for (const tour of DEMO_SCENARIO_TOURS) {
       for (const beat of tour.beats.filter((b) => b.kind === "do")) {
         expect(beat.autoplay?.at(-1)).toEqual({ waitEvent: true })
       }
@@ -101,7 +124,7 @@ describe("demo scenarios", () => {
   })
 
   it("every copy key, typed text included, exists in en and fr", () => {
-    for (const tour of SCENARIO_TOURS) {
+    for (const tour of DEMO_SCENARIO_TOURS) {
       for (const key of tourCopyKeys(tour)) {
         expect({ key, en: typeof lookup(en, key) }).toEqual({ key, en: "string" })
         expect({ key, fr: typeof lookup(fr, key) }).toEqual({ key, fr: "string" })
@@ -207,13 +230,22 @@ describe("demo scenarios", () => {
       e?.causedBy !== undefined ||
       e?.sameEntityAs !== undefined ||
       Object.values(e?.match ?? {}).some((v) => typeof v === "string" && /^\{.+\}$/.test(v))
-    for (const tour of SCENARIO_TOURS) {
+    // A scenario played once may approve what its world seeded for it: one
+    // request, named by its recipient and what it is about.
+    const seededForRun = (tour: Tour, e: TourEventBinding | undefined) =>
+      tour.singleRun === true &&
+      typeof e?.match?.["currentPayload.to.0"] === "string" &&
+      typeof e?.match?.["currentPayload.followUp.refs.0.kind"] === "string"
+    for (const tour of DEMO_SCENARIO_TOURS) {
       for (const beat of tour.beats.filter((b) => b.kind === "do")) {
         const e = beat.event
         const agentDone = e?.actor === "user-or-agent"
         const approves = e?.entity === "approval_request"
         if (agentDone || approves)
-          expect({ beat: `${tour.id}/${beat.id}`, scoped: scoped(e) }).toEqual({
+          expect({
+            beat: `${tour.id}/${beat.id}`,
+            scoped: scoped(e) || seededForRun(tour, e),
+          }).toEqual({
             beat: `${tour.id}/${beat.id}`,
             scoped: true,
           })
@@ -441,7 +473,7 @@ describe("demo scenarios", () => {
       "message-row-routine-approval",
     ]
     const wrong: string[] = []
-    for (const tour of SCENARIO_TOURS.filter((t) => t.talksToAgent)) {
+    for (const tour of DEMO_SCENARIO_TOURS.filter((t) => t.talksToAgent)) {
       for (const beat of tour.beats) {
         const testid = beat.anchor?.replace(/\[.*$/, "")
         if (!testid || !TURN_CONTENT.includes(testid)) continue
@@ -634,6 +666,7 @@ describe("demo scenarios", () => {
         isDemo: true,
         features: ["customer-card", "connector-add"],
         phone: true,
+        worldId: t.world,
       }).find((x) => x.id === b.id)
       // What a 390 px visitor plays never needs the dock (the Chats tab, or
       // the screen's own composer, as the tickets note does).
@@ -879,7 +912,7 @@ describe("demo scenarios", () => {
   // dev's "It asks first" could not find their screen again (the page was on
   // Home). A beat that waits on what the run recorded always has a way back.
   it("every beat waiting on what the run recorded has a route back to it", () => {
-    for (const tour of SCENARIO_TOURS) {
+    for (const tour of DEMO_SCENARIO_TOURS) {
       for (const beat of tour.beats) {
         if (!beat.anchor) continue
         const refs = [
@@ -933,7 +966,7 @@ describe("demo scenarios", () => {
   // composer with no way back to it. Every beat that points at something in a
   // scenario names where it is.
   it("every beat pointing at something names its way back to it", () => {
-    for (const tour of SCENARIO_TOURS) {
+    for (const tour of DEMO_SCENARIO_TOURS) {
       for (const beat of tour.beats) {
         if (!beat.anchor) continue
         // The dev end card points at the pairing button on the same screen.
@@ -1158,5 +1191,79 @@ describe("demo scenarios", () => {
         }),
       ]),
     ).toThrow(/only a show beat carries reach/)
+  })
+})
+
+describe("scenario builders", () => {
+  /** Each need's tour built for the products world, with that need's own values. */
+  const BUILT: Record<string, () => Tour> = {
+    support: () => buildSupportTour(PRODUCTS_CFG),
+    projects: () => buildProjectsTour(PRODUCTS_CFG),
+    chat: () => buildChatTour(PRODUCTS_CFG),
+    sales: () => buildSalesTour(PRODUCTS_SALES_CFG),
+    commerce: () => buildCommerceTour(PRODUCTS_CFG),
+    dev: () => buildDevTour(PRODUCTS_DEV_CFG),
+    knowledge: () => buildKnowledgeTour(PRODUCTS_KNOWLEDGE_CFG),
+  }
+
+  it("each products tour built from its builder equals today's tour beat by beat", () => {
+    const before = z.array(TourSchema).parse(productsSnapshot)
+    expect(before).toHaveLength(Object.keys(BUILT).length)
+    for (const [need, build] of Object.entries(BUILT)) {
+      const built = build()
+      const expected = before.find((t) => t.id === `kernel.scenario-${need}`)
+      if (!expected) throw new Error(`no snapshot of ${need}`)
+      expect(built.beats.map((b) => b.id)).toEqual(expected.beats.map((b) => b.id))
+      for (const [i, beat] of built.beats.entries()) expect(beat).toEqual(expected.beats[i])
+      const { world, ...rest } = built
+      expect(world).toBe("products")
+      expect(rest).toEqual(expected)
+    }
+  })
+
+  it("a world's extra beats are spliced after the beat they name and an unknown beat throws", () => {
+    const extra = {
+      id: "extra-look",
+      kind: "show",
+      title: "tours.scenarios.support.inbox.title",
+      body: "tours.scenarios.support.inbox.body",
+    } as const
+    const tour = buildSupportTour({
+      world: "saas",
+      singleRun: true,
+      extraBeats: [{ after: "inbox", beat: extra }],
+    })
+    expect(tour.id).toBe(demoScenarioTourId("saas", "support"))
+    expect(tour.world).toBe("saas")
+    expect(tour.singleRun).toBe(true)
+    expect(tour.beats.slice(0, 2).map((b) => b.id)).toEqual(["inbox", "extra-look"])
+    expect(tour.beats).toHaveLength(buildSupportTour(PRODUCTS_CFG).beats.length + 1)
+    expect(() =>
+      buildSupportTour({ world: "saas", extraBeats: [{ after: "nowhere", beat: extra }] }),
+    ).toThrow("nowhere")
+  })
+
+  it("a software world tour is unavailable, 404s its beats and is offered only in its own world", () => {
+    const saas = buildSupportTour({ world: "saas" })
+    const apps = saas.requires?.apps ?? []
+    const base = { installedApps: apps, scopes: ["*"], isDemo: true }
+    expect(isTourAvailable(saas, { ...base, worldId: "saas" })).toBe(true)
+    expect(isTourAvailable(saas, { ...base, worldId: "products" })).toBe(false)
+    expect(isTourAvailable(saas, base)).toBe(false)
+    expect(effectiveBeats(saas, { installedApps: apps, isDemo: true })).toEqual([])
+    expect(
+      effectiveBeats(saas, { installedApps: apps, isDemo: true, worldId: "saas" }).length,
+    ).toBeGreaterThan(0)
+    // The products scenarios keep playing where no world is named.
+    for (const tour of SCENARIO_TOURS) {
+      expect(tour.world).toBe("products")
+      expect(
+        isTourAvailable(tour, {
+          installedApps: tour.requires?.apps ?? [],
+          scopes: ["*"],
+          isDemo: true,
+        }),
+      ).toBe(true)
+    }
   })
 })

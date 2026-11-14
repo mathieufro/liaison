@@ -2,7 +2,10 @@
 //
 // French for this app's UI, keyed by the English source text (see i18n.ts).
 // Formal "vous", no dash punctuation (the repo's lint:copy rule).
+import { MONTH_END_FR } from "./month-end-fr"
+
 export const FR: Record<string, string> = {
+  ...MONTH_END_FR,
   "+ Add line": "+ Ajouter une ligne",
   "+ Create document": "+ Créer un document",
   "+ New issuer profile": "+ Nouveau profil émetteur",
@@ -116,11 +119,11 @@ export const FR: Record<string, string> = {
   Invoice: "Facture",
   Invoices: "Factures",
   Invoicing: "Facturation",
+  "Open the customer": "Ouvrir le client",
   "It may have been deleted, or it belongs to another organization.":
     "Il a peut-être été supprimé, ou il appartient à une autre organisation.",
   "Invoicing isn't configured yet: no issuer profile exists. Create one in Settings → Invoicing (or provision one via the `liaison config apply` CLI) before issuing documents.":
     "La facturation n'est pas encore configurée : aucun profil émetteur n'existe. Créez-en un dans Paramètres → Facturation (ou provisionnez-en un avec la commande `liaison config apply`) avant d'émettre des documents.",
-  "Invoicing v0.1": "Facturation v0.1",
   Issue: "Émettre",
   "Issue as computed": "Émettre selon le calcul",
   "Issue date": "Date d'émission",
@@ -167,9 +170,17 @@ export const FR: Record<string, string> = {
   Search: "Rechercher",
   "No HS codes in the library yet.": "Aucun code SH dans la bibliothèque pour l'instant.",
   "No documents in this period.": "Aucun document sur cette période.",
+  "No documents from {{from}} to {{to}}.": "Aucun document du {{from}} au {{to}}.",
+  "No documents since {{from}}.": "Aucun document depuis le {{from}}.",
+  "No documents up to {{to}}.": "Aucun document jusqu'au {{to}}.",
+  "No documents match these filters.": "Aucun document ne correspond à ces filtres.",
+  "No documents yet.": "Aucun document pour l'instant.",
+  "Invoicing settings": "Réglages de la facturation",
   "No documents to group by customer.": "Aucun document à regrouper par client.",
   "No documents to group by market.": "Aucun document à regrouper par marché.",
   "No documents yet for this contact.": "Aucun document pour ce contact pour l'instant.",
+  "No invoices or quotes for this company yet.":
+    "Aucune facture ni aucun devis pour cette entreprise pour l'instant.",
   "No issuer profiles yet.": "Aucun profil émetteur pour l'instant.",
   "No lifecycle events yet.": "Aucun événement pour l'instant.",
   "No lines.": "Aucune ligne.",
@@ -364,6 +375,12 @@ export const FR: Record<string, string> = {
   "Sent for a person to confirm. Nothing is recorded until then.":
     "Envoyé pour confirmation par une personne. Rien n'est enregistré d'ici là.",
   "Saved.": "Enregistré.",
+  "Someone else just saved this schedule. The page shows what they saved.":
+    "Quelqu'un d'autre vient d'enregistrer cet échéancier. La page affiche ce qu'il a enregistré.",
+  "Someone else just saved this schedule. Your changes are still here; saving them will be refused and show what they saved.":
+    "Quelqu'un d'autre vient d'enregistrer cet échéancier. Vos modifications sont toujours là ; leur enregistrement sera refusé et affichera ce qu'il a enregistré.",
+  "Not saved: someone else saved this schedule after you opened it. The page now shows what they saved; make your change again on it.":
+    "Non enregistré : quelqu'un d'autre a enregistré cet échéancier après que vous l'avez ouvert. La page affiche maintenant ce qu'il a enregistré ; refaites votre modification dessus.",
   "not confirmed yet": "pas encore confirmé",
   ", checked {{date}}": ", vérifié le {{date}}",
   "The identity could not be loaded.": "L'identité n'a pas pu être chargée.",
@@ -601,4 +618,221 @@ export const FR: Record<string, string> = {
   "the platform could not be reached.": "la plateforme est injoignable.",
   "Refusing or disputing this invoice needs the permission to act on received invoices.":
     "Refuser ou contester cette facture nécessite le droit d'agir sur les factures reçues.",
+  "Subscriptions paid by card": "Abonnements payés par carte",
+  "Recurring by transfer": "Récurrent par virement",
+  "One-off invoices": "Factures ponctuelles",
+  "Always: not billed from Stripe": "Toujours : pas facturé depuis Stripe",
+  "Liaison invoices": "Liaison facture",
+  "Stripe invoices": "Stripe facture",
+  "Not decided yet": "Pas encore décidé",
+  "Please check in Stripe, Settings, Billing: finalized invoices, credit notes and payment receipts should not email customers. Liaison cannot read this setting.":
+    "Vérifiez dans Stripe, Paramètres, Facturation : les factures finalisées, les avoirs et les reçus de paiement ne doivent pas être envoyés aux clients par e-mail. Liaison ne peut pas lire ce réglage.",
+  "Checked by a person on {{day}}. Liaison cannot read this setting, so check again if someone changes it.":
+    "Vérifié par une personne le {{day}}. Liaison ne peut pas lire ce réglage : vérifiez à nouveau si quelqu'un le modifie.",
+  "Nothing was changed.": "Rien n'a été modifié.",
+  "Starts with the next renewal, after you confirm. Invoices Liaison already issued stay as they are, with their numbers. Check the change with your accountant.":
+    "Commence au prochain renouvellement, après votre confirmation. Les factures déjà émises par Liaison restent telles quelles, avec leurs numéros. Vérifiez ce changement avec votre expert-comptable.",
+  "Who issues what": "Qui facture quoi",
+  "If both invoiced the same sale, it would be invoiced twice.":
+    "Si les deux facturaient la même vente, elle serait facturée deux fois.",
+  "Kind of sale": "Type de vente",
+  "Who invoices": "Qui facture",
+  "Default for French companies": "Par défaut pour les entreprises françaises",
+  "Liaison invoices, Stripe only takes the payment":
+    "Liaison facture, Stripe encaisse seulement le paiement",
+  "Stripe invoices, Liaison only shows you a copy":
+    "Stripe facture, Liaison vous montre seulement une copie",
+  "I checked, they are off": "J'ai vérifié, ils sont désactivés",
+  "Waiting for payment": "En attente de paiement",
+  Collected: "Encaissement transmis",
+  "Partly collected": "Encaissement partiel transmis",
+  "Not needed": "Non requis",
+  "To report at your platform": "À déclarer sur votre plateforme",
+  "Sent to your e-invoicing platform. The payment is reported once the money is in.":
+    "Envoyée à votre plateforme de facturation électronique. L'encaissement est transmis une fois l'argent reçu.",
+  "The payment date and the amount per VAT rate went to your e-invoicing platform.":
+    "La date d'encaissement et le montant par taux de TVA ont été transmis à votre plateforme de facturation électronique.",
+  "After a part payment or a refund: what really came in was reported.":
+    "Après un paiement partiel ou un remboursement : le montant réellement reçu a été transmis.",
+  "The customer pays the VAT (reverse charge), or you pay it when you invoice, not when paid.":
+    "Le client acquitte la TVA (autoliquidation), ou vous la payez à la facturation, pas à l'encaissement.",
+  "Opens a task for you. It never creates an invoice or credit note by itself.":
+    "Ouvre une tâche pour vous. Aucune facture ni aucun avoir n'est créé automatiquement.",
+  "The e-invoicing platform did not take it. Liaison tries again, or the invoice says what to fix.":
+    "La plateforme de facturation électronique ne l'a pas acceptée. Liaison réessaie, ou la facture indique quoi corriger.",
+  "Your platform does not take this report from Liaison, so report the payment there.":
+    "Votre plateforme n'accepte pas cette déclaration depuis Liaison : déclarez l'encaissement sur la plateforme.",
+  "Could not load your schedules": "Impossible de charger vos échéanciers",
+  "No invoice is affected. Runs that are due still happen on their own.":
+    "Aucune facture n'est touchée. Les facturations prévues ont lieu d'elles-mêmes.",
+  "Create the invoice": "Créer la facture",
+  "Link to an invoice": "Rattacher à une facture",
+  "Create an invoice for this payment? It goes to a person for approval before it gets a number.":
+    "Créer une facture pour ce paiement ? Une personne l'approuve avant qu'elle reçoive un numéro.",
+  "Link this payment to the invoice you picked? Once a person approves, the invoice names this payment; its payment status does not change.":
+    "Rattacher ce paiement à la facture choisie ? Une fois approuvé, la facture cite ce paiement ; son statut de paiement ne change pas.",
+  "Type the VAT rate the amount includes, such as 20.":
+    "Saisissez le taux de TVA compris dans le montant, par exemple 20.",
+  "VAT included in the amount, %": "TVA comprise dans le montant, en %",
+  "No recurring schedules": "Aucun échéancier",
+  "Use one for a customer you bill on a rhythm outside Stripe. Customers paying by card are already invoiced from Stripe.":
+    "Utilisez un échéancier pour un client facturé à intervalles réguliers hors de Stripe. Les clients qui paient par carte sont déjà facturés depuis Stripe.",
+  "New schedule": "Nouvel échéancier",
+  Retry: "Réessayer",
+  "Nobody approved this run by {{day}}. Nothing issues by itself: it stays at the top of Home until someone decides.":
+    "Personne n'a approuvé cette facturation avant le {{day}}. Rien n'est émis automatiquement : elle reste en tête de l'Accueil jusqu'à une décision.",
+  "A Stripe payment of {{amount}} has no matching invoice.":
+    "Un paiement Stripe de {{amount}} n'a aucune facture correspondante.",
+  "Off: e-invoices issued with no person wait for the daily send card.":
+    "Désactivée : les factures électroniques émises sans personne attendent la carte d'envoi quotidienne.",
+  "On: turned on by {{who}} on {{on}}, until {{until}}.":
+    "Activée par {{who}} le {{on}}, jusqu'au {{until}}.",
+  "a person": "une personne",
+  "Turn off": "Désactiver",
+  Undo: "Annuler",
+  "Send e-invoices of card subscriptions without a daily card":
+    "Envoyer les factures électroniques des abonnements par carte sans carte quotidienne",
+  "Send e-invoices of recurring transfers without a daily card":
+    "Envoyer les factures électroniques des virements récurrents sans carte quotidienne",
+  "Could not load this run.": "Impossible de charger cette facturation.",
+  "{{n}} PDFs are not ready yet. Try again in a minute.":
+    "{{n}} PDF ne sont pas encore prêts. Réessayez dans une minute.",
+  Loading: "Chargement",
+  "{{period}} run": "Facturation de {{period}}",
+  "Partly issued": "Émise en partie",
+  "All schedules": "Tous les échéanciers",
+  "Download {{n}} PDFs": "Télécharger {{n}} PDF",
+  "Approved by": "Approuvée par",
+  "Issued by itself": "Émise automatiquement",
+  Period: "Période",
+  Numbers: "Numéros",
+  "None yet": "Aucun pour l'instant",
+  "none missing": "aucun manquant",
+  "Could not issue": "Non émises",
+  Fix: "Corriger",
+  "Excl. VAT": "HT",
+  "Incl. VAT": "TTC",
+  "{{n}} invoices": "{{n}} factures",
+  "excl. VAT": "HT",
+  "incl. VAT": "TTC",
+  "It could not issue.": "Elle n'a pas pu être émise.",
+  "An issued invoice cannot be edited or deleted. A correction is a credit note linked to it, with its own number.":
+    "Une facture émise ne peut être ni modifiée ni supprimée. Une correction est un avoir lié, avec son propre numéro.",
+  "These schedules have now billed this period, so they cannot bill it again.":
+    "Ces échéanciers ont facturé cette période et ne peuvent pas la facturer à nouveau.",
+  "Soonest first.": "Les plus proches d'abord.",
+  "Soonest first. Next: {{n}} draft on {{draft}}, to issue on {{issue}}.":
+    "Les plus proches d'abord. Prochain : {{n}} brouillon le {{draft}}, à émettre le {{issue}}.",
+  "Soonest first. Next: {{n}} drafts on {{draft}}, to issue on {{issue}}.":
+    "Les plus proches d'abord. Prochains : {{n}} brouillons le {{draft}}, à émettre le {{issue}}.",
+  "last day": "dernier jour",
+  "Recurring schedules": "Échéanciers",
+  Paused: "En pause",
+  Ended: "Terminé",
+  Month: "Mois",
+  Quarter: "Trimestre",
+  Year: "Année",
+  "Bank transfer": "Virement bancaire",
+  "Card link": "Lien de paiement par carte",
+  "Resumes {{day}}": "Reprend le {{day}}",
+  "Showing {{n}} schedules": "{{n}} échéanciers affichés",
+  "Show 50 more": "Afficher 50 de plus",
+  "A draft has no number. It takes the next number in the series when it issues, so a discarded draft leaves no gap.":
+    "Un brouillon n'a pas de numéro. Il prend le numéro suivant de la série à l'émission, donc un brouillon abandonné ne laisse aucun trou.",
+  "A schedule cannot bill the same period twice. Amounts come from the schedule, not from an agent.":
+    "Un échéancier ne peut pas facturer deux fois la même période. Les montants viennent de l'échéancier, pas d'un agent.",
+  "Customers who pay by card through Stripe are not here: their invoices follow Who issues what in the issuer settings.":
+    "Les clients qui paient par carte via Stripe n'apparaissent pas ici : leurs factures suivent Qui facture quoi dans les réglages de l'émetteur.",
+  "Nothing was saved.": "Rien n'a été enregistré.",
+  "Recurring schedule": "Échéancier",
+  New: "Nouveau",
+  Pause: "Mettre en pause",
+  "Preview next invoice": "Aperçu de la prochaine facture",
+  Start: "Démarrer",
+  "Next invoice": "Prochaine facture",
+  "the dates it covers": "les dates couvertes",
+  "No number yet: it takes one when it issues.":
+    "Pas encore de numéro : elle en reçoit un à l'émission.",
+  "Who and to whom": "Émetteur et client",
+  "Invoice from": "Facturé par",
+  Choose: "Choisir",
+  "This customer is already billed through Stripe": "Ce client est déjà facturé via Stripe",
+  "A schedule would invoice the same service a second time, so it cannot start.":
+    "Un échéancier facturerait le même service une seconde fois : il ne peut pas démarrer.",
+  "Open their subscription": "Ouvrir son abonnement",
+  "Pick another customer": "Choisir un autre client",
+  "Bill something else": "Facturer autre chose",
+  "What does this schedule bill instead?": "Que facture cet échéancier à la place ?",
+  When: "Quand",
+  "Every month": "Chaque mois",
+  "Every quarter": "Chaque trimestre",
+  "Every year": "Chaque année",
+  "Billing date": "Date de facturation",
+  "last, a day from 1 to 28, or MM-DD for a year":
+    "last, un jour de 1 à 28, ou MM-JJ pour une année",
+  Ends: "Fin",
+  "Empty: no end date": "Vide : pas de date de fin",
+  "Each invoice bills for": "Chaque facture couvre",
+  "The period just ended": "La période qui vient de s'achever",
+  "The period ahead": "La période à venir",
+  "How each invoice issues": "Émission de chaque facture",
+  "After someone reviews a draft": "Après relecture d'un brouillon",
+  "By itself": "Automatiquement",
+  "Paid by": "Payé par",
+  "Your bank details print on the invoice, and it stays unpaid until someone marks the transfer received.":
+    "Vos coordonnées bancaires figurent sur la facture, qui reste impayée jusqu'à ce que quelqu'un marque le virement reçu.",
+  "30 days after issue": "30 jours après émission",
+  "On issue": "À l'émission",
+  "{period} becomes the dates this invoice covers.":
+    "{period} devient les dates couvertes par cette facture.",
+  "Each invoice": "Chaque facture",
+  "Next invoices": "Prochaines factures",
+  "draft on {{day}}": "brouillon le {{day}}",
+  "Taken the moment it issues: the next one in the series. Numbers run in order with none missing. A discarded draft uses none.":
+    "Attribué au moment de l'émission : le suivant de la série. Les numéros se suivent sans trou. Un brouillon abandonné n'en consomme aucun.",
+  "Last day to issue": "Dernier jour d'émission",
+  "The end of the billing month. A draft still open moves to the top of Home before then.":
+    "La fin du mois facturé. Un brouillon encore ouvert remonte en tête de l'Accueil avant cette date.",
+  "This schedule was not found. It may have been ended and removed.":
+    "Cet échéancier est introuvable. Il a peut-être été terminé et retiré.",
+  Recurring: "Récurrent",
+  Schedules: "Échéanciers",
+  "E-invoice: {{word}}": "Facture électronique : {{word}}",
+  "Issued by Liaison": "Émise par Liaison",
+  "Collected by Stripe": "Encaissée par Stripe",
+  "Drafted, waiting for approval": "Préparée, en attente d'approbation",
+  "Approved, not issued yet": "Approuvée, pas encore émise",
+  Issuing: "Émission en cours",
+  "Not approved": "Non approuvée",
+  "Past its last day, not issued": "Dernier jour dépassé, non émise",
+  "Closed, nothing to issue": "Clôturée, rien à émettre",
+  "Not approved yet": "Pas encore approuvée",
+  "Issues on": "Émise le",
+  "Given when the invoices issue": "Attribués à l'émission des factures",
+  "{{n}} drafts to issue": "{{n}} brouillons à émettre",
+  "Nothing is billed yet: these drafts become invoices, with their numbers, when the run issues.":
+    "Rien n'est encore facturé : ces brouillons deviennent des factures, avec leur numéro, à l'émission.",
+  "It is not yet known whether this invoice goes through the e-invoicing platform.":
+    "On ne sait pas encore si cette facture passe par la plateforme de facturation électronique.",
+  Bills: "Objet",
+  Repeats: "Fréquence",
+  "Recurring: {{customer}}": "Échéancier : {{customer}}",
+  "Search a contact": "Rechercher un contact",
+  "Numbering series": "Série de numérotation",
+  "Read only: set on the issuer, in Settings, Invoicing.":
+    "Lecture seule : réglée sur l'émetteur, dans Paramètres, Facturation.",
+  "The invoice series of the issuer you choose": "La série de factures de l'émetteur choisi",
+  "{{prefix}} then the next number, from {{issuer}}":
+    "{{prefix}} puis le numéro suivant, chez {{issuer}}",
+  "The invoice series of {{issuer}}": "La série de factures de {{issuer}}",
+  "add at least one line with a description, a quantity above zero, a price and a VAT rate from 0 to 100 %":
+    "ajoutez au moins une ligne avec une description, une quantité supérieure à zéro, un prix et un taux de TVA de 0 à 100 %",
+  "Paused. Nothing is drafted until it is resumed.":
+    "En pause. Rien n'est préparé jusqu'à la reprise.",
+  "Turn on": "Activer",
+  "Choose an e-invoicing platform first, in E-invoicing on this page: with none set, there is nothing to send.":
+    "Choisissez d'abord une plateforme de facturation électronique, dans Facturation électronique sur cette page : sans plateforme, il n'y a rien à envoyer.",
+  "E-invoices of this stream issued with no person will be sent at issue, with no daily card, for 90 days. A renewal card comes a week before. You can turn it off at any time.":
+    "Les factures électroniques de ce flux émises sans personne partiront à l'émission, sans carte quotidienne, pendant 90 jours. Une carte de renouvellement arrive une semaine avant. Vous pouvez la désactiver à tout moment.",
+  "Turning off in {{n}} seconds.": "Désactivation dans {{n}} secondes.",
 }

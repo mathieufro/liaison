@@ -260,11 +260,11 @@ describe("tour engine states", () => {
 
     const panel = await screen.findByTestId("tour-panel")
     expect(panel.dataset.beatId).toBe("welcome")
-    // Progress as dots, named for a screen reader: no "Step 1 of 3" line.
+    // Progress as dashes with the step in words beside them, named for a screen reader too.
     const steps = screen.getByTestId("tour-step-count")
     expect(steps.getAttribute("aria-label")).toBe("Step 1 of 3")
-    expect(steps.children).toHaveLength(3)
-    expect(steps.textContent).toBe("")
+    expect(steps.querySelectorAll("span[aria-hidden='true'].rounded-full")).toHaveLength(3)
+    expect(steps.textContent).toBe("Step 1 of 3")
     expect(screen.getByTestId("tour-beat-title").textContent).toBe("Your apps")
     const spot = await screen.findByTestId("tour-spotlight")
     expect(spot.dataset.anchor).toBe("fixture-anchor")

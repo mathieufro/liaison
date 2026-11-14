@@ -86,3 +86,15 @@ regexes = [
   '''^c9a71b289d8de10b0a802eb6014c9396ce4a5b267c0766e25bdeaf2cad721387$''',
   '''^fff74f2f31b9faf5b7308d523e3e06d99cfb7ce4d894f13457e3672734635bdc$''',
 ]
+
+[[allowlists]]
+description = "SHA-256 hashes of the public embedding model's files (tool search), published by the model's repository; not credentials"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)apps/api/src/modules/agent/tools/local-embedder\.ts$''']
+regexTarget = "secret"
+regexes = [
+  '''^f1cc44ad7faaeec47241864835473fd5403f2da94673f3f764a77ebcb0a803ec$''',
+  '''^6f00514620aff01ba8b7291b2394e98daca5be264cb743805232d9ae27494b2a$''',
+  '''^8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835$''',
+]

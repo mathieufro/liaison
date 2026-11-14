@@ -6,9 +6,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { app } from "~/app"
 import { sql } from "~/db"
+import { PrivilegedDbTestAccess, withPrivilegedDb } from "~/db/privileged"
 import { env } from "~/lib/env"
 import { signAccessToken } from "~/modules/auth/jwt"
-import { isDerivedThreadHandle, slugifyTitle } from "~/modules/threads/thread-handle"
+import {
+  allocateThreadHandle,
+  isDerivedThreadHandle,
+  slugifyTitle,
+} from "~/modules/threads/thread-handle"
 
 const ORG = "550e8400-e29b-41d4-a716-4466554400a0"
 const USER1 = "550e8400-e29b-41d4-a716-4466554400a1"
@@ -93,6 +98,22 @@ describe("channel handles are their names", () => {
     expect(patched.status).toBe(200)
     const body = (await patched.json()) as { data: { handle: string } }
     expect(body.data.handle).toBe("ops-weekly")
+  })
+
+  it("reads the taken handles on a privileged caller's own transaction, never a second slot", async () => {
+    PrivilegedDbTestAccess.record()
+    let handles: string[] = []
+    try {
+      handles = await withPrivilegedDb(ORG, "handle-caller", async (tx) => [
+        await allocateThreadHandle(tx, { orgId: ORG, title: "Slot Check" }),
+        await allocateThreadHandle(tx, { orgId: ORG, title: null }),
+      ])
+    } finally {
+      const nested = PrivilegedDbTestAccess.recorded().filter((a) => a.nested)
+      expect(nested.map((a) => a.reason)).toEqual([])
+    }
+    expect(handles[0]).toBe("slot-check")
+    expect(handles[1]).toMatch(/^thread-\d+$/)
   })
 
   it("slugifies to lowercase ascii and recognises its own output", () => {

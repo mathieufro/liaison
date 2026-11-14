@@ -253,5 +253,38 @@
     "timeout": "Le serveur de messagerie n'a pas répondu à temps. Liaison réessaie de lui-même.",
     "tls": "La connexion sécurisée au serveur de messagerie a échoué. Vérifiez le port et le réglage de sécurité."
   },
-  "personalMailboxTransparentNotice": "Les mails de votre boîte personnelle sont chiffrés au repos. Seuls vous et votre agent pouvez les lire ; les administrateurs de votre organisation ne le peuvent pas. Aucun mot de passe de boîte mail à définir."
+  "personalMailboxTransparentNotice": "Les mails de votre boîte personnelle sont chiffrés au repos. Seuls vous et votre agent pouvez les lire ; les administrateurs de votre organisation ne le peuvent pas. Aucun mot de passe de boîte mail à définir.",
+  "commercialIdentity": {
+    "title": "Identité commerciale",
+    "help": "Chaque message commercial (une relance ou une offre à un prospect) se termine par cette raison sociale et cette adresse postale, un lien de désinscription et « ou répondez stop ». Tant que les deux ne sont pas renseignées, Liaison n'envoie aucun message commercial.",
+    "legalName": "Raison sociale",
+    "postalAddress": "Adresse postale",
+    "saved": "Identité commerciale enregistrée.",
+    "saveFailed": "L'identité commerciale n'a pas pu être enregistrée."
+  },
+  "recipientFacts": {
+    "basis": "Base : {{basis}}",
+    "noBasis": "Aucune base enregistrée",
+    "business": "Professionnel",
+    "consumer": "Consommateur",
+    "consumerUnknown": "Consommateur ou professionnel non enregistré",
+    "optedOut": "Désinscrit le {{date}}",
+    "notOptedOut": "Non désinscrit"
+  },
+  "commercialFooter": {
+    "optOut": "Pour ne plus recevoir de messages commerciaux de {{name}} : {{url}} ou répondez stop.",
+    "linkLabel": "(lien de désinscription)",
+    "composerNote": "Ce message va à un prospect : ces lignes y sont ajoutées à l'envoi, dans sa langue. Elles ne peuvent pas être retirées.",
+    "checkFailed": "Impossible de vérifier si ce message est commercial. La vérification est refaite à l'envoi.",
+    "noBasis": "Aucune base enregistrée pour écrire à {{name}} à des fins commerciales",
+    "recordBasis": "Enregistrer une base",
+    "basisConsent": "Consentement",
+    "basisCustomer": "Client existant",
+    "basisProfessionalInterest": "Intérêt professionnel",
+    "basisGenericAddress": "Adresse générique d'entreprise",
+    "recordBasisFailed": "La base n'a pas été enregistrée. Réessayez, ou enregistrez-la sur sa fiche contact.",
+    "noticeThirdParty": "{{name}} a reçu votre adresse d'un tiers et ne l'utilise que pour des messages professionnels comme celui-ci. Vous pouvez vous y opposer à tout moment avec le lien ci-dessous.",
+    "noticeEnrichment": "{{name}} a trouvé votre adresse dans une source professionnelle publique et ne l'utilise que pour des messages professionnels comme celui-ci. Vous pouvez vous y opposer à tout moment avec le lien ci-dessous.",
+    "noticeUnknown": "Si vous ne nous avez pas donné votre adresse vous-même, {{name}} l'a obtenue d'une autre source et ne l'utilise que pour des messages professionnels comme celui-ci. Vous pouvez vous y opposer à tout moment avec le lien ci-dessous."
+  }
 }

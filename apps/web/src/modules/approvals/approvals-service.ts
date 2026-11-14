@@ -44,6 +44,11 @@ export type DecideBody =
       payloadHash?: string
       /** For a bundle: the fingerprint of every later step the person saw, by step id. */
       stepPayloadHashes?: Record<string, string>
+      /**
+       * "Send now" on a mail draft held by an automatic reply. The server judges the hold again
+       * under its lock and refuses (422 `send_guard_not_held`) when the draft is no longer held.
+       */
+      sendGuardOverride?: "auto_reply"
     }
   | { decision: "deny"; reason: string }
 

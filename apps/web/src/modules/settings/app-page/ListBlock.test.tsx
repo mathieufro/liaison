@@ -316,6 +316,13 @@ describe("ListBlock", () => {
     )
   })
 
+  it("a declared title heads the list, so the reader knows what Add adds", async () => {
+    render(() => (
+      <ListBlock app="fixture" block={{ ...block, title: "Company days off" }} blockId="keys-0" />
+    ))
+    expect((await screen.findByTestId("settings-list-title")).textContent).toBe("Company days off")
+  })
+
   it("reads rows from the one array a list tool answers under its own name", async () => {
     api.tool("fixture:keys.list", () => ({ terms: rows }))
     renderList()

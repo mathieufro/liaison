@@ -85,18 +85,41 @@
 // alone is not a new world. The fingerprint is over file CONTENTS only, never
 // their paths: moving a seed file without changing it keeps the world, so a
 // refactor that only moves code does not retire a ready pool.
+//
+// WORLDS. A box can run several demo worlds (LIAISON_DEMO_WORLDS, the
+// companies of `DEMO_WORLDS`), and the pool keeps workspaces of each:
+// LIAISON_DEMO_POOL_SIZES splits it, or LIAISON_DEMO_POOL_SIZE is shared
+// evenly. Every pooled marker names its world (`worldId`; a marker without
+// one is `products`), and a claim asks for one world and can only ever take
+// an org of that world: the filter is in the claim's own `WHERE`, under the
+// row lock. Each world has its own fingerprint: the shared inputs plus its own
+// pack directories (`DEMO_WORLD_PACK_INPUTS`), never another world's, so a
+// change to one world's pack retires that world's pool and keeps the others.
+// A world whose story follows the calendar month (any but `products`) records
+// the Paris month it was seeded in (`worldMonth`), and an org of last month is
+// never handed out. Any pooled org older than LIAISON_DEMO_POOL_MAX_AGE_HOURS
+// is refused too, and the refill retires both.
 
 import crypto from "node:crypto"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import path from "node:path"
-import { DEMO_NEEDS, type DemoNeed, type DemoOrgMarker, type ShippedLocale } from "@liaison/shared"
+import {
+  DEMO_DEFAULT_WORLD,
+  DEMO_WORLD_NEEDS,
+  DEMO_WORLDS,
+  type DemoNeed,
+  type DemoOrgMarker,
+  type DemoWorldId,
+  demoWorldIdOf,
+  type ShippedLocale,
+} from "@liaison/shared"
 import { and, sql as drizzleSql, eq } from "drizzle-orm"
 import type { PrivilegedDb } from "~/db"
 import { withSystemDb } from "~/db/privileged"
 import { type Agent, agents } from "~/db/schema/kernel/agents"
 import { users } from "~/db/schema/kernel/users"
 import { schemaRef } from "~/db/schema-ref"
-import { env } from "~/lib/env"
+import { env, parseDemoPoolSizes } from "~/lib/env"
 import { loadOrgSettingsFragment, rememberLoadOrg } from "~/lib/load-harness"
 import { rootLogger } from "~/lib/logger"
 import { redis } from "~/lib/redis"
@@ -122,8 +145,10 @@ import {
 } from "~/modules/demo/demo-seed-gate"
 import { DEMO_COMPANY_NAME, seedDemoOrgData } from "~/modules/demo/demo-seeder"
 import { zeroDemoOrgCredits } from "~/modules/demo/demo-spend"
+import { demoWorldOrgName, enabledDemoWorlds } from "~/modules/demo/demo-worlds"
 import { ensureOrg } from "~/modules/provisioning/ensure-org"
 import { ensureUser } from "~/modules/provisioning/ensure-user"
+import { storyClock } from "~/seed/worlds/story-clock"
 
 const K = () => drizzleSql.raw(schemaRef("kernel"))
 
@@ -184,7 +209,9 @@ export function demoPoolBuildId(): string | null {
   return version && version !== "dev" ? version : null
 }
 
-let worldOverride: string | null = null
+/** Test pins of the world fingerprint: one per world, and one for every world. */
+const worldOverrides = new Map<DemoWorldId, string>()
+let worldOverrideDefault: string | null = null
 
 /** The repository root, which the world inputs below are relative to. */
 const REPO_ROOT = path.resolve(import.meta.dir, "../../../../..")
@@ -213,26 +240,61 @@ export const DEMO_WORLD_INPUTS = [
   "apps/api/src/modules/demo/demo-pool.ts",
 ] as const
 
+/**
+ * Each world's own pack: directories only that world's seed reads. A world's
+ * fingerprint hashes its own and skips every other world's, wherever they sit
+ * (under a shared input like `tours/demo`, or reached by the seed's imports),
+ * so an edit to one world's pack retires only that world's pool. A directory
+ * that does not exist yet holds nothing. `products` has none: its files are
+ * where they always were and count as shared.
+ */
+export const DEMO_WORLD_PACK_INPUTS: Readonly<Record<DemoWorldId, readonly string[]>> = {
+  products: [],
+  saas: [
+    "apps/api/src/seed/worlds/saas",
+    "apps/api/src/modules/demo/worlds/saas",
+    "packages/shared/src/tours/demo/worlds/saas",
+    "apps/api/src/seed/factories/payments",
+  ],
+  studio: [
+    "apps/api/src/seed/worlds/studio",
+    "apps/api/src/modules/demo/worlds/studio",
+    "packages/shared/src/tours/demo/worlds/studio",
+  ],
+}
+
+function isUnder(rel: string, dir: string): boolean {
+  return rel === dir || rel.startsWith(`${dir}/`)
+}
+
+/** Is `rel` in the pack of a world other than `worldId`? */
+export function isOtherWorldPackFile(rel: string, worldId: DemoWorldId): boolean {
+  return DEMO_WORLDS.some(
+    (other) => other !== worldId && DEMO_WORLD_PACK_INPUTS[other].some((dir) => isUnder(rel, dir)),
+  )
+}
+
 function isTestFile(name: string): boolean {
   return /\.(test|spec)\.[cm]?[jt]sx?$/.test(name) || name.includes(".test-fixtures.")
 }
 
-function worldFiles(rel: string, out: string[]): void {
+/** Every file under `rel` but tests (or `rel` itself, a file), or null when there is none. */
+function listRepoFiles(rel: string): string[] | null {
   const abs = path.join(REPO_ROOT, rel)
   const stat = statSync(abs, { throwIfNoEntry: false })
-  if (!stat) throw new Error(`demo world input missing: ${rel}`)
-  if (stat.isFile()) {
-    out.push(rel)
-    return
-  }
+  if (!stat) return null
+  if (stat.isFile()) return [rel]
+  const out: string[] = []
   for (const entry of readdirSync(abs, { withFileTypes: true })) {
     const child = path.posix.join(rel, entry.name)
-    if (entry.isDirectory()) worldFiles(child, out)
+    if (entry.isDirectory()) out.push(...(listRepoFiles(child) ?? []))
     else if (entry.isFile() && !isTestFile(entry.name)) out.push(child)
   }
+  return out
 }
 
-let computedWorld: string | null | undefined
+/** The worlds' fingerprints, computed once each (null: an input is missing). */
+const computedWorlds = new Map<DemoWorldId, string | null>()
 
 /** The demo tier's entry: what the signup, the warm pool and the reset seed through. */
 export const DEMO_TIER_ENTRY = "apps/api/src/seed/tiers/demo/seed-demo.ts"
@@ -242,11 +304,28 @@ const API_SRC = "apps/api/src"
 /** How the closure reads the tree: a file's source, or null when there is no such file. */
 export type SourceReader = (rel: string) => string | null
 
-function readRepoSource(rel: string): string | null {
-  const abs = path.join(REPO_ROOT, rel)
-  const stat = statSync(abs, { throwIfNoEntry: false })
-  return stat?.isFile() ? readFileSync(abs, "utf8") : null
+/**
+ * The tree a world's files are listed and read from: the repository, or a
+ * test's fake. `list` gives every file under a path but tests (the path itself
+ * for a file), or null when nothing is there.
+ */
+export interface DemoSourceTree {
+  read: SourceReader
+  list: (rel: string) => string[] | null
 }
+
+function readRepoSource(rel: string): string | null {
+  // Read at once, no check first: the answer is the file as read, or null when no file is there.
+  try {
+    return readFileSync(path.join(REPO_ROOT, rel), "utf8")
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === "ENOENT" || code === "EISDIR" || code === "ENOTDIR") return null
+    throw err
+  }
+}
+
+const REPO_TREE: DemoSourceTree = { read: readRepoSource, list: listRepoFiles }
 
 /** Import and re-export specifiers, static and dynamic. */
 const IMPORT_SPEC = /(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/g
@@ -264,14 +343,17 @@ export function resolveSourceImport(from: string, spec: string, read: SourceRead
 }
 
 /**
- * The seed engine files the demo tier is made of: every file under
+ * The seed engine files `worldId`'s demo tier is made of: every file under
  * `apps/api/src/seed/` reached by imports from the tier's entry and from
  * `roots` (the other world inputs, which import the engine too), followed
- * through engine files transitively. Test files are never inputs.
+ * through engine files transitively. Test files are never inputs, and neither
+ * is another world's pack: the seed reaches every pack through the pack
+ * registry, but only seeds the one world.
  */
 export function demoTierSeedFiles(
   roots: readonly string[],
-  read: SourceReader = readRepoSource,
+  read: SourceReader,
+  worldId: DemoWorldId,
 ): string[] {
   const found = new Set<string>([DEMO_TIER_ENTRY])
   const queue = [DEMO_TIER_ENTRY, ...roots.filter((r) => /\.tsx?$/.test(r))]
@@ -285,6 +367,7 @@ export function demoTierSeedFiles(
     for (const match of src.matchAll(IMPORT_SPEC)) {
       const target = resolveSourceImport(file, match[1] as string, read)
       if (!target?.startsWith(SEED_ROOT) || isTestFile(path.posix.basename(target))) continue
+      if (isOtherWorldPackFile(target, worldId)) continue
       if (!found.has(target)) {
         found.add(target)
         queue.push(target)
@@ -295,14 +378,36 @@ export function demoTierSeedFiles(
 }
 
 /**
- * The files the world fingerprint hashes, repository-relative and sorted: what
- * `DEMO_WORLD_INPUTS` names, plus the demo tier's seed engine files. Throws
- * when an input is missing.
+ * The files `worldId`'s fingerprint hashes, repository-relative and sorted:
+ * what `DEMO_WORLD_INPUTS` names, its own pack directories, and the demo
+ * tier's seed engine files that world reaches; never a file of another
+ * world's pack. Throws when a shared input is missing.
  */
-export function demoWorldFiles(): string[] {
+export function demoWorldFiles(worldId: DemoWorldId, tree: DemoSourceTree = REPO_TREE): string[] {
   const files: string[] = []
-  for (const rel of DEMO_WORLD_INPUTS) worldFiles(rel, files)
-  return [...new Set([...files, ...demoTierSeedFiles(files)])].sort()
+  for (const rel of DEMO_WORLD_INPUTS) {
+    const listed = tree.list(rel)
+    if (!listed) throw new Error(`demo world input missing: ${rel}`)
+    files.push(...listed.filter((f) => !isOtherWorldPackFile(f, worldId)))
+  }
+  for (const rel of DEMO_WORLD_PACK_INPUTS[worldId]) files.push(...(tree.list(rel) ?? []))
+  return [...new Set([...files, ...demoTierSeedFiles(files, tree.read, worldId)])].sort()
+}
+
+/**
+ * `worldId`'s fingerprint over `tree`: its files' contents plus the world's
+ * id, so two worlds never share one even while their files are the same.
+ */
+export function demoWorldFingerprintOf(
+  worldId: DemoWorldId,
+  tree: DemoSourceTree = REPO_TREE,
+): string {
+  const contents = demoWorldFiles(worldId, tree).map((rel) => {
+    const src = tree === REPO_TREE ? readFileSync(path.join(REPO_ROOT, rel)) : tree.read(rel)
+    if (src === null) throw new Error(`demo world input missing: ${rel}`)
+    return typeof src === "string" ? Buffer.from(src) : src
+  })
+  return worldFingerprint([...contents, Buffer.from(`demo-world:${worldId}`)])
 }
 
 /**
@@ -317,36 +422,55 @@ export function worldFingerprint(contents: readonly Uint8Array[]): string {
 }
 
 /**
- * The world fingerprint of the running build: a SHA-256 over the sorted
- * SHA-256 of every world input's bytes (contents only, so a moved file keeps
- * the world), or null when an input is missing (a checkout that cannot seed
- * has no world to share, so only its build id counts).
+ * `worldId`'s fingerprint in the running build: a SHA-256 over the sorted
+ * SHA-256 of every input's bytes (contents only, so a moved file keeps the
+ * world), or null when an input is missing (a checkout that cannot seed has no
+ * world to share, so only its build id counts). Computed once per world.
  */
-export function demoPoolWorld(): string | null {
-  if (worldOverride !== null) return worldOverride
-  if (computedWorld !== undefined) return computedWorld
+export function demoPoolWorld(worldId: DemoWorldId): string | null {
+  const pinned = worldOverrides.get(worldId) ?? worldOverrideDefault
+  if (pinned !== null) return pinned
+  const known = computedWorlds.get(worldId)
+  if (known !== undefined) return known
+  let computed: string | null
   try {
-    computedWorld = worldFingerprint(
-      demoWorldFiles().map((rel) => readFileSync(path.join(REPO_ROOT, rel))),
-    )
+    computed = demoWorldFingerprintOf(worldId)
   } catch (err) {
-    log.warn({ err }, "demo pool: no world fingerprint; only the build id matches pooled orgs")
-    computedWorld = null
+    log.warn(
+      { err, worldId },
+      "demo pool: no world fingerprint; only the build id matches pooled orgs",
+    )
+    computed = null
   }
-  return computedWorld
+  computedWorlds.set(worldId, computed)
+  return computed
+}
+
+/**
+ * The Paris month a pooled org of `worldId` seeded at `at` holds, `YYYY-MM`,
+ * or null for a world whose story does not follow the month (`products`).
+ */
+export function demoWorldMonth(worldId: DemoWorldId, at: Date): string | null {
+  return worldId === DEMO_DEFAULT_WORLD ? null : storyClock(at).monthKey()
 }
 
 /** When this process started: pooled orgs of another build seeded before it are stale. */
 const PROCESS_STARTED_AT = Date.now()
 
-/** A pooled org's marker: a visitor org with no expiry until it is claimed. */
+/**
+ * A pooled org's marker: a visitor org with no expiry until it is claimed, of
+ * one world (`worldId`, and for a world that follows the month, the Paris
+ * month it was seeded in).
+ */
 export function pooledMarker(
   state: DemoPoolState,
-  createdAt: Date = new Date(),
-  build: string | null = demoPoolBuildId(),
-  world: string | null = demoPoolWorld(),
-  run: string | null = null,
+  createdAt: Date,
+  build: string | null,
+  world: string | null,
+  run: string | null,
+  worldId: DemoWorldId,
 ): DemoOrgMarker {
+  const worldMonth = demoWorldMonth(worldId, createdAt)
   return {
     variant: "visitor",
     createdAt: createdAt.toISOString(),
@@ -355,6 +479,8 @@ export function pooledMarker(
     ...(build ? { build } : {}),
     ...(world ? { world } : {}),
     ...(run ? { run } : {}),
+    worldId,
+    ...(worldMonth ? { worldMonth } : {}),
   }
 }
 
@@ -371,13 +497,45 @@ function isCurrentWorld(
   return current.world !== null && row.world === current.world
 }
 
-function runningWorld(): { build: string | null; world: string | null } {
-  return { build: demoPoolBuildId(), world: demoPoolWorld() }
+function runningWorld(worldId: DemoWorldId): { build: string | null; world: string | null } {
+  return { build: demoPoolBuildId(), world: demoPoolWorld(worldId) }
+}
+
+/** The oldest a ready pooled org may be when it is claimed, in milliseconds. */
+function maxPooledAgeMs(): number {
+  return env.LIAISON_DEMO_POOL_MAX_AGE_HOURS * 3600_000
+}
+
+/**
+ * How many ready workspaces the pool keeps of each world: LIAISON_DEMO_POOL_SIZES
+ * when set, else LIAISON_DEMO_POOL_SIZE split evenly over the enabled worlds,
+ * the remainder going in `DEMO_WORLDS` order. A world the box does not run
+ * keeps none.
+ */
+export function demoPoolTargets(): Record<DemoWorldId, number> {
+  const targets: Record<DemoWorldId, number> = { products: 0, saas: 0, studio: 0 }
+  const enabled = enabledDemoWorlds()
+  const sizes = parseDemoPoolSizes(env.LIAISON_DEMO_POOL_SIZES) ?? {}
+  if (Object.keys(sizes).length > 0) {
+    for (const id of enabled) targets[id] = sizes[id] ?? 0
+    return targets
+  }
+  const total = env.LIAISON_DEMO_POOL_SIZE
+  const base = Math.floor(total / enabled.length)
+  const rest = total % enabled.length
+  enabled.forEach((id, i) => {
+    targets[id] = base + (i < rest ? 1 : 0)
+  })
+  return targets
+}
+
+function totalTarget(targets: Record<DemoWorldId, number>): number {
+  return DEMO_WORLDS.reduce((sum, id) => sum + targets[id], 0)
 }
 
 /** Is the pool switched on for this process? */
 export function isDemoPoolEnabled(): boolean {
-  return isDemoModeEnabled() && env.LIAISON_DEMO_POOL_SIZE > 0
+  return isDemoModeEnabled() && totalTarget(demoPoolTargets()) > 0
 }
 
 // ── Making a visitor org's shell ────────────────────────────────────────────
@@ -400,13 +558,15 @@ export async function createVisitorOrgShell(input: {
   locale: ShippedLocale
   marker: DemoOrgMarker
   ownerName: string
+  /** The fictional company's name for the workspace; absent, the default world's. */
+  orgName?: string
   /** A load-harness start: the org is flagged with its marker (lib/load-harness.ts). */
   loadHarness?: boolean
 }): Promise<VisitorOrgShell> {
   // The workspace's NAME is the fictional company's, never the caller's.
   const { orgId } = await ensureOrg({
     slug: input.slug,
-    name: DEMO_COMPANY_NAME,
+    name: input.orgName ?? DEMO_COMPANY_NAME,
     locale: input.locale,
   })
   // MARK NEXT, before anything can act as this org: every restriction demo
@@ -432,6 +592,7 @@ export async function createVisitorOrgShell(input: {
 // ── Refill ──────────────────────────────────────────────────────────────────
 
 const REFILL_LOCK_KEY = "demo:pool:refill-lock"
+/** One backoff record per world (`<key>:<worldId>`): a failing world backs off alone. */
 const BACKOFF_KEY = "demo:pool:backoff"
 const STATUS_KEY = "demo:pool:status"
 const EMPTY_COUNT_KEY = "demo:pool:empty-claims"
@@ -448,32 +609,65 @@ let refillLockTtlMs = 30_000
 const BACKOFF_BASE_MS = 30_000
 const BACKOFF_MAX_MS = 30 * 60_000
 
-export interface DemoPoolDepth {
+export interface DemoPoolWorldDepth {
   ready: number
   seeding: number
 }
 
+export interface DemoPoolDepth extends DemoPoolWorldDepth {
+  /** The same counts for each world the box runs. */
+  worlds: Partial<Record<DemoWorldId, DemoPoolWorldDepth>>
+}
+
+/**
+ * Why a ready pooled org can no longer be handed out, or null when it can:
+ * older than LIAISON_DEMO_POOL_MAX_AGE_HOURS, or seeded in another Paris
+ * month than this one for a world that follows the month. The claim's
+ * `WHERE` applies the same two rules.
+ */
+function expiredReason(row: PooledRow, nowMs: number): "age" | "month" | null {
+  const at = Date.parse(row.createdAt)
+  if (!Number.isFinite(at) || nowMs - at > maxPooledAgeMs()) return "age"
+  const month = demoWorldMonth(row.worldId, new Date(nowMs))
+  if (month !== null && row.worldMonth !== month) return "month"
+  return null
+}
+
 /**
  * How many pooled orgs of the running build are ready, and how many are being
- * seeded. Another build's pooled orgs are not the pool: the refill retires them.
+ * seeded, in total and per enabled world. Another build's pooled orgs, a world
+ * the box does not run, and ready orgs too old to hand out are not the pool:
+ * the refill retires them.
  */
-export async function demoPoolDepth(): Promise<DemoPoolDepth> {
-  const current = runningWorld()
-  const rows = await pooledRows()
+export async function demoPoolDepth(now: number = Date.now()): Promise<DemoPoolDepth> {
+  const enabled = enabledDemoWorlds()
+  const worlds: Partial<Record<DemoWorldId, DemoPoolWorldDepth>> = {}
+  for (const id of enabled) worlds[id] = { ready: 0, seeding: 0 }
   let ready = 0
   let seeding = 0
-  for (const row of rows) {
-    if (!isCurrentWorld(row, current)) continue
-    if (row.state === "ready") ready++
-    else seeding++
+  for (const row of await pooledRows()) {
+    const counts = worlds[row.worldId]
+    if (!counts || !isCurrentWorld(row, runningWorld(row.worldId))) continue
+    if (row.state === "ready") {
+      if (expiredReason(row, now) !== null) continue
+      counts.ready++
+      ready++
+    } else {
+      counts.seeding++
+      seeding++
+    }
   }
-  return { ready, seeding }
+  return { ready, seeding, worlds }
 }
 
 interface PooledRow {
   orgId: string
   state: DemoPoolState
   createdAt: string
+  /** Its world; a marker without one is `products`. */
+  worldId: DemoWorldId
+  /** The Paris month it was seeded in, for a world that follows the month. */
+  worldMonth: string | null
   /** The build that seeded it, or null for a marker written without one. */
   build: string | null
   /** The world fingerprint it was seeded from, or null for a marker without one. */
@@ -501,6 +695,8 @@ async function pooledRows(): Promise<PooledRow[]> {
       orgId: String(row.id),
       state,
       createdAt: String(demo?.createdAt ?? ""),
+      worldId: demoWorldIdOf(demo?.worldId),
+      worldMonth: typeof demo?.worldMonth === "string" ? demo.worldMonth : null,
       build: typeof demo?.build === "string" ? demo.build : null,
       world: typeof demo?.world === "string" ? demo.world : null,
       run: typeof demo?.run === "string" ? demo.run : null,
@@ -519,9 +715,31 @@ function rowsOf(result: unknown): Array<Record<string, unknown>> {
  * Hand a pooled org to the reaper: an expired visitor marker, no `pool`. Used
  * for a seed that failed and for a seed a dead process left half done, so a
  * broken org is never claimed and never squats a pool slot.
+ *
+ * Only while the org is still pooled: the caller read its row earlier, and in
+ * between another process may have claimed it for a visitor. A claimed org
+ * keeps the visitor's marker, so the reaper never takes their workspace.
+ * Returns whether the org was retired.
  */
-async function retirePooledOrg(orgId: string): Promise<void> {
-  await markOrgAsDemo(orgId, visitorMarker(1, new Date(Date.now() - 2 * 3600_000)))
+async function retirePooledOrg(orgId: string): Promise<boolean> {
+  const retired = visitorMarker(1, new Date(Date.now() - 2 * 3600_000))
+  const k = drizzleSql.raw(schemaRef("kernel"))
+  const rows = await withSystemDb("demo-pool-retire", async (tx) =>
+    rowsOf(
+      await tx.execute(drizzleSql`
+        UPDATE ${k}.organizations
+        SET settings = jsonb_set(settings, '{demo}', ${JSON.stringify(retired)}::jsonb),
+          updated_at = now()
+        WHERE id = ${orgId}::uuid AND settings->'demo'->>'pool' IN ('seeding', 'ready')
+        RETURNING id`),
+    ),
+  )
+  if (rows.length === 0) {
+    log.warn({ orgId }, "demo pool: a workspace to retire is no longer pooled; left as it is")
+    return false
+  }
+  await invalidateDemoMarker(orgId)
+  return true
 }
 
 export interface DemoPoolRefillOutcome {
@@ -529,24 +747,56 @@ export interface DemoPoolRefillOutcome {
   skipped?: "disabled" | "locked" | "backoff" | "busy"
   /** Orgs seeded into the pool by this run. */
   seeded: number
-  /** Seeds that failed (the run stops at the first one and backs off). */
+  /** Seeds that failed (a world stops at its first one and backs off). */
   failed: number
+  /** The worlds this run seeded, in the order it started their seeds. */
+  order: DemoWorldId[]
   depth: DemoPoolDepth
 }
 
 interface BackoffRecord {
+  worldId: DemoWorldId
   failures: number
   notBefore: number
 }
 
-async function readBackoff(): Promise<BackoffRecord | null> {
-  const raw = await redis.get(BACKOFF_KEY)
+function backoffKey(worldId: DemoWorldId): string {
+  return `${BACKOFF_KEY}:${worldId}`
+}
+
+async function readBackoff(worldId: DemoWorldId): Promise<BackoffRecord | null> {
+  const raw = await redis.get(backoffKey(worldId))
   if (!raw) return null
   try {
     return JSON.parse(raw) as BackoffRecord
   } catch {
     return null
   }
+}
+
+/**
+ * The world the next pooled seed goes to: the one missing the largest share of
+ * its target, ties in `DEMO_WORLDS` order, among the worlds still allowed to
+ * seed. Null when none is short.
+ */
+export function nextWorldToSeed(
+  targets: Record<DemoWorldId, number>,
+  depth: DemoPoolDepth,
+  allowed: (worldId: DemoWorldId) => boolean = () => true,
+): DemoWorldId | null {
+  let best: DemoWorldId | null = null
+  let bestShare = 0
+  for (const id of DEMO_WORLDS) {
+    const target = targets[id]
+    if (target <= 0 || !allowed(id)) continue
+    const have = (depth.worlds[id]?.ready ?? 0) + (depth.worlds[id]?.seeding ?? 0)
+    const share = (target - have) / target
+    if (share > bestShare) {
+      best = id
+      bestShare = share
+    }
+  }
+  return best
 }
 
 /**
@@ -559,8 +809,9 @@ export function demoPoolRefillParallelism(): number {
 }
 
 /**
- * Top the pool up to LIAISON_DEMO_POOL_SIZE, with up to
- * `demoPoolRefillParallelism()` seeds at once. Each seed holds a slot of the
+ * Top the pool up to each world's target (`demoPoolTargets`), with up to
+ * `demoPoolRefillParallelism()` seeds at once, the world missing the largest
+ * share first (`nextWorldToSeed`). Each seed holds a slot of the
  * box-wide gate; while visitors wait for one, the refill keeps only its share
  * of the slots (demo-seed-gate.ts, PRIORITY), so a burst that outruns seeding
  * still refills the pool instead of draining it until the burst ends. One seed at a time capped the refill at one seed's
@@ -570,33 +821,55 @@ export function demoPoolRefillParallelism(): number {
  * burst of claims never starts a second run. Re-reads the depth before every
  * seed it starts, so claims made while it runs are refilled by the same run.
  * Each seed's org row exists (as `seeding`) before the next depth read, so the
- * run never seeds past the size. Never throws on a failed seed: it records the
- * failure, starts no further seed, lets the ones running finish, and the next
- * scheduler tick after the backoff retries.
+ * run never seeds past a target. Never throws on a failed seed: it records the
+ * failure against that world, starts no further seed of it (the other worlds
+ * go on), lets the ones running finish, and the next scheduler tick after that
+ * world's backoff retries it.
  */
 export async function refillDemoPool(now: () => number = Date.now): Promise<DemoPoolRefillOutcome> {
-  const size = env.LIAISON_DEMO_POOL_SIZE
+  const targets = demoPoolTargets()
+  const size = totalTarget(targets)
   if (!isDemoModeEnabled() || size <= 0) {
-    return { skipped: "disabled", seeded: 0, failed: 0, depth: { ready: 0, seeding: 0 } }
+    return {
+      skipped: "disabled",
+      seeded: 0,
+      failed: 0,
+      order: [],
+      depth: { ready: 0, seeding: 0, worlds: {} },
+    }
   }
-  const backoff = await readBackoff()
-  if (backoff && now() < backoff.notBefore) {
-    return { skipped: "backoff", seeded: 0, failed: 0, depth: await demoPoolDepth() }
+  const backoffs = new Map<DemoWorldId, BackoffRecord>()
+  for (const id of DEMO_WORLDS) {
+    if (targets[id] <= 0) continue
+    const record = await readBackoff(id)
+    if (record && now() < record.notBefore) backoffs.set(id, record)
+  }
+  if (backoffs.size > 0) {
+    // Every world short of its target is backing off: nothing to seed this tick.
+    const depth = await demoPoolDepth(now())
+    const short = DEMO_WORLDS.filter((id) => nextWorldToSeed(targets, depth, (w) => w === id))
+    if (short.length > 0 && short.every((id) => backoffs.has(id))) {
+      return { skipped: "backoff", seeded: 0, failed: 0, order: [], depth }
+    }
   }
   const token = crypto.randomUUID()
   const locked = await redis.set(REFILL_LOCK_KEY, token, "PX", refillLockTtlMs, "NX")
   if (locked !== "OK") {
-    return { skipped: "locked", seeded: 0, failed: 0, depth: await demoPoolDepth() }
+    return { skipped: "locked", seeded: 0, failed: 0, order: [], depth: await demoPoolDepth(now()) }
   }
   const renewal = renewRefillLock(token)
   let seeded = 0
   let failed = 0
   let started = 0
   let stop = false
+  const order: DemoWorldId[] = []
+  /** Worlds that failed in this run: no further seed of them until their backoff lapses. */
+  const failedWorlds = new Set<DemoWorldId>()
   const running = new Set<Promise<void>>()
 
   /** One pooled seed under its gate lease; records its outcome, never throws. */
   const runOne = async (lease: SeedLease, shell: PooledShell): Promise<void> => {
+    const { worldId } = shell
     let result: PooledSeedResult
     try {
       result = await seedPooledShell(shell)
@@ -610,53 +883,65 @@ export async function refillDemoPool(now: () => number = Date.now): Promise<Demo
     } finally {
       await releaseSeedSlot(lease)
     }
-    const after = await demoPoolDepth()
+    const after = await demoPoolDepth(now())
     if (result.ok) {
       seeded++
-      await redis.del(BACKOFF_KEY)
-      await writePoolStatus({ lastSeedAt: new Date().toISOString(), lastError: null, after })
+      await redis.del(backoffKey(worldId))
+      await writePoolStatus({
+        lastSeedAt: new Date().toISOString(),
+        lastError: null,
+        worldId,
+        after,
+      })
       // WARN on purpose: one line per refill that shows on a box running
       // LOG_LEVEL=warn, which is what an operator sizes the pool from.
+      const own = after.worlds[worldId] ?? { ready: 0, seeding: 0 }
       log.warn(
         {
           orgId: result.orgId,
+          worldId,
           seedMs: result.ms,
           ready: after.ready,
           seeding: after.seeding,
+          worldReady: own.ready,
+          worldTarget: targets[worldId],
           size,
           parallel: running.size,
         },
-        `demo pool refill: seeded one workspace in ${result.ms} ms, ${after.ready}/${size} ready`,
+        `demo pool refill: seeded one ${worldId} workspace in ${result.ms} ms, ${own.ready}/${targets[worldId]} ready (${after.ready}/${size} in all)`,
       )
       return
     }
     failed++
-    stop = true
-    // One backoff step per run, however many of its seeds failed together.
-    if (failed > 1) return
-    const failures = (backoff?.failures ?? 0) + 1
+    // One backoff step per world per run, however many of its seeds failed together.
+    if (failedWorlds.has(worldId)) return
+    failedWorlds.add(worldId)
+    const failures =
+      (backoffs.get(worldId)?.failures ?? (await readBackoff(worldId))?.failures ?? 0) + 1
     const delay = Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS)
     await redis.set(
-      BACKOFF_KEY,
-      JSON.stringify({ failures, notBefore: now() + delay } satisfies BackoffRecord),
+      backoffKey(worldId),
+      JSON.stringify({ worldId, failures, notBefore: now() + delay } satisfies BackoffRecord),
     )
     await writePoolStatus({
       lastSeedAt: new Date().toISOString(),
       lastError: result.detail ?? "seed failed",
+      worldId,
       after,
     })
     log.error(
       {
         orgId: result.orgId,
+        worldId,
         seedMs: result.ms,
         detail: result.detail,
         failures,
         retryInMs: delay,
         ready: after.ready,
         size,
-        alert: "demo_pool_seed_failed",
+        alert: "demo_pool_world_failing",
       },
-      "demo pool refill: a pooled workspace failed to seed; backing off",
+      `demo pool refill: a pooled ${worldId} workspace failed to seed; that world backs off`,
     )
   }
 
@@ -678,15 +963,21 @@ export async function refillDemoPool(now: () => number = Date.now): Promise<Demo
         )
       }
       if (!stop && running.size < parallel) {
-        const depth = await demoPoolDepth()
-        if (depth.ready + depth.seeding < size) {
+        const depth = await demoPoolDepth(now())
+        const worldId = nextWorldToSeed(
+          targets,
+          depth,
+          (id) => !backoffs.has(id) && !failedWorlds.has(id),
+        )
+        if (worldId) {
           // A seeding slot from the box-wide gate; while visitors wait for one,
           // only within the refill's share (demo-seed-gate.ts, PRIORITY).
           const lease = await tryAcquireRefillSeedSlot()
           if (lease) {
             try {
-              const shell = await createPooledShell(token)
+              const shell = await createPooledShell(token, worldId, new Date(now()))
               started++
+              order.push(worldId)
               const task: Promise<void> = runOne(lease, shell).finally(() => running.delete(task))
               running.add(task)
             } catch (err) {
@@ -714,7 +1005,8 @@ export async function refillDemoPool(now: () => number = Date.now): Promise<Demo
     ...(busy ? { skipped: "busy" as const } : {}),
     seeded,
     failed,
-    depth: await demoPoolDepth(),
+    order,
+    depth: await demoPoolDepth(now()),
   }
 }
 
@@ -769,25 +1061,38 @@ async function releaseRefillLock(token: string): Promise<void> {
  *   which the running build never hands out. Only one seeded before this
  *   process started, or older than a seed's deadline: while an old and a new
  *   process overlap during a deploy, the old one must not retire the new
- *   one's fresh seeds.
+ *   one's fresh seeds. The same holds for an org of a world this process
+ *   does not run (a newer build may run it): one this box does not run any
+ *   more retires once it is past that window;
+ * - a ready org older than LIAISON_DEMO_POOL_MAX_AGE_HOURS, or of a world that
+ *   follows the month seeded in another Paris month, is never handed out.
  */
 async function retireStalePooledOrgs(nowMs: number, run: string): Promise<void> {
-  const current = runningWorld()
-  const build = current.build
+  const build = demoPoolBuildId()
+  const enabled = new Set(enabledDemoWorlds())
   const otherBuild: PooledRow[] = []
+  const expired: Array<{ orgId: string; worldId: DemoWorldId; reason: string }> = []
   for (const row of await pooledRows()) {
     const at = Date.parse(row.createdAt)
     const known = Number.isFinite(at)
     const deadRun = row.state === "seeding" && row.run !== null && row.run !== run
-    if (!isCurrentWorld(row, current)) {
+    const current = runningWorld(row.worldId)
+    if (!enabled.has(row.worldId) || !isCurrentWorld(row, current)) {
       if (!deadRun && known && at >= PROCESS_STARTED_AT && nowMs - at <= STALE_PROVISIONING_MS) {
         continue
       }
-      otherBuild.push(row)
-      await retirePooledOrg(row.orgId)
+      if (await retirePooledOrg(row.orgId)) otherBuild.push(row)
       continue
     }
-    if (row.state !== "seeding") continue
+    if (row.state === "ready") {
+      const reason = expiredReason(row, nowMs)
+      if (reason !== null) {
+        if (await retirePooledOrg(row.orgId)) {
+          expired.push({ orgId: row.orgId, worldId: row.worldId, reason })
+        }
+      }
+      continue
+    }
     if (!deadRun && (row.run === run || (known && nowMs - at <= STALE_PROVISIONING_MS))) continue
     log.error(
       {
@@ -806,20 +1111,31 @@ async function retireStalePooledOrgs(nowMs: number, run: string): Promise<void> 
         build,
         retired: otherBuild.length,
         orgIds: otherBuild.map((r) => r.orgId),
-        world: current.world,
+        worldIds: [...new Set(otherBuild.map((r) => r.worldId))],
         builds: [...new Set(otherBuild.map((r) => r.build))],
         worlds: [...new Set(otherBuild.map((r) => r.world))],
       },
-      `demo pool: retired ${otherBuild.length} pooled workspace(s) seeded by another build from another world`,
+      `demo pool: retired ${otherBuild.length} pooled workspace(s) seeded by another build from another world, or of a world this box does not run`,
+    )
+  }
+  if (expired.length > 0) {
+    log.warn(
+      { retired: expired.length, expired },
+      `demo pool: retired ${expired.length} ready workspace(s) too old to hand out`,
     )
   }
 }
 
-async function writePoolStatus(status: {
+interface DemoPoolStatus {
   lastSeedAt: string
   lastError: string | null
+  /** The world of the seed this records. */
+  worldId: DemoWorldId
+  /** The depth after it, in total and per world. */
   after: DemoPoolDepth
-}): Promise<void> {
+}
+
+async function writePoolStatus(status: DemoPoolStatus): Promise<void> {
   try {
     await redis.set(STATUS_KEY, JSON.stringify(status))
   } catch (err) {
@@ -827,19 +1143,21 @@ async function writePoolStatus(status: {
   }
 }
 
-/** The last refill's outcome, for an operator: when, what failed, the depth after. */
-export async function readDemoPoolStatus(): Promise<{
-  lastSeedAt: string
-  lastError: string | null
-  after: DemoPoolDepth
-} | null> {
+/**
+ * The last refill's outcome, for an operator: when, which world, what failed,
+ * and the depth after in total and per world.
+ */
+export async function readDemoPoolStatus(): Promise<DemoPoolStatus | null> {
   const raw = await redis.get(STATUS_KEY)
-  return raw ? (JSON.parse(raw) as Awaited<ReturnType<typeof readDemoPoolStatus>>) : null
+  return raw ? (JSON.parse(raw) as DemoPoolStatus) : null
 }
 
 /** A pooled org's shell, created and marked `seeding`, not yet seeded. */
 interface PooledShell extends VisitorOrgShell {
   slug: string
+  worldId: DemoWorldId
+  /** The refill clock's time when the shell was made: its marker's `createdAt` and month. */
+  createdAt: Date
   started: number
   startedAt: string
 }
@@ -856,33 +1174,46 @@ interface PooledSeedResult {
  * It carries the refill run's lock token, so the next run knows a shell its run
  * left behind is dead (retireStalePooledOrgs).
  */
-async function createPooledShell(run: string): Promise<PooledShell> {
+async function createPooledShell(
+  run: string,
+  worldId: DemoWorldId,
+  createdAt: Date,
+): Promise<PooledShell> {
   const started = Date.now()
   const slug = demoOrgSlug("")
   const shell = await createVisitorOrgShell({
     slug,
     locale: POOL_SEED_LOCALE,
-    marker: pooledMarker("seeding", new Date(), demoPoolBuildId(), demoPoolWorld(), run),
+    marker: pooledMarker(
+      "seeding",
+      createdAt,
+      demoPoolBuildId(),
+      demoPoolWorld(worldId),
+      run,
+      worldId,
+    ),
     ownerName: DEMO_POOL_OWNER_NAME,
+    orgName: demoWorldOrgName(worldId),
   })
   const startedAt = new Date(started).toISOString()
   await writeProvisioning({ orgId: shell.orgId, state: "provisioning", startedAt })
-  return { ...shell, slug, started, startedAt }
+  return { ...shell, slug, worldId, createdAt, started, startedAt }
 }
 
-/** Seed a pooled shell with the whole world, and mark it ready (or retire it). */
+/** Seed a pooled shell with its whole world, and mark it ready (or retire it). */
 async function seedPooledShell(shell: PooledShell): Promise<PooledSeedResult> {
-  const { slug, started, startedAt } = shell
+  const { slug, started, startedAt, worldId, createdAt } = shell
   let ok = false
   let detail: string | undefined
   try {
     const seed = await seedDemoOrgData({
       orgSlug: slug,
-      orgName: DEMO_COMPANY_NAME,
+      orgName: demoWorldOrgName(worldId),
+      worldId,
       variant: "visitor",
       locale: POOL_SEED_LOCALE,
       owner: { email: shell.login, name: DEMO_POOL_OWNER_NAME, password: shell.password },
-      needs: [...DEMO_NEEDS],
+      needs: [...DEMO_WORLD_NEEDS[worldId]],
     })
     ok = seed.ok
     detail = seed.detail
@@ -897,7 +1228,10 @@ async function seedPooledShell(shell: PooledShell): Promise<PooledSeedResult> {
   }
   const finishedAt = new Date().toISOString()
   if (ok) {
-    await markOrgAsDemo(shell.orgId, pooledMarker("ready", new Date(started)))
+    await markOrgAsDemo(
+      shell.orgId,
+      pooledMarker("ready", createdAt, demoPoolBuildId(), demoPoolWorld(worldId), null, worldId),
+    )
     await writeProvisioning({ orgId: shell.orgId, state: "ready", startedAt, finishedAt })
   } else {
     // A failed pooled org is never handed out: a visitor who would get it gets
@@ -917,17 +1251,24 @@ export interface ClaimedPooledOrg {
   /** The visitor's own agent's handle (`@<first name>`). */
   agentHandle: string
   marker: DemoOrgMarker
+  /** The world the org holds: always the one the claim asked for. */
+  worldId: DemoWorldId
 }
 
 /**
- * Take the oldest ready pooled org the running build seeded and make it the visitor's, in ONE
+ * Take the oldest ready pooled org of `worldId` the running build seeded and make it the visitor's, in ONE
  * transaction: the org row is locked `FOR UPDATE SKIP LOCKED`, so concurrent
  * claims each get a different org (or none) and never wait on each other. The
- * marker becomes the visitor's own (their needs, their expiry starting now),
- * the org takes the visitor's language, and the owner account the seed
- * attached the world to takes the visitor's name. Null on an empty pool.
+ * marker becomes the visitor's own (their needs, their expiry starting now,
+ * the org's world kept), the org takes the visitor's language, and the owner
+ * account the seed attached the world to takes the visitor's name. Null when
+ * no org of that world can be handed out: never an org of another world, nor
+ * one older than LIAISON_DEMO_POOL_MAX_AGE_HOURS, nor one of a world that
+ * follows the month seeded in another Paris month.
  */
 export async function claimPooledOrg(input: {
+  /** The world the visitor's workspace must hold; an org of any other world is never handed out. */
+  worldId: DemoWorldId
   name: string
   locale: ShippedLocale
   needs: readonly DemoNeed[]
@@ -945,27 +1286,38 @@ export async function claimPooledOrg(input: {
    */
   expiresAt?: string
 }): Promise<ClaimedPooledOrg | null> {
-  if (!isDemoPoolEnabled()) return null
+  const { worldId } = input
+  if (!isDemoPoolEnabled() || !enabledDemoWorlds().includes(worldId)) return null
   const now = input.now ?? new Date()
   const fresh = visitorMarker(env.LIAISON_DEMO_VISITOR_TTL_HOURS, now, input.needs)
   const visitor = input.expiresAt ? { ...fresh, expiresAt: input.expiresAt } : fresh
-  const marker: DemoOrgMarker = input.synthetic ? { ...visitor, synthetic: true } : visitor
   const loadFlag = input.synthetic ? loadOrgSettingsFragment() : {}
   const k = drizzleSql.raw(schemaRef("kernel"))
-  // Only the running build's world (see BUILD and WORLD in the header).
-  const { build, world } = runningWorld()
+  // Only the asked world, and only the running build's fingerprint of it (see
+  // WORLDS, BUILD and WORLD in the header). A marker without a world is the
+  // default world's, as `demoWorldOf` reads it.
+  const sameWorldId = drizzleSql`AND COALESCE(settings->'demo'->>'worldId', ${DEMO_DEFAULT_WORLD}) = ${worldId}`
+  const { build, world } = runningWorld(worldId)
   const sameBuild = !build
     ? drizzleSql``
     : world
       ? drizzleSql`AND (settings->'demo'->>'build' = ${build} OR settings->'demo'->>'world' = ${world})`
       : drizzleSql`AND settings->'demo'->>'build' = ${build}`
+  // Fresh enough: markers write `createdAt` with toISOString, which sorts as text.
+  const oldest = new Date(now.getTime() - maxPooledAgeMs()).toISOString()
+  const month = demoWorldMonth(worldId, now)
+  const sameMonth =
+    month === null ? drizzleSql`` : drizzleSql`AND settings->'demo'->>'worldMonth' = ${month}`
   for (;;) {
     let pickedId: string | null = null
     const claim = await withSystemDb("demo-pool-claim", async (tx) => {
       const picked = rowsOf(
         await tx.execute(drizzleSql`
-          SELECT id, slug FROM ${k}.organizations
-          WHERE settings->'demo'->>'pool' = 'ready' ${sameBuild}
+          SELECT id, slug, settings->'demo'->>'worldMonth' AS world_month,
+            COALESCE(settings->'demo'->>'worldId', ${DEMO_DEFAULT_WORLD}) AS world_id
+          FROM ${k}.organizations
+          WHERE settings->'demo'->>'pool' = 'ready' ${sameWorldId} ${sameBuild}
+            AND settings->'demo'->>'createdAt' >= ${oldest} ${sameMonth}
           ORDER BY created_at ASC, id ASC
           LIMIT 1
           FOR UPDATE SKIP LOCKED`),
@@ -973,6 +1325,15 @@ export async function claimPooledOrg(input: {
       if (!picked) return null
       const orgId = String(picked.id)
       pickedId = orgId
+      // The visitor's marker keeps the org's world: what the pool seeded it
+      // as, read from the row (the `WHERE` makes it the asked one).
+      const pickedMonth = typeof picked.world_month === "string" ? picked.world_month : null
+      const withWorld: DemoOrgMarker = {
+        ...visitor,
+        worldId: demoWorldIdOf(picked.world_id),
+        ...(pickedMonth ? { worldMonth: pickedMonth } : {}),
+      }
+      const marker: DemoOrgMarker = input.synthetic ? { ...withWorld, synthetic: true } : withWorld
       const owners = rowsOf(
         await tx.execute(drizzleSql`
           UPDATE ${k}.users SET name = ${input.name}, updated_at = now()
@@ -1001,7 +1362,7 @@ export async function claimPooledOrg(input: {
           default_locale = ${input.locale},
           updated_at = now()
         WHERE id = ${orgId}::uuid`)
-      return { orgId, slug: String(picked.slug), userId, agentHandle: agent.handle }
+      return { orgId, slug: String(picked.slug), userId, agentHandle: agent.handle, marker }
     }).catch(async (err: unknown) => {
       // A claim that could not complete rolled back whole. The org it picked
       // must not be picked again by every next signup: it leaves the pool for
@@ -1026,7 +1387,7 @@ export async function claimPooledOrg(input: {
     // The claim wrote straight to the row: every process re-reads the marker.
     await invalidateDemoMarker(claim.orgId)
     if (input.synthetic) rememberLoadOrg(claim.orgId)
-    return { ...claim, marker }
+    return { ...claim, worldId: demoWorldIdOf(claim.marker.worldId) }
   }
 }
 
@@ -1169,19 +1530,28 @@ async function handOverOwnerAgent(
 }
 
 /**
- * Count a signup that found the pool empty, and say so at WARN with the
- * running count, so an operator reading a warn-level log can size the pool.
+ * Count a signup that found no workspace of its world in the pool, and say so
+ * at WARN with the running count (in total and for that world), so an
+ * operator reading a warn-level log can size each world's pool.
  */
-export async function recordDemoPoolMiss(): Promise<void> {
+export async function recordDemoPoolMiss(worldId: DemoWorldId): Promise<void> {
   let misses = 0
+  let worldMisses = 0
   try {
     misses = await redis.incr(EMPTY_COUNT_KEY)
+    worldMisses = await redis.incr(`${EMPTY_COUNT_KEY}:${worldId}`)
   } catch {
     // The count is a sizing hint; the warn line below is the signal.
   }
   log.warn(
-    { poolSize: env.LIAISON_DEMO_POOL_SIZE, emptyClaims: misses, alert: "demo_pool_empty" },
-    "demo pool empty: this signup seeds its own workspace behind the response",
+    {
+      worldId,
+      poolSize: demoPoolTargets()[worldId],
+      emptyClaims: misses,
+      worldEmptyClaims: worldMisses,
+      alert: "demo_pool_empty",
+    },
+    `demo pool empty for ${worldId}: this signup seeds its own workspace behind the response`,
   )
 }
 
@@ -1231,9 +1601,17 @@ export const DemoPoolTestAccess = {
   setRefillLockTtlMs(ms: number): void {
     refillLockTtlMs = ms
   },
-  /** Pin the world fingerprint (null: the one computed from this checkout). */
-  setWorld(world: string | null): void {
-    worldOverride = world
+  /**
+   * Pin a world fingerprint (null: the one computed from this checkout): of
+   * one world, or with no world, the default every unpinned world reads.
+   */
+  setWorld(world: string | null, worldId?: DemoWorldId): void {
+    if (worldId === undefined) {
+      worldOverrideDefault = world
+      if (world === null) worldOverrides.clear()
+    } else if (world === null) worldOverrides.delete(worldId)
+    else worldOverrides.set(worldId, world)
   },
-  keys: { REFILL_LOCK_KEY, BACKOFF_KEY, STATUS_KEY, EMPTY_COUNT_KEY },
+  keys: { REFILL_LOCK_KEY, BACKOFF_KEY, STATUS_KEY, EMPTY_COUNT_KEY, backoffKey },
+  retirePooledOrg,
 }

@@ -37,8 +37,10 @@ export const testApp = {
       searchable: ["title"],
     },
     // The external records `externalSearch` returns: a dimension is declared on
-    // a table, so the `market` its response filter uses is declared here.
+    // a table, so the `market` its response filter uses is declared here. The
+    // items scopes read it, as in the manifest.
     externalrecords: {
+      rlsScope: "items",
       fields: { name: "string", market: "string" },
       dimensions: {
         market: { type: "membership" as const, values: ["eu", "us", "ap"] },

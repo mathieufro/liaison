@@ -252,7 +252,7 @@ export async function findTaskIdByExternalRef(
   return rows[0]?.id ?? null
 }
 
-async function projectIdByName(
+export async function projectIdByName(
   tx: PrivilegedDb,
   orgId: string,
   name: string,
@@ -267,7 +267,11 @@ async function projectIdByName(
   return rows[0]?.id ?? null
 }
 
-async function statusIdsOf(tx: PrivilegedDb, orgId: string, projectId: string): Promise<string[]> {
+export async function statusIdsOf(
+  tx: PrivilegedDb,
+  orgId: string,
+  projectId: string,
+): Promise<string[]> {
   return extractRows<{ id: string }>(
     await tx.execute(drizzleSql`
       SELECT id FROM ${projectsRel("project_statuses")}
@@ -314,7 +318,7 @@ async function transactionNowMs(tx: PrivilegedDb): Promise<number> {
 }
 
 /** The privileged operator actor the projects services attribute rows to. */
-function serviceActor(ctx: HostImportContext): UserContext {
+export function serviceActor(ctx: HostImportContext): UserContext {
   return {
     actorType: "user",
     userId: ctx.actorUserId,

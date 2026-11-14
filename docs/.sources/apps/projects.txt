@@ -263,6 +263,12 @@ Where the time went, one segment per status in its colour -> apps/web/src/module
 Automations on this task, the recent runs fired on it -> apps/web/src/modules/projects/TaskTimeInStatus.tsx:119
 Automations list row: last run dot, time since and step strip -> apps/web/src/modules/projects/ProjectAutomations.tsx:330
 An SLA whose time came reads as passed -> apps/web/src/modules/projects/TaskTimeInStatus.tsx:34
+Money taint: a money-bearing result stamps projects:money:read -> apps/api/src/modules/apps/execute-tool.ts:6699 ; apps/api/src/apps/projects/app.manifest.json:2339
+No linked invoice, mixed price and invoice currencies -> apps/api/src/apps/projects/handlers.ts:1230
+Margin refuses mixed currencies -> apps/api/src/apps/projects/service/margin.ts:274
+cost_rate_set DM only, human turn only, margin scope, ISO 4217 -> apps/api/src/apps/projects/app.manifest.json:2285 ; apps/api/src/apps/projects/service/currency.ts:23
 The automation editor names a missing status until one is picked -> apps/web/src/modules/projects/ProjectAutomations.tsx:393 ; apps/web/src/modules/agent/flow/flow-model.ts:530
 A task opened from a dashboard drill is named by its title -> apps/web/src/modules/projects/exports.ts:43 ; apps/web/src/modules/shell/entity-opener.ts:135
 A project's task table names who last changed each task -> apps/api/src/apps/projects/service/table-backing.ts:138
+A week nobody has planned says so, with the projects using time and how time gets planned -> apps/api/src/apps/projects/service/capacity.ts:340 ; apps/api/src/apps/projects/service/capacity.ts:352
+A reconcile names a source repository only to a reader of its host -> apps/api/src/apps/projects/service/reconcile.ts:445 ; apps/api/src/apps/projects/service/reconcile.ts:556

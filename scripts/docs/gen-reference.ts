@@ -1226,9 +1226,33 @@ export interface AppTools {
   tools: AgentTool[]
 }
 
+/**
+ * What the tool-finding bench reads of a kernel tool beyond the reference page:
+ * the whole description, the words it answers to, whether it is announced
+ * (deferred) or always loaded, whether an agent sees it at all, and the size of
+ * its parameter schema's source.
+ */
+export interface KernelToolSearchFields {
+  /** The whole description, or "" when it is built at run time. */
+  fullDescription: string
+  searchKeywords: string[]
+  /** As declared; absent when the tool states none (a kernel tool is then hot). */
+  deferLoading?: boolean
+  agentVisible: boolean
+  /** The visible tool a hidden one sends an agent to, as declared. */
+  useInstead?: string
+  routineOnly: boolean
+  /** Characters of the `params` expression's source, a stand-in for its schema size. */
+  paramsChars: number
+  /** Declared `readOnly: true` (a literal); the dashboard source guard reads it. */
+  readOnly: boolean
+  /** Where the registration is, `file:line` from the repo root. */
+  registeredAt: string
+}
+
 export interface KernelTools {
   /** Each tool may carry `availability`: the condition its registration depends on. */
-  tools: Array<AgentTool & { availability?: string }>
+  tools: Array<AgentTool & { availability?: string } & KernelToolSearchFields>
 }
 
 /** Every shipped app's agent tools (`tools`, keyed by tool name), sorted. */
@@ -1330,6 +1354,22 @@ function isReregistration(def: ts.Expression): boolean {
   )
 }
 
+/** A string array literal, or a const in this file naming one; anything else reads as none. */
+function resolveStringArray(e: ts.Expression, sf: ts.SourceFile): string[] {
+  let arr = unwrap(e)
+  if (ts.isIdentifier(arr)) {
+    const init = findVariable(sf, arr.text)?.initializer
+    if (!init) return []
+    arr = unwrap(init)
+  }
+  if (!ts.isArrayLiteralExpression(arr)) return []
+  return arr.elements.flatMap((el) => {
+    if (ts.isSpreadElement(el)) return resolveStringArray(el.expression, sf)
+    const v = stringValue(el as ts.Expression)
+    return v === undefined ? [] : [v]
+  })
+}
+
 function insideCondition(node: ts.Node): boolean {
   for (let p: ts.Node | undefined = node.parent; p; p = p.parent) {
     if (ts.isIfStatement(p) || ts.isConditionalExpression(p)) return true
@@ -1351,7 +1391,7 @@ function insideCondition(node: ts.Node): boolean {
 export function collectKernelTools(root: string = ROOT): KernelTools {
   const files: string[] = []
   walkSources(join(root, "apps/api/src/modules"), files)
-  const byName = new Map<string, AgentTool & { availability?: string }>()
+  const byName = new Map<string, KernelTools["tools"][number]>()
   for (const f of files) {
     const text = readFileSync(f, "utf8")
     if (!text.includes("toolRegistry.set(")) continue
@@ -1455,9 +1495,19 @@ export function collectKernelTools(root: string = ROOT): KernelTools {
         })
 
         const dExpr = bound(defProps.get("description"))
-        const description = firstSentence(dExpr ? resolveString(dExpr, ctx) : undefined)
+        const fullDescription = (dExpr ? resolveString(dExpr, ctx) : undefined) ?? ""
+        const description = firstSentence(fullDescription || undefined)
         const gatedExpr = bound(defProps.get("gated"))
         const gated = gatedExpr?.kind === ts.SyntaxKind.TrueKeyword
+        const flag = (key: string): boolean | undefined => {
+          const e = bound(defProps.get(key))
+          if (e?.kind === ts.SyntaxKind.TrueKeyword) return true
+          if (e?.kind === ts.SyntaxKind.FalseKeyword) return false
+          return undefined
+        }
+        const keywordsExpr = bound(defProps.get("searchKeywords"))
+        const useInsteadExpr = bound(defProps.get("useInstead"))
+        const paramsExpr = bound(defProps.get("params"))
 
         let availability: string | undefined
         if (insideCondition(n) && bindings.length === 1) {
@@ -1470,11 +1520,25 @@ export function collectKernelTools(root: string = ROOT): KernelTools {
         }
 
         const prev = byName.get(name)
+        const useInstead =
+          (useInsteadExpr ? resolveString(useInsteadExpr, ctx) : undefined) ?? prev?.useInstead
+        const deferLoading = flag("deferLoading") ?? prev?.deferLoading
         byName.set(name, {
           name,
           description: description || prev?.description || "",
           gated: gated || prev?.gated === true,
           requiredScopes,
+          fullDescription: fullDescription || prev?.fullDescription || "",
+          searchKeywords: keywordsExpr
+            ? resolveStringArray(keywordsExpr, sf)
+            : (prev?.searchKeywords ?? []),
+          ...(deferLoading !== undefined ? { deferLoading } : {}),
+          agentVisible: flag("agentVisible") !== false && prev?.agentVisible !== false,
+          ...(useInstead ? { useInstead } : {}),
+          routineOnly: flag("routineOnly") === true || prev?.routineOnly === true,
+          readOnly: flag("readOnly") === true || prev?.readOnly === true,
+          registeredAt: prev?.registeredAt ?? where(n),
+          paramsChars: paramsExpr ? paramsExpr.getText(sf).length : (prev?.paramsChars ?? 0),
           ...((availability ?? prev?.availability)
             ? { availability: availability ?? prev?.availability }
             : {}),

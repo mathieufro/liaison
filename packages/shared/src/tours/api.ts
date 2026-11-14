@@ -195,6 +195,8 @@ export interface TourListItem {
   title: string
   summary: string
   beatCount: number
+  /** Played once: once played it offers no "Start again", only the demo's "Start over". */
+  singleRun?: true
   /** null = never started ("new"). */
   progress: TourProgress | null
 }

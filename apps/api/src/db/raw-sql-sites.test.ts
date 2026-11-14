@@ -206,6 +206,7 @@ const REVIEWED: Record<string, Record<string, string>> = {
     "tablePrivilegesFor(role)": "privilege list from a code constant per role",
     "generateSequenceDdl(schemaName, entityName)": APP_DDL,
     stmt: APP_DDL,
+    loosen: APP_DDL,
     "generateTableUniqueAddDdl(schemaName, entityName, cols)": APP_DDL,
     "generateDropIndexDdl(schemaName, indexname)":
       "index name read from pg_indexes; validateIdentifier + quoteIdent in the generator (ddl.ts)",
@@ -267,6 +268,30 @@ const REVIEWED: Record<string, Record<string, string>> = {
     "target.table": MANIFEST_IDENT,
     "target.joinOn": MANIFEST_IDENT,
   },
+  "apps/api/src/modules/contacts/service.ts#repointContactSoftReferences": {
+    deals: "quoteIdent(schemaRef()) over code constants (service.ts, repointContactSoftReferences)",
+  },
+  "apps/api/src/modules/contacts/companies.ts#repointAppCompanyLinks": {
+    qualified:
+      "quoteIdent(schemaRef()) and quoteIdent over the code constant APP_COMPANY_LINKS (companies.ts), checked with to_regclass first",
+  },
+  "apps/api/src/modules/contacts/companies.ts#liveSchedulesBilling": {
+    qualified:
+      "quoteIdent(schemaRef()) over code constants (companies.ts), checked with to_regclass first",
+  },
+  "apps/api/src/modules/contacts/companies.ts#unlinkAppCompanyRows": {
+    qualified:
+      "quoteIdent(schemaRef()) and quoteIdent over the code constant APP_COMPANY_LINKS (companies.ts), checked with to_regclass first",
+  },
+  "apps/api/src/modules/contacts/service.ts#liveSchedulesBillingContact": {
+    qualified:
+      "quoteIdent(schemaRef()) over code constants (service.ts), checked with to_regclass first",
+  },
+  "apps/api/src/modules/contacts/erasure.ts#clearContactSoftReferences": {
+    dealsTable: "rel() over code constants (erasure.ts:81)",
+    customersTable: "rel() over code constants (erasure.ts), checked with to_regclass first",
+    schedulesTable: "rel() over code constants (erasure.ts), checked with to_regclass first",
+  },
   "apps/api/src/modules/contacts/erasure.ts#release": {
     used: "OR-joined EXISTS predicates built in this function from the code reference table and the checked ids",
     orgId: "UUID-checked before splicing (erasure.ts:83-85)",
@@ -291,6 +316,22 @@ const REVIEWED: Record<string, Record<string, string>> = {
   },
   "apps/api/src/modules/org/purge/immutable-triggers.ts#ensureImmutableTriggersCurrent": {
     stmt: `${APP_DDL}; schema and table read from pg_catalog, the spec read back from the trigger body this generator wrote (immutableSpecFromTriggerBody: digits and identifiers only)`,
+  },
+  "apps/api/src/modules/export/org-archive/writer.ts#scopeWhere": {
+    "withheld.keep()":
+      "a predicate from the code constant WITHHELD_ROWS (withheld.ts): fixed SQL over alias t and schemaRef names, no value from a request or a row",
+  },
+  "apps/api/src/apps/projects/service/reconcile-sweep.ts#sweepClaims": {
+    docs: 'schemaRef("app_invoicing") plus the literal table name documents, checked with to_regclass first',
+  },
+  "apps/api/src/apps/projects/service/reconcile.ts#readableProofRefs": {
+    rel: "schemaRef() and table name from the code constant OWNED_PROOFS, checked with to_regclass first",
+  },
+  "apps/api/src/apps/projects/service/time-settings.ts#selectedCalendars": {
+    rel: 'schemaRef("app_calendar") plus the literal table name calendars, checked with to_regclass first',
+  },
+  "apps/api/src/apps/projects/service/time-plan.ts#keep": {
+    col: 'a column name the calling code writes as a literal (keep("basis") and the like) to keep a plan or terms column unchanged in an upsert',
   },
   "apps/api/src/modules/export/org-archive/writer.ts#readBatch": {
     'pk.join(", ")': `${CATALOG_IDENT} (primary key columns), each quoteIdent'd`,
@@ -327,6 +368,9 @@ const REVIEWED: Record<string, Record<string, string>> = {
   "apps/api/src/modules/export/data-subject-export-tool.ts#buildDataSubjectBundle": {
     documentsTable: IDENT_FROM_CODE,
     identityTable: IDENT_FROM_CODE,
+    schedulesTable: IDENT_FROM_CODE,
+    customersTable: IDENT_FROM_CODE,
+    subscriptionsTable: IDENT_FROM_CODE,
   },
   "apps/api/src/modules/files/message-attachments.ts#messageIdOf": {
     filesAlias: IDENT_FROM_CODE,

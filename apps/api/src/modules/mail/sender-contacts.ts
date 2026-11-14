@@ -16,7 +16,10 @@
 //     for the same address is never reused: audiences stay apart;
 //   - either way, a sender who already has an org-visible contact is linked to
 //     it (never duplicated privately), and a bulk or machine sender
-//     (newsletter, notifier, no-reply) is only ever linked, never created.
+//     (newsletter, notifier, no-reply) is only ever linked, never created;
+//   - a contact created here joins the company that holds its address's
+//     domain, when exactly one company of the org does, so a colleague at a
+//     client who writes for the first time is that client's from the start.
 //
 // The writes run privileged, with every filter explicit: the sync acts as a
 // system actor, who is neither the mailbox's owner nor one of its members,
@@ -36,6 +39,7 @@ import { rootLogger } from "~/lib/logger"
 import { redis } from "~/lib/redis"
 import { quoteIdent } from "~/lib/sql-utils"
 import { checkRateLimit } from "~/middleware/rate-limiter"
+import { isConsumerMailDomain } from "~/modules/apps/connections/api/consumer-domains"
 import { resolveContact } from "~/modules/contacts/service"
 import { recomputeSearchAcl } from "~/modules/sharing/service"
 
@@ -116,6 +120,7 @@ export async function resolveSenderContacts(
       out[row.email] = row.id
     }
 
+    const created: Array<{ id: string; email: string }> = []
     if (!create) return out
     for (const [email, sender] of byEmail) {
       if (out[email] || sender.bulk || isMachineAddress(email)) continue
@@ -126,20 +131,52 @@ export async function resolveSenderContacts(
       const name =
         typeof sender.name === "string" && sender.name.trim() ? sender.name.trim() : undefined
       if (personal) {
-        const { contact } = await resolveContact(
+        const { contact, isNew } = await resolveContact(
           tx as never,
           orgId,
           actorId,
           { email, name },
           { audience: "owner", ownerUserId: account.ownerId as string },
         )
-        if (contact) out[email] = contact.id
+        if (contact) {
+          out[email] = contact.id
+          if (isNew) created.push({ id: contact.id, email })
+        }
         continue
       }
-      out[email] = await createMailboxContact(tx, orgId, actorId, inbox, email, name)
+      const id = await createMailboxContact(tx, orgId, actorId, inbox, email, name)
+      out[email] = id
+      created.push({ id, email })
     }
+    await linkToCompanyByDomain(tx, orgId, created)
     return out
   })
+}
+
+/**
+ * New contacts join the company that holds their address's domain, when exactly one company of
+ * the org does: two companies on one domain (a group's subsidiaries) leave the choice to a person,
+ * and a consumer mail domain never names a company. A contact already at a company keeps it.
+ */
+async function linkToCompanyByDomain(
+  tx: PrivilegedDb,
+  orgId: string,
+  created: ReadonlyArray<{ id: string; email: string }>,
+): Promise<void> {
+  const linkable = created.filter((c) => !isConsumerMailDomain(c.email.split("@")[1] ?? ""))
+  if (linkable.length === 0) return
+  const K = drizzleSql.raw(quoteIdent(schemaRef("kernel")))
+  const ids = JSON.stringify([...new Set(linkable.map((c) => c.id))])
+  await tx.execute(drizzleSql`
+    UPDATE ${K}.contacts c SET company_id = x.company_id, updated_at = now()
+      FROM (SELECT lower(co.domain) AS domain, (array_agg(co.id))[1] AS company_id
+              FROM ${K}.companies co
+             WHERE co.org_id = ${orgId}::uuid AND co.domain IS NOT NULL
+             GROUP BY lower(co.domain)
+            HAVING count(*) = 1) x
+     WHERE c.org_id = ${orgId}::uuid AND c.company_id IS NULL
+       AND c.id = ANY(ARRAY(SELECT jsonb_array_elements_text(${ids}::jsonb)::uuid))
+       AND lower(split_part(c.email, '@', 2)) = x.domain`)
 }
 
 /** New contacts one mailbox may auto-create per day. */

@@ -1,0 +1,8 @@
+card brand, last 4, expiry only; no card number, CVC, raw body, metadata -> bundled-apps/stripe/README.md (What it stores)
+schema allow-list test -> bundled-apps/stripe/src/schema-guard.test.ts (FieldDef)
+card numbers hidden before storage -> bundled-apps/stripe/src/mirror.ts (scan) ; bundled-apps/stripe/src/mirror.ts (writeMirror)
+card number scan with Luhn -> bundled-apps/stripe/src/pan-scan.ts (luhnValid)
+refund reason with card number refused -> bundled-apps/stripe/src/tools/refunds.ts (cardNumberRefusal)
+masked answers test -> bundled-apps/stripe/src/results.test.ts (every Stripe tool)
+key added by the server, only api.stripe.com -> bundled-apps/stripe/src/http.ts (STRIPE_AUTH) ; bundled-apps/stripe/src/http.ts (STRIPE_API_BASE)
+hosted invoice and portal link -> bundled-apps/stripe/src/tools/links.ts (cardUpdateLink)

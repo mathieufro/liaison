@@ -127,6 +127,18 @@ Section `report-access`, scope `org`, edited with `database:access:admin`.
 | --- | --- | --- |
 |  | DatabaseReportAccess | custom |
 
+## github
+
+Read repositories, commits, pull requests and issues on GitHub, read-only.
+
+### Connection
+
+Section `connection`, scope `org`, edited with `github:accounts:admin`.
+
+| Key | Label | Type |
+| --- | --- | --- |
+|  | github | connections |
+
 ## gitlab
 
 Sync GitLab manuals into Knowledge and read projects, merge requests and issues.
@@ -171,6 +183,7 @@ Section `issuers`, scope `org`, edited with `invoicing:settings:read`.
 | Key | Label | Type |
 | --- | --- | --- |
 |  | InvoicingIssuerProfiles | custom |
+|  | InvoicingIssuerStreams | custom |
 
 ### Shopify shop mappings
 
@@ -369,6 +382,18 @@ Section `quota`, scope `org`, edited with `social:findings:read`.
 | Key | Label | Type |
 | --- | --- | --- |
 |  | SocialQuota | custom |
+
+## stripe
+
+Stripe: customers, subscriptions, invoices and payments from your Stripe account, read through a restricted key.
+
+### Stripe account
+
+Section `connection`, scope `org`, edited with `stripe:admin:connection`.
+
+| Key | Label | Type |
+| --- | --- | --- |
+|  | stripe | connections |
 
 ## tickets
 

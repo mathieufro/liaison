@@ -38,7 +38,7 @@ vi.mock("~/modules/shell/ApiContext", () => ({
   }),
 }))
 
-import { resetRegistry } from "~/framework/app-registry"
+import { registerManifestAppData, resetRegistry } from "~/framework/app-registry"
 import { I18nProvider } from "~/modules/i18n/i18n-context"
 import { attentionStore } from "~/modules/shell/attention-store"
 import { resetHomeCardLayout } from "~/modules/shell/home-card-layout"
@@ -75,6 +75,12 @@ function renderHome(locale: "en" | "fr") {
 beforeEach(() => {
   attentionStore._setForTest({ items: [], errors: [], loading: false })
   resetRegistry()
+  registerManifestAppData("tickets", {
+    attention: { groupLabel: { label: "Support", labelKey: "kernel.homeGroupSupport" } },
+  })
+  registerManifestAppData("knowledge", {
+    attention: { groupLabel: { label: "Knowledge", labelKey: "kernel.homeGroupKnowledge" } },
+  })
   resetHomeCardLayout()
   resetThreadStore()
   apiGet.mockReset().mockResolvedValue([])
@@ -103,16 +109,15 @@ describe("the attention feed chrome follows the reader's language", () => {
     }
   })
 
-  it("says nothing is urgent, in French, when only grouped work is left", () => {
+  it("says nothing needs you, in French, when only grouped work is left", () => {
     attentionStore._setForTest({
       items: [item({ id: "g1" }), item({ id: "g2", entityId: "T2" })],
       errors: [],
     })
     renderHome("fr")
     const status = screen.getByTestId("home-status").textContent ?? ""
-    expect(status).toContain("RIEN D'URGENT")
-    expect(status).toContain("EN ATTENTE DANS")
-    expect(status).toContain("DOMAINE")
+    expect(status).toContain("RIEN NE VOUS ATTEND")
+    expect(status).toContain("DANS VOS AUTRES TÂCHES")
   })
 
   // D21: the card holds the alerts only (conversations left Home), so its

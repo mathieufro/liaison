@@ -12,6 +12,7 @@ const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..", "..")
 // tenant-generic setupGuide.
 const GUIDED: Array<{ path: string; connection: string }> = [
   { path: "bundled-apps/gitlab/app.manifest.json", connection: "gitlab" },
+  { path: "bundled-apps/github/app.manifest.json", connection: "github" },
   { path: "apps/api/src/apps/mail/app.manifest.json", connection: "gmail" },
   { path: "apps/api/src/apps/mail/app.manifest.json", connection: "imap" },
   { path: "apps/api/src/apps/tickets/app.manifest.json", connection: "gmail" },

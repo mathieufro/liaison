@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+import { resolveLocale } from "@liaison/shared"
 import { and, eq } from "drizzle-orm"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -7,7 +8,7 @@ import { withPrivilegedDb } from "~/db/privileged"
 import { connectedAccounts } from "~/db/schema/kernel"
 import { appsLogger as log } from "~/lib/logger"
 import { connectBindingEnabled, setConnectBindingCookie } from "~/lib/oauth-browser-binding"
-import { withRequestRls } from "~/lib/request-rls"
+import { extractRlsContext, withRequestRls } from "~/lib/request-rls"
 import { isAppOriginRequest } from "~/lib/response"
 import { requireScope } from "~/middleware/require-scope"
 import { connectionConfigRegistry, manifestRegistry } from "~/modules/apps/app-registries"
@@ -23,12 +24,14 @@ import {
   getConnectionOAuthClient,
   upsertConnectionOAuthClient,
 } from "~/modules/apps/connections/oauth-client-provisioning"
+import { precheckCredentials } from "~/modules/apps/connections/precheck"
 import { runConnectionTeardown } from "~/modules/apps/connections/revoke"
 import {
   CONNECT_BINDING_COOKIE,
   CONNECT_CALLBACK_PATH,
   ConnectionHeldByMemberError,
   ConnectionHeldByOtherOwnerError,
+  CredentialRefusedError,
   connectionAccountLabel,
   createCredentialConnection,
   describeConnectionAccounts,
@@ -50,6 +53,7 @@ import {
   parseConnectClient,
 } from "~/modules/apps/connections/shell-connect"
 import { ensureAppsForOrg } from "~/modules/apps/init"
+import { serverT } from "~/modules/i18n/server-i18n"
 import { hasScope } from "~/modules/permissions/permissions"
 
 type ConnectMode = "personal" | "org"
@@ -86,6 +90,22 @@ function ownerTypeFromMode(mode: ConnectMode): "user" | "org" {
 async function linkToken(c: any): Promise<string> {
   const body = ((await c.req.json().catch(() => null)) ?? {}) as Record<string, unknown>
   return typeof body.token === "string" ? body.token : ""
+}
+
+/** A refused credential: nothing was stored; the message is the field's or the check's. */
+function credentialRefused(c: any, err: CredentialRefusedError) {
+  const locale = resolveLocale(c.req.header("accept-language")?.split(",")[0]?.trim())
+  const translated = err.messageKey ? serverT(locale, err.messageKey) : null
+  return c.json(
+    {
+      error: {
+        code: err.code,
+        message: translated && translated !== err.messageKey ? translated : err.message,
+        details: { field: err.field, stored: false },
+      },
+    },
+    422,
+  )
 }
 
 export const connectionRoutes = new Hono<AppEnv>()
@@ -430,6 +450,20 @@ export const connectionRoutes = new Hono<AppEnv>()
       providedCredentials.identifier ??
       (ownerType === "org" ? orgId : userId)
 
+    try {
+      // The connection's own check of the key before it is kept: a refused key
+      // replaces nothing (precheck.ts).
+      await precheckCredentials({
+        actor: extractRlsContext(c),
+        appName,
+        connectionName,
+        credentials: providedCredentials,
+      })
+    } catch (err) {
+      if (err instanceof CredentialRefusedError) return credentialRefused(c, err)
+      throw err
+    }
+
     const connectionInput = {
       identifier,
       credentials: providedCredentials,
@@ -466,6 +500,8 @@ export const connectionRoutes = new Hono<AppEnv>()
       if (err instanceof ConnectionHeldByOtherOwnerError) {
         throw new HTTPException(409, { message: err.message })
       }
+      // The wrong kind of secret: nothing was stored; the field's own message says why.
+      if (err instanceof CredentialRefusedError) return credentialRefused(c, err)
       // A member holds it personally: the caller confirms with `takeOver: true`.
       if (err instanceof ConnectionHeldByMemberError) {
         return c.json(

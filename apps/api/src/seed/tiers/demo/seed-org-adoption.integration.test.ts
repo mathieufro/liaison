@@ -11,8 +11,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { sql } from "drizzle-orm"
 import { withSystemDb } from "~/db/privileged"
+import { DemoModeTestAccess } from "~/modules/demo/demo-mode"
 import { invalidateDemoMarker, loadDemoMarker } from "~/modules/demo/demo-org"
-import { claimOrgSlug, hasOrgSlugClaim } from "~/seed/factories/org/org"
+import { claimOrgSlug, findOrgIdBySlug, hasOrgSlugClaim } from "~/seed/factories/org/org"
 import { runSeedDemoCli } from "./seed-demo"
 import { demoMarkRefusal, seedDemoOrg } from "./seed-org"
 
@@ -76,6 +77,19 @@ describe("seeding an existing org that is not a demo org", () => {
     await expect(seedDemoOrg({ orgSlug: SLUG, variant: "visitor" })).rejects.toThrow(
       new RegExp(`'${SLUG}'.*NOT a demo org`),
     )
+    expect(await marker()).toBeNull()
+  })
+
+  it("is never deleted by a reset on a private box: the replace refuses it and the org stays", async () => {
+    DemoModeTestAccess.set(false)
+    try {
+      await expect(
+        runSeedDemoCli(["--slug", SLUG, "--world", "saas", "--variant", "visitor", "--reset"]),
+      ).rejects.toThrow(new RegExp(`'${SLUG}': it is not a demo org`))
+    } finally {
+      DemoModeTestAccess.set(null)
+    }
+    expect(await findOrgIdBySlug(SLUG)).toBe(orgId)
     expect(await marker()).toBeNull()
   })
 

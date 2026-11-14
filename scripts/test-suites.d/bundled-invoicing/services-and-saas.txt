@@ -1,0 +1,41 @@
+# Test files the services and software-company work adds to this suite.
+# Who issues what, and the issuer guard on every path that invoices a named customer.
+src/issuer-guard.test.ts
+src/streams.test.ts
+# Card payments on Stripe: invoices, payments, refunds, unmatched payments (pure store).
+src/handlers/stripe-subscribers.test.ts
+src/handlers/stripe-refund-credit-note.test.ts
+# A Stripe invoice or refund credit note e-invoices like any no-person issue (pure store).
+src/handlers/stripe-einvoice-send.test.ts
+src/handlers/orphan-actions.test.ts
+# The month-end run: drafts, flags, the card, approve and undo, the legal dates (pure store).
+src/recurring/draft-job.test.ts
+src/recurring/run-card.test.ts
+# A row billing far from the schedule's last invoice asks for a look (pure store).
+src/recurring/amount-check.test.ts
+# Timeline rows (issued, paid, credited), paged past the app database's page size (pure store).
+src/activity.test.ts
+# The issuer time zone is asked once, at the first issue on a profile nobody gave one.
+src/issue-timezone-ask.test.ts
+# Recurring schedules: the date rules (pure) and the four tools against the store.
+src/recurring/schedule.test.ts
+src/recurring/tools.test.ts
+src/recurring/manifest.test.ts
+src/recurring/month-end-check.test.ts
+src/recurring/import-kind.test.ts
+src/einvoicing/send-batch.test.ts
+src/einvoicing/collection.test.ts
+src/einvoicing/standing.test.ts
+src/einvoicing/run-send.test.ts
+src/send-state.test.ts
+# The company page's Money section reads only that company's documents.
+src/ui/CompanyMoneyPanel.test.tsx
+# Who issues what, in the issuer settings: the streams, and Checked only after a person's click.
+src/ui/IssuerStreams.test.tsx
+# Recurring schedules: the list, its empty and refused states, a run's detail, the editor.
+src/ui/RecurringList.test.tsx
+src/ui/RecurringStates.test.tsx
+src/ui/RunDetail.test.tsx
+src/ui/ScheduleEditor.test.tsx
+# A project's invoiced amount, net of credit notes, for the projects app's margin (pure store).
+src/tools/project-invoiced-get.test.ts

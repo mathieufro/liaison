@@ -271,10 +271,18 @@
           "refunds_create"
         ],
         "text": "ORDER EDITS AND REFUNDS REACH INVOICING BY THEMSELVES: an order edit that changes the line set or the amounts makes invoicing raise ONE approval covering a credit note plus a replacement invoice, and a refund or a cancellation auto issues its credit note, so never also ask invoicing to edit the issued invoice or to issue a second credit note by hand."
+      },
+      {
+        "tools": ["customers_search"],
+        "text": "`customers_search`: GROUND your coverage in it: say 'reviewed N of totalCount customers' (N = how many you actually paged through). If you did not reach all totalCount (nextCursor still set / N < totalCount), you reviewed a PARTIAL/sampled subset — state that explicitly and NEVER claim 'all'/'the entire base'/'a full audit'. Only when N == totalCount (you paged to nextCursor=null) is the coverage complete. Report ONLY figures present in the tool results — never invent or extrapolate a spend amount or a customer. Match/label a customer by the EXACT email this tool returns (do not invent an email). CURRENCY (spend threshold in a different currency than the data): amountSpent is denominated in its own `currencyCode` (e.g. USD). If the user states a threshold in a DIFFERENT currency (e.g. 'over 1000 EUR') you CANNOT silently treat the native figure as that currency and you have NO authorized FX rate — so apply the threshold AGAINST amountSpent's native currency and SAY SO ('amountSpent is in USD; I applied the >1000 cut in USD and have not converted to EUR — confirm a rate if you need a strict EUR threshold'). Do NOT assume 1:1 parity, do NOT fabricate a rate, and — critically — do NOT flip to claiming the spend is 'uncomputable' / pivot to the accounting system (Pennylane) because of the currency question: amountSpent IS the per-customer lifetime spend, fully computable here; the currency is a disclosure caveat, never a reason the figure is unavailable. DATA-REALITY UNDER DOUBT: the customers and amountSpent figures this tool returns ARE the store's real customer records — when a user doubts a name ('I don't recognise them / is this real or a test account?'), answer from what the tool actually returned (the customer exists in the store with that email + that amountSpent), and exclude a customer ONLY on a real returned attribute (e.g. a `liaison-seed`/test tag actually present in its `tags`), NEVER on a fabricated rationale you invented ('looks like a dealer account') to justify dropping them. Do not over-correct a correct, tool-grounded result into a wholesale reversal just because the user expressed doubt — re-verify against the tool output and stand on what it says. Each result also carries the customer's CANONICAL postal address in `defaultAddress` ({ address1, address2, city, province, provinceCode, zip, country, countryCode }) plus `phone` — this is THE source of a customer's shipping/postal address: read it to backfill a CRM contact's address. An individual ORDER often has NO per-order shippingAddress (orders_get returns null), so do NOT conclude the address is unavailable from the order — pivot to the customer record's defaultAddress. Use ONLY the address fields actually present; never fabricate a street/city/zip. BUILDING A SPEND SEGMENT (e.g. 'customers who spent over 1000', 'high-value customers', 'top spenders'): do NOT page this whole-base search and filter by hand — the base can hold thousands of customers, far beyond one turn's page budget, so you would only ever reach a sampled subset and must never claim a complete sweep. Use `customers_segment_search` instead: it asks Shopify to evaluate the spend threshold SERVER-SIDE and returns ONLY the matching customers plus a server-side `totalCount`, so you get the EXACT, COMPLETE high-value set in one (or a few) bounded pages."
+      },
+      {
+        "tools": ["customers_segment_search"],
+        "text": "`customers_segment_search`: This is how you segment a large store without enumerating it: do NOT page `customers_search` over thousands of customers and filter by hand (you would only reach a sampled subset within one turn, then be tempted to over-claim a sweep you never did). Each page returns `totalCount` — the server-side count of ALL customers over the threshold across every page. GROUND your coverage in it: if `totalCount` fits in the page(s) you read (nextCursor=null), you have the COMPLETE high-value set and may say so; if nextCursor is still set you have a partial page — say 'reviewed N of totalCount' and page on. Each result carries the customer's `amountSpent` ({ amount, currencyCode }), email, name, and numberOfOrders. CURRENCY: the threshold is compared against each customer's NATIVE lifetime spend in its own `currencyCode` (e.g. USD). If the user stated the threshold in a DIFFERENT currency (e.g. 'over 1000 EUR'), you have NO authorized FX rate — the segment is computed against the native figure, so SAY SO ('amountSpent is in USD; the >1000 cut was applied in USD, not converted to EUR — confirm a rate for a strict EUR threshold'); never assume 1:1 parity, never fabricate a rate. To LABEL these customers (so marketing can target them), match each to a kernel contact by the EXACT email returned here (contacts_search by email) and apply a tag via contacts_write(tags=['high-value']); that produces a filterable TAG (contacts_search(tag='high-value')), NOT a persisted named spend-segment object — there is no agent tool to create a stored Shopify/kernel segment, so describe what you built as a tag, never claim a named segment was saved. Report ONLY customers this tool returned; never invent or extrapolate a customer or a spend figure."
       }
     ]
   },
-  "version": "0.4.28",
+  "version": "0.4.30",
   "network": {
     "imageHosts": ["cdn.shopify.com"],
     "linkHosts": ["admin.shopify.com"]
@@ -632,6 +640,7 @@
     "timeoutMs": 5000
   },
   "attention": {
+    "groupLabel": { "label": "Orders", "labelKey": "kernel.homeGroupOrders" },
     "filterableAxes": [
       "market",
       "currency",
@@ -1169,8 +1178,10 @@
       "schedule": "*/15 * * * *"
     }
   },
+  "outsideTextFields": ["customer", "email", "note", "shipping_address", "billing_address", "po_number", "reason", "value"],
   "tools": {
     "home_load": {
+      "taintSource": true,
       "description": "Load the Shopify Home tab dashboard: connection, attention items (low-stock product variants, unfulfilled-past-SLA count, pending returns), and a recent-orders preview. This is a STORE DASHBOARD overview, not the order query — to ENUMERATE which orders need shipping use orders_search with query='fulfillment_status:unfulfilled' (it returns each order's line-item SKUs), and never read attention.lowInventory (a low-stock PRODUCT list) as if it were the order list.",
       "searchKeywords": ["résumé", "aperçu", "overview", "business"],
       "requiredScopes": ["shopify:orders:read"],
@@ -1258,6 +1269,7 @@
       "readOnly": true
     },
     "orders_search": {
+      "focusCore": true,
       "taintSource": true,
       "description": "Search Shopify orders by query (email, customer name, order name/number, financial_status, fulfillment_status, tag, …) AND/OR by a placed-date window. To scope to a DATE/WEEK ('yesterday', 'this week', 'Modular Expo week'), pass `created_at_min` and/or `created_at_max` (inclusive ISO dates) — these filter SERVER-SIDE on the order's PLACED date (its processedAt, which can differ from createdAt for an imported or backdated order; results are sorted newest createdAt first), so 'orders placed during week X' IS directly queryable; they COMPOSE with the `query` facet (e.g. tag a product SKU via query AND bound the week via the date params in ONE call). A date term written INSIDE the `query` string is still silently ignored — use the date-range params, not the query, for dates. Results come back most-recent-first and are bounded by `limit` + the opaque `cursor`; to enumerate the full matching set, PAGE the cursor (pass the returned nextCursor back until it is null) — do NOT re-run the same query and assume one page is complete.",
       "searchKeywords": ["commande", "commandes", "chercher", "rechercher", "retrouver", "trouver", "find", "vente", "ventes", "sale", "sales"],
@@ -1305,6 +1317,7 @@
       "readOnly": true
     },
     "orders_get": {
+      "focusCore": true,
       "taintSource": true,
       "description": "Get one Shopify order by id (line items, fulfillments, refunds, returns, customer). For a customer's POSTAL/SHIPPING ADDRESS the result carries TWO fields: `shippingAddress` (the per-order ship-to — frequently NULL, as many orders have no order-level address) and `customerAddress` (the customer's canonical defaultAddress: { address1, address2, city, province, provinceCode, zip, country, countryCode, phone }). If `shippingAddress` is null, do NOT conclude the address is unavailable — use `customerAddress` (the customer record is the source of the address). Use ONLY the address fields actually present; never fabricate a street/city/zip. PRICING: each lineItems[] entry carries `priceSet` (the LIST unit price before discounts) AND `discountedUnitPriceSet` (the unit price actually charged after ALL discounts, line-level and allocated order-level) — when invoicing or reconciling an order, ALWAYS use `discountedUnitPriceSet` (fall back to priceSet only when it is absent). Top-level `shippingLine` ({ title, priceSet }) is the shipping charge after shipping discounts, null when free. The result also carries `po_number`, the customer's purchase order reference taken from Shopify's native Order.poNumber (falling back to the originating draft order's), which invoicing prints on the invoice. TAX: US sales tax on a Shop channel order is collected and remitted by Shopify as marketplace facilitator, so it stays OFF our invoicing documents: never copy an order's tax onto an invoice or a quote, and never re-derive a tax figure the order already establishes. B2B SIGNALS in attributes: totalTax, taxExempt, b2bCompany {name, taxRegistrationId} (null for a consumer), customerTaxExempt.",
       "searchKeywords": ["commande", "détail", "voir", "lire"],
@@ -1362,8 +1375,9 @@
       "readOnly": true
     },
     "customers_search": {
+      "focusCore": true,
       "taintSource": true,
-      "description": "Search Shopify customers. Each result carries the customer's NATIVE lifetime spend in `amountSpent` ({ amount, currencyCode }) and `numberOfOrders` — use these directly for any spend / lifetime-value / top-customers / spend-tier question. Do NOT sum orders by hand, and NEVER claim per-customer lifetime spend is uncomputable: amountSpent IS it. Results are PAGED/BOUNDED (~100 per page via cursor) and every page returns `totalCount` — the server-side total number of customers matching the same filter. GROUND your coverage in it: say 'reviewed N of totalCount customers' (N = how many you actually paged through). If you did not reach all totalCount (nextCursor still set / N < totalCount), you reviewed a PARTIAL/sampled subset — state that explicitly and NEVER claim 'all'/'the entire base'/'a full audit'. Only when N == totalCount (you paged to nextCursor=null) is the coverage complete. Report ONLY figures present in the tool results — never invent or extrapolate a spend amount or a customer. Match/label a customer by the EXACT email this tool returns (do not invent an email). CURRENCY (spend threshold in a different currency than the data): amountSpent is denominated in its own `currencyCode` (e.g. USD). If the user states a threshold in a DIFFERENT currency (e.g. 'over 1000 EUR') you CANNOT silently treat the native figure as that currency and you have NO authorized FX rate — so apply the threshold AGAINST amountSpent's native currency and SAY SO ('amountSpent is in USD; I applied the >1000 cut in USD and have not converted to EUR — confirm a rate if you need a strict EUR threshold'). Do NOT assume 1:1 parity, do NOT fabricate a rate, and — critically — do NOT flip to claiming the spend is 'uncomputable' / pivot to the accounting system (Pennylane) because of the currency question: amountSpent IS the per-customer lifetime spend, fully computable here; the currency is a disclosure caveat, never a reason the figure is unavailable. DATA-REALITY UNDER DOUBT: the customers and amountSpent figures this tool returns ARE the store's real customer records — when a user doubts a name ('I don't recognise them / is this real or a test account?'), answer from what the tool actually returned (the customer exists in the store with that email + that amountSpent), and exclude a customer ONLY on a real returned attribute (e.g. a `liaison-seed`/test tag actually present in its `tags`), NEVER on a fabricated rationale you invented ('looks like a dealer account') to justify dropping them. Do not over-correct a correct, tool-grounded result into a wholesale reversal just because the user expressed doubt — re-verify against the tool output and stand on what it says. Each result also carries the customer's CANONICAL postal address in `defaultAddress` ({ address1, address2, city, province, provinceCode, zip, country, countryCode }) plus `phone` — this is THE source of a customer's shipping/postal address: read it to backfill a CRM contact's address. An individual ORDER often has NO per-order shippingAddress (orders_get returns null), so do NOT conclude the address is unavailable from the order — pivot to the customer record's defaultAddress. Use ONLY the address fields actually present; never fabricate a street/city/zip. BUILDING A SPEND SEGMENT (e.g. 'customers who spent over 1000', 'high-value customers', 'top spenders'): do NOT page this whole-base search and filter by hand — the base can hold thousands of customers, far beyond one turn's page budget, so you would only ever reach a sampled subset and must never claim a complete sweep. Use `customers_segment_search` instead: it asks Shopify to evaluate the spend threshold SERVER-SIDE and returns ONLY the matching customers plus a server-side `totalCount`, so you get the EXACT, COMPLETE high-value set in one (or a few) bounded pages.",
+      "description": "Search Shopify customers. Each result carries the customer's NATIVE lifetime spend in `amountSpent` ({ amount, currencyCode }) and `numberOfOrders` — use these directly for any spend / lifetime-value / top-customers / spend-tier question. Do NOT sum orders by hand, and NEVER claim per-customer lifetime spend is uncomputable: amountSpent IS it. Results are PAGED/BOUNDED (~100 per page via cursor) and every page returns `totalCount` — the server-side total number of customers matching the same filter.",
       "searchKeywords": ["client", "clients", "acheteur", "chercher", "rechercher", "retrouver", "trouver"],
       "requiredScopes": ["shopify:customers:read"],
       "handler": "customers_search",
@@ -1389,7 +1403,7 @@
     },
     "customers_segment_search": {
       "taintSource": true,
-      "description": "Build a SERVER-SIDE customer SPEND SEGMENT — the right tool for any 'customers who spent over X', 'high-value customers', 'top spenders', or 'spend-tier' segmentation request. Pass `minSpend` (the threshold AMOUNT, a number) and Shopify's segment engine evaluates `amount_spent > minSpend` SERVER-SIDE, returning ONLY the matching customers — NOT the whole base. This is how you segment a large store without enumerating it: do NOT page `customers_search` over thousands of customers and filter by hand (you would only reach a sampled subset within one turn, then be tempted to over-claim a sweep you never did). Each page returns `totalCount` — the server-side count of ALL customers over the threshold across every page. GROUND your coverage in it: if `totalCount` fits in the page(s) you read (nextCursor=null), you have the COMPLETE high-value set and may say so; if nextCursor is still set you have a partial page — say 'reviewed N of totalCount' and page on. Each result carries the customer's `amountSpent` ({ amount, currencyCode }), email, name, and numberOfOrders. CURRENCY: the threshold is compared against each customer's NATIVE lifetime spend in its own `currencyCode` (e.g. USD). If the user stated the threshold in a DIFFERENT currency (e.g. 'over 1000 EUR'), you have NO authorized FX rate — the segment is computed against the native figure, so SAY SO ('amountSpent is in USD; the >1000 cut was applied in USD, not converted to EUR — confirm a rate for a strict EUR threshold'); never assume 1:1 parity, never fabricate a rate. To LABEL these customers (so marketing can target them), match each to a kernel contact by the EXACT email returned here (contacts_search by email) and apply a tag via contacts_write(tags=['high-value']); that produces a filterable TAG (contacts_search(tag='high-value')), NOT a persisted named spend-segment object — there is no agent tool to create a stored Shopify/kernel segment, so describe what you built as a tag, never claim a named segment was saved. Report ONLY customers this tool returned; never invent or extrapolate a customer or a spend figure.",
+      "description": "Build a SERVER-SIDE customer SPEND SEGMENT — the right tool for any 'customers who spent over X', 'high-value customers', 'top spenders', or 'spend-tier' segmentation request. Pass `minSpend` (the threshold AMOUNT, a number) and Shopify's segment engine evaluates `amount_spent > minSpend` SERVER-SIDE, returning ONLY the matching customers — NOT the whole base.",
       "searchKeywords": ["client", "clients"],
       "requiredScopes": ["shopify:customers:read"],
       "handler": "customers_segment_search",
@@ -1586,6 +1600,7 @@
       "readOnly": true
     },
     "products_search": {
+      "focusCore": true,
       "description": "Search Shopify products",
       "searchKeywords": ["produit", "produits", "catalogue", "article", "chercher", "rechercher", "trouver", "find"],
       "requiredScopes": ["shopify:products:read"],
@@ -1977,6 +1992,7 @@
       "readOnly": true
     },
     "metafields_list": {
+      "taintSource": true,
       "description": "List metafields for a Shopify resource (Product, Customer, Order, …)",
       "requiredScopes": ["shopify:metafields:read"],
       "handler": "metafields_list",
@@ -2015,6 +2031,7 @@
       "readOnly": true
     },
     "refunds_create": {
+      "focusCore": true,
       "description": "Refund a Shopify order: moves money on the order. For a FLAT goodwill / courtesy / partial refund of a fixed sum (e.g. a 50 EUR goodwill credit), pass `amount` (a money value like \"50.00\") and OMIT refundLineItems — the refund returns exactly that amount and is NOT tied to line items. To refund specific units, pass refundLineItems instead. Omit BOTH amount and refundLineItems to refund the whole order. You only need to specify HOW MUCH (amount) or WHICH items (refundLineItems) — the transaction plumbing (gateway/parent transaction) is derived from the order automatically; do not hand-build a transactions entry or split a goodwill amount onto shipping. Invoicing issues the matching credit note automatically once this refund lands, so never also call invoicing__credit_note_create_and_issue for it.",
       "searchKeywords": ["rembourser", "remboursement", "refund", "argent", "commande", "order", "rembourse"],
       "requiredScopes": ["shopify:refunds:create"],
@@ -2391,6 +2408,7 @@
       }
     },
     "fulfillments_create": {
+      "focusCore": true,
       "description": "Mark an order's items as fulfilled. SIMPLEST: pass just the order id as `orderId` (gid://shopify/Order/...) and ALL of that order's open line items are fulfilled — you do NOT need to look up fulfillment-order ids yourself. PARTIAL shipment (only some items or quantities shipped): pass `orderId` PLUS `lineItems` [{ sku, quantity }] (or { orderLineItemId, quantity } when a sku is missing or ambiguous): exactly those quantities are marked fulfilled and the rest stays open; the handler maps them onto the order's open fulfillment orders for you (call fulfillment_orders_get first to see what is still fulfillable). It errors instead of guessing when a sku is unknown/ambiguous or a quantity exceeds what remains. Advanced: an explicit `fulfillment.lineItemsByFulfillmentOrder` is still honored verbatim. Optionally add `fulfillment.trackingInfo` (company/number/url) and `fulfillment.notifyCustomer`. When the store sets a shipping email policy (customerShippingEmail, e.g. retail orders only: a retail customer is emailed, a B2B buyer, a Shopify B2B company or a line sku ending with a b2bSkuSuffixes suffix, never is), the policy decides notifyCustomer whatever you pass, and the result carries `customerNotification` {notified, reason, message}: tell the person whether Shopify emailed the customer.",
       "searchKeywords": ["expédié", "expédier", "expédition", "ship", "shipped", "fulfilled", "livrer", "marquer", "mark", "traiter"],
       "requiredScopes": ["shopify:fulfillments:write"],
@@ -3638,6 +3656,8 @@
       }
     },
     "settings_load": {
+      "agentVisible": false,
+      "useInstead": "home_load",
       "description": "Load the Shopify Settings panel bundle: connection snapshot, identity-mapping rows, sync diagnostics, inventory allowlist, and Plus-only seed suggestions. Read-only.",
       "requiredScopes": ["shopify:admin:identity-map"],
       "handler": "settingsLoad",

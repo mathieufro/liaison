@@ -168,6 +168,11 @@ export const approvalRequests = kernel.table(
     // approvals are privately routed — visible and decidable only by the
     // requester and this owner (see migration 0028). Null = org/shared resource.
     resourceOwnerId: uuid("resource_owner_id").references(() => users.id),
+    // The one person this approval is routed to. NULL = the usual deciders.
+    routePersonId: uuid("route_person_id").references(() => users.id, { onDelete: "set null" }),
+    // The company it is routed for; no foreign key until that table exists.
+    // FK -> kernel.companies ON DELETE SET NULL (0293); a merge re-points it first.
+    routeCompanyId: uuid("route_company_id"),
     // Custom decision scope for this approval (dimension-constrained approvals,
     // migration 0029). Overrides the derived `<app>:approve`. Null = derived.
     approveScope: text("approve_scope"),

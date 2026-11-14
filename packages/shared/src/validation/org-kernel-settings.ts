@@ -247,6 +247,22 @@ export type AddedModel = z.infer<typeof addedModelSchema>
 export type ModelServer = z.infer<typeof modelServerSchema>
 export type AiModelsSettings = z.infer<typeof aiModelsSettingsSchema>
 
+/**
+ * What a commercial mail must state about its sender: the legal name and the
+ * postal address printed in its footer, and the country policy that decides
+ * whether a recipient's professional interest is enough (`optout`) or consent
+ * is needed (`consent`). Written by `config apply` (`email.commercialIdentity`)
+ * and the organization settings page.
+ */
+export const commercialIdentitySchema = z
+  .object({
+    legalName: z.string().trim().min(1).max(200),
+    postalAddress: z.string().trim().min(1).max(500),
+    countryPolicy: z.record(z.string(), z.enum(["optout", "consent"])).optional(),
+  })
+  .strict()
+export type CommercialIdentity = z.infer<typeof commercialIdentitySchema>
+
 export const orgKernelSettingsSchema = z
   .object({
     rateLimitPerMinute: z.number().nullable().optional(),
@@ -327,6 +343,10 @@ export const orgKernelSettingsSchema = z
       })
       .partial()
       .optional(),
+    // The sender identity a commercial mail states (commercialIdentitySchema).
+    // Read-tolerant: a stored value that no longer parses reads as unset, so the
+    // send check refuses commercial mail until it is set again.
+    commercialIdentity: z.unknown().optional(),
     // Demo-instance marker (see demoOrgMarkerSchema above). Declared explicitly
     // rather than left to `.passthrough()` so it is typed, not `unknown`.
     demo: demoOrgMarkerSchema.nullable().optional(),

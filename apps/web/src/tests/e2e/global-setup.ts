@@ -32,6 +32,7 @@ const BUNDLED_APPS: string[] = [
   "boxtal",
   "monitoring",
   "social",
+  "stripe",
   ...LANE_CATALOG_APPS,
 ]
 

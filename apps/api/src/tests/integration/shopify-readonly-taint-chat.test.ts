@@ -113,7 +113,7 @@ describe("chat turn: Shopify reads survive scope taint, Shopify writes do not", 
     await registerApps([shopifyDescriptor()] as never, ORG)
     spyOn("tickets", "search")
     spyOn("shopify", "orders_search")
-    spyOn("shopify", "settings_load")
+    spyOn("shopify", "home_load")
     spyOn("shopify", "webhooks_repair")
   })
 
@@ -136,11 +136,11 @@ describe("chat turn: Shopify reads survive scope taint, Shopify writes do not", 
     await call(frame, "tickets__search")
     expect(frame.turnScopeAccumulator?.snapshot()).toContain("tickets:tickets:read")
     const orders = await call(frame, "shopify__orders_search")
-    const settings = await call(frame, "shopify__settings_load")
-    for (const r of [orders, settings]) {
+    const home = await call(frame, "shopify__home_load")
+    for (const r of [orders, home]) {
       expect((r as { code?: string }).code).not.toBe("E_SCOPE_TAINT_BLOCKED")
     }
-    expect(ran).toEqual(["tickets:search", "shopify:orders_search", "shopify:settings_load"])
+    expect(ran).toEqual(["tickets:search", "shopify:orders_search", "shopify:home_load"])
   })
 
   it("a Shopify write never runs inline after a read tainted the turn: it parks for approval", async () => {

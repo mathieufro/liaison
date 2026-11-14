@@ -26,6 +26,27 @@ describe("contact-merge-store", () => {
     expect(mergeStore.targetCandidates[0].id).toBe("target-1")
   })
 
+  it("loadSourceConversations counts the source contact's mail conversations", async () => {
+    const api = { getEnvelope: vi.fn().mockResolvedValue({ data: [{ id: "c1" }, { id: "c2" }] }) }
+    const { loadSourceConversations, mergeStore, openMerge } = await import("./contact-merge-store")
+
+    openMerge("source-1")
+    await loadSourceConversations(api as any)
+
+    expect(api.getEnvelope).toHaveBeenCalledWith("/mail/conversations?contactId=source-1&limit=100")
+    expect(mergeStore.sourceConversations).toBe(2)
+  })
+
+  it("loadSourceConversations counts none when mail cannot be read", async () => {
+    const api = { getEnvelope: vi.fn().mockRejectedValue(new Error("forbidden")) }
+    const { loadSourceConversations, mergeStore, openMerge } = await import("./contact-merge-store")
+
+    openMerge("source-1")
+    await loadSourceConversations(api as any)
+
+    expect(mergeStore.sourceConversations).toBe(0)
+  })
+
   it("selectTarget and setFieldChoice advance comparison state", async () => {
     const { mergeStore, selectTarget, setFieldChoice } = await import("./contact-merge-store")
 

@@ -723,4 +723,38 @@ describe("ProjectsHome label filter", () => {
     renderHome(makeApi({ get }))
     expect(await screen.findByText("Second project task")).toBeTruthy()
   })
+  it("projects.home.new-project-has-one-time-switch-off-by-default-and-posts-it-only-when-on", async () => {
+    const post = vi.fn().mockResolvedValue({ id: "created", name: "Roadmap" })
+    renderHome(makeApi({ post }))
+
+    fireEvent.click(screen.getByTestId("projects-home.new-project"))
+    fireEvent.input(screen.getByTestId("projects-home.new-project-name"), {
+      target: { value: "Roadmap" },
+    })
+    const sw = screen.getByTestId(
+      "projects-home.new-project.time-budgets-switch",
+    ) as HTMLInputElement
+    expect(sw.checked).toBe(false)
+    fireEvent.click(screen.getByTestId("projects-home.new-project-confirm"))
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+    expect(post.mock.calls[0]?.[1]).not.toHaveProperty("timeBudgets")
+  })
+
+  it("projects.home.new-project-time-switch-on-posts-time-budgets-true", async () => {
+    const post = vi.fn().mockResolvedValue({ id: "created", name: "Roadmap" })
+    renderHome(makeApi({ post }))
+
+    fireEvent.click(screen.getByTestId("projects-home.new-project"))
+    fireEvent.input(screen.getByTestId("projects-home.new-project-name"), {
+      target: { value: "Roadmap" },
+    })
+    fireEvent.click(screen.getByTestId("projects-home.new-project.time-budgets-switch"))
+    fireEvent.click(screen.getByTestId("projects-home.new-project-confirm"))
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/projects",
+        expect.objectContaining({ timeBudgets: true }),
+      ),
+    )
+  })
 })

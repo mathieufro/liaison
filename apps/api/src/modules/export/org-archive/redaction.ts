@@ -40,6 +40,7 @@ export const REDACTED_COLUMNS: Readonly<Record<string, string>> = {
   "kernel.mcp_connections.refresh_token_hash": "MCP client token hash",
   "kernel.nodes.credential_hash": "node credential hash",
   "kernel.notification_device_credentials.token_hash": "device credential hash",
+  "kernel.suppression_links.token_hash": "opt-out link token hash",
   "kernel.push_tokens.token": "push notification token",
   "kernel.browser_push_subscriptions.auth": "web push subscription secret",
   "kernel.browser_push_subscriptions.p256dh": "web push subscription key",
@@ -61,6 +62,20 @@ export const REDACTED_COLUMNS: Readonly<Record<string, string>> = {
   "app_tickets.api_keys.key_hash": "API key hash",
   "app_tickets.ticket_csat.survey_token": "survey link token",
   "app_tickets.tickets.reply_token": "reply address token",
+  // A dispatch grant is a signed token that sends an e-invoice with no further approval while it lasts.
+  "app_invoicing.recurring_run_items.send_grant": "e-invoice send grant",
+  "app_invoicing.einvoice_standing.grant_ref": "e-invoice send grant",
+  // Payment card fragments mirrored from the payment provider: the provider keeps them, a
+  // restored mirror reads them again at its next sync, and an archive never carries card data.
+  "app_stripe.stripe_subscriptions.card_brand": "payment card detail",
+  "app_stripe.stripe_subscriptions.card_last4": "payment card detail",
+  "app_stripe.stripe_subscriptions.card_exp": "payment card detail",
+  "app_stripe.stripe_payments.card_brand": "payment card detail",
+  "app_stripe.stripe_payments.card_last4": "payment card detail",
+  "app_stripe.stripe_payments.card_exp": "payment card detail",
+  // A row's frozen cost is a person's rate times their minutes; a project's cost is the money
+  // figure finance reads (withheld.ts keeps the dated sheet's rows, not the rate behind them).
+  "app_projects.task_time.cost_minor": "a person's cost on one entry",
 }
 
 /** jsonb paths written as `null` (`*` matches any key). */
@@ -87,6 +102,10 @@ const STATUS = "a status label, not an OAuth state value"
 
 /** Reviewed: sensitive-looking names that are kept, with why. */
 export const KEPT_COLUMNS: Readonly<Record<string, string>> = {
+  "kernel.suppression_links.email_hash":
+    "fingerprint of an address that opted out, not a credential (the token hash is redacted)",
+  "kernel.suppressions.email_hash":
+    "fingerprint of an address that opted out: the org keeps honouring it after a restore",
   "app_knowledge.documents.verified_at": "a timestamp",
   "app_knowledge.documents.verified_by": "who checked the document, not a verifier",
   "app_knowledge.source_links.verified_at": "a timestamp",
@@ -97,6 +116,9 @@ export const KEPT_COLUMNS: Readonly<Record<string, string>> = {
   "kernel.contact_addresses.verified_by": "who checked the address, not a verifier",
   "app_boxtal.short_code_sync.state": STATUS,
   "kernel.agent_turns.state": STATUS,
+  "app_projects.reconciliations.state": STATUS,
+  "app_projects.billing_claims.state": STATUS,
+  "app_projects.billing_claims.period_key": "a billing period (all or a month), not a key",
   "kernel.demo_world_marks.state": STATUS,
   "kernel.device_flow_requests.state": STATUS,
   "kernel.effect_ledger.state": STATUS,
@@ -105,6 +127,7 @@ export const KEPT_COLUMNS: Readonly<Record<string, string>> = {
   "kernel.oauth_providers.userinfo_endpoint": "a public URL",
   "app_boxtal.app_config.key": NOT_SECRET_KEY,
   "app_pennylane.app_config.key": NOT_SECRET_KEY,
+  "app_stripe.install_metadata.state": STATUS,
   "app_projects.projects.key": NOT_SECRET_KEY,
   "kernel.product_attributes.key": NOT_SECRET_KEY,
   "app_test_bridge_a.audit.key": NOT_SECRET_KEY,
@@ -113,8 +136,13 @@ export const KEPT_COLUMNS: Readonly<Record<string, string>> = {
   "app_calendar.calendars.sync_token": "provider sync cursor, grants no access",
   "app_invoicing.counterparty_identities.verified_by": "who approved the identity, not a verifier",
   "app_invoicing.einvoice_book_batches.state": STATUS,
+  "app_invoicing.einvoice_send_batches.state": STATUS,
   "app_invoicing.einvoice_transmissions.idempotency_key": CONTENT_HASH,
   "app_invoicing.einvoice_transmissions.state": STATUS,
+  "app_invoicing.recurring_run_items.approved_hash": CONTENT_HASH,
+  "app_invoicing.recurring_run_items.period_key":
+    "the billing period a row is for, not a credential",
+  "app_invoicing.recurring_run_items.state": STATUS,
   "app_mail.accounts.encryption_state": "mailbox encryption status label",
   "app_mail.accounts.encryption_conversion":
     "progress of a mailbox encryption change, holds no key",

@@ -41,6 +41,8 @@ const READERS: Record<string, string> = {
   "infra/jobs/webhook-worker.ts": JOB,
   "modules/agent/context/connected-systems.ts": AGENT,
   "modules/agent/context/context.ts": AGENT,
+  // Registers the host's tools under its own measuring org, reads that org, removes it.
+  "modules/agent/context/ladder-budget.ts": SETUP,
   // Called by the routine create, update and template enable handlers (skills-routines-tools.ts).
   "modules/agent/routines/flow-scopes.ts": AGENT,
   "modules/agent/routines/routine-incident.ts": JOB,
@@ -50,6 +52,7 @@ const READERS: Record<string, string> = {
   "modules/agent/scopes/room-resource-history.ts": AGENT,
   "modules/agent/scopes/scope-taint.ts": AGENT,
   "modules/agent/scopes/tool-identifier-redaction.ts": AGENT,
+  "modules/agent/tools/company-tools.ts": SETUP,
   "modules/agent/tools/config-tools.ts": AGENT,
   // Registers the kernel connection tools for an org while it is set up.
   "modules/agent/tools/connection-tools.ts": SETUP,
@@ -69,6 +72,7 @@ const READERS: Record<string, string> = {
   "modules/approvals/edit.ts": REQUEST,
   "modules/approvals/poll-output.ts": JOB,
   "modules/approvals/required-step.ts": REQUEST,
+  "modules/approvals/routed-reminders.ts": ENSURES,
   "modules/approvals/result-notice.ts": JOB,
   "modules/apps/activation.ts": SETUP,
   "modules/apps/app-registries.ts": SETUP,
@@ -98,7 +102,9 @@ const READERS: Record<string, string> = {
   // Called by the CLI (ensureAppsForOrg first), agent tools and the secret-request routes.
   "modules/connection-guides/plan.ts":
     "CLI, agent turn or request: each caller sets the org up first",
+  "modules/contacts/activity.ts": AGENT,
   "modules/demo/world/commerce-order.ts": ENSURES,
+  "modules/demo/worlds/saas/payments/deliver.ts": ENSURES,
   // A source lookup fills the org's registries on a miss (ensureAppsForOrg); the source
   // listing runs from the dashboards routes and tools, each set up first.
   "modules/dashboards/sources.ts":
@@ -128,6 +134,16 @@ const READERS: Record<string, string> = {
   "modules/webhooks/handler-run.ts":
     "reads no registry itself: the type of the registration its caller (the webhook route or the inbox replay job) looked up",
   "modules/webhooks/routes.ts": WEBHOOK,
+  "modules/agent/context/context-providers.ts": AGENT,
+  "modules/agent/runtime/tool-card-store.ts":
+    "agent turn (agent-service) or HTTP request (agent and apps routes): each sets the org up at its entry",
+  "modules/agent/tools/tool-name-resolve.ts": AGENT,
+  "modules/approvals/route-world.ts":
+    "approval routing: reached from a tool call, a decision or a Home read, each set up at its entry",
+  "modules/mail/send-guard.ts":
+    "send check: reached from the mail bridge (tool call) or the approval list and cascade (request)",
+  "modules/users/away.ts":
+    "away days: reached from set_away (tool call) and the preferences and Home routes (request)",
 }
 
 function sourceFiles(dir: string): string[] {

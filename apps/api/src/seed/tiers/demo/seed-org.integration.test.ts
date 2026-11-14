@@ -22,6 +22,7 @@ import { login } from "~/modules/auth/auth"
 import { verifyAccessToken } from "~/modules/auth/jwt"
 import { invalidateDemoMarker, isDemoOrgId, loadDemoMarker } from "~/modules/demo/demo-org"
 import { DEMO_SHOP_DOMAIN } from "~/modules/demo/shopify"
+import { commercialIdentityMissing, readCommercialIdentity } from "~/modules/mail/commercial-footer"
 import { loadEffectivePermissions } from "~/modules/permissions/permissions"
 import { DEMO_DESK_TEAMS, DEMO_ROLE_AGENTS, DEMO_TEAM } from "~/seed/world/fiction"
 import {
@@ -489,6 +490,14 @@ describe("seedDemoOrg against a real database", () => {
         )
       }
     }
+  })
+
+  it("gives the org the world company's commercial identity, so its business mail can stage", async () => {
+    expect(await readCommercialIdentity(first.orgId)).toMatchObject({
+      legalName: "Resonant Audio Labs SAS",
+      postalAddress: "14 rue des Ateliers, 75011 Paris, France",
+    })
+    expect(await commercialIdentityMissing(first.orgId)).toBe(false)
   })
 
   it("writes the demo timezone and locale onto the org row", async () => {

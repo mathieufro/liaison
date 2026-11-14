@@ -1,0 +1,15 @@
+{
+  "entry": "job:recurring-legal-date",
+  "params": {},
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": [
+        "recurring_runs",
+        "{\"where\":{\"status\":{\"in\":[\"drafted\",\"rejected\",\"approved\",\"issuing\",\"late\"]}},\"orderBy\":{\"issue_on\":\"asc\"},\"limit\":200}"
+      ],
+      "reply": "[]"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

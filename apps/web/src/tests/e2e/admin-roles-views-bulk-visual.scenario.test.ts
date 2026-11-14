@@ -117,13 +117,19 @@ test("visual snapshot: bulk toolbar resting state", async ({ page, env, qa, worl
         .filter((el) => {
           // A label wraps when its text lays out on more than one line box.
           // (Touch targets make phone chips taller, so height alone lies.)
-          const range = document.createRange()
-          range.selectNodeContents(el)
-          const tops = new Set(
-            Array.from(range.getClientRects())
-              .filter((r) => r.width > 0 && r.height > 0)
-              .map((r) => Math.round(r.top)),
-          )
+          // Only the text's own boxes count: a chip's icon (the More chevron)
+          // is centred on the line, so its box starts a pixel or two off the
+          // glyphs' and would read as a second line at some subpixel offsets.
+          const tops = new Set<number>()
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            if (!n.textContent?.trim()) continue
+            const range = document.createRange()
+            range.selectNodeContents(n)
+            for (const r of Array.from(range.getClientRects())) {
+              if (r.width > 0 && r.height > 0) tops.add(Math.round(r.top))
+            }
+          }
           return tops.size > 1
         })
         .map((el) => el.dataset.testid)

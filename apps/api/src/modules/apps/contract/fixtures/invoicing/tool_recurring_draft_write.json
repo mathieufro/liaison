@@ -1,0 +1,37 @@
+{
+  "entry": "tool:recurring_draft_write",
+  "params": {
+    "document": {
+      "external_ref": "recurring:00000000-0000-4000-8000-0000000000e1:2026-11",
+      "issuer_profile_id": "00000000-0000-4000-8000-0000000000a1",
+      "contact_id": "00000000-0000-4000-8000-0000000000c1",
+      "currency": "EUR"
+    },
+    "lines": [
+      {
+        "description": "Monthly service 2026-11",
+        "qty": 1,
+        "unit_price_minor": 10000,
+        "vat_bp": 2000
+      }
+    ]
+  },
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)",
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": [
+        "documents",
+        "{\"where\":{\"external_ref\":\"recurring:00000000-0000-4000-8000-0000000000e1:2026-11\"},\"limit\":1}"
+      ],
+      "reply": "[]"
+    },
+    {
+      "method": "db_batch",
+      "args": [
+        "{\"ops\":[{\"insert\":\"documents\",\"as\":\"draft\",\"data\":{\"external_ref\":\"recurring:00000000-0000-4000-8000-0000000000e1:2026-11\",\"issuer_profile_id\":\"00000000-0000-4000-8000-0000000000a1\",\"contact_id\":\"00000000-0000-4000-8000-0000000000c1\",\"currency\":\"EUR\",\"type\":\"invoice\",\"status\":\"draft\",\"number\":null,\"number_int\":null,\"year_of_issue\":null,\"issued_at\":null}},{\"insert\":\"document_lines\",\"data\":{\"description\":\"Monthly service 2026-11\",\"qty\":1,\"unit_price_minor\":10000,\"vat_bp\":2000,\"document_id\":{\"$ref\":\"draft\"}}}]}"
+      ],
+      "reply": "{\"rows\":{\"draft\":{\"id\":\"00000000-0000-4000-8000-0000000000d9\"}}}"
+    }
+  ]
+}

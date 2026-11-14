@@ -138,6 +138,24 @@ describe("checklist store", () => {
     expect(projectStore.task("t1")?.checklist).toMatchObject({ total: 2, complete: 1 })
   })
 
+  it("a refetch keeps each level's and each item's identity, so an open chip popover survives", async () => {
+    // Fresh objects per read, as off the wire: the store merges into what it holds.
+    const get = vi.fn(async () => view([item("i1", 1)], [{ ...AI }, { ...DEV }]))
+    await checklistStore.load({ get } as any, "p1", "t1")
+    const [firstLevel] = checklistStore.levels("t1")
+    const [firstItem] = checklistStore.items("t1")
+    // The same task read again (an event's coalesced refetch, a second view mounting).
+    await checklistStore.load({ get } as any, "p1", "t1")
+    expect(checklistStore.levels("t1")[0]).toBe(firstLevel)
+    expect(checklistStore.items("t1")[0]).toBe(firstItem)
+    // A renamed level is patched in place; a removed one leaves.
+    get.mockImplementationOnce(async () => view([item("i1", 1)], [{ ...AI, name: "AI review" }]))
+    await checklistStore.load({ get } as any, "p1", "t1")
+    expect(checklistStore.levels("t1")).toHaveLength(1)
+    expect(checklistStore.levels("t1")[0]).toBe(firstLevel)
+    expect(checklistStore.levels("t1")[0]?.name).toBe("AI review")
+  })
+
   it("setLevels echoes the saved list and drops a removed level's states", async () => {
     const api = {
       get: vi.fn(async () =>

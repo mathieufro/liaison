@@ -66,6 +66,11 @@ describe("Shopify app.manifest.json", () => {
     expect(loadManifest()).toBeTypeOf("object")
   })
 
+  it("declares the heading over its attention items, in the words and catalog key Home shows", () => {
+    const attention = (loadManifest() as { attention?: { groupLabel?: unknown } }).attention
+    expect(attention?.groupLabel).toEqual({ label: "Orders", labelKey: "kernel.homeGroupOrders" })
+  })
+
   it("validates against packageManifestSchema", () => {
     const result = packageManifestSchema.safeParse(loadManifest())
     if (!result.success) {
@@ -930,15 +935,23 @@ describe("Shopify app.manifest.json", () => {
     // (the shared package depends on it by workspace protocol); no change to what it does.
     // 0.4.4: above 0.4.3, so an instance on either line of work upgrades; no change of its own.
     // 0.4.5: above both lines of work, which each changed it under the number before; no change of its own.
-    // 0.4.6: the offline token stays host-side (ctx.fetch auth); the verifier checks by config key.
-    // 0.4.7: backfill-customers and scope-seed are onDemand (a job with neither schedule nor onDemand never registers).
-    // 0.4.8: declares that it places no config secret in any request (secrets: {}); the token goes by ctx.fetch auth.
-    // 0.4.9: screens work framed on their own origin (outside links through the host).
-    // 0.4.10: the home's attention rows open the admin through the host too; framed, a
+    // 0.4.6: its attention heading is declared here, not in the web shell.
+    // 0.4.6 (main): the offline token stays host-side (ctx.fetch auth); the verifier checks by config key.
+    // 0.4.7 (main): backfill-customers and scope-seed are onDemand (a job with neither schedule nor onDemand never registers).
+    // 0.4.9: both of the above, merged.
+    // 0.4.10: the longest descriptions past 600 characters read from guide sections.
+    // 0.4.11: its core tools load on a hard focus of its entity, the others by name.
+    // 0.4.6 (main): the offline token stays host-side (ctx.fetch auth); the verifier checks by config key.
+    // 0.4.7 (main): backfill-customers and scope-seed are onDemand (a job with neither schedule nor onDemand never registers).
+    // 0.4.8 (main): declares that it places no config secret in any request (secrets: {}); the token goes by ctx.fetch auth.
+    // 0.4.12: both of the above, merged.
+    // 0.4.9 (main): screens work framed on their own origin (outside links through the host).
+    // 0.4.10 (main): the home's attention rows open the admin through the host too; framed, a
     // Cmd/Ctrl-click opens a row in place.
-    // 0.4.11: draft order create and complete refuse an order Invoicing would not invoice
+    // 0.4.13: both of the above, merged.
+    // 0.4.11 (main): draft order create and complete refuse an order Invoicing would not invoice
     // (invoicing:orders_invoiceability_check), with a stage-time preflight on complete.
-    // 0.4.12: orders_get returns the order's billing address (with its company) and the buyer's
+    // 0.4.12 (main): orders_get returns the order's billing address (with its company) and the buyer's
     // VAT number from its current custom attributes.
     // 0.4.13: orders_search hits carry the shipping the customer paid (shippingAmount, shippingCurrency).
     // 0.4.15: variants_search sends product_status in lower case (Shopify matches no other)
@@ -946,12 +959,20 @@ describe("Shopify app.manifest.json", () => {
     // 0.4.15: draft_orders_get and orders_get return the B2B buyer (purchasingCompany: company name,
     // location addresses, tax registration id, tax exemption, contact email), orders_get the order's
     // taxesIncluded, and draft lines their priceOverride.
+    // 0.4.14 (branch): above the 0.4.12 main took meanwhile, merged; 0.4.15 (branch): merged with 0.4.13.
+    // 0.4.16: the branch's 0.4.15 merged with main's 0.4.14 and 0.4.15.
+    // 0.4.17: above the 0.4.16 main took meanwhile, so an installed copy upgrades.
+    // 0.4.18: above the 0.4.17 main took meanwhile, so an installed copy upgrades.
     // 0.4.16: variants_search sends product_status in lower case (Shopify matches no other).
     // 0.4.17: B2B company drafts: companies_search / companies_get (read_companies), purchasingCompany
     // on draft_orders_create / update, priceOverride + priceException, the B2B catalog-price guard.
     // 0.4.18: B2B catalogs that reach a location through a B2B market (every plan) count, as well
     // as those assigned to it directly (Plus); companies_* mark each catalog's source.
-    // 0.4.22: analytics_query adds metrics sessions and conversion_rate (sessions dataset),
+    // 0.4.19: the branch's 0.4.18 merged with main's 0.4.16 to 0.4.18 (B2B drafts and catalogs).
+    // 0.4.20: above main's 0.4.19 (references to the new repository), merged.
+    // 0.4.21: above main's 0.4.20 (b2bOrderTags; companies_search returns catalogs), merged.
+    // 0.4.22: the branch's 0.4.21 and main's 0.4.21 (contract fixtures, resumable backfill), merged.
+    // 0.4.22 on main: analytics_query adds metrics sessions and conversion_rate (sessions dataset),
     // groupBy product, and an optional timeGrain (day, week, month) whose rows carry `date`.
     // 0.4.23: the OAuth request adds write_online_store_navigation, which products_merge's redirect
     // needs; a merge whose connection lacks it is refused before its first write.

@@ -128,6 +128,17 @@ appScopeAliasProviders.set("pennylane", (scopes: string[]): string[] => {
   return out
 })
 
+// Payments connector scope alias, same shape as pennylane's: its internal tables (`sync_state`,
+// `install_metadata`, `webhook_deliveries`, `rlsScope: "internal"`) hold the connection state and
+// the sync progress every read surface shows, so any holder of one of the app's scopes reads them.
+// Writes to them stay with `stripe:internal` (webhook, sync and connection handlers).
+appScopeAliasProviders.set("stripe", (scopes: string[]): string[] => {
+  const out = [...scopes]
+  const hasAny = out.some((s) => s === "*" || s === "stripe" || s.startsWith("stripe:"))
+  if (hasAny && !hasScope("stripe:internal:read", out)) out.push("stripe:internal:read")
+  return out
+})
+
 // Built-in invoicing scope alias — same shape as shopify/pennylane above. The deferred parks
 // (`deferred_events`, `rlsScope: "internal"`) say why an order or a credit note waits (a missing
 // e-invoicing identity, a tax decision); the readiness view and `deferred_list` show them to the

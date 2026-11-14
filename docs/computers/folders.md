@@ -78,7 +78,7 @@ On the **Folders** tab, click **Remove** on the folder. The agents lose access a
 
 ## What agents can do with folders
 
-Agents can look for, and offer, folders but they cannot add one on their own. The two search tools work only in your own private conversation.
+Agents can look for, and offer, folders but they cannot add one on their own. The two search tools work only in your own private conversation, and an agent is offered them only once you have a computer set up for Liaison.
 
 | Tool | What it does | Approval |
 | --- | --- | --- |

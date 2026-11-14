@@ -276,3 +276,19 @@ export async function sendInConversation(
   await page.keyboard.type(text)
   await page.keyboard.press("Enter")
 }
+
+/**
+ * Opens every collapsed roll-up of consecutive app reads in `scope`, so each
+ * call's own row (`data-tool-name`) is on screen. A roll-up already open is left
+ * open: its toggle would close it.
+ */
+export async function expandToolRollups(scope: Locator): Promise<void> {
+  const rollups = scope.getByTestId("tool-rollup")
+  const n = await rollups.count()
+  for (let i = 0; i < n; i++) {
+    const rollup = rollups.nth(i)
+    if ((await rollup.getByTestId("tool-call-row").count()) > 0) continue
+    await rollup.getByTestId("tool-rollup-toggle").click()
+    await rollup.getByTestId("tool-call-row").first().waitFor({ state: "visible" })
+  }
+}

@@ -561,6 +561,12 @@ export async function initAppsForOrg(
     scope: "kernel:approvals:read",
     bundlePath: new URL("../approvals/attention.ts", import.meta.url).pathname,
   })
+  // "While you were away": decisions taken for the person while they were away, once back.
+  registerKernelAttentionProvider({
+    appName: "kernel.away_recap",
+    handler: "getAwayRecapAttentionItems",
+    bundlePath: new URL("../approvals/away-recap.ts", import.meta.url).pathname,
+  })
   registerKernelAttentionProvider({
     appName: "kernel.attention_events",
     handler: "getEventAttentionItems",

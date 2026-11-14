@@ -36,6 +36,8 @@ export interface MailMessageSpec {
   toEmail: string
   hoursAgo: number
   body: string
+  /** Headers the message arrived with beyond its id, such as an auto-reply's `auto-submitted`. */
+  headers?: Record<string, string>
 }
 
 export interface MailConversationSpec {
@@ -164,7 +166,7 @@ export async function insertUnarmedMail(
                 ${JSON.stringify(conv.labels)}::jsonb, ${m.direction},
                 ${ownerType}, ${ownerId}::uuid,
                 ${sentAt.toISOString()}, ${sentAt.toISOString()},
-                ${JSON.stringify({ "message-id": `<demo-${conv.key}-${i}@${input.domain}>` })}::jsonb,
+                ${JSON.stringify({ ...m.headers, "message-id": `<demo-${conv.key}-${i}@${input.domain}>` })}::jsonb,
                 ${sentAt.toISOString()}, ${sentAt.toISOString()}
               )
               ON CONFLICT (id) DO NOTHING`,

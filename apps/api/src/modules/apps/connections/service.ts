@@ -191,6 +191,12 @@ export function decryptConnectionConfigValue(
     return value
   }
 }
+const SIGNING_SECRET_KEY = "webhookSigningSecret"
+const PREVIOUS_SECRET_KEY = "webhookSigningSecretPrevious"
+const PREVIOUS_SECRET_UNTIL_KEY = "webhookSigningSecretPreviousUntil"
+/** How long the old signing secret keeps verifying after a roll. */
+const PREVIOUS_SECRET_WINDOW_MS = 24 * 60 * 60 * 1000
+
 /**
  * App-held secret capability: store a secret the PROVIDER minted (returned once by its API, e.g.
  * a webhook signing secret) into the app's own `kernel.apps.config`, encrypted at rest. Only a
@@ -231,11 +237,24 @@ export async function storeAppHeldSecret(args: {
   const overlayJson = JSON.stringify({
     [args.key]: encryptSecret(args.value, encKey, CryptoContext.appConfigConnectionSecret),
   })
+  // A replaced webhook signing secret is not cut off at once: the provider may still be
+  // delivering with the old one. In the SAME update, the old (already encrypted) value moves
+  // to the "previous" key with a deadline, which the verifier reads.
+  const rolls = args.key === SIGNING_SECRET_KEY && declared.has(PREVIOUS_SECRET_KEY)
+  const untilJson = JSON.stringify(new Date(Date.now() + PREVIOUS_SECRET_WINDOW_MS).toISOString())
+  const rollOver = rolls
+    ? drizzleSql`|| CASE
+        WHEN coalesce(${appsTable.config}->>${SIGNING_SECRET_KEY}, '') <> ''
+        THEN jsonb_build_object(
+          ${PREVIOUS_SECRET_KEY}::text, ${appsTable.config}->${SIGNING_SECRET_KEY},
+          ${PREVIOUS_SECRET_UNTIL_KEY}::text, ${untilJson}::jsonb)
+        ELSE '{}'::jsonb END`
+    : drizzleSql``
   await withPrivilegedDb(args.orgId, "app-held-secret-store", (tx) =>
     tx
       .update(appsTable)
       .set({
-        config: drizzleSql`coalesce(${appsTable.config}, '{}'::jsonb) || ${overlayJson}::jsonb`,
+        config: drizzleSql`coalesce(${appsTable.config}, '{}'::jsonb) || ${overlayJson}::jsonb ${rollOver}`,
         updatedAt: new Date(),
       })
       .where(and(eq(appsTable.orgId, args.orgId), eq(appsTable.name, args.appName))),
@@ -515,6 +534,38 @@ export class ConnectionHeldByMemberError extends Error {
       `This account is connected personally by ${memberName}. Saving it for the organization replaces ${memberName}'s personal connection: confirm to take it over.`,
     )
     this.name = "ConnectionHeldByMemberError"
+  }
+}
+
+/**
+ * A credential value its manifest field refuses (`credentialFields[].refusePattern`):
+ * the wrong kind of secret was pasted. Thrown before anything is encrypted or
+ * stored. The message is the manifest's and never holds the value.
+ */
+export class CredentialRefusedError extends Error {
+  constructor(
+    readonly code: string,
+    readonly field: string,
+    message: string,
+    readonly messageKey?: string,
+  ) {
+    super(message)
+    this.name = "CredentialRefusedError"
+  }
+}
+
+/** Throws {@link CredentialRefusedError} when a declared field's value matches its `refusePattern`. */
+export function assertCredentialsAccepted(
+  connConfig: ReturnType<typeof connectionConfigRegistry.get>,
+  credentials: Record<string, string>,
+): void {
+  for (const field of connConfig?.credentialFields ?? []) {
+    const rule = field.refusePattern
+    const value = credentials[field.name]
+    if (!rule || typeof value !== "string") continue
+    if (manifestRegExp(rule.pattern).test(value.trim())) {
+      throw new CredentialRefusedError(rule.code, field.name, rule.message, rule.messageKey)
+    }
   }
 }
 
@@ -1368,6 +1419,12 @@ export async function createCredentialConnection(
   if (!isInboundOnlyConnection(connectionConfigRegistry.get([orgId, appName, connectionName]))) {
     await assertDemoEgressAllowed(orgId, "connector_credentials", tx)
   }
+  // The wrong kind of secret (a field's `refusePattern`) is refused before it
+  // is encrypted or stored, so nothing of it is kept anywhere.
+  assertCredentialsAccepted(
+    connectionConfigRegistry.get([orgId, appName, connectionName]),
+    input.credentials,
+  )
   // A mailbox outside the org's allowed domains is refused (mail-domains.ts).
   // Read on this transaction: no second privileged connection.
   await assertMailboxAllowed(

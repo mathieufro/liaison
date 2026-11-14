@@ -402,7 +402,8 @@ describe("a claimed card must exist in the conversation", () => {
     ])
 
     expect(calls.length).toBe(1)
-    expect(reply.content).toBe(TICKETS_EARLY + late)
+    // Each step's text is a paragraph of its own in the stored reply.
+    expect(reply.content).toBe(`${TICKETS_EARLY}\n\n${late}`)
     expect(reply.metadata.contradictedTextWithheld).toBeUndefined()
     expect(reply.metadata.falseCardCorrected).toBeUndefined()
   })

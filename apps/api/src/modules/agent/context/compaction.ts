@@ -471,7 +471,7 @@ export async function runCompaction(params: {
     })
 
     // A tainted thread may carry untrusted web/MCP content in its history. The
-    // memory flush runs a real write tool (user_memory_set) over that history
+    // memory flush runs a real write tool (memory_create) over that history
     // outside the executeTool taint gate, so an injection that survives to the
     // compaction threshold could persist a durable cross-conversation memory.
     // Skip the flush entirely for tainted threads — summarisation (read-only)

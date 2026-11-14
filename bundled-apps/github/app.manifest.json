@@ -1,0 +1,704 @@
+{
+  "name": "github",
+  "version": "1.0.3",
+  "kind": "connector",
+  "iconName": "folder",
+  "description": "GitHub connector: read-only access to an organization's or a user's repositories, commits, pull requests, issues, releases and code.",
+  "listing": {
+    "publisher": "Liaison",
+    "category": "Developer",
+    "icon": "folder-git-2",
+    "summary": "Read repositories, commits, pull requests and issues on GitHub, read-only.",
+    "sourceRepository": "https://github.com/liaison-sh/liaison/tree/main/bundled-apps/github"
+  },
+  "packageFormat": 1,
+  "license": "FSL-1.1-ALv2",
+  "host": "^1",
+  "scopes": [
+    "github:repo:read",
+    "github:accounts:read",
+    "github:accounts:admin"
+  ],
+  "dependencies": {
+    "required": [
+      "kernel"
+    ]
+  },
+  "connections": {
+    "github": {
+      "type": "credentials",
+      "allowedDomains": [
+        "api.github.com"
+      ],
+      "credentialFields": [
+        {
+          "name": "token",
+          "type": "password",
+          "label": "GitHub fine-grained personal access token (read-only: Contents, Metadata, Pull requests, Issues)"
+        },
+        {
+          "name": "owner",
+          "type": "text",
+          "label": "GitHub organization or user name",
+          "readable": true
+        }
+      ],
+      "setupGuide": {
+        "summary": "Connect a GitHub organization or user read-only with a fine-grained personal access token. Liaison refuses a token that can write.",
+        "steps": [
+          {
+            "who": "human",
+            "minutes": 1,
+            "text": "On github.com, open your avatar → **Settings → Developer settings → Personal access tokens → Fine-grained tokens** and choose **Generate new token**.",
+            "url": "https://github.com/settings/personal-access-tokens/new"
+          },
+          {
+            "who": "human",
+            "minutes": 1,
+            "text": "Under **Resource owner**, pick the organization (or yourself), and under **Repository access** the repositories Liaison may read.",
+            "url": "https://github.com/settings/personal-access-tokens/new"
+          },
+          {
+            "who": "human",
+            "minutes": 1,
+            "text": "Under **Repository permissions**, set **Contents**, **Metadata**, **Pull requests** and **Issues** to **Read-only**. Leave everything else at No access: never Read and write, never Administration. A classic token with the `repo` scope can write and is refused.",
+            "url": "https://github.com/settings/personal-access-tokens/new"
+          },
+          {
+            "who": "human",
+            "minutes": 0,
+            "text": "Set the longest expiry your organization allows. An expired token answers 401 and every GitHub read stops until you paste a new one.",
+            "url": "https://github.com/settings/personal-access-tokens/new"
+          },
+          {
+            "who": "human",
+            "minutes": 0,
+            "text": "Copy the `github_pat_…` value and paste it into the **token** field.",
+            "place": "liaison"
+          },
+          {
+            "who": "human",
+            "minutes": 1,
+            "text": "In **owner**, enter the organization or user name exactly as in its GitHub URL (e.g. `maison-example`).",
+            "place": "liaison"
+          },
+          {
+            "who": "human",
+            "minutes": 0,
+            "text": "Rotating later: come back to this same form and paste the new token. It REPLACES the stored credential rather than adding a second connection.",
+            "place": "liaison"
+          }
+        ],
+        "docsUrl": "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+      },
+      "adminScope": "github:accounts:admin",
+      "limits": {
+        "concurrency": 4,
+        "perSecond": 10,
+        "burst": 20
+      }
+    }
+  },
+  "outsideTextFields": [
+    "title",
+    "body",
+    "description",
+    "message",
+    "content",
+    "patch",
+    "fragments",
+    "author",
+    "name",
+    "path"
+  ],
+  "tools": {
+    "github_list_repos": {
+      "taintSource": true,
+      "description": "List the connected GitHub owner's repositories. Call it first for repository names.",
+      "searchKeywords": [
+        "dépôts"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListRepos",
+      "params": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "github_list": {
+      "taintSource": true,
+      "description": "List a GitHub repository's issues (pull requests left out), pull requests, milestones, labels, releases, tags, commits, or tree (files and folders at a path).",
+      "searchKeywords": [
+        "mr",
+        "pr",
+        "pull",
+        "merge",
+        "bug",
+        "bugs",
+        "jalons",
+        "étiquettes",
+        "version",
+        "versions",
+        "balises",
+        "dossier",
+        "arborescence",
+        "révisions"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubList",
+      "params": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "issues",
+              "pull_requests",
+              "milestones",
+              "labels",
+              "releases",
+              "tags",
+              "commits",
+              "tree"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "owner/name, or name (connected owner)"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ],
+            "description": "issues, pull_requests (default: open)"
+          },
+          "since": {
+            "type": "string",
+            "description": "issues, pull_requests: ISO 8601, updated after; commits: after"
+          },
+          "labels": {
+            "type": "string",
+            "description": "issues: comma-separated names"
+          },
+          "milestone": {
+            "type": "string",
+            "description": "issues: number or title, `*` any, `none` none"
+          },
+          "base": {
+            "type": "string",
+            "description": "pull_requests: base branch"
+          },
+          "path": {
+            "type": "string",
+            "description": "tree: directory (default: root); commits: touching it"
+          },
+          "ref": {
+            "type": "string",
+            "description": "tree, commits: branch, tag or SHA (default: default branch)"
+          },
+          "until": {
+            "type": "string",
+            "description": "commits: ISO 8601, before"
+          },
+          "author": {
+            "type": "string",
+            "description": "commits: login or email"
+          }
+        },
+        "required": [
+          "kind",
+          "repo"
+        ]
+      }
+    },
+    "github_list_commits": {
+      "taintSource": true,
+      "description": "List a GitHub repository's commits, by ref, file path, author or dates.",
+      "agentVisible": false,
+      "useInstead": "github_list",
+      "searchKeywords": [
+        "révisions"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListCommits",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "owner/name, or name (connected owner)"
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch, tag or SHA (default: default branch)"
+          },
+          "path": {
+            "type": "string",
+            "description": "Only commits touching this path"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "until": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "author": {
+            "type": "string",
+            "description": "Author's GitHub login or email"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      }
+    },
+    "github_get_commit": {
+      "taintSource": true,
+      "description": "Get one GitHub commit by SHA, its diff with withDiff.",
+      "searchKeywords": [
+        "modifications"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubGetCommit",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "owner/name, or name (connected owner)"
+          },
+          "sha": {
+            "type": "string"
+          },
+          "withDiff": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "sha"
+        ]
+      }
+    },
+    "github_list_pull_requests": {
+      "taintSource": true,
+      "description": "List pull requests in a GitHub repository. Filter by state, base branch, or last update.",
+      "agentVisible": false,
+      "useInstead": "github_list",
+      "searchKeywords": [
+        "mr",
+        "pr",
+        "pull",
+        "merge"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListPullRequests",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository as owner/name, or just its name (the connected owner's)"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ],
+            "description": "Filter by state (default: open)"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO 8601 — only pull requests updated after this date"
+          },
+          "base": {
+            "type": "string",
+            "description": "Filter by base (target) branch"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      }
+    },
+    "github_get_pull_request": {
+      "taintSource": true,
+      "description": "Get one GitHub pull request by number; withFiles adds its changed files and diffs.",
+      "searchKeywords": [
+        "mr",
+        "pr",
+        "pull",
+        "merge"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubGetPullRequest",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "owner/name, or name (connected owner)"
+          },
+          "number": {
+            "type": "number"
+          },
+          "withFiles": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ]
+      }
+    },
+    "github_list_issues": {
+      "taintSource": true,
+      "description": "List issues in a GitHub repository (pull requests left out). Filter by state, labels, milestone, or last update.",
+      "agentVisible": false,
+      "useInstead": "github_list",
+      "searchKeywords": [
+        "bug",
+        "bugs"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListIssues",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository as owner/name, or just its name (the connected owner's)"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ],
+            "description": "Filter by state (default: open)"
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated label names"
+          },
+          "milestone": {
+            "type": "string",
+            "description": "Milestone number or title, `*` for any, `none` for none"
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO 8601 — only issues updated after this date"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      }
+    },
+    "github_list_milestones": {
+      "taintSource": true,
+      "description": "List milestones in a GitHub repository, open and closed, with their issue counts.",
+      "agentVisible": false,
+      "useInstead": "github_list",
+      "searchKeywords": [
+        "jalons"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListMilestones",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository as owner/name, or just its name (the connected owner's)"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      }
+    },
+    "github_list_labels": {
+      "taintSource": true,
+      "description": "List labels in a GitHub repository.",
+      "agentVisible": false,
+      "useInstead": "github_list",
+      "searchKeywords": [
+        "étiquettes"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListLabels",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository as owner/name, or just its name (the connected owner's)"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      }
+    },
+    "github_list_releases": {
+      "taintSource": true,
+      "description": "List releases in a GitHub repository.",
+      "agentVisible": false,
+      "useInstead": "github_list",
+      "searchKeywords": [
+        "version",
+        "versions"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListReleases",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository as owner/name, or just its name (the connected owner's)"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      }
+    },
+    "github_list_tags": {
+      "taintSource": true,
+      "description": "List git tags in a GitHub repository.",
+      "agentVisible": false,
+      "useInstead": "github_list",
+      "searchKeywords": [
+        "balises"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListTags",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository as owner/name, or just its name (the connected owner's)"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      }
+    },
+    "github_read_file": {
+      "taintSource": true,
+      "description": "Read a file of a GitHub repository, secret-redacted.",
+      "searchKeywords": [
+        "code",
+        "fichier",
+        "source"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubReadFile",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "owner/name, or name (connected owner)"
+          },
+          "path": {
+            "type": "string",
+            "description": "File path"
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch, tag or SHA (default: default branch)"
+          }
+        },
+        "required": [
+          "repo",
+          "path"
+        ]
+      }
+    },
+    "github_list_tree": {
+      "taintSource": true,
+      "description": "List files and directories at a path of a GitHub repository.",
+      "agentVisible": false,
+      "useInstead": "github_list",
+      "searchKeywords": [
+        "dossier",
+        "arborescence"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubListTree",
+      "params": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository as owner/name, or just its name (the connected owner's)"
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory path (default: root)"
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch, tag, or commit SHA (default: the default branch)"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      }
+    },
+    "github_search": {
+      "taintSource": true,
+      "description": "Search the connected owner's GitHub code, commits, issues or pull requests.",
+      "searchKeywords": [
+        "code",
+        "chercher",
+        "rechercher"
+      ],
+      "readOnly": true,
+      "requiredScopes": [
+        "github:repo:read"
+      ],
+      "trustBoundary": "user",
+      "handler": "githubSearch",
+      "params": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "code",
+              "commits",
+              "issues",
+              "pull_requests"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "GitHub search syntax"
+          }
+        },
+        "required": [
+          "scope",
+          "query"
+        ]
+      }
+    }
+  },
+  "roles": {
+    "member": {
+      "description": "GitHub repository reader: read access to repositories, commits, pull requests, issues",
+      "scopes": [
+        "github:repo:read",
+        "github:accounts:read"
+      ]
+    },
+    "admin": {
+      "description": "GitHub connection administrator: manage the GitHub connection",
+      "extends": "member",
+      "scopes": [
+        "github:accounts:admin"
+      ]
+    }
+  },
+  "settings": {
+    "sections": [
+      {
+        "id": "connection",
+        "title": "Connection",
+        "titleKey": "kernel.appSettings.github.connectionTitle",
+        "description": "Read-only connector for a GitHub organization or user: repositories, commits, pull requests, issues, releases.",
+        "descriptionKey": "kernel.appSettings.github.connectionDescription",
+        "scope": "org",
+        "adminScope": "github:accounts:admin",
+        "blocks": [
+          {
+            "block": "connections",
+            "names": [
+              "github"
+            ],
+            "status": {
+              "tool": "github_list_repos"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "provisioning": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "handler": "provisionGithub",
+    "verify": "verifyGithub"
+  },
+  "agentInstructions": "GitHub connector provides read-only access to the connected GitHub organization or user. Call github_list_repos first to discover repositories. Tools are read-only — no write operations. When GitHub is not connected, surface a not_connected error, do not fabricate data."
+}

@@ -30,6 +30,8 @@ const HIDDEN: Array<[path: string, hidden: string, replacement: string]> = [
   ["bundled-apps/boxtal", "prep_set_validated", "prep_set_status"],
   ["apps/api/src/apps/mail", "getSyncStatus", "listAccounts"],
   ["bundled-apps/ads", "counts", "campaigns_list"],
+  ["apps/api/src/apps/mail", "getAccount", "listAccounts"],
+  ["bundled-apps/pennylane", "home_load", "pnl_summary"],
 ]
 
 describe("duplicates hidden from the agent", () => {

@@ -41,6 +41,15 @@ describe("fetchImapPage on a 50 000-message folder", () => {
     expect(page.messages[0]?.textBody).toContain(`Body of ${TOP}`)
   })
 
+  it("stores the headers that tell a newsletter from a reply", async () => {
+    const { client } = fakeServer({ uids: [1, 2] })
+    const page = await fetchImapPage(client, { mode: "full", order: "newest", batchSize: 25 })
+    expect(page.messages[0]?.headers).toEqual({
+      "list-id": "<news.example.test>",
+      precedence: "bulk",
+    })
+  })
+
   it("a later page reads the next batch below `before`, and the last one says done", async () => {
     const { client, stats } = fakeServer({ uids: BIG })
     const before = String(BIG[100])

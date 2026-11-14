@@ -38,7 +38,8 @@ interface FetchMockOptions {
   imported?: any[]
   roles?: any[]
   inviteResponse?: { status: number; body: any }
-  deactivate?: { status: number; body?: any }
+  /** Answers of the admin deactivate route, one per call (the last repeats). */
+  deactivate?: Array<{ status: number; body?: any }>
   reactivate?: { status: number; body?: any }
 }
 
@@ -46,11 +47,13 @@ function mockFetch(opts: FetchMockOptions = {}): ReturnType<typeof vi.fn> {
   const users = opts.users ?? []
   const imported = opts.imported ?? []
   const roles = opts.roles ?? []
+  let deactivateCalls = 0
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET"
     if (typeof url === "string") {
       if (url.match(/\/admin\/users\/[^/]+\/deactivate/) && method === "POST") {
-        const r = opts.deactivate ?? { status: 200, body: { data: { id: USER_A } } }
+        const answers = opts.deactivate ?? [{ status: 200, body: { data: { id: USER_A } } }]
+        const r = answers[Math.min(deactivateCalls++, answers.length - 1)]!
         return jsonResp(r.body ?? {}, r.status)
       }
       if (url.match(/\/admin\/users\/[^/]+\/reactivate/) && method === "POST") {
@@ -205,28 +208,87 @@ describe("AdminUsers", () => {
     expect(await screen.findByTestId("bulk-toolbar")).toBeInTheDocument()
   })
 
-  it("deactivate action calls POST /:id/deactivate", async () => {
+  const alice = { id: USER_A, email: "alice@test.com", name: "Alice", status: "active", roles: [] }
+  const BOB = "22222222-2222-4222-8222-222222222222"
+  const bob = { id: BOB, email: "bob@test.com", name: "Bob", status: "active", roles: [] }
+
+  /** Each deactivate call as the person in its path plus its body. */
+  function deactivateBodies(fetchMock: ReturnType<typeof vi.fn>): Array<Record<string, unknown>> {
+    return fetchMock.mock.calls.flatMap((c) => {
+      const m = /\/admin\/users\/([^/]+)\/deactivate/.exec(String(c[0]))
+      if (!m) return []
+      return [{ userId: m[1], ...JSON.parse(String((c[1] as RequestInit).body ?? "{}")) }]
+    })
+  }
+
+  it("deactivating someone who manages no company asks nothing and deactivates them", async () => {
+    const fetchMock = mockFetch({ users: [alice] })
+    renderAdminUsers()
+    fireEvent.click(await screen.findByTestId(`admin-users-deactivate-${USER_A}`))
+    fireEvent.click(await screen.findByTestId("admin-users-deactivate-confirm"))
+    await waitFor(() => expect(deactivateBodies(fetchMock)).toEqual([{ userId: USER_A }]))
+    expect(screen.queryByTestId("admin-users-deactivate-accounts")).toBeNull()
+  })
+
+  it("deactivating an account manager asks who takes their companies, then sends the answer", async () => {
     const fetchMock = mockFetch({
-      users: [
+      users: [alice, bob],
+      deactivate: [
         {
-          id: USER_A,
-          email: "alice@test.com",
-          name: "Alice",
-          status: "active",
-          roles: [],
+          status: 409,
+          body: {
+            error: {
+              code: "accounts_to_required",
+              message: "Alice manages 3 companies (A, B, C). Say who takes them over.",
+            },
+          },
         },
+        { status: 200, body: { data: { id: USER_A } } },
       ],
     })
     renderAdminUsers()
-    const btn = await screen.findByTestId(`admin-users-deactivate-${USER_A}`)
-    fireEvent.click(btn)
-    // A confirmation dialog appears — click the confirm button to proceed
-    const confirmBtn = await screen.findByTestId("admin-users-deactivate-confirm")
-    fireEvent.click(confirmBtn)
-    await waitFor(() => {
-      const calls = fetchMock.mock.calls.map((c) => c[0] as string)
-      expect(calls.some((url) => url.includes(`/admin/users/${USER_A}/deactivate`))).toBe(true)
+    fireEvent.click(await screen.findByTestId(`admin-users-deactivate-${USER_A}`))
+    const confirm = await screen.findByTestId("admin-users-deactivate-confirm")
+    fireEvent.click(confirm)
+    const question = await screen.findByTestId("admin-users-deactivate-accounts")
+    expect(question.textContent).toContain("3")
+    expect(confirm).toBeDisabled()
+    const pick = screen.getByTestId("admin-users-deactivate-accounts-to") as HTMLSelectElement
+    // The person leaving is not offered.
+    expect([...pick.options].map((o) => o.value)).not.toContain(USER_A)
+    fireEvent.change(pick, { target: { value: BOB } })
+    fireEvent.click(confirm)
+    await waitFor(() =>
+      expect(deactivateBodies(fetchMock)).toEqual([
+        { userId: USER_A },
+        { userId: USER_A, accountsTo: BOB },
+      ]),
+    )
+  })
+
+  it("leaving the companies without an account manager sends null", async () => {
+    const fetchMock = mockFetch({
+      users: [alice, bob],
+      deactivate: [
+        {
+          status: 409,
+          body: { error: { code: "accounts_to_required", message: "Alice manages 1 company." } },
+        },
+        { status: 200, body: { data: { id: USER_A } } },
+      ],
     })
+    renderAdminUsers()
+    fireEvent.click(await screen.findByTestId(`admin-users-deactivate-${USER_A}`))
+    const confirm = await screen.findByTestId("admin-users-deactivate-confirm")
+    fireEvent.click(confirm)
+    const pick = (await screen.findByTestId(
+      "admin-users-deactivate-accounts-to",
+    )) as HTMLSelectElement
+    fireEvent.change(pick, { target: { value: [...pick.options].at(-1)!.value } })
+    fireEvent.click(confirm)
+    await waitFor(() =>
+      expect(deactivateBodies(fetchMock).at(-1)).toEqual({ userId: USER_A, accountsTo: null }),
+    )
   })
 
   describe("import placeholders", () => {

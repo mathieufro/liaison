@@ -167,16 +167,23 @@ const ConnectorCard: Component<{
   const api = useApi()
   const app = () => props.entry.appId
   const off = () => isOrgAppOff(orgAppsStore.app(app()))
-  const [status] = createResource(
+  // The load starts once; the header reads the shared connections store, so a
+  // connection made in the card (its Connection block reloads that store)
+  // shows here at once, not after a reload of the page.
+  const [loaded] = createResource(
     () => (off() ? false : app()),
     async (name) => {
       await appsStore.loadConnections(api, name)
-      const states = appsStore.connectionsFor(name).map(connectionState)
-      if (states.includes("connected")) return "connected" as const
-      if (states.includes("attention")) return "attention" as const
-      return "missing" as const
+      return true
     },
   )
+  const status = () => {
+    if (!loaded()) return undefined
+    const states = appsStore.connectionsFor(app()).map(connectionState)
+    if (states.includes("connected")) return "connected" as const
+    if (states.includes("attention")) return "attention" as const
+    return "missing" as const
+  }
   const statusText = () => {
     if (off()) return i18n.t("kernel.appManagement.offBadge")
     switch (status()) {

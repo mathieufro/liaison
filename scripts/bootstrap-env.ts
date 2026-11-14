@@ -13,6 +13,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
+import { assertDevComposeProject } from "../packages/test-helpers/src/ensure-infra"
 
 const POSTGRES_ROLE = "postgres"
 const POSTGRES_PASSWORD = "postgres"
@@ -91,6 +92,7 @@ function ensureRedis() {
   // Prefer the docker-compose cluster (same infra as Postgres).
   if (has("docker")) {
     log("redis", "starting docker compose cluster")
+    assertDevComposeProject()
     run(["docker", "compose", "up", "-d"], { quiet: true })
     for (let i = 0; i < 15; i++) {
       if (redisPong()) {
@@ -129,6 +131,7 @@ function ensurePostgres() {
   // compose omits (it ships a `liaison` superuser). Self-healing — no manual steps.
   if (has("docker")) {
     log("postgres", "starting docker compose cluster")
+    assertDevComposeProject()
     run(["docker", "compose", "up", "-d"], { quiet: true })
     for (let i = 0; i < 30; i++) {
       if (psqlValue("SELECT 1") === "1") {

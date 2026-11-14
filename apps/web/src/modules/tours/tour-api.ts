@@ -24,6 +24,8 @@ export interface TourApi {
   /** A 409 (stale `fromBeatId`) resolves to the fresh progress instead of throwing. */
   update(tourId: string, body: UpdateTourRequest): Promise<TourProgress | null>
   progress(tourId: string): Promise<TourProgress | null>
+  /** A read tool's answer to the signed-in person (a step's figures), as the screen reads it. */
+  readTool?(tool: string, params: Record<string, unknown>): Promise<unknown>
 }
 
 const path = (tourId: string) => `/tours/${encodeURIComponent(tourId)}`
@@ -50,5 +52,7 @@ export function createTourApi(client: ApiClient): TourApi {
       }
     },
     progress,
+    readTool: (tool, params) =>
+      client.post<unknown>(`/apps/tools/${tool}`, params, { suppressGlobalError: true }),
   }
 }

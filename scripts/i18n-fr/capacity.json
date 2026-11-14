@@ -1,0 +1,22 @@
+{
+  "key": {
+    "projects.card.capacity": "Charge",
+    "projects.card.available": "Disponible",
+    "projects.capacity.tab": "Charge",
+    "projects.settingsPage.time.title": "Temps et budgets",
+    "projects.settingsPage.time.description": "Heures dans une journée et jours non travaillés de l'entreprise, pour les projets qui utilisent le temps et les budgets. Chaque projet l'active dans ses propres réglages. Le rapprochement ne lit que ce que la personne qui le demande peut déjà lire.",
+    "projects.settingsPage.time.hoursPerDay": "Heures dans une journée",
+    "projects.settingsPage.time.calendar": "Lire un calendrier partagé",
+    "projects.settingsPage.time.calendarHelp": "Aucun par défaut. Les événements sur la journée entière du calendrier choisi deviennent des jours non travaillés de l'entreprise.",
+    "projects.settingsPage.time.from": "Du",
+    "projects.settingsPage.time.to": "Au",
+    "projects.settingsPage.time.label": "Libellé",
+    "projects.settingsPage.time.yearly": "Chaque année",
+    "projects.settingsPage.time.remove": "Retirer",
+    "projects.capacity.loading": "Chargement de la charge",
+    "projects.capacity.error": "Impossible de charger la charge. Projets n'a pas répondu. Aucune tâche n'a été déplacée.",
+    "projects.capacity.of": "{{planned}} sur {{available}}",
+    "projects.capacity.left": "Assigné à des personnes parties",
+    "projects.capacity.footnote": "Le temps prévu vient des estimations des projets qui utilisent le temps et les budgets. Rien ici ne vient du temps saisi ni de l'activité."
+  }
+}

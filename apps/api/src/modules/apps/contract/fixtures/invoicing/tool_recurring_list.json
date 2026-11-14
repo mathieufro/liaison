@@ -1,0 +1,23 @@
+{
+  "entry": "tool:recurring_list",
+  "params": {},
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": [
+        "recurring_schedules",
+        "{\"where\":{},\"orderBy\":{\"next_issue_on\":\"asc\"},\"limit\":51,\"offset\":0}"
+      ],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": [
+        "recurring_schedules",
+        "{\"where\":{\"status\":\"active\"},\"orderBy\":{\"next_issue_on\":\"asc\"},\"limit\":1}"
+      ],
+      "reply": "[]"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

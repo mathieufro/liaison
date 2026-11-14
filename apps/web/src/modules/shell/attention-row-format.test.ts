@@ -4,7 +4,13 @@ import { dictionariesFor } from "@liaison/shared"
 import { flatten, resolveTemplate } from "@solid-primitives/i18n"
 import { CircleAlert } from "lucide-solid"
 import { describe, expect, test } from "vitest"
-import { getAppLabel, getKindIcon, getMetric, type RowLocale } from "./attention-row-format"
+import {
+  getAppLabel,
+  getKindIcon,
+  getMetric,
+  kernelAttentionTitle,
+  type RowLocale,
+} from "./attention-row-format"
 
 describe("attention row format — dm_window_closing (A9)", () => {
   test("getKindIcon('dm_window_closing') resolves a real glyph (not the unknown-kind fallback)", () => {
@@ -164,8 +170,9 @@ describe("attention row format — metric chip follows the reader's language", (
     [
       "approval_pending",
       item("approval_pending", { expiresInSeconds: 1500 }),
-      "25m left",
-      "25 min restant",
+      // What runs out, said (cold walk 2026-11-08): never "25m left".
+      "Expires in 25 minutes",
+      "Expire dans 25 minutes",
     ],
     ["admin_action", item("admin_action"), "admin", "admin"],
     [
@@ -193,5 +200,34 @@ describe("attention row format — metric chip follows the reader's language", (
   test("the tone is the reader's language's business too: it does not move", () => {
     expect(getMetric(item("task_overdue", { daysOver: 3 }), fr).tone).toBe("warning")
     expect(getMetric(item("task_blocked"), fr).tone).toBe("tertiary")
+  })
+})
+
+describe("attention row format — a routed request waiting a day", () => {
+  const flat = (locale: "en" | "fr") => {
+    const out: Record<string, unknown> = {}
+    for (const [ns, dict] of Object.entries(dictionariesFor(locale))) {
+      for (const [k, v] of Object.entries(flatten(dict as Record<string, unknown>))) {
+        out[`${ns}.${k}`] = v
+      }
+    }
+    return (key: string, params?: Record<string, string | number | boolean>) => {
+      const raw = out[key]
+      if (typeof raw !== "string") return key
+      return params ? resolveTemplate(raw, params) : raw
+    }
+  }
+  const reminder = {
+    app: "kernel",
+    kind: "agent_notification",
+    summary: "Waiting more than 24 hours for a decision: Pay supplier",
+    metadata: { routedReminder: { approvalId: "a1", hours: 24 } },
+  }
+
+  test("reads in English as written and in French from the catalog", () => {
+    expect(kernelAttentionTitle(reminder, flat("en"))).toBe(reminder.summary)
+    expect(kernelAttentionTitle(reminder, flat("fr"))).toBe(
+      "En attente d'une décision depuis plus de 24 heures : Pay supplier",
+    )
   })
 })

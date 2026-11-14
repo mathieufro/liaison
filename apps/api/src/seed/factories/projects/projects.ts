@@ -12,6 +12,7 @@
 import { sql } from "drizzle-orm"
 import { createProject } from "~/apps/projects/service/create-project"
 import { addDependency, createTask } from "~/apps/projects/service/tasks"
+import { writeTaskPlan } from "~/apps/projects/service/time-plan"
 import type { UserContext } from "~/db/rls"
 import { schemaRef } from "~/db/schema-ref"
 import { seedClock } from "~/seed/clock"
@@ -32,6 +33,19 @@ export interface TaskSpec {
   parent?: string
   /** Task keys this one is blocked by. */
   dependsOn?: string[]
+  /** Days from the base time to the task's start date. */
+  startInDays?: number
+  /** When a done task was closed; the product's own close time otherwise. */
+  completedAt?: Date
+  /** The task's own timebox, in minutes. */
+  timeboxMinutes?: number
+  /** A milestone: usually the parent of work tasks, its timebox counting for theirs. */
+  isMilestone?: boolean
+  /**
+   * The task's number on its board (`KEY-12`). Set on every task of a spec or on none: tasks
+   * are then created in number order, and the project skips the numbers the board leaves out.
+   */
+  number?: number
 }
 
 export interface ProjectSpec {
@@ -96,21 +110,62 @@ export async function seedProject(
     }
 
     const taskIdByKey: Record<string, string> = {}
-    const ordered = [...spec.tasks].sort((a, b) => (a.parent ? 1 : 0) - (b.parent ? 1 : 0))
+    const numbered = spec.tasks.some((t) => t.number !== undefined)
+    if (numbered && !spec.tasks.every((t) => t.number !== undefined)) {
+      throw new Error(`seed: project ${spec.key} numbers some tasks and not others`)
+    }
+    const ordered = numbered
+      ? [...spec.tasks].sort((a, b) => (a.number ?? 0) - (b.number ?? 0))
+      : [...spec.tasks].sort((a, b) => (a.parent ? 1 : 0) - (b.parent ? 1 : 0))
+    // The tasks a previous run wrote, in one read: a re-run adopts them.
+    const refs = ordered.map((t) => input.externalRefOf(t.key))
+    const adopted = new Map(
+      rowsOf<{ id: string; external_ref: string }>(
+        await (tx as ExecTx).execute(
+          sql`SELECT id, external_ref FROM ${sql.raw(schemaRef("app_projects"))}.tasks
+              WHERE org_id = ${orgId}
+                AND external_ref IN (SELECT jsonb_array_elements_text(${JSON.stringify(refs)}::jsonb))`,
+        ),
+      ).map((r) => [r.external_ref, r.id]),
+    )
+    // The number the project hands out next, once read; moved only across a gap.
+    let nextNumber: number | null = null
     for (const task of ordered) {
       const externalRef = input.externalRefOf(task.key)
-      const existing = rowsOf<{ id: string }>(
-        await (tx as ExecTx).execute(
-          sql`SELECT id FROM ${sql.raw(schemaRef("app_projects"))}.tasks
-              WHERE org_id = ${orgId} AND external_ref = ${externalRef} LIMIT 1`,
-        ),
-      )
-      if (existing[0]) {
-        taskIdByKey[task.key] = existing[0].id
-        taskIds.push(existing[0].id)
+      const existing = adopted.get(externalRef)
+      if (existing) {
+        taskIdByKey[task.key] = existing
+        taskIds.push(existing)
         continue
       }
+      if (task.parent && !taskIdByKey[task.parent]) {
+        throw new Error(`seed: task ${task.key} comes before its parent ${task.parent}`)
+      }
+      if (task.number !== undefined) {
+        if (nextNumber === null) {
+          nextNumber = Number(
+            rowsOf<{ n: number }>(
+              await (tx as ExecTx).execute(
+                sql`SELECT next_task_number AS n FROM ${sql.raw(schemaRef("app_projects"))}.projects
+                     WHERE id = ${projectId}::uuid AND org_id = ${orgId}::uuid`,
+              ),
+            )[0]?.n ?? 1,
+          )
+        }
+        if (task.number > nextNumber) {
+          // The board's own number: the project's counter moves past the numbers it leaves
+          // out, as when those tasks moved to another project, so the product hands this one out.
+          await (tx as ExecTx).execute(
+            sql`UPDATE ${sql.raw(schemaRef("app_projects"))}.projects
+                   SET next_task_number = ${task.number}
+                 WHERE id = ${projectId}::uuid AND org_id = ${orgId}::uuid`,
+          )
+        }
+        nextNumber = Math.max(nextNumber, task.number) + 1
+      }
       const dueDate = task.dueInDays === undefined ? undefined : clock.daysAfter(task.dueInDays)
+      const startDate =
+        task.startInDays === undefined ? undefined : clock.daysAfter(task.startInDays)
       const created = await createTask({
         tx: tx as never,
         orgId,
@@ -123,6 +178,8 @@ export async function seedProject(
           ...(task.assignee ? { assigneeId: people[task.assignee]?.userId } : {}),
           priority: task.priority ?? "normal",
           ...(dueDate ? { dueDate: dueDate.toISOString() } : {}),
+          ...(startDate ? { startDate: startDate.toISOString().slice(0, 10) } : {}),
+          ...(task.completedAt ? { completedAt: task.completedAt.toISOString() } : {}),
           ...(task.parent && taskIdByKey[task.parent]
             ? { parentTaskId: taskIdByKey[task.parent] }
             : {}),
@@ -131,6 +188,20 @@ export async function seedProject(
       })
       taskIdByKey[task.key] = created.id
       taskIds.push(created.id)
+      if (task.timeboxMinutes !== undefined || task.isMilestone) {
+        // The task's timebox and milestone flag through the product's own writer, in the
+        // owner's transaction: a timebox needs the project to use time and budgets.
+        await writeTaskPlan({
+          tx: tx as never,
+          orgId,
+          taskId: created.id,
+          scopes: owner.scopes,
+          patch: {
+            ...(task.timeboxMinutes !== undefined ? { timebox: `${task.timeboxMinutes}m` } : {}),
+            ...(task.isMilestone ? { isMilestone: true } : {}),
+          },
+        })
+      }
     }
 
     for (const task of spec.tasks) {

@@ -312,6 +312,17 @@ export async function togglePersonalAgentChat(api?: PersonalDmApi): Promise<void
   revealThread(threadId)
 }
 
+/**
+ * The personal agent DM for a caller that may hold no api client, and the way it is shown: the
+ * pair the dock's prefill uses (shell/dock-prefill.ts).
+ */
+export function personalAgentDmFor(api?: PersonalDmApi): Promise<string> {
+  return ensurePersonalAgentDm(resolveApi(api))
+}
+export function revealPersonalAgentDm(threadId: string): void {
+  revealThread(threadId)
+}
+
 export function resetPersonalDmStore(): void {
   cachedId = undefined
   setKnownDmId(undefined)

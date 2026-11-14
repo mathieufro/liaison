@@ -1,6 +1,6 @@
 {
   "name": "google-drive",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "kind": "connector",
   "iconName": "folder",
   "description": "Google Drive connector: a Knowledge source (synced folders and picked files, live source links, an opt-in federated search) and a headless agent-tool surface (search + read + import Drive files, plus upload of NEW files into an app-owned 'Liaison Reports' folder under the drive.file scope; existing Drive files are never modified or deleted).",
@@ -137,6 +137,7 @@
       }
     }
   },
+  "outsideTextFields": ["name", "content"],
   "tools": {
     "search": {
       "taintSource": true,
@@ -256,6 +257,7 @@
       }
     },
     "shared_drives": {
+      "taintSource": true,
       "searchKeywords": [
         "partagé",
         "partagés"

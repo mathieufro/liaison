@@ -330,6 +330,10 @@ describe("full-access MCP approval takes a fresh step-up", () => {
       const later = await viewConsentPage(clientId)
       await settled(() => connectCodeEmails().length === 2)
       expect(connectCodeEmails()).toHaveLength(2)
+      // The email goes out before the page reads the answer: wait for the page to take it
+      // (it shows the code was sent and starts its countdown) before running the clock.
+      await settled(() => later.nodes.sent?.style.display === "block")
+      expect(later.nodes.sent?.style.display).toBe("block")
       // On the page, the resend opens once its countdown has run out.
       expect(later.nodes.resend?.disabled).toBe(true)
       for (let i = 0; i < 61; i++) later.elapseSecond()

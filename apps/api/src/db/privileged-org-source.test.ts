@@ -26,6 +26,7 @@
 // Each reviewed site is listed by file and enclosing function with the reason
 // it is safe. A new site of any class fails here until it is reviewed.
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import {
   enumeratePrivilegedSites,
@@ -34,6 +35,7 @@ import {
   serverSourceFiles,
 } from "../../test-support/security/enumerate"
 import {
+  REVIEWED_CALLERS,
   REVIEWED_DISPATCH,
   REVIEWED_ORIGINS,
   REVIEWED_OUTSIDE_ROUTES,
@@ -245,6 +247,29 @@ auth.get("/everyone", async (c) => {
       ...Object.keys(REVIEWED_REGISTRIES).filter((k) => !traces.includes(`reviewed registry ${k}`)),
     ]
     expect(stale).toEqual([])
+  })
+
+  test("a function reviewed for having no product caller keeps exactly its pinned callers", () => {
+    const sources = serverSourceFiles().map((file) => ({
+      file: path.relative(LIAISON_ROOT, file).split(path.sep).join("/"),
+      // Comments may name a function without calling it.
+      code: readFileSync(file, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/.*$/gm, "$1"),
+    }))
+    const drift: string[] = []
+    for (const [key, pinned] of Object.entries(REVIEWED_CALLERS)) {
+      const name = key.slice(key.indexOf("#") + 1)
+      const use = new RegExp(`(?<!function\\s+)\\b${name}\\b`)
+      const callers = sources.filter((s) => use.test(s.code)).map((s) => s.file)
+      const actual = [...callers].sort()
+      if (JSON.stringify(actual) !== JSON.stringify([...pinned].sort())) {
+        drift.push(
+          `${key}: product callers ${JSON.stringify(actual)}, reviewed for ${JSON.stringify(pinned)}. Rewrite its entry in test-support/security/privileged-org-reviews.ts for the new caller's org id, then pin it in REVIEWED_CALLERS.`,
+        )
+      }
+    }
+    expect(drift).toEqual([])
   })
 
   test("no reviewed entry is stale", () => {

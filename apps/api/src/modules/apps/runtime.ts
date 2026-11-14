@@ -53,7 +53,6 @@ import {
   attentionItemsRegistry,
   connectionBeforeDisconnectRegistry,
   connectionConfigRegistry,
-  contributionRegistry,
   declaredEmits,
   deleteDeclaredEmits,
   dimensionDefRegistry,
@@ -93,7 +92,11 @@ import { projectBulkToolSchemas } from "~/modules/apps/bulk-field-schemas"
 import { manifestFileParentOf } from "~/modules/apps/catalog-derivations"
 import { registerAdapterAuthoringTools } from "~/modules/apps/connections/api/authoring-tools"
 import { apiConnectionOf } from "~/modules/apps/connections/api/declarations"
-import { validateAppDescriptor, validateAppManifest } from "~/modules/apps/contract"
+import {
+  firstPartyOnlyToolKeyErrors,
+  validateAppDescriptor,
+  validateAppManifest,
+} from "~/modules/apps/contract"
 import { CORE_EXPORT_HANDLERS } from "~/modules/apps/core/exports"
 import { coreModuleFor, isCoreApp } from "~/modules/apps/core/registry"
 // --- DDL helpers ---
@@ -107,6 +110,7 @@ import {
   generateDropIndexDdl,
   generateEnumCheckReconcileDdl,
   generateImmutableTriggerDdl,
+  generateNotNullLoosenDdl,
   generateNotNullTightenDdl,
   generateSequenceDdl,
   generateTableDdl,
@@ -147,7 +151,8 @@ export class AppRegistrationFatalError extends Error {
       | "missing_tool_dependency"
       | "manifest_invalid"
       | "role_cycle"
-      | "entity_schema_mismatch",
+      | "entity_schema_mismatch"
+      | "rls_unreachable",
     public readonly details: Record<string, unknown>,
     message: string,
   ) {
@@ -180,6 +185,7 @@ import {
   tablesUnreachableByGrantableScopes,
 } from "~/modules/permissions/rls-generator"
 import { invalidateScopeCatalog } from "~/modules/permissions/scope-catalog"
+import { registerAppSlots } from "~/modules/slots/registry"
 import { declareWebhookHealth, forgetWebhookHealth } from "~/modules/webhooks/ingest-health"
 import {
   parseUpstreamProbeResult,
@@ -284,6 +290,28 @@ export async function resolveJobApprovalRequester(
   return id
 }
 
+/**
+ * The scopes a job's bridge acts with: the enqueuing person's snapshot when a person's action
+ * enqueued it, else the app's own (`<app>:*`), the same authority the job's RLS context carries
+ * (infra/jobs/jobs.ts). Without them a scheduled job's `ctx.executeTool` into one of its own
+ * app's tools was refused for a missing scope.
+ */
+export function jobCallerScopes(
+  appName: string,
+  payload: { _callerScopes?: unknown; _userId?: unknown },
+): string[] | undefined {
+  if (Array.isArray(payload._callerScopes)) return payload._callerScopes as string[]
+  return payload._userId ? undefined : [`${appName}:*`]
+}
+
+/**
+ * The session of a background run that holds no transaction (an async-output
+ * poll, an outcome reconcile): every bridge call opens one short transaction on
+ * the jobs pool, as the app. Privileged for a core app (its manifest's scopes
+ * become the transaction's, so a scope check in the database reads them,
+ * db/privileged.ts setPrivilegedContext), else under RLS with the app's own
+ * scopes. Nothing stays open across a provider call.
+ */
 export function backgroundAppSession(opts: {
   appName: string
   orgId: string
@@ -499,6 +527,16 @@ const sharedProjections = new WeakMap<object, SharedAppProjection>()
  */
 function buildManifestForBridge(desc: AppDescriptor, declaredCapabilities: string[]) {
   return {
+    ...((desc as any).sendGuardProviders
+      ? { sendGuardProviders: (desc as any).sendGuardProviders }
+      : {}),
+    ...((desc as any).approvalRoute ? { approvalRoute: (desc as any).approvalRoute } : {}),
+    ...(Array.isArray((desc as any).contextProviders)
+      ? { contextProviders: (desc as any).contextProviders }
+      : {}),
+    ...(Array.isArray((desc as any).activitySources)
+      ? { activitySources: (desc as any).activitySources }
+      : {}),
     name: desc.name,
     schema: (desc as any).schema ?? {},
     events: (desc as any).events ?? {},
@@ -580,6 +618,51 @@ const MAX_PROBLEM_MESSAGE = 1000
  * host API range. A refused app is recorded in the errored state with its reason
  * and comes back as the problem; a valid one comes back cleaned for registration.
  */
+/**
+ * The scope-reachability check of a descriptor's schema, judged before any DDL
+ * at every registration (the reuse paths included): a governed table whose
+ * effective scope entity (its `rlsScope`, else its name) no declared grantable
+ * scope covers. Tables whose access migration policies own are judged on the
+ * database during the schema transaction instead (the migration half below).
+ *
+ * Outside production the refusal throws (`rls_unreachable`), so a test, a dev
+ * server or CI fails on it. In production the app is not loaded and the
+ * returned problem marks it in error with the tables named; the others load.
+ */
+function rlsUnreachableRefusal(desc: AppDescriptor): AppProblem | null {
+  if (!desc.schema) return null
+  const grantable = grantableScopesWithAppAliases(desc.name, declaredGrantableScopes(desc as any))
+  const tables = tablesUnreachableByGrantableScopes(
+    desc.name,
+    desc.schema as Record<string, { rlsScope?: unknown }>,
+    grantable,
+    { rlsManagedBy: (desc as { rlsManagedBy?: unknown }).rlsManagedBy },
+  )
+  return rlsRefusal(desc, tables, grantable)
+}
+
+/** Throws outside production; in production logs and returns the app's problem. */
+function rlsRefusal(desc: AppDescriptor, tables: string[], grantable: string[]): AppProblem | null {
+  if (tables.length === 0) return null
+  const message =
+    `${desc.name} ${desc.version ?? ""}: no scope the app declares can reach its table(s) ` +
+    `${tables.join(", ")}, so only administrators could read them. Give each one an ` +
+    "`rlsScope` one of the app's scopes covers, declare a scope for it, or, for a table whose " +
+    "access a migration policy grants, mark it `rlsGovernedByMigration` and make sure that policy exists."
+  if (process.env.NODE_ENV !== "production") {
+    throw new AppRegistrationFatalError(
+      "rls_unreachable",
+      { appName: desc.name, version: desc.version, tables, grantableScopes: grantable },
+      message,
+    )
+  }
+  log.error(
+    { app: desc.name, version: desc.version, tables, grantableScopes: grantable },
+    "App refused: governed tables no grantable scope can reach",
+  )
+  return { code: "manifest_invalid", message }
+}
+
 async function validateForRegistration(
   desc: AppDescriptor,
   orgId: string,
@@ -657,6 +740,24 @@ async function validateForRegistration(
     }
     return { ok: false, problem }
   }
+  // First-party-only tool keys (contract.ts) count only for an app the platform vouches
+  // for: any other app declaring one is not loaded, same errored state.
+  const firstPartyKeyErrors =
+    isManifest && !isCoreApp(desc) && (desc as { _firstParty?: unknown })._firstParty !== true
+      ? firstPartyOnlyToolKeyErrors(manifestOnly)
+      : []
+  if (firstPartyKeyErrors.length > 0) {
+    const problem: AppProblem = {
+      code: "manifest_invalid",
+      message: firstPartyKeyErrors.join("; "),
+    }
+    log.error(
+      { app: desc.name, version: desc.version, error: problem.message },
+      "Invalid app descriptor",
+    )
+    await persistAppErrorState(orgId, String(desc.name ?? ""), String(desc.version ?? ""), problem)
+    return { ok: false, problem }
+  }
   // An app that needs a host API this server does not provide is not loaded
   // either (S3): same errored state, with the reason the App store shows.
   const hostProblem = hostApiIncompatibility({
@@ -672,6 +773,14 @@ async function validateForRegistration(
     const problem: AppProblem = { code: "manifest_invalid", message: hostProblem }
     await persistAppErrorState(orgId, desc.name, String(desc.version ?? ""), problem)
     return { ok: false, problem }
+  }
+  // A governed table no declared scope can reach is visible to administrators
+  // only: every least-privilege role reads it as empty. Such an app is refused,
+  // never registered half-working (rlsUnreachableRefusal).
+  const rlsProblem = rlsUnreachableRefusal(desc)
+  if (rlsProblem) {
+    await persistAppErrorState(orgId, desc.name, String(desc.version ?? ""), rlsProblem)
+    return { ok: false, problem: rlsProblem }
   }
   // If skills had lazy body loaders, restore the originals — `result.data`
   // carries the validation placeholder strings, and the skill register
@@ -1013,7 +1122,7 @@ function fnv1a32(str: string): number {
   return hash >>> 1 // Convert to non-negative int (pg advisory lock needs int8, but 32-bit is fine)
 }
 
-function flattenRoleScopes(
+export function flattenRoleScopes(
   roles: Record<string, { extends?: string; scopes: string[] }>,
   name: string,
   visited = new Set<string>(),
@@ -1128,7 +1237,7 @@ export async function seedManifestRoles(
  * always excluded. Apps can make this explicit simply by naming their base
  * write role `member`.
  */
-function baselineMemberScopes(
+export function baselineMemberScopes(
   roles: Record<string, { extends?: string; scopes: string[] }>,
 ): string[] {
   if (roles.member) return flattenRoleScopes(roles, "member")
@@ -2026,7 +2135,7 @@ async function grantDefinerOnShareableTables(
 
 /**
  * What a version switch keeps of the old registration until the new one is in
- * place: every app-keyed registry's entries, its slot contributions, declared
+ * place: every app-keyed registry's entries, declared
  * emits, external-search handler, event subscriptions and registration record.
  * On success `pruneOldVersion` removes what only the old version had; on failure
  * `restoreOldVersion` puts it all back, so the running version never has a gap.
@@ -2034,7 +2143,6 @@ async function grantDefinerOnShareableTables(
 interface OldVersionSnapshot {
   journal: RegistryJournal
   entries: Map<string, unknown>[]
-  contributions: Set<unknown>
   emits: Set<string> | undefined
   searchHandler: object | undefined
   subscriptions: Array<() => Promise<void> | void> | undefined
@@ -2043,17 +2151,11 @@ interface OldVersionSnapshot {
 
 async function snapshotOldVersion(orgId: string, appName: string): Promise<OldVersionSnapshot> {
   const { externalSearchHandlerEntry } = await import("~/modules/search/external-handlers")
-  const contributions = new Set<unknown>()
-  for (const [key, entries] of contributionRegistry.entriesOf(orgId)) {
-    if (key[0] !== orgId) continue
-    for (const e of entries as Array<{ app: string }>) if (e.app === appName) contributions.add(e)
-  }
   return {
     journal: openRegistryJournal(),
     entries: APP_KEYED_REGISTRIES.map(
       (registry) => registry.snapshotUnder([orgId, appName]) as Map<string, unknown>,
     ),
-    contributions,
     emits: declaredEmits.get(`${orgId}:${appName}`),
     searchHandler: externalSearchHandlerEntry(orgId, appName),
     subscriptions: eventSubscriptionDisposers.get([orgId, appName]) as
@@ -2090,13 +2192,6 @@ async function pruneOldVersion(
       snap.journal,
     )
   })
-  for (const [key, entries] of contributionRegistry.entriesOf(orgId)) {
-    if (key[0] !== orgId) continue
-    const remaining = entries.filter((e: unknown) => !snap.contributions.has(e))
-    if (remaining.length === entries.length) continue
-    if (remaining.length === 0) contributionRegistry.delete(key)
-    else contributionRegistry.set(key, remaining)
-  }
   if (snap.emits && declaredEmits.get(`${orgId}:${appName}`) === snap.emits) {
     deleteDeclaredEmits(orgId, appName)
   }
@@ -2126,15 +2221,6 @@ async function restoreOldVersion(
       snap.entries[i] ?? new Map(),
     )
   })
-  for (const [key, entries] of contributionRegistry.entriesOf(orgId)) {
-    if (key[0] !== orgId) continue
-    const kept = entries.filter(
-      (e: { app: string }) => e.app !== appName || snap.contributions.has(e),
-    )
-    if (kept.length === entries.length) continue
-    if (kept.length === 0) contributionRegistry.delete(key)
-    else contributionRegistry.set(key, kept)
-  }
   if (snap.emits) setDeclaredEmits(orgId, appName, snap.emits)
   else deleteDeclaredEmits(orgId, appName)
   const { restoreExternalSearchHandlerEntry } = await import("~/modules/search/external-handlers")
@@ -2341,31 +2427,21 @@ async function registerSingleApp(
                 }
               }
 
-              // Reachability guard: warn if any governed table's effective RLS
-              // scope-entity (its `rlsScope` alias, else the table name) is not matched
-              // by any declared grantable scope. Such a table is unreachable for every
-              // grantable role → least-privilege users fail on it (the invoicing
-              // document_lines/issuer_profiles bug). Non-fatal so 3rd-party installs are
-              // not blocked, but loud so the misconfig surfaces.
-              //
-              // A table whose access the migrations own (app `rlsManagedBy:
-              // "migration"`, or table `rlsGovernedByMigration`) is judged on the
-              // database instead: it is unreachable only when no migration policy on
+              // Reachability guard, migration half: the scope half ran before any DDL
+              // (rlsUnreachableRefusal). A table whose access the migrations own (app
+              // `rlsManagedBy: "migration"`, or table `rlsGovernedByMigration`) is
+              // judged on the database: it is unreachable when no migration policy on
               // it can grant anything (every one is a `USING (false)` deny-default).
+              // Such an app is refused like an unreachable scope: outside production
+              // the registration throws; in production the schema transaction rolls
+              // back and the app is marked in error.
               if (desc.schema) {
-                // Per-app scope aliases widen the RLS context of every handler call
-                // (withAppDimensionAliases), so they count toward reachability.
                 const grantable = grantableScopesWithAppAliases(
                   desc.name,
                   declaredGrantableScopes(desc as any),
                 )
                 const rlsOpts = { rlsManagedBy: (desc as { rlsManagedBy?: unknown }).rlsManagedBy }
-                const unreachable = tablesUnreachableByGrantableScopes(
-                  desc.name,
-                  desc.schema as Record<string, { rlsScope?: unknown }>,
-                  grantable,
-                  rlsOpts,
-                )
+                const unreachable: string[] = []
                 const migrationGoverned = migrationGovernedTables(
                   desc.schema as Record<string, { rlsGovernedByMigration?: unknown }>,
                   rlsOpts,
@@ -2394,12 +2470,8 @@ async function registerSingleApp(
                     log.debug({ err, app: desc.name }, "Migration policy probe failed; skipped")
                   }
                 }
-                if (unreachable.length > 0) {
-                  log.warn(
-                    { app: desc.name, tables: unreachable, grantableScopes: grantable },
-                    "App declares governed tables no grantable scope can reach; least-privilege roles will fail on them. Declare a per-table `rlsScope` alias or add a grantable scope, or, for a table whose access a migration policy grants, mark it `rlsGovernedByMigration` and make sure that policy exists.",
-                  )
-                }
+                const refused = rlsRefusal(desc, unreachable, grantable)
+                if (refused) throw new Error(refused.message)
               }
 
               // Process entity schemas — topologically sort by intra-app FK references so
@@ -2498,6 +2570,35 @@ async function registerSingleApp(
                               log.warn(
                                 { err, app: desc.name, entity: entityName, column: colName },
                                 "Schema drift: NOT NULL tighten failed",
+                              )
+                            }
+                          }
+                          // A field a later version made nullable: drop NOT NULL. Additive for
+                          // code still running from the earlier version, which keeps writing the
+                          // value; same savepoint so a lock timeout only leaves the drift warning.
+                          const loosen =
+                            existing.nullable === "NO" && expectedNullable === "YES"
+                              ? generateNotNullLoosenDdl(
+                                  schemaName,
+                                  entityName,
+                                  fieldName,
+                                  fieldDef,
+                                )
+                              : null
+                          if (loosen) {
+                            try {
+                              await tx.transaction(async (sp) => {
+                                await sp.execute(drizzleSql.raw(loosen))
+                              })
+                              existing.nullable = "YES"
+                              log.info(
+                                { app: desc.name, entity: entityName, column: colName },
+                                "Column loosened to nullable to match the manifest",
+                              )
+                            } catch (err) {
+                              log.warn(
+                                { err, app: desc.name, entity: entityName, column: colName },
+                                "Schema drift: NOT NULL drop failed",
                               )
                             }
                           }
@@ -3219,10 +3320,60 @@ async function registerSingleApp(
             if (tool.noAutoApprove === true) entry.noAutoApprove = true
             // Pinned params: dropped from a caller's call, set only by the preflight.
             if (Array.isArray(tool.pinnedParams)) entry.pinnedParams = tool.pinnedParams
+            // A call chaining `@ref` tokens to a tool with pinned params stages unpinned (read by
+            // execute-tool.ts); the pinned-drop above still applies.
+            if (tool.pinnedOptionalOnRefs === true) entry.pinnedOptionalOnRefs = true
+            if (tool.approvalCard !== null && typeof tool.approvalCard === "object") {
+              entry.approvalCard = tool.approvalCard
+            }
+            // Declarations the card, roll-up, feature gate, focus budget, taint and hidden-tool
+            // redirect readers take off the entry. Each one must be copied here or it reads
+            // undefined, whatever the manifest says (see the note above `decideInContext`).
+            if (tool.resultCard !== null && typeof tool.resultCard === "object") {
+              entry.resultCard = tool.resultCard
+            }
+            if (typeof tool.runningLabel === "string") entry.runningLabel = tool.runningLabel
+            if (typeof tool.runningLabelKey === "string") {
+              entry.runningLabelKey = tool.runningLabelKey
+            }
+            if (typeof tool.feature === "string") entry.feature = tool.feature
+            if (tool.focusCore === true || typeof tool.focusCore === "string") {
+              entry.focusCore = tool.focusCore
+            }
+            if (typeof tool.useInstead === "string") entry.useInstead = tool.useInstead
+            // The manifest's row condition. It lands beside, not on, the host-only
+            // `taintSourceWhen` function that taint.ts calls.
+            // The app's `outsideTextFields` travel with it: they say which text beside the
+            // rows a person outside the org can set.
+            if (tool.taintSourceWhen !== null && typeof tool.taintSourceWhen === "object") {
+              const declared: unknown = (desc as { outsideTextFields?: unknown }).outsideTextFields
+              const outsideFields = Array.isArray(declared)
+                ? declared.filter((f): f is string => typeof f === "string")
+                : []
+              entry.taintSourceWhenRow = {
+                ...tool.taintSourceWhen,
+                ...(outsideFields.length > 0 ? { outsideFields } : {}),
+              }
+            }
+            // A classified part of the result widens the turn's taint; it only ever adds one.
+            if (tool.resultTaintWhen !== null && typeof tool.resultTaintWhen === "object") {
+              entry.resultTaintWhen = tool.resultTaintWhen
+            }
+            // What a tool writes is read only by the person writing it: it narrows a scope-taint
+            // refusal, so it counts for a first-party app alone (registration refuses any other).
+            if (core || desc._firstParty === true) {
+              if (tool.sinkReadersSelf === true) entry.sinkReadersSelf = true
+              if (Array.isArray(tool.contentParams)) entry.contentParams = tool.contentParams
+              // Where a call may run: a product rule of first-party apps (contract.ts).
+              if (tool.humanTurnOnly === true) entry.humanTurnOnly = true
+              if (tool.dmOnly === true) entry.dmOnly = true
+            }
             // Outbound text params: a placeholder there is refused before any gate (execute-tool.ts).
             if (Array.isArray(tool.outboundTextParams)) {
               entry.outboundTextParams = tool.outboundTextParams
             }
+            // The edit path a refused approval edit names (approvals/edit.ts).
+            if (Array.isArray(tool.editWith)) entry.editWith = tool.editWith
             // Webhook secrets the host writes into the answer (reveal-secrets.ts).
             if (Array.isArray(tool.revealsSecrets)) entry.revealsSecrets = tool.revealsSecrets
             if (Array.isArray(tool.referenceableOutputs)) {
@@ -3540,6 +3691,7 @@ async function registerSingleApp(
             requiredScopes: skillDef.requiredScopes ?? [],
             kind: skillDef.kind ?? "playbook",
             enabledByDefault: skillDef.enabledByDefault ?? true,
+            ...(skillDef.feature ? { feature: skillDef.feature } : {}),
             autoAttach: skillDef.autoAttach ?? null,
           })
         }
@@ -3563,6 +3715,7 @@ async function registerSingleApp(
             promptTemplate: t.promptTemplate,
             scopes: t.scopes,
             enabledByDefault: t.enabledByDefault,
+            ...(t.followUp ? { followUp: true } : {}),
             ...(t.flow ? { flow: t.flow } : {}),
             ...(t.eventFilter ? { eventFilter: t.eventFilter } : {}),
           })
@@ -3680,6 +3833,8 @@ async function registerSingleApp(
       if (attDecl && isManifestFormat) {
         const handler = typeof attDecl === "string" ? attDecl : attDecl.handler
         const explicitScope = typeof attDecl === "object" ? attDecl.scope : undefined
+        // Undeclared: the provider never receives anyone else's items to pass on.
+        const passesOn = typeof attDecl === "object" && attDecl.passesOn === true
         const firstEntity = Object.keys((desc as any).schema ?? {})[0]
         const scope =
           explicitScope ?? (firstEntity ? `${desc.name}:${firstEntity}:read` : `${desc.name}:read`)
@@ -3688,6 +3843,7 @@ async function registerSingleApp(
           scope,
           bundlePath,
           core,
+          ...(passesOn ? { passesOn: true } : {}),
         })
       }
 
@@ -3979,12 +4135,26 @@ async function registerSingleApp(
                 // At an app day cap a scheduled tick is skipped: the job is
                 // periodic, the first tick after midnight UTC runs it
                 // (modules/apps/usage/app-day-cap.ts).
-                const { appRunHoldMs } = await import("~/modules/apps/usage/app-day-cap")
-                if ((await appRunHoldMs({ orgId: jobOrgId, core: false })) !== null) {
+                const { appRunHoldMs, noticeHeldJob } = await import(
+                  "~/modules/apps/usage/app-day-cap"
+                )
+                const holdMs = await appRunHoldMs({ orgId: jobOrgId, core: false })
+                if (holdMs !== null) {
                   log.info(
                     { app: appName, job: jobName, orgId: jobOrgId },
                     "scheduled job skipped: the org reached an app day cap",
                   )
+                  // A job whose skipped tick someone must know about (money that does not
+                  // go out) names the event that says so.
+                  if (typeof jobDef.heldEvent === "string") {
+                    await noticeHeldJob({
+                      orgId: jobOrgId,
+                      app: appName,
+                      job: jobName,
+                      heldEvent: jobDef.heldEvent,
+                      holdMs,
+                    })
+                  }
                   return
                 }
                 const actorId: string = payload._userId ?? `system:${appName}:${jobName}`
@@ -3994,7 +4164,7 @@ async function registerSingleApp(
                   jobOrgId,
                   payload,
                   bridgeManifest,
-                  Array.isArray(payload._callerScopes) ? payload._callerScopes : undefined,
+                  jobCallerScopes(appName, payload),
                   { name: jobName, timeoutMs: jobDef.timeoutMs ?? 60_000 },
                 )
                 // Job handlers execute in the OUT-OF-PROCESS worker pool, like
@@ -4060,7 +4230,7 @@ async function registerSingleApp(
                   jobOrgId,
                   payload,
                   bridgeManifest,
-                  Array.isArray(payload._callerScopes) ? payload._callerScopes : undefined,
+                  jobCallerScopes(appName, payload),
                   { name: jobName, timeoutMs: jobDef.timeoutMs ?? 60_000 },
                 )
                 // Out-of-process worker pool — see the scheduled-job branch.
@@ -4305,23 +4475,8 @@ async function registerSingleApp(
         }
       }
 
-      // Register slots
-      if (desc.slots) {
-        for (const [slotName, slotDef] of Object.entries(desc.slots as Record<string, any>)) {
-          slotRegistry.set([orgId, desc.name, slotName], slotDef)
-        }
-      }
-
-      // Register contributions
-      if (desc.contributions) {
-        for (const [slotTarget, contribution] of Object.entries(
-          desc.contributions as Record<string, any>,
-        )) {
-          const existing = contributionRegistry.get([orgId, slotTarget]) ?? []
-          existing.push({ app: desc.name, contribution })
-          contributionRegistry.set([orgId, slotTarget], existing)
-        }
-      }
+      // Register slots and contributions: one list, read by `listSlotPanels`.
+      registerAppSlots(orgId, desc.name, desc.slots, desc.contributions)
 
       // Register export handlers. A manifest app with a handler bundle resolves
       // to its export by name. A core app with no handler module (contacts, over
@@ -4418,6 +4573,7 @@ async function registerSingleApp(
                   searchable: e.searchable,
                   cardComponent: e.cardComponent,
                   readScope: e.readScope,
+                  discussion: e.discussion,
                 },
               ]),
             )
@@ -4435,6 +4591,7 @@ async function registerSingleApp(
           bulk: (desc as any).bulk ?? undefined,
           roles: (desc as any).roles ?? undefined,
           savedViews: (desc as any).savedViews ?? undefined,
+          features: (desc as any).features ?? undefined,
           entities: safeEntities,
           tools: projectBulkToolSchemas((desc as any).bulk, desc.tools as any),
           configKeys: desc.configKeys ?? undefined,
@@ -4603,16 +4760,6 @@ export async function teardownAppRegistrations(orgId: string, appName: string): 
   {
     const { unregisterExternalSearchHandler } = await import("~/modules/search/external-handlers")
     unregisterExternalSearchHandler(orgId, appName)
-  }
-  // contributionRegistry is keyed by [orgId, slotTarget] (NOT appName), and a
-  // single slot can hold contributions from multiple apps. Filter out only the
-  // entries this app contributed; drop the key when it becomes empty.
-  for (const [key, entries] of contributionRegistry.entriesOf(orgId)) {
-    if (key[0] !== orgId) continue
-    const remaining = entries.filter((e: { app: string }) => e.app !== appName)
-    if (remaining.length === entries.length) continue
-    if (remaining.length === 0) contributionRegistry.delete(key)
-    else contributionRegistry.set(key, remaining)
   }
   // DB-side pause of the app's instantiated routines (sourceKind='app') —
   // distinct from the in-memory registry sweep above. Disposes their event

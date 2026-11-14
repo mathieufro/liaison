@@ -1,0 +1,5 @@
+The fake gets the Shopify app's Admin API requests with the token and an X-Liaison-Shop-Domain header -> apps/api/src/modules/apps/sandbox/bridge/shopify-fake-admin.ts (shopifyFakeAdminTarget) ; apps/api/src/modules/apps/sandbox/bridge/shopify-fake-admin.ts (FAKE_SHOP_DOMAIN_HEADER)
+Rewritten after the allowlist and auth checks; an app naming the fake is refused -> apps/api/src/modules/apps/sandbox/bridge/egress.ts (createEgressMethods) ; apps/api/src/modules/apps/sandbox/bridge/shared.ts (validateSandboxFetchUrl)
+No redirect followed, only that origin, private or loopback address -> apps/api/src/modules/apps/sandbox/bridge/shopify-fake-admin.ts (shopifyFakeAdminFetchPolicy)
+Private label plus loopback BASE_URL, never managed, refused at boot elsewhere -> apps/api/src/lib/shopify-fake-admin-gate.ts (shopifyFakeAdminGate) ; apps/api/src/lib/env.ts (SHOPIFY_FAKE_ADMIN_ENV)
+Another app's Shopify calls go through the Shopify app's tools, so they reach the fake the same way -> bundled-apps/invoicing/src/handlers/shopify-order-paid.ts (tryFetchShopifyOrder) ; apps/api/src/modules/apps/sandbox/bridge/agent.ts (executeTool)

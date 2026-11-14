@@ -1,7 +1,7 @@
 {
   "name": "calendar",
   "agentInstructions": "Calendar is a bidirectional Google Calendar connector — events created/edited here sync to Google and vice versa. Reach for it to list a user's schedule, search events, or create/update/delete events (with sendUpdates disabled, so attendees are never emailed by these tools). Key handles: calendar id, event id. Personal connections are private to their owner; org connections are visible to all org members. Writes to org calendars are permission-gated by app role. Recurring events store the master row plus exception rows for edited/cancelled occurrences; editing recurrence is limited to none/daily/weekly/monthly — a complex inbound RRULE is preserved but not editable here. VIDEO MEETINGS: when the user asks for a Google Meet, a video call, a visio or an online meeting, call create_event with conference: \"google_meet\" — Google then creates a real Meet link. Never put a conferencing product name (\"Google Meet\", \"Meet\", \"Hangouts\") in location: location is for a physical place or a link the user gave you. After creating, give the user the meetLink from the result (if it is not there yet, say the link is being created and read it from list_events hangoutLink shortly after). Only Google accounts are connected, so the only video link these tools can create is Google Meet: for Microsoft Teams or Zoom, say plainly that Calendar cannot create that link and offer a Google Meet, or put a link the user provides in the description. EDITING MEETINGS: to change an existing meeting (time, title, description, location, guests, or adding/removing its Google Meet), find it with search_events or list_events, then call update_event with its eventId — conference: \"google_meet\" adds a Meet link, conference: \"none\" removes it. Never tell the user to do it themselves in Google Calendar when update_event can do it; if Google refuses a change (for example the user is not the organizer), say what was refused and why. RECURRING MEETINGS: list_events returns a recurring series once (its eventId, first start and repeat rule) plus any occurrence already edited (recurringEventId set). Before changing one, know whether the user means only this occurrence or the whole series; if the request does not say, ask. Then call update_event with scope: \"occurrence\" and occurrenceStart (the original start of that occurrence) or scope: \"series\". update_event refuses a recurring meeting without a scope. delete_event takes the same scope: \"occurrence\" (with occurrenceStart) cancels only that occurrence on Google, \"series\" deletes the whole series; ask the user which when it is not clear.",
-  "version": "1.1.12",
+  "version": "1.2.0",
   "description": "Calendar app: month/week UI backed by a bidirectional Google Calendar connector for org-wide and personal calendars.",
   "license": "FSL-1.1-ALv2",
   "listing": {
@@ -217,6 +217,11 @@
         "pushNotice": "string?",
         "conferenceRequest": "string?",
         "calaccess": "string",
+        "eventType": {
+          "type": "string",
+          "required": false,
+          "description": "Google's eventType, as sent and nothing else (default, outOfOffice, focusTime, ...). Also added by migration 0267 where the table already exists; NULL until the next sync."
+        },
         "externalRef": {
           "type": "string",
           "required": false,
@@ -288,8 +293,12 @@
       "readScope": "calendar:events:read"
     }
   },
+  "outsideTextFields": ["title", "description", "location", "attendees", "name"],
+  "activitySources": [{"tool": "activity_read", "scope": "calendar:events:read", "label": "Calendar", "filterKey": "calendar"}],
   "tools": {
+    "activity_read": {"description": "The meetings a company's or a contact's people attend, in the 90 days before the cursor, newest first, for their timeline. Read by the kernel.", "readOnly": true, "agentVisible": false, "timeoutMs": 2000, "requiredScopes": ["calendar:events:read"], "trustBoundary": "user", "handler": "activityRead", "params": {"type": "object", "properties": {"contactIds": {"type": "array", "items": {"type": "string"}}, "companyId": {"type": ["string", "null"]}, "dealIds": {"type": "array", "items": {"type": "string"}}, "before": {"type": ["object", "null"]}, "limit": {"type": "integer"}, "prefix": {"type": "string"}}}},
     "list_calendars": {
+      "taintSource": true,
       "description": "List the connected Google calendars visible to the caller (personal calendars they own, plus org-wide calendars), each with `selected`: only selected calendars are synced and have events.",
       "searchKeywords": ["agenda", "agendas"],
       "readOnly": true,
@@ -320,6 +329,11 @@
           },
           "timeMax": {
             "type": "string"
+          },
+          "attendee": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Attendee emails, at most 50."
           }
         },
         "required": ["timeMin", "timeMax"]
@@ -348,7 +362,7 @@
     },
     "create_event": {
       "description": "Create a new event or meeting on a writable calendar. Syncs to Google (sendUpdates disabled — attendees are not emailed by this tool). For a Google Meet / video call / online meeting, pass conference: \"google_meet\": Google creates a real Meet link and the result returns it as meetLink — give that link to the user. Never write \"Google Meet\" or another conferencing product name into location as a substitute (location is a place or a link the user gave). Only Google accounts are connected: Teams or Zoom links cannot be created here, say so. To change the event later (time, guests, adding or removing the Meet), use update_event.",
-      "searchKeywords": ["rdv", "rendez", "réunion", "meeting", "planifier", "schedule", "événement", "agenda", "nouvel"],
+      "searchKeywords": ["rdv", "rendez", "réunion", "meeting", "planifier", "schedule", "événement", "agenda", "nouvel", "créer"],
       "requiredScopes": ["calendar:events:write"],
       "trustBoundary": "user",
       "handler": "calendarCreateEvent",
@@ -399,7 +413,7 @@
     },
     "update_event": {
       "description": "Update an existing event or meeting: change its time, title, description, location or guests, or add or remove its Google Meet video link. Find the eventId first with search_events or list_events. Syncs to Google. conference: \"google_meet\" adds a Meet link to an event that has none (the result returns it as meetLink); conference: \"none\" removes the event's video conference; omit it to keep the conference as it is. Never tell the user to make these changes themselves in Google Calendar. For a recurring meeting, scope is required: scope: \"occurrence\" changes one occurrence (pass occurrenceStart, its original start; an already-edited occurrence can be passed by its own eventId), scope: \"series\" changes every occurrence (start/end then set the first occurrence). If the user did not say which, ask the user before calling. `attendees` is the COMPLETE guest list: omit it to keep the current guests unchanged; to add someone, pass everyone who should attend plus the new address; anyone left out is removed. No invitation or update email is sent to attendees (writes use sendUpdates=none). Only the organizer (or anyone, when the event lets guests modify it) can change the guest list; otherwise Google keeps its own list.",
-      "searchKeywords": ["déplacer", "reporter", "modifier", "reschedule", "rdv", "réunion", "meeting"],
+      "searchKeywords": ["déplacer", "reporter", "modifier", "reschedule", "rdv", "réunion", "meeting", "événement"],
       "requiredScopes": ["calendar:events:write"],
       "trustBoundary": "user",
       "handler": "calendarUpdateEvent",
@@ -457,7 +471,7 @@
     },
     "delete_event": {
       "description": "Delete an event or meeting. Syncs the deletion to Google in the background. For a recurring meeting, scope is required: scope: \"occurrence\" cancels one occurrence only (pass occurrenceStart, its original start; an already-edited occurrence can be passed by its own eventId), scope: \"series\" deletes every occurrence. If the user did not say which, ask the user before calling.",
-      "searchKeywords": ["annuler", "supprimer", "cancel", "rdv", "réunion", "meeting"],
+      "searchKeywords": ["annuler", "supprimer", "cancel", "rdv", "réunion", "meeting", "événement"],
       "requiredScopes": ["calendar:events:write"],
       "trustBoundary": "user",
       "handler": "calendarDeleteEvent",
@@ -729,7 +743,7 @@
       "icon": "CalendarIcon",
       "label": "Calendar",
       "labelKey": "kernel.nav.calendar",
-      "order": 12,
+      "order": 13,
       "tabAction": {
         "type": "month",
         "entityId": "calendar",

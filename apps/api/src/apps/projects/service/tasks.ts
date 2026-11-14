@@ -8,9 +8,11 @@ import {
   cancelApprovalsForDeletedTasks,
   reopenApprovalsForRestoredTasks,
 } from "~/modules/approvals/cancel"
+import { updateItemRoutePerson } from "~/modules/approvals/route-world"
 import { applyCells, changedKeys } from "~/modules/dashboards/tables/columns"
 import { appendChecklistOnMerge, readItems, readProjectLevels } from "./checklist"
 import { checklistStatus } from "./checklist-status"
+import { explainClosingStages, mergeDealRows, syncDealOutcome } from "./deals"
 import { dueBucketSql } from "./due-status"
 import {
   fieldFilterConditions,
@@ -25,6 +27,7 @@ import {
   MAX_TASK_DEPTH,
   statusIsTerminal,
 } from "./move-task"
+import { orgUsesTimeBudgets } from "./planning"
 import { normalizeRelease, releaseFilterSql } from "./release-filter"
 import { assertTaskPriority, resolveAssignee, resolveStatusRef } from "./resolve"
 import { ProjectsServiceError } from "./statuses"
@@ -47,6 +50,7 @@ import {
   labelFilterCondition,
   resolveLabelInput,
 } from "./task-labels"
+import { attachTaskTimeKeys } from "./task-time-keys"
 import { recordTransitions, type TransitionActor, transitionActorFor } from "./transitions"
 
 export type { AssigneeRef, Task, TaskSummary } from "./task-detail"
@@ -200,7 +204,12 @@ export async function createTask(args: CreateTaskArgs): Promise<TaskDetail> {
   return tx.transaction(async (innerTx) => {
     await ensureProjectMutableForTasks(innerTx, orgId, input.projectId)
     const release = normalizeRelease(input.release) ?? null
-    const statusId = await resolveStatusId(innerTx as RlsClient, orgId, input.projectId, input)
+    const statusId = await resolveStatusId(
+      innerTx as RlsClient,
+      orgId,
+      input.projectId,
+      input,
+    ).catch((err) => explainClosingStages(innerTx, orgId, input.projectId, err))
     assertTaskPriority(input.priority)
     const labelAssignments = await resolveLabelInput(innerTx as RlsClient, orgId, input.labels)
     // Before the definitions are read: a concurrent fields_set waits for this create, or this
@@ -414,6 +423,9 @@ export async function createTask(args: CreateTaskArgs): Promise<TaskDetail> {
     `)
 
     await applyTaskLabels(innerTx as RlsClient, orgId, taskId, labelAssignments)
+    // A root task of a pipeline is a deal: its rows, and its outcome when it
+    // is created straight into a closing stage.
+    await syncDealOutcome(innerTx, orgId, actor, [taskId])
 
     // The event carries the full row as written (key, number, position,
     // resolved status) so a live client can render it without a refetch.
@@ -439,7 +451,9 @@ export async function createTask(args: CreateTaskArgs): Promise<TaskDetail> {
       { at: createdAtIso },
     )
 
-    return detail
+    // The time keys go on the answer only, never on the event every member's socket receives.
+    const [answer] = await attachTaskTimeKeys(innerTx as RlsClient, orgId, [{ ...detail }])
+    return answer ?? detail
   })
 }
 
@@ -504,7 +518,8 @@ export async function getTask(args: GetTaskArgs): Promise<TaskDetail> {
   if (args.viewerId && detail.threadId) {
     await ensureThreadParticipant(args.tx, args.orgId, detail.threadId, args.viewerId)
   }
-  return detail
+  const [withTime] = await attachTaskTimeKeys(args.tx, args.orgId, [detail])
+  return withTime ?? detail
 }
 
 /**
@@ -677,6 +692,7 @@ export async function listTasks(args: ListTasksArgs): Promise<{ items: TaskSumma
     task.checklist = taskItems && taskItems.length > 0 ? checklistStatus(levels, taskItems) : null
   }
   await attachTaskLabels(args.tx, args.orgId, items)
+  await attachTaskTimeKeys(args.tx, args.orgId, items)
   await maskLinkFields(args.tx, items)
   if (view === "tree") {
     items.sort((a, b) => a.depth - b.depth || a.position - b.position)
@@ -745,7 +761,9 @@ function taskDiff(before: TaskDetail, after: TaskDetail): string[] {
 
 export async function updateTask(args: UpdateTaskArgs): Promise<TaskDetail> {
   const { tx, orgId, actor, projectId, taskId, input } = args
-  return tx.transaction(async (innerTx) => {
+  const { detail: updated, assigned } = await tx.transaction(async (innerTx) => {
+    // The assignee this update set, if it set one: pending requests about the task follow it.
+    let assigned: { personId: string | null } | null = null
     const projectClause = projectId ? drizzleSql`AND project_id = ${projectId}::uuid` : drizzleSql``
     const taskRows = extractRows<{
       project_id: string
@@ -789,7 +807,12 @@ export async function updateTask(args: UpdateTaskArgs): Promise<TaskDetail> {
       input.statusId !== undefined ||
       (input.statusLabel !== undefined && input.statusLabel !== null)
     ) {
-      nextStatusId = await resolveStatusRef(innerTx as RlsClient, orgId, existing.project_id, input)
+      nextStatusId = await resolveStatusRef(
+        innerTx as RlsClient,
+        orgId,
+        existing.project_id,
+        input,
+      ).catch((err) => explainClosingStages(innerTx, orgId, existing.project_id, err))
       sets.push(drizzleSql`status_id = ${nextStatusId}::uuid`)
       const completedAt = await computeNextCompletedAt(innerTx, orgId, {
         previousStatusId: existing.status_id,
@@ -812,6 +835,7 @@ export async function updateTask(args: UpdateTaskArgs): Promise<TaskDetail> {
           ? drizzleSql`assignee_id = NULL`
           : drizzleSql`assignee_id = ${assigneeId}::uuid`,
       )
+      assigned = { personId: assigneeId }
     }
     if (input.priority !== undefined) {
       assertTaskPriority(input.priority)
@@ -848,12 +872,18 @@ export async function updateTask(args: UpdateTaskArgs): Promise<TaskDetail> {
       WHERE id = ${taskId}::uuid AND org_id = ${orgId}::uuid ${projectClause}
     `)
     await applyTaskLabels(innerTx as RlsClient, orgId, taskId, labelAssignments)
+    const statusChanged = nextStatusId !== null && nextStatusId !== existing.status_id
+    // The deal's outcome follows its new stage, in this transaction.
+    if (statusChanged) {
+      await syncDealOutcome(innerTx, orgId, actor, [taskId], {
+        fromStatusIds: { [taskId]: existing.status_id },
+      })
+    }
 
     // The event carries what changed first (the names of the properties and
     // `fields.<key>` whose value differs, and the status left and entered),
     // then the full row AFTER the write, so a fenced copy keeps the change.
     const detail = await loadTaskDetail(innerTx as RlsClient, orgId, taskId, projectId)
-    const statusChanged = nextStatusId !== null && nextStatusId !== existing.status_id
     await innerTx.queueEvent({
       app: "projects",
       entity: "task",
@@ -882,11 +912,26 @@ export async function updateTask(args: UpdateTaskArgs): Promise<TaskDetail> {
         ],
         via,
       )
-      return loadTaskDetail(innerTx as RlsClient, orgId, taskId, projectId)
     }
-
-    return detail
+    // Read again after the transition, so the answer carries when the status was entered.
+    const after = statusChanged
+      ? await loadTaskDetail(innerTx as RlsClient, orgId, taskId, projectId)
+      : detail
+    // The time keys go on the answer only, never on the event every member's socket receives.
+    const [answer] = await attachTaskTimeKeys(innerTx as RlsClient, orgId, [{ ...after }])
+    return { detail: answer ?? after, assigned }
   })
+  if (assigned) {
+    // Its own transaction, after the write: a failure is logged and the assignment stands.
+    await updateItemRoutePerson({
+      orgId,
+      app: "projects",
+      entityType: "task",
+      entityId: taskId,
+      personId: assigned.personId,
+    })
+  }
+  return updated
 }
 
 // ---------------------------------------------------------------------------
@@ -908,9 +953,8 @@ export interface CrossProjectTask extends Task {
    *  this flag (or the `terminal` filter) a caller cannot tell open from done. */
   statusTerminal: boolean
   /** The assignee's display NAME (joined from kernel.users), or null when the
-   *  task is unassigned (or the user row is missing/anonymized). Lets a caller
-   *  tally a per-PERSON workload from a single project read and NAME the
-   *  most-loaded person — without a separate per-id user lookup. `assigneeId`
+   *  task is unassigned (or the user row is missing/anonymized). Lets a readout
+   *  say who holds each task without a separate per-id user lookup. `assigneeId`
    *  alone is an opaque uuid; the name is what a human-facing readout needs. */
   assigneeName: string | null
   /** SERVER-computed overdue flag: TRUE iff the task has a non-null `due_date`
@@ -1013,6 +1057,7 @@ export async function listTasksAcrossProjects(
     overdue: r.overdue ?? false,
   }))
   await attachTaskLabels(args.tx, args.orgId, items)
+  await attachTaskTimeKeys(args.tx, args.orgId, items)
   await maskLinkFields(args.tx, items)
   // Unpaginated (no LIMIT) — the result IS the full matching set, so the sweep
   // count is exactly items.length. Returned as `totalCount` for the uniform
@@ -1187,6 +1232,7 @@ export async function listProjectTasks(
     overdue: r.overdue ?? false,
   }))
   await attachTaskLabels(args.tx, args.orgId, items)
+  await attachTaskTimeKeys(args.tx, args.orgId, items)
   await maskLinkFields(args.tx, items)
   return { items, totalCount }
 }
@@ -1225,6 +1271,8 @@ export interface PortfolioAtRiskTask {
 export interface PortfolioProjectRollup {
   projectId: string
   projectName: string
+  /** Time and budgets on this project: present only while the org uses it. */
+  timeBudgets?: boolean
   /** Total non-archived tasks in the project. */
   totalTasks: number
   /** Tasks in a terminal/done status. */
@@ -1302,10 +1350,11 @@ export async function portfolioRollup(args: PortfolioRollupArgs): Promise<Portfo
     risk_days_overdue: number | null
     risk_assignee_name: string | null
     risk_status_label: string | null
+    time_budgets_on: boolean
   }>(
     await args.tx.execute(drizzleSql`
       WITH candidate_projects AS (
-        SELECT p.id, p.name, p.updated_at
+        SELECT p.id, p.name, p.updated_at, p.time_budgets_on
         FROM ${projectsRel("projects")} p
         WHERE p.org_id = ${args.orgId}::uuid ${archivedClause}
         ORDER BY p.updated_at DESC, p.id DESC
@@ -1328,6 +1377,7 @@ export async function portfolioRollup(args: PortfolioRollupArgs): Promise<Portfo
       SELECT
         cp.id AS project_id,
         cp.name AS project_name,
+        cp.time_budgets_on,
         COALESCE(agg.total_tasks, 0)::int AS total_tasks,
         COALESCE(agg.done_tasks, 0)::int AS done_tasks,
         COALESCE(agg.overdue_tasks, 0)::int AS overdue_tasks,
@@ -1370,6 +1420,7 @@ export async function portfolioRollup(args: PortfolioRollupArgs): Promise<Portfo
     `),
   )
 
+  const inUse = orgUsesTimeBudgets(args.orgId)
   const projects: PortfolioProjectRollup[] = rows.map((r) => {
     const total = r.total_tasks
     const done = r.done_tasks
@@ -1377,6 +1428,7 @@ export async function portfolioRollup(args: PortfolioRollupArgs): Promise<Portfo
     return {
       projectId: r.project_id,
       projectName: r.project_name,
+      ...(inUse ? { timeBudgets: r.time_budgets_on === true } : {}),
       totalTasks: total,
       doneTasks: done,
       remainingTasks: remaining,
@@ -1552,6 +1604,33 @@ export interface MergeTasksArgs {
  * the target, move any source-pointing dependencies to the target, then archive
  * the source. Modeled on contacts `mergeContacts` (reassign-then-archive).
  */
+/** Carry the source's time rows to the target (app_projects.merge_task_time). */
+async function mergeTaskTimeRows(
+  tx: RlsClient,
+  sourceId: string,
+  targetId: string,
+  checkOnly: boolean,
+) {
+  try {
+    await tx.transaction(async (sp) => {
+      await sp.execute(
+        drizzleSql`SELECT ${projectsRel("merge_task_time")}(${sourceId}::uuid, ${targetId}::uuid, ${checkOnly})`,
+      )
+    })
+  } catch (err) {
+    const e = err as { message?: string; cause?: { message?: string } }
+    if (`${e.cause?.message ?? ""} ${e.message ?? ""}`.includes("time_merge_over_limit")) {
+      throw new ProjectsServiceError(
+        409,
+        "time_over_limit",
+        "Nothing was merged: one person's time on the two tasks together would pass 744 h, the most one entry holds.",
+        { next: "That person corrects their time on one of the tasks, then merge again." },
+      )
+    }
+    throw err
+  }
+}
+
 export async function mergeTasks(args: MergeTasksArgs): Promise<void> {
   const { tx, orgId, sourceId, targetId } = args
   if (sourceId === targetId) {
@@ -1566,9 +1645,17 @@ export async function mergeTasks(args: MergeTasksArgs): Promise<void> {
   if (exists.length < 2) {
     throw new ProjectsServiceError(404, "not_found", "source or target task not found")
   }
+  // A fold past what one time row holds refuses the merge before anything is written.
+  await mergeTaskTimeRows(tx, sourceId, targetId, true)
+  // Two deals naming different companies are refused before anything is
+  // written; otherwise the survivor keeps its deal rows and the source's go.
+  await mergeDealRows(tx, orgId, sourceId, targetId)
   // Append the source's checklist after the target's own (S11). First, so a
   // refusal (over the per-task limit) writes nothing.
   await appendChecklistOnMerge(tx, orgId, args.actor.userId, sourceId, targetId)
+  // The source's time rows join the target in this transaction, other people's
+  // included (a definer function), once nothing else refuses.
+  await mergeTaskTimeRows(tx, sourceId, targetId, false)
   // Reassign the source's direct children to the target.
   await tx.execute(drizzleSql`
     UPDATE ${projectsRel("tasks")}

@@ -4,6 +4,7 @@ import type { Component } from "solid-js"
 import { createSignal } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { notifyEntityChange } from "~/framework/entity-changes"
+import { isFeatureOff } from "~/framework/org-features"
 import { isAppUnavailable } from "~/framework/unavailable-apps"
 import type { ApiClient } from "~/lib/api-client"
 import { log } from "~/lib/logger"
@@ -95,6 +96,8 @@ export interface TabTypeRegistration {
   defaultLabelKey?: string
   appId?: string
   localType?: string
+  /** A feature the app declares: off, no navigation leads here and an open tab shows the notice. */
+  feature?: string
   singleton?: boolean
   /** Resolve a dynamic label from entityId (e.g. thread title from store) */
   resolveLabel?: (entityId: string) => string | undefined
@@ -175,7 +178,12 @@ export function subscribeToTabTypeRemoval(listener: (types: string[]) => void): 
 
 export function getTabType(type: string): TabTypeRegistration | undefined {
   const registryId = resolveRegisteredTabType(type)
-  return registryId ? tabTypeStore[registryId] : undefined
+  const registration = registryId ? tabTypeStore[registryId] : undefined
+  // The registration stays, so the feature coming back on needs no reload, and a
+  // tab already open resolves to no component: the shell says why (MainPanel).
+  return registration && !isFeatureOff(registration.appId, registration.feature)
+    ? registration
+    : undefined
 }
 
 export function getTabTypes(): Record<string, TabTypeRegistration> {
@@ -254,6 +262,8 @@ export interface ActivityBarEntry {
   labelKey?: string
   order: number
   appId: string
+  /** The feature of the tab type this entry opens: off, the entry is hidden. */
+  feature?: string
   position?: "top" | "bottom"
   /**
    * True for an app whose UI arrives as an installed bundle (`/api/apps/<name>/
@@ -301,7 +311,9 @@ export function unregisterActivityBarEntry(id: string): void {
  *  registration stays, so its routes still resolve to the unavailable notice and
  *  turning it back On brings the entry back without a reload. Reactive. */
 export function getActivityBarEntries(): ActivityBarEntry[] {
-  return activityBarStore.entries.filter((e) => !isAppUnavailable(e.appId))
+  return activityBarStore.entries.filter(
+    (e) => !isAppUnavailable(e.appId) && !isFeatureOff(e.appId, e.feature),
+  )
 }
 
 /**
@@ -356,6 +368,8 @@ export interface SettingsSection {
   group?: "user" | "ai" | "admin" | "app" | "connectors"
   appId?: string
   adminScope?: string
+  /** A feature the app declares: off, the section is absent for everyone. */
+  feature?: string
   /**
    * An app's declarative settings page: the scope and admin scope of each of
    * its sections. The page is visible when the viewer sees at least one of
@@ -382,6 +396,9 @@ export interface SettingsPageSectionAccess {
   scope: "user" | "org"
   /** Org sections default to `kernel:apps:admin` (the server's default). */
   adminScope?: string
+  /** The feature this section belongs to, and its app. */
+  feature?: string
+  appId?: string
 }
 
 const [settingsStore, setSettingsStore] = createStore<{ sections: SettingsSection[] }>({
@@ -730,6 +747,27 @@ export function getKeybindings(): KeyBinding[] {
   return keybindingStore.bindings
 }
 
+/**
+ * Runs the first registered binding a keydown matches, and returns it. A
+ * keydown typed into a field (an input, a textarea, an editable element) only
+ * reaches bindings marked `activeInInput`, so typing a word into a search box
+ * never fires a single-letter shortcut such as "n" for a new message.
+ */
+export function dispatchKeybinding(e: KeyboardEvent): KeyBinding | null {
+  const target = e.target as HTMLElement | null
+  const tag = target?.tagName
+  const isInput = tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable === true
+  for (const binding of getKeybindings()) {
+    if (!binding.activeInInput && isInput) continue
+    if (matchesKey(e, binding.key)) {
+      e.preventDefault()
+      binding.handler(e)
+      return binding
+    }
+  }
+  return null
+}
+
 /** Cross-platform key matching. "mod" maps to Meta on Mac, Ctrl on Windows/Linux */
 export function matchesKey(e: KeyboardEvent, keySpec: string): boolean {
   const parts = keySpec.toLowerCase().split("+")
@@ -758,7 +796,7 @@ export function matchesKey(e: KeyboardEvent, keySpec: string): boolean {
 // ─── Slot & Contribution Registry ────────────────────────────────────
 
 export interface SlotDeclaration {
-  position: "tabs" | "toolbar" | "menu" | "sidebar"
+  position: "tabs" | "toolbar" | "menu" | "sidebar" | "sections"
 }
 
 export interface ContributionEntry {
@@ -1176,20 +1214,40 @@ export interface ManifestSavedView {
   defaults?: ManifestSavedViewDefault[]
 }
 
+/** A label an app declares: its English words and the catalog key a reader's
+ *  language is looked up by. */
+export interface ManifestLabel {
+  label: string
+  labelKey?: string
+}
+
 export interface ManifestAppData {
+  /** The heading over the app's attention items on Home. */
+  attention?: { groupLabel?: ManifestLabel }
   bulk?: Record<string, ManifestBulkAction>
   savedViews?: Record<string, ManifestSavedView>
   entities?: Record<string, { handlePrefix?: string; readScope?: string }>
 }
 
 const manifestAppData = new Map<string, ManifestAppData>()
+// Read by Home while apps are still loading: a label read tracks this version,
+// so a heading re-renders when its app's manifest arrives.
+const [manifestAppDataVersion, setManifestAppDataVersion] = createSignal(0)
 
 export function registerManifestAppData(appId: string, data: ManifestAppData): void {
   manifestAppData.set(appId, data)
+  setManifestAppDataVersion((v) => v + 1)
 }
 
 export function unregisterManifestAppData(appId: string): void {
   manifestAppData.delete(appId)
+  setManifestAppDataVersion((v) => v + 1)
+}
+
+/** The heading an app declares over its attention items, if it declares one. */
+export function getAttentionGroupLabel(appId: string): ManifestLabel | undefined {
+  manifestAppDataVersion()
+  return manifestAppData.get(appId)?.attention?.groupLabel
 }
 
 export function getManifestBulkActions(

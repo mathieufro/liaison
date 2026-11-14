@@ -27,6 +27,7 @@ import {
   normalizeApprovalPayload,
   proposingTurnScopesUnionSql,
 } from "~/modules/approvals/event-data"
+import { maskApprovalPayload } from "~/modules/approvals/payload-mask"
 import {
   narrowPendingApprovalForTaint,
   type TaintNarrowRow,
@@ -103,7 +104,11 @@ export async function restagePendingApproval(args: RestageArgs): Promise<Restage
     if (!locked || locked.status !== "pending") return { updated: false }
 
     const currentPayload = normalizeApprovalPayload(locked.current_payload)
-    const nextPayload = JSON.parse(JSON.stringify(args.toolParams ?? {})) as Record<string, unknown>
+    // Masked like a new request (payload-mask.ts): no card number or payment key is kept.
+    const nextPayload = maskApprovalPayload(
+      JSON.parse(JSON.stringify(args.toolParams ?? {})) as Record<string, unknown>,
+    )
+    const nextSummary = maskApprovalPayload(args.summary)
 
     // Top-level field diff — both the no-op decision and the audit trail (same
     // metadata shape the payload-edit path emits, so the UI renders it
@@ -146,8 +151,8 @@ export async function restagePendingApproval(args: RestageArgs): Promise<Restage
       from: ["pending"],
       set:
         priorApprovals > 0
-          ? drizzleSql`tool_params = ${JSON.stringify(nextPayload)}::jsonb, current_payload = ${JSON.stringify(nextPayload)}::jsonb, summary = ${JSON.stringify(args.summary)}::jsonb, metadata = metadata - 'approvedBy'${scopeUnion}`
-          : drizzleSql`tool_params = ${JSON.stringify(nextPayload)}::jsonb, current_payload = ${JSON.stringify(nextPayload)}::jsonb, summary = ${JSON.stringify(args.summary)}::jsonb${scopeUnion}`,
+          ? drizzleSql`tool_params = ${JSON.stringify(nextPayload)}::jsonb, current_payload = ${JSON.stringify(nextPayload)}::jsonb, summary = ${JSON.stringify(nextSummary)}::jsonb, metadata = metadata - 'approvedBy'${scopeUnion}`
+          : drizzleSql`tool_params = ${JSON.stringify(nextPayload)}::jsonb, current_payload = ${JSON.stringify(nextPayload)}::jsonb, summary = ${JSON.stringify(nextSummary)}::jsonb${scopeUnion}`,
       returning: drizzleSql`current_payload`,
     })
     if (!updated) return { updated: false }

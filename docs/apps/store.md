@@ -192,7 +192,6 @@ Read tools never wait. Every tool marked "Always" files an approval and changes 
 | `discounts_search`, `metafields_list` | Read discount codes and metafields | No |
 | `order_note_set` | Set an order's internal staff note | No |
 | `webhooks_repair` | Re-register the store webhooks | No |
-| `settings_load` | The settings panel data | No |
 | `order_update`, `order_cancel` | Change tags or note, cancel an order | Always |
 | `refunds_create` | Refund an order | Always |
 | `draft_orders_create`, `draft_orders_update`, `draft_orders_delete`, `draft_orders_send`, `draft_orders_complete` | Draft orders (quotes) | Always |

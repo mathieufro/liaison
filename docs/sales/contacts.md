@@ -3,7 +3,7 @@ title: Keep customers and prospects in Contacts
 description: "Find the people you deal with in Contacts, edit their details, sort them into groups and share them with your team."
 ---
 
-Contacts is Liaison's own directory of the people and companies you deal with. This page shows how contacts get there, how to find and edit them, how to group and share them, and what agents can do with them. Contacts is not a CRM: it has no deals, stages or pipeline. To read deals from your own CRM, see [Connect your own CRM or ERP](connect-your-crm.md).
+Contacts is Liaison's own directory of the people and companies you deal with. This page shows how contacts get there, how to find and edit them, how to group and share them, and what agents can do with them. Each person can belong to a [company](companies.md), which has its own page with a timeline, and deals are kept in [Projects](deals.md). To read deals from your own CRM instead, see [Connect your own CRM or ERP](connect-your-crm.md).
 
 ## What a contact holds
 
@@ -39,9 +39,9 @@ If a search under **People** finds nothing, click **Search all senders instead**
 
 1. Open the contact.
 2. Under **Identity**, click **Name**, **Phone** or **Company** to edit it in place, then confirm. The email is shown but cannot be edited here.
-3. The **Activity** section lists the contact's mail conversations, and **Tickets** lists their tickets.
+3. The **Activity** section is the person's timeline: their mail, tickets, invoices, meetings and deals, newest first. **Follow-ups** says whether commercial mail to them is allowed. Their **Company** links to the company's page. See [Companies](companies.md#the-persons-own-page).
 
-To delete a contact, click **More actions**, then **Delete contact**, then confirm **Delete this contact permanently?**.
+To delete a contact, click **More actions**, then **Delete contact**, then confirm **Delete this contact permanently?**. A contact that a recurring invoice schedule still bills cannot be deleted until that schedule ends or bills another person. Linked Stripe customers and ended schedules lose the link to the person.
 
 ## Discuss a contact with your team and agents
 
@@ -139,6 +139,10 @@ Open the contact. Under **Addresses** each address shows its role (**Billing**, 
 3. Click **Edit** to change an address, **Mark stale** when it may be out of date, or **Archive** to remove it from the list.
 
 If you can see a contact but not edit it, you see its addresses without these buttons.
+
+## Review prospects who have gone quiet
+
+Once a day, contacts recorded under professional interest that have sent no mail or ticket and had no deal for three years are listed on one Home item, for each person who is an admin and can edit contacts. Liaison deletes nothing: open the list and decide whom to keep. Not now hides the item until next week; once read, it comes back only when the list changes. Which contacts may get commercial mail at all is in [Mail](../apps/mail.md).
 
 ## Scopes
 

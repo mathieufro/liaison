@@ -19,6 +19,7 @@ import {
   beatArrives,
   beatIndexOf,
   beatOutcome,
+  type DemoWorldId,
   type EffectiveBeat,
   effectiveBeats,
   findTour,
@@ -36,7 +37,7 @@ import {
   tourCatalogue,
   type UpdateTourRequest,
 } from "@liaison/shared"
-import { and, eq, isNull, sql } from "drizzle-orm"
+import { and, eq, isNull, notInArray, sql } from "drizzle-orm"
 import type { RlsClient } from "~/db"
 import { type TourProgressRow, tourProgress } from "~/db/schema/kernel"
 import type { AppEvent } from "~/infra/events/event-bus"
@@ -46,7 +47,7 @@ import { customerLookupConfigured } from "~/modules/apps/connections/api/custome
 import { apiConnectionsOf } from "~/modules/apps/connections/api/declarations"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import { isDemoEgressRestricted } from "~/modules/demo/demo-egress"
-import { isDemoOrgId, isVisitorDemoOrgId } from "~/modules/demo/demo-org"
+import { demoWorldOf, isVisitorDemoOrgId, loadDemoMarker } from "~/modules/demo/demo-org"
 import { hasScope } from "~/modules/permissions/permissions"
 import { routineRaisedNothingFor } from "~/modules/tours/beat-status"
 
@@ -57,6 +58,8 @@ export type TourDb = Pick<RlsClient, "select" | "insert" | "update" | "queueEven
 export interface TourOrgContext {
   installedApps: readonly string[]
   isDemo: boolean
+  /** The demo world of the org (the default world outside a demo org). */
+  worldId: DemoWorldId
   features: readonly TourFeature[]
 }
 
@@ -74,8 +77,8 @@ export async function loadTourOrgContext(orgId: string): Promise<TourOrgContext>
   const installedApps = listInstalledAppNames(orgId)
   // An app that declares an API connection (declarations.ts), whatever its name.
   const connector = apiConnectionsOf(orgId).length > 0
-  const [isDemo, customerCard, connectorReadOnly] = await Promise.all([
-    isDemoOrgId(orgId),
+  const [marker, customerCard, connectorReadOnly] = await Promise.all([
+    loadDemoMarker(orgId),
     connector ? customerLookupConfigured(orgId) : false,
     // The page a demo org shows is read-only (api-connector routes, `readOnly`).
     connector ? isDemoEgressRestricted(orgId) : true,
@@ -83,7 +86,7 @@ export async function loadTourOrgContext(orgId: string): Promise<TourOrgContext>
   const features: TourFeature[] = []
   if (customerCard) features.push("customer-card")
   if (connector && !connectorReadOnly) features.push("connector-add")
-  return { installedApps, isDemo, features }
+  return { installedApps, isDemo: marker !== null, worldId: demoWorldOf(marker), features }
 }
 
 /**
@@ -94,7 +97,12 @@ export async function loadTourOrgContext(orgId: string): Promise<TourOrgContext>
  */
 export function availableTours(
   tours: readonly Tour[],
-  ctx: { installedApps: readonly string[]; scopes: readonly string[]; isDemo?: boolean },
+  ctx: {
+    installedApps: readonly string[]
+    scopes: readonly string[]
+    isDemo?: boolean
+    worldId?: DemoWorldId
+  },
 ): Tour[] {
   const held = [...ctx.scopes]
   return tours.filter((tour) => {
@@ -103,6 +111,7 @@ export function availableTours(
       installedApps: ctx.installedApps,
       scopes: [...held, ...covered],
       isDemo: ctx.isDemo,
+      worldId: ctx.worldId,
     })
   })
 }
@@ -111,6 +120,7 @@ export function tourBeats(tour: Tour, ctx: TourOrgContext): EffectiveBeat[] {
   return effectiveBeats(tour, {
     installedApps: ctx.installedApps,
     isDemo: ctx.isDemo,
+    worldId: ctx.worldId,
     features: ctx.features,
   })
 }
@@ -392,6 +402,30 @@ export async function assertWorldBeatAllowed(orgId: string): Promise<void> {
   if (!(await isVisitorDemoOrgId(orgId))) throw new TourWorldBeatRefusedError(orgId)
 }
 
+/**
+ * A single-run tour (`singleRun`) that was played, to its end or left: it does
+ * not start again. Only the demo's Start over, which gives the visitor a fresh
+ * workspace with no progress, plays it again.
+ */
+export class TourPlayedError extends Error {
+  readonly code = "tour_played"
+  constructor(readonly tourId: string) {
+    super("This scenario was played once; Start over plays it again")
+    this.name = "TourPlayedError"
+  }
+}
+
+/** The statuses that make a single-run tour played. */
+const PLAYED_STATUSES: readonly TourStatus[] = ["completed", "abandoned"]
+
+/** Whether `row` is a played run of a single-run `tour`, which does not start again. */
+export function isPlayedSingleRun(
+  tour: Tour,
+  row: Pick<TourProgressRow, "status"> | null,
+): boolean {
+  return tour.singleRun === true && row !== null && PLAYED_STATUSES.includes(row.status)
+}
+
 // ── persistence ────────────────────────────────────────────────────────────
 
 export async function readProgressRow(
@@ -466,7 +500,8 @@ export function tourFrameEvent(
  * told (`kernel/tour:start`). A tour that talks to the agent (`talksToAgent`)
  * records the person's DM with it, which the caller found
  * (`runConversationId`), as the run's `RUN_CONVERSATION`; it refuses to start
- * without one.
+ * without one. A played single-run tour is refused (`TourPlayedError`) and
+ * its row left as it is, even when another tab started it a moment before.
  */
 export async function startTour(
   db: TourDb,
@@ -507,9 +542,15 @@ export async function startTour(
     .onConflictDoUpdate({
       target: [tourProgress.orgId, tourProgress.userId, tourProgress.tourId],
       set: values,
+      // Checked in the same statement as the write: a run another tab just
+      // finished is never reset.
+      ...(input.tour.singleRun
+        ? { setWhere: notInArray(tourProgress.status, [...PLAYED_STATUSES]) }
+        : {}),
     })
     .returning()
-  const progress = progressOf(input.tour, row!, input.beats)
+  if (!row) throw new TourPlayedError(input.tour.id)
+  const progress = progressOf(input.tour, row, input.beats)
   await db.queueEvent(tourFrameEvent(input.orgId, input.userId, progress, "start", input.actor))
   return progress
 }

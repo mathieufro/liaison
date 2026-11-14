@@ -5,12 +5,13 @@
 // all six is the whole world with every scenario's extras; a subset is the
 // baseline plus each pick's apps and parts, and nothing unguided.
 import { describe, expect, it } from "bun:test"
+import { createHash } from "node:crypto"
 import type { TourBeat } from "@liaison/shared"
 import {
   DEMO_ENTRIES,
   DEMO_ENTRY_NEEDS,
   DEMO_NEED_SPECS,
-  DEMO_NEEDS,
+  DEMO_WORLD_NEEDS,
   type DemoNeed,
   isTourAvailable,
   SCENARIO_TOURS,
@@ -20,8 +21,9 @@ import { DEMO_WORLD } from "~/seed/world/fiction"
 import en from "../../../../../../packages/shared/src/i18n/locales/en/tours.json"
 import fr from "../../../../../../packages/shared/src/i18n/locales/fr/tours.json"
 import { DEMO_CONTENT_CATEGORY, demoBoxtalSender, demoShippingProfiles } from "./boxtal-catalog"
-import { DEMO_APPS, DEMO_BASELINE_APPS, demoSeedPlan } from "./demo-apps"
-import { SKILL_SPECS } from "./seed-agent-native"
+import { DEMO_APPS, DEMO_BASELINE_APPS, DEMO_WORLD_APPS, demoSeedPlan } from "./demo-apps"
+import { SKILL_SPECS, SUPPORT_SCENARIO_ROUTINE } from "./seed-agent-native"
+import { pooledFitPlan } from "./seed-demo"
 import { SEEDED_PROJECT_NAMES } from "./seed-support"
 
 /** The needs-driven plan, with every opt-in part on (each test below is about the needs). */
@@ -51,29 +53,32 @@ describe("demoSeedPlan", () => {
   it("no needs: today's world, every app, every part, not tailored", () => {
     const plan = demoSeedPlan(undefined, ON)
     expect(plan.tailored).toBe(false)
-    expect(plan.apps).toEqual(DEMO_APPS)
-    for (const need of DEMO_NEEDS) {
+    expect(plan.apps).toEqual(DEMO_WORLD_APPS.products)
+    for (const need of DEMO_WORLD_NEEDS.products) {
       for (const part of DEMO_NEED_SPECS[need].seedParts) expect(plan.parts.has(part)).toBe(true)
     }
   })
 
   it("everything (all six, any order): every app and part, tailored", () => {
-    const plan = demoSeedPlan([...DEMO_NEEDS].reverse(), ON)
+    const plan = demoSeedPlan([...DEMO_WORLD_NEEDS.products].reverse(), ON)
     expect(plan.tailored).toBe(true)
-    expect(plan.apps).toEqual(DEMO_APPS)
+    expect(plan.apps).toEqual(DEMO_WORLD_APPS.products)
     expect(plan.parts).toEqual(demoSeedPlan(undefined, ON).parts)
   })
 
-  it.each(DEMO_NEEDS.map((n) => [n]))("%s alone: baseline + its own apps and parts", (need) => {
-    const plan = demoSeedPlan([need as DemoNeed], ON)
-    const spec = DEMO_NEED_SPECS[need as DemoNeed]
-    for (const app of [...DEMO_BASELINE_APPS, ...spec.apps]) expect(plan.apps).toContain(app)
-    expect([...plan.parts].sort()).toEqual([...spec.seedParts].sort())
-    // Unguided apps (social) only with Everything.
-    expect(plan.apps).not.toContain("social")
-    // Every app installed is a demo app, in the demo order.
-    expect(plan.apps).toEqual(DEMO_APPS.filter((a) => plan.apps.includes(a)))
-  })
+  it.each(DEMO_WORLD_NEEDS.products.map((n) => [n]))(
+    "%s alone: baseline + its own apps and parts",
+    (need) => {
+      const plan = demoSeedPlan([need as DemoNeed], ON)
+      const spec = DEMO_NEED_SPECS[need as DemoNeed]
+      for (const app of [...DEMO_BASELINE_APPS, ...spec.apps]) expect(plan.apps).toContain(app)
+      expect([...plan.parts].sort()).toEqual([...spec.seedParts].sort())
+      // Unguided apps (social) only with Everything.
+      expect(plan.apps).not.toContain("social")
+      // Every app installed is a demo app, in the demo order.
+      expect(plan.apps).toEqual(DEMO_APPS.filter((a) => plan.apps.includes(a)))
+    },
+  )
 
   it("support alone installs no shop, no projects; commerce installs the whole commerce layer", () => {
     const support = demoSeedPlan(["support"], ON)
@@ -89,13 +94,15 @@ describe("demoSeedPlan", () => {
 
   it("turns Off exactly the demo apps not picked; Everything and an untailored seed none", () => {
     const plan = demoSeedPlan(["chat", "projects", "support", "sales"], ON)
-    expect([...plan.offApps].sort()).toEqual(DEMO_APPS.filter((a) => !plan.apps.includes(a)).sort())
+    expect([...plan.offApps].sort()).toEqual(
+      DEMO_WORLD_APPS.products.filter((a) => !plan.apps.includes(a)).sort(),
+    )
     for (const app of ["shopify", "boxtal", "monitoring", "social", "pennylane"]) {
       expect(plan.offApps).toContain(app)
     }
     // Sales quotes from invoicing (its routine's one request: record, quote, reply).
     expect(plan.apps).toContain("invoicing")
-    expect(demoSeedPlan([...DEMO_NEEDS], ON).offApps).toEqual([])
+    expect(demoSeedPlan([...DEMO_WORLD_NEEDS.products], ON).offApps).toEqual([])
     expect(demoSeedPlan(undefined, ON).offApps).toEqual([])
   })
 })
@@ -124,7 +131,7 @@ function appsUsedBy(beat: TourBeat): string[] {
 // need installs, picked alone.
 describe("demoSeedPlan: opt-in parts", () => {
   it("the warehouse is seeded only when the deployment turns it on, and named when it is off", () => {
-    for (const needs of [undefined, [...DEMO_NEEDS], ["commerce"] as DemoNeed[]]) {
+    for (const needs of [undefined, [...DEMO_WORLD_NEEDS.products], ["commerce"] as DemoNeed[]]) {
       const on = demoSeedPlan(needs, { warehouse: true })
       const off = demoSeedPlan(needs, { warehouse: false })
       expect(on.parts.has("warehouse")).toBe(true)
@@ -143,19 +150,22 @@ describe("demoSeedPlan: opt-in parts", () => {
 })
 
 describe("each scenario picked alone", () => {
-  it.each(DEMO_NEEDS.map((n) => [n]))("%s: its steps use only the apps it installs", (need) => {
-    const tour = SCENARIO_TOURS.find(
-      (t) => t.id === DEMO_NEED_SPECS[need as DemoNeed].scenarioTourId,
-    )
-    expect(tour).toBeDefined()
-    const installed = new Set(demoSeedPlan([need as DemoNeed], ON).apps)
-    const missing = (tour?.beats ?? []).flatMap((beat) =>
-      appsUsedBy(beat)
-        .filter((app) => !installed.has(app))
-        .map((app) => `${beat.id}: ${app}`),
-    )
-    expect(missing).toEqual([])
-  })
+  it.each(DEMO_WORLD_NEEDS.products.map((n) => [n]))(
+    "%s: its steps use only the apps it installs",
+    (need) => {
+      const tour = SCENARIO_TOURS.find(
+        (t) => t.id === DEMO_NEED_SPECS[need as DemoNeed].scenarioTourId,
+      )
+      expect(tour).toBeDefined()
+      const installed = new Set(demoSeedPlan([need as DemoNeed], ON).apps)
+      const missing = (tour?.beats ?? []).flatMap((beat) =>
+        appsUsedBy(beat)
+          .filter((app) => !installed.has(app))
+          .map((app) => `${beat.id}: ${app}`),
+      )
+      expect(missing).toEqual([])
+    },
+  )
 
   it("Team chat seeds a project for its task to go in, and not the Projects scenario's task", () => {
     const chat = demoSeedPlan(["chat"], ON)
@@ -258,5 +268,93 @@ describe("the demo's playbooks", () => {
   it("anchor to the screens they are about: none surfaces into a turn about projects", () => {
     const onProjects = SKILL_SPECS.filter((s) => (s.apps ?? []).includes("projects"))
     expect(onProjects.map((s) => s.name)).toEqual([])
+  })
+})
+
+/**
+ * Every products plan, need set by need set, both ways the deployment can set
+ * the warehouse: the plan the products world had before there were several.
+ */
+function productsPlans(plan: typeof demoSeedPlan): string {
+  const needs = DEMO_WORLD_NEEDS.products
+  const lines: string[] = []
+  for (const warehouse of [true, false]) {
+    const show = (label: string, picked: DemoNeed[] | undefined) => {
+      const p = plan(picked, { warehouse })
+      lines.push(
+        JSON.stringify([label, warehouse, p.tailored, p.apps, p.offApps, [...p.parts], p.partsOff]),
+      )
+    }
+    show("none", undefined)
+    for (let mask = 1; mask < 1 << needs.length; mask++) {
+      const picked = needs.filter((_, i) => mask & (1 << i))
+      show(picked.join(","), picked)
+    }
+  }
+  return createHash("sha256").update(lines.join("\n")).digest("hex")
+}
+
+describe("demoSeedPlan per world", () => {
+  it("the products plan is unchanged for every need set", () => {
+    const pinned = "6e985cba2097011a5a509818dbdca4b4ebe1b3a54068c0aadb547cc61884d523"
+    expect(productsPlans(demoSeedPlan)).toBe(pinned)
+    expect(productsPlans((needs, opts) => demoSeedPlan(needs, opts, "products"))).toBe(pinned)
+  })
+
+  it("a world installs only its own apps and turns Off every other demo app", () => {
+    const saas = demoSeedPlan(undefined, ON, "saas")
+    expect(saas.apps).toEqual(DEMO_WORLD_APPS.saas)
+    for (const app of ["shopify", "boxtal", "pennylane", "monitoring", "social", "api-connector"]) {
+      expect(saas.apps).not.toContain(app)
+      expect(saas.offApps).toContain(app)
+    }
+    expect(saas.parts.has("commerce")).toBe(false)
+    expect(saas.parts.has("stripe")).toBe(true)
+    // The products world never installs the payments app.
+    expect(demoSeedPlan(undefined, ON).apps).not.toContain("stripe")
+    expect(demoSeedPlan(["money"], ON).apps).not.toContain("stripe")
+  })
+
+  it("a software visitor who picked money gets the payments app, invoicing and the baseline with tickets off, the failed payments routine on and the support routine off", () => {
+    const fit = pooledFitPlan(["money"], "saas")
+    for (const app of ["stripe", "invoicing", ...DEMO_BASELINE_APPS]) {
+      expect(fit.apps).toContain(app)
+      expect(fit.offApps).not.toContain(app)
+    }
+    expect(fit.apps).not.toContain("tickets")
+    expect(fit.offApps).toContain("tickets")
+    // Only the support scenario's routine is switched Off: every routine the
+    // world seeded on (its failed payments routine among them) stays on.
+    expect(fit.routinesOff).toEqual([SUPPORT_SCENARIO_ROUTINE])
+    const plan = demoSeedPlan(["money"], ON, "saas")
+    for (const part of ["stripe", "recurring", "crm"] as const)
+      expect(plan.parts.has(part)).toBe(true)
+    expect(plan.parts.has("support-routine")).toBe(false)
+  })
+
+  it("a software workspace keeps Projects on whatever the picks: its deals board and product work live there", () => {
+    const door = DEMO_ENTRY_NEEDS.software
+    for (const needs of [
+      door,
+      ["money", "support", "dev"],
+      ["money"],
+      ["support"],
+      ["dev"],
+      ["knowledge"],
+    ] as DemoNeed[][]) {
+      const fit = pooledFitPlan(needs, "saas")
+      expect(fit.apps).toContain("projects")
+      expect(fit.offApps).not.toContain("projects")
+      expect(demoSeedPlan(needs, ON, "saas").apps).toContain("projects")
+    }
+    // The products world still turns Projects Off when no pick needs it.
+    expect(pooledFitPlan(["support"], "products").offApps).toContain("projects")
+  })
+
+  it("a pooled products workspace fits as it always did", () => {
+    const fit = pooledFitPlan(["support"], "products")
+    expect(fit.offApps).toEqual(demoSeedPlan(["support"], ON).offApps)
+    expect(fit.routinesOff).toEqual([])
+    expect(pooledFitPlan(["projects"], "products").routinesOff).toEqual([SUPPORT_SCENARIO_ROUTINE])
   })
 })

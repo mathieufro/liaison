@@ -1,0 +1,3 @@
+# Test files the services and software-company work adds to this suite.
+# The path-to-suite map for the demo worlds.
+scripts/test-map.test.ts

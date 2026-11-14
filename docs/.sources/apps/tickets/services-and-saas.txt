@@ -1,0 +1,5 @@
+Card numbers in mail and ticket messages are masked before storage -> apps/api/src/apps/tickets/inbound.ts (insertMessage) ; apps/api/src/modules/mail/page-write.ts (maskPageMessage)
+Only Luhn-valid numbers with a card network's prefix and length are hidden; a number right after an identifier label is kept -> packages/shared/src/pan-scan.ts (cardNetwork) ; packages/shared/src/pan-scan.ts (siretGrouping)
+A nearby security code is hidden -> packages/shared/src/pan-scan.ts (cardSpans)
+Notes are masked the same way -> apps/api/src/apps/tickets/admin.ts (addNote)
+An encrypted mailbox is masked where the agent reads it -> apps/api/src/modules/agent/mailbox-plaintext/mailbox-plaintext-broker.ts (renderContextBlock)

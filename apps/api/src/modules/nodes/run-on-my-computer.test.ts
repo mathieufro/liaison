@@ -9,11 +9,20 @@
 // visible than the conversation itself.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { sql } from "~/db"
 import { type UserContext, withRlsContext } from "~/db/rls"
+import {
+  normalizeAppGuide,
+  parseGuideMarkdown,
+  renderAppGuideBlock,
+  selectAppGuideParts,
+} from "~/modules/agent/context/app-guide"
 import { COMPUTER_MODE_SECTION } from "~/modules/agent/context/context"
 import { type RunContext, runContextStore } from "~/modules/agent/runtime/run-context"
 import { createTurnScopeAccumulator } from "~/modules/agent/scopes/turn-scope-accumulator"
+import { parseSkillFile } from "~/modules/agent/skills/skill-loader"
 import { PushFanoutTestAccess } from "~/modules/push/fanout-consumer"
 import { pushNodeSessionWaiting } from "~/modules/push/node-session-push"
 import type { PushPayload } from "~/modules/push/types"
@@ -25,6 +34,19 @@ import {
   RUN_ON_MY_COMPUTER_DESCRIPTION,
   summarizeRunOnMyComputer,
 } from "./run-on-my-computer"
+
+/**
+ * What the model reads about the tool once it is loaded: its description, and
+ * the section of the kernel guide about it, which arrives with the load.
+ */
+const TOOL_TEXT_LOADED = (() => {
+  const file = parseSkillFile(
+    readFileSync(path.join(import.meta.dir, "../agent/prompts/kernel/overview.md"), "utf8"),
+  )
+  const guide = normalizeAppGuide(parseGuideMarkdown(file.content, file.meta.tools))
+  const { sections } = selectAppGuideParts("kernel", guide, new Set(["kernel__run_on_my_computer"]))
+  return `${RUN_ON_MY_COMPUTER_DESCRIPTION}\n${renderAppGuideBlock("kernel", { sections })}`
+})()
 
 const HAIKU = "claude-haiku-4-5-20251001"
 const OPUS = "claude-opus-5-5"
@@ -186,10 +208,10 @@ describe("run_on_my_computer starts a session (P1-T20)", () => {
     expect(res.say).toBe("Started on Olive's Mac. Follow it in the card above.")
     expect(res.instruction).toContain("reply with exactly the `say` sentence")
     expect(res.instruction).toContain("never say whether any output has returned")
-    expect(RUN_ON_MY_COMPUTER_DESCRIPTION).toContain(
+    expect(TOOL_TEXT_LOADED).toContain(
       "on the card it posts in this conversation, which shows its progress and result",
     )
-    expect(RUN_ON_MY_COMPUTER_DESCRIPTION).not.toContain("the card is the only place")
+    expect(TOOL_TEXT_LOADED).not.toContain("the card is the only place")
     const [session] = await sessions()
     const allJobs = await jobs()
     expect(allJobs).toHaveLength(1)
@@ -309,7 +331,7 @@ describe("run_on_my_computer starts a session (P1-T20)", () => {
     const [none] = await sql<Array<{ effort: string | null }>>`
       SELECT effort FROM kernel.node_sessions WHERE id = ${plain.sessionId!}`
     expect(none.effort).toBeNull()
-    expect(RUN_ON_MY_COMPUTER_DESCRIPTION).toContain("reasoning level")
+    expect(TOOL_TEXT_LOADED).toContain("reasoning level")
   })
 
   it("S30: run_on_my_computer stores autonomy and finishWith the agent passed; absent → guided and null", async () => {
@@ -332,7 +354,7 @@ describe("run_on_my_computer starts a session (P1-T20)", () => {
     const plain = await run({ folder: "code" })
     expect(plain).toMatchObject({ status: "started" })
     expect(await stored(plain.sessionId!)).toEqual({ autonomy: "guided", finish_with: null })
-    expect(RUN_ON_MY_COMPUTER_DESCRIPTION).toContain("autonomy")
+    expect(TOOL_TEXT_LOADED).toContain("autonomy")
   })
 
   it("an unknown model is refused with the offered list", async () => {
@@ -377,13 +399,13 @@ describe("run_on_my_computer starts a session (P1-T20)", () => {
       "never write a model id from your own knowledge",
       "read it with kernel__computer_session_read",
     ]) {
-      expect(RUN_ON_MY_COMPUTER_DESCRIPTION).toContain(sentence)
+      expect(TOOL_TEXT_LOADED).toContain(sentence)
     }
     expect(COMPUTER_MODE_SECTION).toContain(
       "Never choose a model yourself, and never reuse one from memory, an earlier request or another conversation.",
     )
     // The steering half: the agent acts on the session itself.
-    expect(RUN_ON_MY_COMPUTER_DESCRIPTION).toContain("The answer carries the session's `sessionId`")
+    expect(TOOL_TEXT_LOADED).toContain("The answer carries the session's `sessionId`")
     expect(COMPUTER_MODE_SECTION).toContain("never send them to the card for that")
     expect(COMPUTER_MODE_SECTION).toContain("pass them as they said them and never ask again")
   })

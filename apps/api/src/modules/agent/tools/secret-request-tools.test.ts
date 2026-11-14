@@ -263,6 +263,20 @@ describe("request_secret kernel tool", () => {
     expect(String(connectCreds.error)).toContain("connection_credentials")
   })
 
+  it("a credentials card's note names what the card asks for, by its labels", async () => {
+    const posted = await tool()({
+      kind: "connection_credentials",
+      target: { app: "mail", connection: "imap" },
+    })
+    const secretLabels = (
+      connectionConfigRegistry.get([orgId, "mail", "imap"])?.credentialFields ?? []
+    )
+      .filter((f) => f.type === "password")
+      .map((f) => f.label)
+    expect(secretLabels.length).toBeGreaterThan(0)
+    expect(String(posted.note)).toContain(`The card asks for: ${secretLabels.join(", ")}.`)
+  })
+
   it("asks a Google connection's client as the Google integration client, never its own", async () => {
     for (const [app, connection] of [
       ["mail", "gmail"],

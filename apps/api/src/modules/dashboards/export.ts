@@ -616,7 +616,8 @@ function plainMarkdown(md: string): string {
 // ── a PDF staged for its caller (agent) ────────────────────────────────────
 
 /**
- * Stores `bytes` as a kernel file staged in an upload session the viewer owns: only they can
+ * Stores `bytes` (a PDF unless `file.mimeType` says otherwise) as a kernel file staged in an
+ * upload session the viewer owns: only they can
  * read it (file_upload_sessions_owner), and it attaches to a reply like a staged upload
  * (the same path as files_merge_pdfs, pdf/merge.ts).
  */
@@ -624,7 +625,10 @@ export async function stagePdfForViewer(
   viewer: DashboardViewer,
   bytes: Uint8Array,
   filename: string,
+  file: { mimeType?: string; purpose?: string } = {},
 ): Promise<{ fileId: string; byteSize: number; filename: string }> {
+  const mimeType = file.mimeType ?? "application/pdf"
+  const purpose = file.purpose ?? "dashboard_pdf"
   // The quota first: a full org stages nothing (no empty upload session left behind).
   const full = await withPrivilegedDb(viewer.orgId, "dashboard-pdf-quota", async (tx) =>
     wouldExceedOrgQuota(
@@ -639,7 +643,7 @@ export async function stagePdfForViewer(
   const sessionId = await withRlsContext(viewer, async (t) => {
     const rows = (await t.execute<{ id: string }>(
       sql`INSERT INTO ${K}.file_upload_sessions (org_id, created_by, target_app, target_entity_type)
-          VALUES (${viewer.orgId}, ${viewer.userId}, 'kernel', 'dashboard_pdf')
+          VALUES (${viewer.orgId}, ${viewer.userId}, 'kernel', ${purpose})
           RETURNING id::text AS id`,
     )) as unknown as { id: string }[]
     return rows[0]?.id
@@ -653,7 +657,7 @@ export async function stagePdfForViewer(
     entityId: sessionId,
     filename,
   })
-  await putObject({ key: storageKey, body: bytes, contentType: "application/pdf" })
+  await putObject({ key: storageKey, body: bytes, contentType: mimeType })
   // A failed insert leaves no object nothing refers to.
   await withPrivilegedDb(viewer.orgId, "dashboard-pdf-insert", async (tx) => {
     await tx.insert(files).values({
@@ -663,7 +667,7 @@ export async function stagePdfForViewer(
       entityType: "file_upload_session",
       entityId: sessionId,
       filename,
-      mimeType: "application/pdf",
+      mimeType,
       sizeBytes: bytes.byteLength,
       storageKey,
       uploadedBy: viewer.userId,

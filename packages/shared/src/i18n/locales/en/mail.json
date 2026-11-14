@@ -253,5 +253,39 @@
     "timeout": "The mail server did not answer in time. Liaison tries again on its own.",
     "tls": "The secure connection to the mail server failed. Check the port and the security setting."
   },
-  "personalMailboxTransparentNotice": "Mail from your personal mailbox is encrypted at rest. Only you and your agent can read it; your organization's admins cannot. There is no mailbox password to set."
+  "personalMailboxTransparentNotice": "Mail from your personal mailbox is encrypted at rest. Only you and your agent can read it; your organization's admins cannot. There is no mailbox password to set.",
+  "suppressions": {},
+  "commercialIdentity": {
+    "title": "Commercial identity",
+    "help": "Every commercial mail (a follow-up or offer to a prospect) ends with this legal name and postal address, an opt-out link and \"or reply stop\". Until both are set, Liaison sends no commercial mail.",
+    "legalName": "Legal name",
+    "postalAddress": "Postal address",
+    "saved": "Commercial identity saved.",
+    "saveFailed": "The commercial identity could not be saved."
+  },
+  "recipientFacts": {
+    "basis": "Basis: {{basis}}",
+    "noBasis": "No recorded basis",
+    "business": "Business",
+    "consumer": "Consumer",
+    "consumerUnknown": "Consumer or business not recorded",
+    "optedOut": "Opted out on {{date}}",
+    "notOptedOut": "Not opted out"
+  },
+  "commercialFooter": {
+    "optOut": "To stop commercial messages from {{name}}: {{url}} or reply stop.",
+    "linkLabel": "(opt-out link)",
+    "composerNote": "This mail goes to a prospect, so these lines are added when it is sent, in their language. They cannot be removed.",
+    "checkFailed": "Could not check whether this mail is commercial. It is checked again when you send.",
+    "noBasis": "No recorded basis for writing to {{name}} commercially",
+    "recordBasis": "Record a basis",
+    "basisConsent": "Consent",
+    "basisCustomer": "Existing customer",
+    "basisProfessionalInterest": "Professional interest",
+    "basisGenericAddress": "Generic company address",
+    "recordBasisFailed": "The basis was not recorded. Try again, or record it on their contact.",
+    "noticeThirdParty": "{{name}} received your address from a third party and uses it only for professional messages like this one. You can object at any time with the link below.",
+    "noticeEnrichment": "{{name}} found your address in a public business source and uses it only for professional messages like this one. You can object at any time with the link below.",
+    "noticeUnknown": "If you did not give us your address yourself, {{name}} obtained it from another source and uses it only for professional messages like this one. You can object at any time with the link below."
+  }
 }

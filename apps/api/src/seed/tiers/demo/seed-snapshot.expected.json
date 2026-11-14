@@ -1,8 +1,4 @@
 {
-  "app_api_connector.adapters": {
-    "rows": 1,
-    "digest": "3c73adcbd0e3a486"
-  },
   "app_boxtal.app_config": {
     "rows": 1,
     "digest": "7af7efe955b0cc74"
@@ -57,7 +53,7 @@
   },
   "app_calendar.events": {
     "rows": 8,
-    "digest": "a5eede9d0431d3ef"
+    "digest": "a1b0dc447f97ac2e"
   },
   "app_invoicing.contact_relationships": {
     "rows": 30,
@@ -69,7 +65,7 @@
   },
   "app_invoicing.documents": {
     "rows": 37,
-    "digest": "9f3c878b1a44cb5a"
+    "digest": "8dbd7dba35a3ab1f"
   },
   "app_invoicing.hs_code_library": {
     "rows": 5,
@@ -116,16 +112,16 @@
     "digest": "38811e6ac298c6ee"
   },
   "app_mail.conversations": {
-    "rows": 6,
-    "digest": "4aa6a2ad6086aba1"
+    "rows": 7,
+    "digest": "2785f577bc6d2865"
   },
   "app_mail.messages": {
-    "rows": 7,
-    "digest": "379fc8afe1805c4c"
+    "rows": 9,
+    "digest": "a3d5bd77fba913de"
   },
   "app_monitoring.incidents": {
     "rows": 15,
-    "digest": "b6c94744ff03570c"
+    "digest": "e15724a53be80018"
   },
   "app_pennylane.account_class_map": {
     "rows": 7,
@@ -139,21 +135,33 @@
     "rows": 1,
     "digest": "7d8ea4b5a34b0f08"
   },
+  "app_projects.deal_values": {
+    "rows": 9,
+    "digest": "5e1182d122d45062"
+  },
+  "app_projects.deals": {
+    "rows": 9,
+    "digest": "d569cf6b2989eef6"
+  },
   "app_projects.project_statuses": {
-    "rows": 20,
-    "digest": "cf3507c626ecae49"
+    "rows": 26,
+    "digest": "1c8f6ccd7c1fc66e"
   },
   "app_projects.projects": {
-    "rows": 4,
-    "digest": "e250b121c2a524a0"
+    "rows": 5,
+    "digest": "c925050e9024ef7a"
   },
   "app_projects.task_dependencies": {
     "rows": 10,
     "digest": "c62f734ea4ddbf71"
   },
+  "app_projects.task_transitions": {
+    "rows": 36,
+    "digest": "47788ff8805cd1aa"
+  },
   "app_projects.tasks": {
-    "rows": 27,
-    "digest": "b2327a8876e77683"
+    "rows": 36,
+    "digest": "b6006c9fd350ef87"
   },
   "app_social.dm_conversation": {
     "rows": 3,
@@ -189,7 +197,7 @@
   },
   "app_tickets.messages": {
     "rows": 16,
-    "digest": "6a5d9411e5b035b6"
+    "digest": "8a1f1b3b51390b8d"
   },
   "app_tickets.ticket_reads": {
     "rows": 8,
@@ -217,7 +225,11 @@
   },
   "kernel.agents": {
     "rows": 12,
-    "digest": "34e926a219721575"
+    "digest": "18c265740defb4dc"
+  },
+  "kernel.api_adapters": {
+    "rows": 1,
+    "digest": "9704e1509ccb98d6"
   },
   "kernel.app_seeded_assets": {
     "rows": 9,
@@ -229,15 +241,19 @@
   },
   "kernel.approval_requests": {
     "rows": 3,
-    "digest": "f20ae2c8af9c7d98"
+    "digest": "9f916c3abef3049b"
   },
   "kernel.apps": {
-    "rows": 21,
-    "digest": "760f0ccfdba1c3cd"
+    "rows": 19,
+    "digest": "052d98e5fb6708ac"
   },
   "kernel.audit_log": {
     "rows": 35,
     "digest": "332154ef00bdad96"
+  },
+  "kernel.companies": {
+    "rows": 13,
+    "digest": "2dd28ed49278fdd8"
   },
   "kernel.config_applied_fields": {
     "rows": 8,
@@ -249,7 +265,7 @@
   },
   "kernel.contacts": {
     "rows": 41,
-    "digest": "68f571671a7d5c5d"
+    "digest": "af7f7ba9851701e4"
   },
   "kernel.credit_balances": {
     "rows": 1,
@@ -264,8 +280,8 @@
     "digest": "80cdbe01c0fdd51d"
   },
   "kernel.pending_events": {
-    "rows": 282,
-    "digest": "b715ead6dd5511d6"
+    "rows": 362,
+    "digest": "c08156c69d178f7d"
   },
   "kernel.resource_grants": {
     "rows": 7,
@@ -273,11 +289,11 @@
   },
   "kernel.roles": {
     "rows": 32,
-    "digest": "2046331e3e7b0955"
+    "digest": "b5d0feb3a042f17a"
   },
   "kernel.routines": {
     "rows": 7,
-    "digest": "22ce18a008ffbf1a"
+    "digest": "4d4c455a7e0e7424"
   },
   "kernel.saved_views": {
     "rows": 8,
@@ -292,12 +308,12 @@
     "digest": "7eb2edec8666f96a"
   },
   "kernel.thread_participants": {
-    "rows": 91,
-    "digest": "8edb1b8e517277a7"
+    "rows": 109,
+    "digest": "38a499b350f49df8"
   },
   "kernel.threads": {
-    "rows": 37,
-    "digest": "7183737ad92d02e3"
+    "rows": 46,
+    "digest": "083f4459e13ff13b"
   },
   "kernel.user_dimension_grants": {
     "rows": 8,
@@ -308,11 +324,11 @@
     "digest": "5450128f5005cd9a"
   },
   "kernel.user_thread_state": {
-    "rows": 60,
-    "digest": "e6e2471891b52ad8"
+    "rows": 69,
+    "digest": "2a56c4add15fa033"
   },
   "kernel.users": {
     "rows": 8,
-    "digest": "3d91e9f551131e27"
+    "digest": "5f24d5a0c6b6be52"
   }
 }

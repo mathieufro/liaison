@@ -49,6 +49,8 @@ test.describe("the You seat and the work surfaces at phone width", () => {
     await expect(notifRow).toBeVisible()
     await expect(page.locator("[data-testid^='you-toggle-notifications-']")).toHaveCount(0)
     const viewportWidth = await page.evaluate(() => window.innerWidth)
+    // The rows are rebuilt while the sections and apps load, so measure once one holds a box.
+    await expect.poll(() => notifRow.boundingBox()).not.toBeNull()
     const box = await notifRow.boundingBox()
     expect(box).not.toBeNull()
     expect(box!.x + box!.width).toBeLessThanOrEqual(viewportWidth)

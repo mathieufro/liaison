@@ -1,0 +1,5 @@
+LIAISON_TEST_SHOPIFY_ADMIN_URL sends the Shopify app's Admin API requests to a fake origin, token included -> apps/api/src/modules/apps/sandbox/bridge/shopify-fake-admin.ts (shopifyFakeAdminTarget) ; apps/api/src/modules/apps/sandbox/bridge/egress.ts (createEgressMethods)
+Covers connect, disconnect, jobs and reads: every Admin API call of the app goes through ctx.fetch -> bundled-apps/shopify/src/lib/get-client.ts (getShopifyClient) ; bundled-apps/shopify/src/connection.ts (buildShopifyClient)
+One bare origin on the box: loopback, one-label service name or host.docker.internal -> apps/api/src/lib/shopify-fake-admin-gate.ts (parseFakeOrigin)
+Only with LIAISON_PRIVATE_DEMO_BOX and a loopback BASE_URL, never managed -> apps/api/src/lib/shopify-fake-admin-gate.ts (shopifyFakeAdminGate)
+Set anywhere else, the server refuses to start -> apps/api/src/lib/env.ts (SHOPIFY_FAKE_ADMIN_ENV)

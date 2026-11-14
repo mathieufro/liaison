@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-import { agentSpeakerName, PERSONAL_AGENT_DISPLAY_NAME } from "@liaison/shared"
+import { agentSpeakerName, maskWithNote, PERSONAL_AGENT_DISPLAY_NAME } from "@liaison/shared"
 import { and, sql as drizzleSql, eq, inArray, isNull } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { HTTPException } from "hono/http-exception"
@@ -512,7 +512,7 @@ export async function sendMessage(db: RlsClient, params: SendMessageParams) {
     orgId,
     userId,
     threadId,
-    content,
+    content: givenContent,
     authorType = "user",
     agentAuthorLabel,
     correlationId,
@@ -526,6 +526,10 @@ export async function sendMessage(db: RlsClient, params: SendMessageParams) {
   } = params
 
   assertExplicitRequiredScopes(givenRequiredScopes)
+  // Card numbers and payment keys are masked HERE, before the row, the event,
+  // the search index, the live fan-out and the next model request read the
+  // text: every one of them reads `content` from this point on.
+  const content = maskWithNote(givenContent).text
   // A grant wildcard is never a data scope (scope-taint.ts, rule 10b): whatever a caller hands
   // in (a requester's own grant set, an effective scope), the row is stamped with the read
   // scopes it covers, never with `*`, which only the grant `*` covers.
@@ -879,7 +883,9 @@ export async function sendMessage(db: RlsClient, params: SendMessageParams) {
 }
 
 export async function editMessage(db: RlsClient, params: EditMessageParams) {
-  const { orgId, userId, threadId, messageId, content, isAdmin = false } = params
+  const { orgId, userId, threadId, messageId, isAdmin = false } = params
+  // Masked before the update and its event, as on a new message.
+  const content = maskWithNote(params.content).text
 
   // Verify user is still a participant — removed participants cannot edit old messages
   const [participant] = await db
@@ -1979,7 +1985,7 @@ export async function postThreadSystemMessage(
     replyRootId?: string | null
   },
 ) {
-  const content = params.content
+  const content = maskWithNote(params.content).text
   const metadata = params.metadata ?? null
   const replyRootId = params.replyRootId ?? null
   let requiredScopes: string[] = []

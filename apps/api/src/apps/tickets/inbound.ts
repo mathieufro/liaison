@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
 import { randomUUID } from "node:crypto"
-import { PUBLIC_EMAIL_PROVIDERS } from "@liaison/shared"
+import {
+  maskHtmlWithNote,
+  maskPaymentSecrets,
+  maskWithNote,
+  PUBLIC_EMAIL_PROVIDERS,
+} from "@liaison/shared"
 import { sql as drizzleSql } from "drizzle-orm"
 import { lookupTicketIdByHandle } from "~/apps/tickets/display-handle"
 import { detectAutoResponder } from "~/apps/tickets/inbound-auto-responder"
@@ -405,9 +410,13 @@ async function insertMessage(
   const fromName = params.raw.from?.name ?? null
   const toEmails = (params.raw.to ?? []).map((a) => a.email)
   const ccEmails = (params.raw.cc ?? []).map((a) => a.email)
-  const subject = params.raw.subject ?? null
-  const html = params.raw.htmlBody ? sanitizeCustomerHtml(params.raw.htmlBody) : null
-  const text = params.raw.textBody ?? null
+  // Card numbers and payment keys are masked before the row is written, so no
+  // reader (a person, an agent, search, an export) ever meets the full value.
+  const subject = params.raw.subject ? maskPaymentSecrets(params.raw.subject).text : null
+  const html = params.raw.htmlBody
+    ? maskHtmlWithNote(sanitizeCustomerHtml(params.raw.htmlBody)).text
+    : null
+  const text = params.raw.textBody ? maskWithNote(params.raw.textBody).text : null
   const snippet = (text ?? html ?? "").slice(0, 200)
   const externalMessageId = params.raw.messageId ?? null
   const inReplyTo = params.raw.inReplyTo ?? null

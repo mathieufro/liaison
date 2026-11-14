@@ -32,15 +32,18 @@ describe("alreadyPendingMessage", () => {
     expect(message).toMatch(/Only if that update is refused, tell the user/)
   })
 
-  it("names no field when the tool declares none", () => {
-    expect(
-      alreadyPendingMessage({
-        toolName: "x:y",
-        keyParam: "k",
-        keyValue: "v",
-        approvalRequestId: "a",
-        editableFields: [],
-      }),
-    ).toContain("editable fields: (none)")
+  it("with no editable field, points at the waiting card instead of an edit", () => {
+    const m = alreadyPendingMessage({
+      toolName: "x:y",
+      keyParam: "k",
+      keyValue: "v",
+      approvalRequestId: "a",
+      editableFields: [],
+    })
+    expect(m.startsWith("NOT STAGED:")).toBe(true)
+    expect(m).toContain("Do NOT call x:y again")
+    expect(m).toContain("approvalRequestId a")
+    expect(m).not.toContain("approval_update_payload")
+    expect(m).toContain("no tool decides it")
   })
 })

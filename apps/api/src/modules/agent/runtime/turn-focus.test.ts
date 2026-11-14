@@ -10,8 +10,10 @@ import { estimateToolSchemaTokens } from "~/modules/agent/context/context"
 import { entityRegistry, viewRegistry } from "~/modules/apps/app-registries"
 import {
   actsOnEntity,
+  entityRank,
   FOCUS_ENTITY_TOOLS_CEILING_FACTOR,
   type FocusApp,
+  focusCorePreload,
   focusHeadroomFill,
   focusOverflow,
   isRegisteredEntityType,
@@ -248,5 +250,61 @@ describe("a soft focus app fills the room left, and only that", () => {
       cap: 500 + room,
     })
     expect(out).toEqual(["tickets__reply", "tickets__categories_list"])
+  })
+})
+
+describe("a hard focus app with a core list", () => {
+  const coreTools = {
+    invoicing__documents_search: { description: "Search documents.", inputSchema: schema("q") },
+    invoicing__documents_get: {
+      description: "Get one document.",
+      inputSchema: schema("id"),
+      focusCore: true,
+    },
+    invoicing__drafts_update: {
+      description: "Edit a draft.",
+      inputSchema: schema("draft_id"),
+      focusCore: "document",
+    },
+    invoicing__vat_lookup: { description: "Look up a VAT number.", inputSchema: schema("vat") },
+    tickets__reply: { description: "Reply.", inputSchema: schema("ticketId") },
+    tickets__search: { description: "Search tickets.", inputSchema: schema("q") },
+  }
+  const invoicing = Object.keys(coreTools).filter((n) => n.startsWith("invoicing__"))
+  const tickets = Object.keys(coreTools).filter((n) => n.startsWith("tickets__"))
+
+  it("loads its core list and lists its other tools by name only", () => {
+    const focus = focusOf("invoicing", { verifiedEntityTypes: new Set(["document"]) })
+    expect(focusCorePreload({ candidates: invoicing, tools: coreTools, focus })).toEqual({
+      preload: ["invoicing__documents_get", "invoicing__drafts_update"],
+      indexOnly: ["invoicing__documents_search", "invoicing__vat_lookup"],
+    })
+  })
+
+  it("loads a tool named for an entity type only when the server read that entity", () => {
+    const viewed = focusOf("invoicing", { viewEntityTypes: new Set(["document"]) })
+    expect(
+      focusCorePreload({ candidates: invoicing, tools: coreTools, focus: viewed }).preload,
+    ).toEqual(["invoicing__documents_get"])
+    const other = focusOf("invoicing", { verifiedEntityTypes: new Set(["pdf"]) })
+    expect(
+      focusCorePreload({ candidates: invoicing, tools: coreTools, focus: other }).preload,
+    ).toEqual(["invoicing__documents_get"])
+  })
+
+  it("an app with no core list loads every tool, as before", () => {
+    const focus = focusOf("tickets", { verifiedEntityTypes: new Set(["ticket"]) })
+    expect(focusCorePreload({ candidates: tickets, tools: coreTools, focus })).toEqual({
+      preload: tickets,
+      indexOnly: [],
+    })
+  })
+
+  it("ranks a tool named for the entity the server read as acting on it, whatever its input", () => {
+    const verified = focusOf("invoicing", { verifiedEntityTypes: new Set(["document"]) })
+    const viewed = focusOf("invoicing", { viewEntityTypes: new Set(["document"]) })
+    expect(entityRank("invoicing__drafts_update", coreTools, verified)).toBe(2)
+    expect(entityRank("invoicing__drafts_update", coreTools, viewed)).toBe(0)
+    expect(entityRank("invoicing__documents_get", coreTools, verified)).toBe(0)
   })
 })

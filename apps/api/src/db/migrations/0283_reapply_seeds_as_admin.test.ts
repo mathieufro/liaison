@@ -165,6 +165,8 @@ beforeAll(async () => {
       FOR r IN SELECT nspname FROM pg_namespace
                 WHERE nspname = 'kernel' OR nspname = 'drizzle' OR nspname LIKE 'app\\_%' LOOP
         EXECUTE format('ALTER SCHEMA %I OWNER TO "${login}"', r.nspname);
+        -- A table the login creates later is handed to liaison_admin, which needs CREATE on the schema.
+        EXECUTE format('GRANT CREATE ON SCHEMA %I TO liaison_admin', r.nspname);
       END LOOP;
       FOR r IN SELECT n.nspname, c.relname FROM pg_class c
                  JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -189,6 +191,17 @@ beforeAll(async () => {
   await withRoleCatalogLock(adminUrl, () =>
     runMigrations(freshAsSuperuser.toString(), { migrationsFolder: upToFix }),
   )
+  // A later migration hands the portal role to the request login. Roles are cluster wide and
+  // the replay above took the request login's extra memberships back, so the login needs the
+  // ADMIN option on the portal role to give it again, as the owner of a role has; the role
+  // itself is created here when the cluster has none yet, since the login cannot create roles.
+  await admin.unsafe(`DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'liaison_portal') THEN
+        CREATE ROLE liaison_portal NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+      END IF;
+    END $$`)
+  await admin.unsafe(`GRANT liaison_portal TO "${login}" WITH ADMIN OPTION`)
   // Had the login run those itself, it would own the functions they created: a later migration
   // replaces one (CREATE OR REPLACE needs its owner). The ones given to a runtime role stay theirs.
   await fresh.unsafe(`DO $$
@@ -254,6 +267,8 @@ describe("0283: seeds re-applied as liaison_admin, by a non-superuser migration 
 
   test("a member role gains the products (0254) and mcp-manager (0133, 0134) scopes", async () => {
     expect(await scopesOf(MEMBER_ROLE)).toEqual([
+      "kernel:companies:read",
+      "kernel:companies:write",
       "kernel:contacts:read",
       "kernel:contacts:write",
       "kernel:products:read",
@@ -265,8 +280,9 @@ describe("0283: seeds re-applied as liaison_admin, by a non-superuser migration 
   })
 
   test("a scope an admin revoked is not given back, and an app role gets nothing", async () => {
-    expect(await scopesOf(REVOKED_ROLE)).toEqual(["kernel:contacts:read"])
-    expect(await scopesOf(APP_ROLE)).toEqual(["kernel:contacts:read"])
+    // The companies scopes follow the contacts scopes a role holds (the companies migration).
+    expect(await scopesOf(REVOKED_ROLE)).toEqual(["kernel:companies:read", "kernel:contacts:read"])
+    expect(await scopesOf(APP_ROLE)).toEqual(["kernel:companies:read", "kernel:contacts:read"])
   })
 
   test("its users' sessions are told to refresh", async () => {

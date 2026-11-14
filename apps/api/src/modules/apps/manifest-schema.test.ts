@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { describe, expect, it } from "bun:test"
-import { validateAppManifest } from "~/modules/apps/contract"
+import { firstPartyOnlyToolKeyErrors, validateAppManifest } from "~/modules/apps/contract"
 
 describe("manifest schema: bulk", () => {
   it("requires perItemParam when dispatchMode=perItem", () => {
@@ -770,5 +770,42 @@ describe("manifest schema: connection multiInstance", () => {
       allowedDomains: ["x.example"],
     })
     expect(r.success).toBe(false)
+  })
+})
+
+describe("manifest schema: where a call may run", () => {
+  const withKeys = () => ({
+    name: "x",
+    version: "1.0.0",
+    tools: {
+      mine: {
+        description: "m",
+        requiredScopes: ["x:y:read"],
+        handler: "h",
+        readOnly: true,
+        humanTurnOnly: true,
+      },
+      private_read: {
+        description: "p",
+        requiredScopes: ["x:y:read"],
+        handler: "h",
+        readOnly: true,
+        dmOnly: true,
+      },
+    },
+  })
+
+  it("the schema accepts both keys as booleans and refuses another type", () => {
+    expect(validateAppManifest(withKeys()).success).toBe(true)
+    const wrong = withKeys()
+    ;(wrong.tools.mine as Record<string, unknown>).humanTurnOnly = "yes"
+    expect(validateAppManifest(wrong).success).toBe(false)
+  })
+
+  it("a third-party manifest cannot declare the two keys", () => {
+    const errors = firstPartyOnlyToolKeyErrors(withKeys())
+    expect(errors).toHaveLength(2)
+    expect(errors[0]).toContain("tools.mine.humanTurnOnly: only a first-party app may declare it")
+    expect(errors[1]).toContain("tools.private_read.dmOnly: only a first-party app may declare it")
   })
 })

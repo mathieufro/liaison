@@ -1,0 +1,45 @@
+{
+  "entry": "tool:connection_precheck",
+  "params": {},
+  "unrecorded": {
+    "reason": "hand-written, not recorded: a recording needs a restricted Stripe key, which the recording run does not have yet. Awaiting a recording against a Stripe test account."
+  },
+  "expectError": {
+    "reason": "the replay holds no restricted key, so the host refuses the call before it reaches Stripe; the working path waits for a recording with a restricted key"
+  },
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": ["install_metadata", "{\"limit\":1}"],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": ["stripe_customers", "{\"limit\":3}"],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": ["stripe_subscriptions", "{\"limit\":3}"],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": ["stripe_invoices", "{\"limit\":3}"],
+      "reply": "[]"
+    },
+    {
+      "method": "fetch",
+      "args": [
+        "https://api.stripe.com/v1/customers?limit=1",
+        "{\"method\":\"GET\",\"headers\":{\"Stripe-Version\":\"2026-10-28.endive\"},\"auth\":{\"connection\":\"stripe\",\"scheme\":\"bearer\",\"fields\":[\"restrictedKey\"]}}"
+      ],
+      "error": {
+        "message": "Connection \"stripe\" has no token",
+        "status": 409,
+        "code": "credential_missing"
+      }
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

@@ -38,6 +38,13 @@ export interface Task {
   checklist?: ChecklistStatus | null
   /** Effective labels as the server computed them (own and inherited); absent on optimistic rows. */
   labels?: TaskLabel[]
+  /**
+   * Time keys: the server sends them only on a task of a project using time and budgets.
+   * `realTotalMinutes` is the task's total, with no one's part named.
+   */
+  timeboxMinutes?: number | null
+  realTotalMinutes?: number
+  isMilestone?: boolean
   /** Values of the project's task fields, {fieldKey: value}; absent on optimistic rows. */
   fields?: Record<string, unknown>
   /** When the task entered its current status. */
@@ -68,6 +75,18 @@ export interface ProjectDetail {
   checklistOnCards?: boolean
   /** The key no longer changes: the project holds a task (server rule). */
   keyLocked?: boolean
+  /** A sales pipeline: its board shows deals. Absent on an ordinary project. */
+  kind?: "pipeline"
+  /** The project's client company; absent when none is set. */
+  companyId?: string | null
+  /**
+   * Time and budgets on this project. The server sends the key only while the org uses it (or
+   * the call just set it), so an absent key reads as off.
+   */
+  timeBudgets?: boolean
+  /** When and by whom the switch was last turned; present once it was ever turned. */
+  timeBudgetsChangedAt?: string
+  timeBudgetsChangedBy?: { id: string; name: string }
   /** The project's task fields (dashboard column shape), in order; absent or empty = none. */
   fields?: TableColumn[]
 }
@@ -387,6 +406,8 @@ export const projectStore = {
     return null
   },
   load: loadProject,
+  /** Read the project and its tasks again in place (after the server said time and budgets are off). */
+  refresh: refetchProject,
   /** Reflect an archive / restore the server confirmed on the open project. */
   setArchivedAt(projectId: string, archivedAt: string | null) {
     if (state.byProjectId[projectId]?.current) {

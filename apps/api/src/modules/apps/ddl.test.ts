@@ -5,6 +5,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   generateAlterTableDdl,
+  generateNotNullLoosenDdl,
   generateTableDdl,
   generateTriggerDdl,
   mapFieldTypeToPgDataType,
@@ -284,5 +285,23 @@ describe("enum CHECK reconciliation", () => {
     )
     expect(stmts[1]).toContain('ADD CONSTRAINT "documents_type_check"')
     expect(stmts[1]).toContain(`CHECK ("type" IN ('invoice', 'credit_note', 'o''brien'))`)
+  })
+})
+
+describe("generateNotNullLoosenDdl", () => {
+  it("drops NOT NULL for a field the manifest declares nullable", () => {
+    expect(generateNotNullLoosenDdl("app_x", "rows", "contactId", "uuid?")).toBe(
+      'ALTER TABLE "app_x"."rows" ALTER COLUMN "contact_id" DROP NOT NULL',
+    )
+    expect(
+      generateNotNullLoosenDdl("app_x", "rows", "n", { type: "integer", required: false }),
+    ).toBe('ALTER TABLE "app_x"."rows" ALTER COLUMN "n" DROP NOT NULL')
+  })
+
+  it("emits nothing for a field still declared NOT NULL", () => {
+    expect(generateNotNullLoosenDdl("app_x", "rows", "n", "uuid")).toBeNull()
+    expect(
+      generateNotNullLoosenDdl("app_x", "rows", "n", { type: "integer", default: 0 }),
+    ).toBeNull()
   })
 })

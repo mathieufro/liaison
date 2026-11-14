@@ -16,6 +16,8 @@
 // Fails-without-fix: with the hand-rolled DDL the child dies on the missing
 // columns (`subject`, `labels`, `message_count`, `app_mail.accounts` itself).
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { sql as drizzleSql } from "drizzle-orm"
 import { extractRows } from "~/db"
 import { __privileged_db__ as db, sql } from "~/db/connection"
@@ -40,6 +42,28 @@ const TARGETS = [
   "src/tests/integration/mail-api.test.ts",
   "src/tests/integration/mail-sync.test.ts",
 ]
+
+/**
+ * The table statements of the initial migration's app_mail section, in order: from its
+ * stub tables on, past the schema's own ownership and grants, which the take-over above
+ * already settled.
+ */
+function migrationMailSection(): string[] {
+  const text = readFileSync(
+    join(import.meta.dir, "..", "..", "db", "migrations", "0000_initial.sql"),
+    "utf8",
+  )
+  const section = text.indexOf("-- app_mail schema")
+  const start = text.indexOf("DO $$", section)
+  const end = text.indexOf("-- app_tickets schema", start)
+  if (section < 0 || start < 0 || end < 0)
+    throw new Error("the initial migration's app_mail section moved")
+  return text
+    .slice(start, end)
+    .split("--> statement-breakpoint")
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.split("\n").some((l) => l.trim() !== "" && !l.trim().startsWith("--")))
+}
 
 // No `acquireAppSchemaLock` here: the child takes that same Postgres advisory
 // lock through its own registration, so holding it across the spawn would
@@ -86,6 +110,13 @@ describe("the mail integration files own the app_mail schema they assert", () =>
           )
         `),
       )
+      // Everything else the migrations put in app_mail, as a real database has it: the
+      // stub tables they create when absent and the policies of the tables whose access
+      // they own (messages, drafts). Registration refuses a migration-governed table no
+      // policy grants, so a schema without them is a state no database is ever in.
+      for (const statement of migrationMailSection()) {
+        await tx.execute(drizzleSql.raw(statement))
+      }
     })
 
     const child = Bun.spawn(["bun", "test", "--timeout", "120000", ...TARGETS], {

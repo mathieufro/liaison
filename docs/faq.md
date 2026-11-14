@@ -35,7 +35,7 @@ Yes. The Mail app connects Gmail accounts and IMAP/SMTP mailboxes. Agents can se
 
 ## Is there a built-in CRM pipeline?
 
-No. Contacts is a directory of people and companies, not a CRM with deals or stages. If your deals live in a CRM or ERP, connect it with the API connector so agents read it and a customer card shows on mail and tickets. See [Contacts](sales/contacts.md) and [Connect your own CRM or ERP](sales/connect-your-crm.md).
+Yes. Companies, their people and a timeline of their mail, tickets, invoices and meetings are in Contacts, and deals sit on a pipeline in Projects, with an amount, stages and a next step. Agents can follow up quiet deals, and every commercial mail respects opt-outs. See [Companies](sales/companies.md), [Track deals on a pipeline](sales/deals.md) and [Opt-outs](sales/opt-outs.md). If your deals live in another CRM or ERP, connect it with the API connector (see [Connect your own CRM or ERP](sales/connect-your-crm.md)).
 
 ## What is a computer (node), and does code run on my machine?
 

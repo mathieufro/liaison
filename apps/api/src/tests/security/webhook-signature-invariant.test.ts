@@ -29,6 +29,7 @@ import { monitoringWebhookVerifier } from "../../../../../bundled-apps/monitorin
 import { verifyEinvoicingWebhook } from "../../../../../bundled-apps/pennylane/src/einvoicing/webhooks"
 import { shopifyWebhookVerifier } from "../../../../../bundled-apps/shopify/src/lib/hmac"
 import { metaWebhookVerifier } from "../../../../../bundled-apps/social/src/handlers"
+import * as paymentsHandlers from "../../../../../bundled-apps/stripe/src/handlers"
 
 const REPO = join(import.meta.dir, "..", "..", "..", "..", "..")
 const SECRET = "whsec-invariant-0123456789abcdef0123456789abcdef"
@@ -41,13 +42,38 @@ type Req = {
 }
 type Verify = (req: Req) => Promise<unknown>
 
-/** The host bridge, as routes.ts builds it (verify-bridge.ts), with the app's secret under its key. */
-function bridge(secretKey: string) {
+/**
+ * The host bridge, as routes.ts builds it (verify-bridge.ts), with the app's secret under its key.
+ * `otherSecretKeys` are declared secrets left unset (a rolled-out previous secret, say).
+ */
+function bridge(secretKey: string, ...otherSecretKeys: string[]) {
   return buildVerifyBridge({
     readConfig: async (key: string) => (key === secretKey ? SECRET : null),
-    secretConfigKeys: [secretKey],
+    secretConfigKeys: [secretKey, ...otherSecretKeys],
   })
 }
+
+/**
+ * A verifier named by its app's manifest (`webhooks.<name>.verify`), taken from the app's handler
+ * module: the exact function the kernel registers for that webhook.
+ */
+function manifestVerifier(
+  app: string,
+  webhook: string,
+  handlers: Record<string, unknown>,
+): (req: Req, bridge: ReturnType<typeof buildVerifyBridge>) => Promise<unknown> {
+  const manifest = JSON.parse(
+    readFileSync(join(REPO, "bundled-apps", app, "app.manifest.json"), "utf8"),
+  ) as { webhooks?: Record<string, { verify?: string }> }
+  const name = manifest.webhooks?.[webhook]?.verify
+  const fn = name ? handlers[name] : undefined
+  if (typeof fn !== "function") throw new Error(`${app}/${webhook}: no verifier "${name}" exported`)
+  return fn as (req: Req, bridge: ReturnType<typeof buildVerifyBridge>) => Promise<unknown>
+}
+/** The payment processor's connector: its app name, and the signature header named after it. */
+const PAYMENTS_APP = "stripe"
+const PAYMENTS_SIGNATURE_HEADER = `${PAYMENTS_APP}-signature`
+const paymentsVerify = manifestVerifier(PAYMENTS_APP, "events", paymentsHandlers)
 const b64 = (body: string) => createHmac("sha256", SECRET).update(body, "utf8").digest("base64")
 const hex = (body: string) => createHmac("sha256", SECRET).update(body, "utf8").digest("hex")
 
@@ -111,6 +137,19 @@ const VERIFIERS: Record<string, VerifierCase> = {
     },
     sigHeaders: ["x-pennylane-signature"],
     body: () => JSON.stringify({ id: "evt_1", type: "customer_invoice.updated" }),
+    staleBody: undefined,
+  },
+  // The payment processor's events: `t=<unix s>,v1=<hex of "t.body">`, checked host-side against
+  // the org's secret; the replay key is the event id, so a resend is the same key.
+  "stripe/events": {
+    verify: (r) =>
+      paymentsVerify(r, bridge("webhookSigningSecret", "webhookSigningSecretPrevious")),
+    sign: (body) => {
+      const t = Math.floor(Date.now() / 1000)
+      return { [PAYMENTS_SIGNATURE_HEADER]: `t=${t},v1=${hex(`${t}.${body}`)}` }
+    },
+    sigHeaders: [PAYMENTS_SIGNATURE_HEADER],
+    body: () => JSON.stringify({ id: "evt_invariant_1", type: "invoice.paid" }),
     staleBody: undefined,
   },
 }

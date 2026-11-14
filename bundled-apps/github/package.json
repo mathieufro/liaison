@@ -1,0 +1,23 @@
+{
+  "name": "@liaison/github-app",
+  "version": "1.0.0",
+  "description": "Liaison GitHub connector: read-only tools",
+  "license": "FSL-1.1-ALv2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@liaison/app-sdk": "file:../../packages/app-sdk",
+    "@liaison/host": "file:../../packages/host-sdk"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest"
+  },
+  "overrides": {
+    "@liaison/control-plane-contract": "file:../../packages/control-plane-contract",
+    "@liaison/shared": "file:../../packages/shared"
+  }
+}

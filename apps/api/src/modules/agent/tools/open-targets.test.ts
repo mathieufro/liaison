@@ -59,7 +59,15 @@ function unload(m: Manifest): void {
 }
 
 /** The kernel entities `resolveEntityLabel` reads by name, proved below with a fake reader. */
-const KERNEL_READERS = new Set(["thread", "contact", "routine", "skill", "agent", "session"])
+const KERNEL_READERS = new Set([
+  "thread",
+  "contact",
+  "company",
+  "routine",
+  "skill",
+  "agent",
+  "session",
+])
 
 function hasReader(record: NonNullable<OpenView["record"]>): boolean {
   if (record.app === "kernel") return KERNEL_READERS.has(record.entityType)
@@ -158,6 +166,7 @@ describe("every tab a person can open, the agent can open", () => {
     ["a task", "projects", "task", "tab"],
     ["a project", "projects", "project", "tab"],
     ["a contact", "contacts", "contact-detail", "tab"],
+    ["a company", "contacts", "company-detail", "tab"],
     ["a channel or a direct conversation", "kernel", "thread", "tab"],
     ["a mail conversation", "mail", "conversation", "tab"],
     ["a knowledge document", "knowledge", "document", "tab"],

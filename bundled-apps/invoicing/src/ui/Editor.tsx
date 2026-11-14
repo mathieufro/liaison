@@ -23,6 +23,7 @@ import {
   For,
   Index,
   Show,
+  untrack,
 } from "solid-js"
 import {
   documentRollup,
@@ -516,6 +517,26 @@ export function applyNetToGrossOnLoad(deps: NetToGrossOnLoadDeps): boolean {
   return true
 }
 
+/** A VAT rate in basis points as the percent a person reads and types (2000 → "20", 550 → "5.5"). */
+export function bpToPercentInput(bp: number): string {
+  return String(Math.round(bp) / 100)
+}
+
+/** A typed VAT percent ("20", "5,5", "5.5 %") in basis points, or null while it does not parse. */
+export function percentInputToBp(text: string): number | null {
+  const t = text.replace(/%/g, "").replace(",", ".").trim()
+  if (t === "") return 0
+  if (!/^\d+(\.\d{0,2})?$/.test(t)) return null
+  return Math.round(Number(t) * 100)
+}
+
+/** Whether any line carries customs data, so a services invoice need not show those columns. */
+export function showCustomsColumns(lines: DraftLine[], taxTreatment: string): boolean {
+  return (
+    EXPORT_TREATMENTS.has(taxTreatment) || lines.some((l) => !!l.hs_code || !!l.country_of_origin)
+  )
+}
+
 export interface CustomsReadinessResult {
   applicable: boolean
   ready: boolean
@@ -840,6 +861,19 @@ export interface EditorProps {
    *  the `{type}_issue` tool against the existing draft instead of
    *  `{type}_create_and_issue` (which would create a duplicate). */
   documentId?: string
+  /** Opened inside another view (a month-end row): the customer, notes, due date and lines only,
+   *  with no top bar, no summary and no issue buttons. The host view saves through `onReady`. */
+  compact?: boolean
+  /** Shown, not editable: the viewer may read this draft but not change it. */
+  readOnly?: boolean
+  /** The draft as typed, on every change, before anything is saved. */
+  onChange?: (d: DraftDocument) => void
+  /** The editor's own save of an existing draft, for a host view's buttons: `drafts_update` with
+   *  this editor's patch plus the extra arguments given. Resolves false when it was refused. */
+  onReady?: (api: {
+    save: (extra?: Record<string, unknown>) => Promise<boolean>
+    error: () => string | null
+  }) => void
 }
 
 /** Today on this computer's calendar: the date shown until the issuer's own date is known. */
@@ -970,13 +1004,15 @@ export async function loadIssuerProfiles(): Promise<IssuerProfilesLoad> {
 
 export const Editor: Component<EditorProps> = (props) => {
   const [draft, setDraft] = createSignal<DraftDocument>(props.initial)
-  const ro = createMemo(() => readOnly(draft()))
+  const ro = createMemo(() => props.readOnly === true || readOnly(draft()))
   /** Financial substance locked (an issued invoice or credit note): the line grid,
    *  customer name, VAT id and tax treatment inputs are disabled and left out of the patch. */
   const frozen = createMemo(() => isFinancialSubstanceFrozen(draft()))
   const validation = createMemo(() => validateDraft(draft()))
   const totals = createMemo(() => rollupTotals(draft().lines, !!draft().prices_include_tax))
   const readiness = createMemo(() => customsReadiness(draft().lines, draft().tax_treatment))
+  // HS code and country of origin matter for goods sent abroad; a services line never needs them.
+  const customsColumns = createMemo(() => showCustomsColumns(draft().lines, draft().tax_treatment))
   // The e-invoicing verdict on the saved draft (invoices and credit notes only): regime, gate
   // mode and what the gate would refuse. Refetched after the e-invoicing fields are saved.
   const classifyKey = () =>
@@ -1249,11 +1285,14 @@ export const Editor: Component<EditorProps> = (props) => {
   /** Push the current editor state onto the existing draft (no banner) so a
    *  subsequent issue call issues WHAT THE USER SEES, not the last-saved
    *  state. Returns false (and surfaces the error) when the update failed. */
-  const pushDraftPatch = async (documentId: string): Promise<boolean> => {
+  const pushDraftPatch = async (
+    documentId: string,
+    extra?: Record<string, unknown>,
+  ): Promise<boolean> => {
     try {
       const result = await app.invokeTool<
         Record<string, unknown> | { status: "error"; error: { code: string; message: string } }
-      >("drafts_update", { draft_id: documentId, patch: draftPatch() })
+      >("drafts_update", { draft_id: documentId, patch: draftPatch(), ...(extra ?? {}) })
       if (result && typeof result === "object" && "status" in result && result.status === "error") {
         const err = (result as { error?: { code?: string; message?: string } }).error
         setLastError(err?.message ?? err?.code ?? tr("The request failed."))
@@ -1265,6 +1304,19 @@ export const Editor: Component<EditorProps> = (props) => {
       return false
     }
   }
+
+  createEffect(() => {
+    const d = draft()
+    // Only the draft is tracked: what the host does with it never re-runs this.
+    untrack(() => props.onChange?.(d))
+  })
+  props.onReady?.({
+    save: (extra) => {
+      setLastError(null)
+      return props.documentId ? pushDraftPatch(props.documentId, extra) : Promise.resolve(false)
+    },
+    error: () => lastError(),
+  })
 
   /** Persist the e-invoicing fields of an existing draft as soon as they change, then re-ask
    *  einvoicing_classify, so what blocks Issue reflects what the operator just chose. */
@@ -1409,55 +1461,57 @@ export const Editor: Component<EditorProps> = (props) => {
     <section data-testid="invoicing-editor" class="flex h-full min-h-0 flex-col">
       {/* Top bar — spans the lines column and the summary. The actions live at the top: the
           chat dock floats over the panel's bottom-right corner, so a bottom bar would sit under it. */}
-      <div
-        data-testid="editor-top-bar"
-        class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border-subtle px-5 py-3"
-      >
-        <div class="flex items-center gap-3">
-          <TypeLabel
-            type={draft().type}
-            testid="editor-top-bar-type"
-            class="text-[14px] font-medium text-text"
-          />
-          <StatusBadge status={draft().status} testid="editor-top-bar-status" />
+      <Show when={!props.compact}>
+        <div
+          data-testid="editor-top-bar"
+          class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border-subtle px-5 py-3"
+        >
+          <div class="flex items-center gap-3">
+            <TypeLabel
+              type={draft().type}
+              testid="editor-top-bar-type"
+              class="text-[14px] font-medium text-text"
+            />
+            <StatusBadge status={draft().status} testid="editor-top-bar-status" />
+          </div>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <Show
+              when={isNonDraftEditable()}
+              fallback={
+                <>
+                  <Button
+                    variant="secondary"
+                    testid="editor-button-preview-pdf"
+                    onClick={onPreviewPdf}
+                  >
+                    {tr("Preview PDF")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    testid="editor-button-issue"
+                    disabled={!issuable()}
+                    onClick={onIssue}
+                  >
+                    {primaryActionLabel(draft().type)}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    testid="editor-button-issue-email"
+                    disabled={!issuable()}
+                    onClick={onIssueEmail}
+                  >
+                    {primaryActionEmailLabel(draft().type)}
+                  </Button>
+                </>
+              }
+            >
+              <Button variant="primary" testid="editor-button-save-changes" onClick={onSaveChanges}>
+                {tr("Save changes")}
+              </Button>
+            </Show>
+          </div>
         </div>
-        <div class="flex flex-wrap items-center justify-end gap-2">
-          <Show
-            when={isNonDraftEditable()}
-            fallback={
-              <>
-                <Button
-                  variant="secondary"
-                  testid="editor-button-preview-pdf"
-                  onClick={onPreviewPdf}
-                >
-                  {tr("Preview PDF")}
-                </Button>
-                <Button
-                  variant="secondary"
-                  testid="editor-button-issue"
-                  disabled={!issuable()}
-                  onClick={onIssue}
-                >
-                  {primaryActionLabel(draft().type)}
-                </Button>
-                <Button
-                  variant="primary"
-                  testid="editor-button-issue-email"
-                  disabled={!issuable()}
-                  onClick={onIssueEmail}
-                >
-                  {primaryActionEmailLabel(draft().type)}
-                </Button>
-              </>
-            }
-          >
-            <Button variant="primary" testid="editor-button-save-changes" onClick={onSaveChanges}>
-              {tr("Save changes")}
-            </Button>
-          </Show>
-        </div>
-      </div>
+      </Show>
 
       <Show when={lastError()}>
         <div
@@ -1477,8 +1531,9 @@ export const Editor: Component<EditorProps> = (props) => {
       </Show>
 
       <div class="flex min-h-0 flex-1">
-        {/* Left: header + lines */}
-        <div class="flex flex-1 flex-col">
+        {/* Left: header + lines. Compact (inside a card) it may shrink to the card's width: the
+            lines table scrolls on its own instead of widening the page. */}
+        <div class={props.compact ? "flex min-w-0 flex-1 flex-col" : "flex flex-1 flex-col"}>
           <Show when={issuerFailure() === "forbidden"}>
             <div
               data-testid="editor-issuer-forbidden-banner"
@@ -1542,69 +1597,77 @@ export const Editor: Component<EditorProps> = (props) => {
           </Show>
 
           {/* Header strip */}
-          <header class="grid grid-cols-2 gap-x-5 gap-y-4 border-b border-border-subtle px-5 py-4 lg:grid-cols-3">
-            <Field label={tr("Type")}>
-              <Select
-                testid="editor-field-type"
-                disabled={ro()}
-                value={draft().type}
-                onChange={(v) => update({ type: v as DocType })}
+          <header
+            class={
+              props.compact
+                ? "grid grid-cols-1 gap-x-5 gap-y-4 border-b border-border-subtle px-3 py-3 sm:grid-cols-2"
+                : "grid grid-cols-2 gap-x-5 gap-y-4 border-b border-border-subtle px-5 py-4 lg:grid-cols-3"
+            }
+          >
+            <Show when={!props.compact}>
+              <Field label={tr("Type")}>
+                <Select
+                  testid="editor-field-type"
+                  disabled={ro()}
+                  value={draft().type}
+                  onChange={(v) => update({ type: v as DocType })}
+                >
+                  <For each={DOC_TYPES}>
+                    {(t) => (
+                      <option value={t}>
+                        {t.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())}
+                      </option>
+                    )}
+                  </For>
+                </Select>
+              </Field>
+              <Field
+                label={tr("Issuer")}
+                error={validation().errors.some((er) => er.field === "issuer_profile_id")}
               >
-                <For each={DOC_TYPES}>
-                  {(t) => (
-                    <option value={t}>
-                      {t.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())}
-                    </option>
+                <Select
+                  testid="editor-field-issuer"
+                  disabled={ro() || (issuerProfiles()?.length ?? 0) === 0}
+                  value={draft().issuer_profile_id ?? ""}
+                  onChange={onIssuerChange}
+                >
+                  <option value="" disabled>
+                    {tr("Select an issuer…")}
+                  </option>
+                  <For each={issuerProfiles() ?? []}>
+                    {(p) => <option value={p.id}>{p.legal_name}</option>}
+                  </For>
+                </Select>
+              </Field>
+              <Field label={tr("Contact")}>
+                <ContactPicker
+                  contactId={draft().counterparty_contact_id ?? null}
+                  disabled={ro()}
+                  onPick={(c) => update(pickedContactPatch(c, draft()))}
+                  onClear={() => update({ counterparty_contact_id: null })}
+                />
+              </Field>
+              <Field label={tr("Issue date")}>
+                <input
+                  data-testid="editor-field-issued-at"
+                  type="date"
+                  disabled={ro()}
+                  value={draft().issued_at ?? ""}
+                  onInput={(e) => update({ issued_at: e.currentTarget.value || null })}
+                  class={dateInputClass}
+                />
+                <Show when={issueNotice()}>
+                  {(notice) => (
+                    <p
+                      data-testid="editor-issue-date-notice"
+                      class="mt-1 text-[11.5px] text-text-secondary"
+                    >
+                      {notice()}
+                    </p>
                   )}
-                </For>
-              </Select>
-            </Field>
-            <Field
-              label={tr("Issuer")}
-              error={validation().errors.some((er) => er.field === "issuer_profile_id")}
-            >
-              <Select
-                testid="editor-field-issuer"
-                disabled={ro() || (issuerProfiles()?.length ?? 0) === 0}
-                value={draft().issuer_profile_id ?? ""}
-                onChange={onIssuerChange}
-              >
-                <option value="" disabled>
-                  {tr("Select an issuer…")}
-                </option>
-                <For each={issuerProfiles() ?? []}>
-                  {(p) => <option value={p.id}>{p.legal_name}</option>}
-                </For>
-              </Select>
-            </Field>
-            <Field label={tr("Contact")}>
-              <ContactPicker
-                contactId={draft().counterparty_contact_id ?? null}
-                disabled={ro()}
-                onPick={(c) => update(pickedContactPatch(c, draft()))}
-                onClear={() => update({ counterparty_contact_id: null })}
-              />
-            </Field>
-            <Field label={tr("Issue date")}>
-              <input
-                data-testid="editor-field-issued-at"
-                type="date"
-                disabled={ro()}
-                value={draft().issued_at ?? ""}
-                onInput={(e) => update({ issued_at: e.currentTarget.value || null })}
-                class={dateInputClass}
-              />
-              <Show when={issueNotice()}>
-                {(notice) => (
-                  <p
-                    data-testid="editor-issue-date-notice"
-                    class="mt-1 text-[11.5px] text-text-secondary"
-                  >
-                    {notice()}
-                  </p>
-                )}
-              </Show>
-            </Field>
+                </Show>
+              </Field>
+            </Show>
             {/* Credit notes are never payable — no due date, so the field is hidden for this type. */}
             <Show when={draft().type !== "credit_note"}>
               <Field
@@ -1625,32 +1688,38 @@ export const Editor: Component<EditorProps> = (props) => {
                 />
               </Field>
             </Show>
-            <Field label={tr("Language")}>
-              <Select
-                testid="editor-field-language"
-                disabled={ro()}
-                value={draft().language}
-                onChange={(v) => update({ language: v as Language })}
-              >
-                <For each={LANGUAGES}>{(l) => <option value={l}>{l.toUpperCase()}</option>}</For>
-              </Select>
-            </Field>
-            <Field label={tr("Incoterm")}>
-              <Select
-                testid="editor-field-incoterm"
-                disabled={ro()}
-                value={draft().incoterm}
-                onChange={(v) => update({ incoterm: v as Incoterm })}
-              >
-                <For each={INCOTERMS}>{(i) => <option value={i}>{i}</option>}</For>
-              </Select>
-            </Field>
+            <Show when={!props.compact}>
+              <Field label={tr("Language")}>
+                <Select
+                  testid="editor-field-language"
+                  disabled={ro()}
+                  value={draft().language}
+                  onChange={(v) => update({ language: v as Language })}
+                >
+                  <For each={LANGUAGES}>{(l) => <option value={l}>{l.toUpperCase()}</option>}</For>
+                </Select>
+              </Field>
+              <Field label={tr("Incoterm")}>
+                <Select
+                  testid="editor-field-incoterm"
+                  disabled={ro()}
+                  value={draft().incoterm}
+                  onChange={(v) => update({ incoterm: v as Incoterm })}
+                >
+                  <For each={INCOTERMS}>{(i) => <option value={i}>{i}</option>}</For>
+                </Select>
+              </Field>
+            </Show>
           </header>
 
           {/* Customer section */}
           <section
             data-testid="editor-section-customer"
-            class="grid grid-cols-2 gap-x-5 gap-y-4 border-b border-border-subtle px-5 py-4 lg:grid-cols-3"
+            class={
+              props.compact
+                ? "grid grid-cols-1 gap-x-5 gap-y-4 border-b border-border-subtle px-3 py-3 sm:grid-cols-2"
+                : "grid grid-cols-2 gap-x-5 gap-y-4 border-b border-border-subtle px-5 py-4 lg:grid-cols-3"
+            }
           >
             <Field label={tr("Customer name")}>
               <input
@@ -1731,31 +1800,33 @@ export const Editor: Component<EditorProps> = (props) => {
             </Field>
             {/* Ship to: filled only when the parcel goes somewhere other than the billing
                 address. Left empty, the document prints the BILL TO block alone. */}
-            <Field label={tr("Shipping address (if different)")} class="col-span-2 lg:col-span-3">
-              <textarea
-                data-testid="editor-field-shipping-address"
-                disabled={ro()}
-                value={draft().counterparty_shipping_address ?? ""}
-                onInput={(e) =>
-                  update({ counterparty_shipping_address: e.currentTarget.value || null })
-                }
-                placeholder={tr("Leave empty when the parcel ships to the billing address")}
-                rows={2}
-                class={cx(inputClass, "resize-y")}
-              />
-            </Field>
-            <Field label={tr("Ship to name (if different)")} class="col-span-2 lg:col-span-3">
-              <input
-                data-testid="editor-field-shipping-name"
-                disabled={ro()}
-                value={draft().counterparty_shipping_name ?? ""}
-                onInput={(e) =>
-                  update({ counterparty_shipping_name: e.currentTarget.value || null })
-                }
-                placeholder={tr("Consignee name, when it is not the billing customer")}
-                class={inputClass}
-              />
-            </Field>
+            <Show when={!props.compact}>
+              <Field label={tr("Shipping address (if different)")} class="col-span-2 lg:col-span-3">
+                <textarea
+                  data-testid="editor-field-shipping-address"
+                  disabled={ro()}
+                  value={draft().counterparty_shipping_address ?? ""}
+                  onInput={(e) =>
+                    update({ counterparty_shipping_address: e.currentTarget.value || null })
+                  }
+                  placeholder={tr("Leave empty when the parcel ships to the billing address")}
+                  rows={2}
+                  class={cx(inputClass, "resize-y")}
+                />
+              </Field>
+              <Field label={tr("Ship to name (if different)")} class="col-span-2 lg:col-span-3">
+                <input
+                  data-testid="editor-field-shipping-name"
+                  disabled={ro()}
+                  value={draft().counterparty_shipping_name ?? ""}
+                  onInput={(e) =>
+                    update({ counterparty_shipping_name: e.currentTarget.value || null })
+                  }
+                  placeholder={tr("Consignee name, when it is not the billing customer")}
+                  class={inputClass}
+                />
+              </Field>
+            </Show>
             {/* Free-text notes printed on the document. Editable on EVERY editable status
                 (documents_update takes notes as non-financial metadata, exactly like po_number),
                 so it is NOT gated on the draft-only read-only flag beyond `ro()`. */}
@@ -1782,7 +1853,11 @@ export const Editor: Component<EditorProps> = (props) => {
             {/* E-invoicing: customer type and operation type (invoices), the structured billing
                 address an e-invoice needs (French buyers), and what still blocks Issue. Each
                 blocker names its field and carries one action; warn mode only notes, calmly. */}
-            <Show when={draft().type === "invoice" || draft().type === "credit_note"}>
+            <Show
+              when={
+                !props.compact && (draft().type === "invoice" || draft().type === "credit_note")
+              }
+            >
               <div
                 data-testid="editor-section-einvoicing"
                 class="col-span-2 grid grid-cols-2 gap-x-5 gap-y-4 lg:col-span-3 lg:grid-cols-3"
@@ -1959,9 +2034,18 @@ export const Editor: Component<EditorProps> = (props) => {
           </section>
 
           {/* Lines */}
-          <div class="flex-1 overflow-y-auto px-5 py-4">
-            <table class="w-full text-[12.5px]" data-testid="editor-lines-table">
-              <thead>
+          <div
+            class={
+              props.compact
+                ? "flex-1 overflow-x-auto px-3 py-3"
+                : "flex-1 overflow-y-auto px-5 py-4"
+            }
+          >
+            <table
+              class={cx("w-full text-[12.5px]", props.compact && "max-sm:block")}
+              data-testid="editor-lines-table"
+            >
+              <thead class={props.compact ? "max-sm:hidden" : undefined}>
                 <tr class="text-left text-[10.5px] uppercase tracking-wider text-text-tertiary">
                   <th class="px-2 pb-2 font-medium">{tr("Description")}</th>
                   <th class="px-2 pb-2 text-right font-medium">{tr("Qty")}</th>
@@ -1969,13 +2053,15 @@ export const Editor: Component<EditorProps> = (props) => {
                     {draft().prices_include_tax ? tr("Unit price (incl. VAT)") : tr("Unit price")}
                   </th>
                   <th class="px-2 pb-2 text-right font-medium">{tr("VAT %")}</th>
-                  <th class="px-2 pb-2 font-medium">{tr("HS code")}</th>
-                  <th class="px-2 pb-2 font-medium">{tr("CoO")}</th>
+                  <Show when={customsColumns()}>
+                    <th class="px-2 pb-2 font-medium">{tr("HS code")}</th>
+                    <th class="px-2 pb-2 font-medium">{tr("CoO")}</th>
+                  </Show>
                   <th class="px-2 pb-2 text-right font-medium">{tr("Total")}</th>
                   <th class="px-2 pb-2" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody class={props.compact ? "max-sm:block" : undefined}>
                 <Index each={draft().lines}>
                   {(line, idx) => {
                     const sub = createMemo(() =>
@@ -2027,9 +2113,25 @@ export const Editor: Component<EditorProps> = (props) => {
                         setPriceText(minorToPriceInput(stored, currency))
                       }
                     })
+                    // The VAT rate is typed as a percent; the draft keeps basis points.
+                    const [taxText, setTaxText] = createSignal(bpToPercentInput(line().tax_rate_bp))
+                    createEffect(() => {
+                      const stored = line().tax_rate_bp
+                      if (percentInputToBp(untrack(taxText)) !== stored)
+                        setTaxText(bpToPercentInput(stored))
+                    })
                     return (
-                      <tr data-testid={`editor-line-${idx + 1}`} class="align-top">
-                        <td class="px-2 py-1.5">
+                      <tr
+                        data-testid={`editor-line-${idx + 1}`}
+                        class={cx(
+                          "align-top",
+                          props.compact &&
+                            "max-sm:flex max-sm:flex-wrap max-sm:items-center max-sm:border-b max-sm:border-border-subtle max-sm:py-1",
+                        )}
+                      >
+                        <td
+                          class={cx("px-2 py-1.5", props.compact && "max-sm:block max-sm:w-full")}
+                        >
                           <input
                             data-testid={`editor-line-${idx + 1}-description`}
                             disabled={ro() || frozen()}
@@ -2039,7 +2141,7 @@ export const Editor: Component<EditorProps> = (props) => {
                             class={cx(CELL, "w-full")}
                           />
                         </td>
-                        <td class="px-2 py-1.5">
+                        <td class={cx("px-2 py-1.5", props.compact && "max-sm:block")}>
                           <input
                             data-testid={`editor-line-${idx + 1}-quantity`}
                             disabled={ro() || frozen()}
@@ -2048,7 +2150,7 @@ export const Editor: Component<EditorProps> = (props) => {
                             class={cx(CELL, "w-16 text-right tabular-nums")}
                           />
                         </td>
-                        <td class="px-2 py-1.5">
+                        <td class={cx("px-2 py-1.5", props.compact && "max-sm:block")}>
                           <input
                             data-testid={`editor-line-${idx + 1}-unit-price`}
                             disabled={ro() || frozen()}
@@ -2069,53 +2171,62 @@ export const Editor: Component<EditorProps> = (props) => {
                             class={cx(CELL, "w-24 text-right tabular-nums")}
                           />
                         </td>
-                        <td class="px-2 py-1.5">
+                        <td class={cx("px-2 py-1.5", props.compact && "max-sm:block")}>
                           <input
                             data-testid={`editor-line-${idx + 1}-tax-rate`}
                             disabled={ro() || frozen()}
-                            value={String(line().tax_rate_bp)}
-                            onInput={(e) =>
+                            inputmode="decimal"
+                            value={taxText()}
+                            onInput={(e) => {
+                              setTaxText(e.currentTarget.value)
+                              const bp = percentInputToBp(e.currentTarget.value)
+                              if (bp === null) return
                               updateLine(idx, {
-                                tax_rate_bp: Number(e.currentTarget.value) || 0,
+                                tax_rate_bp: bp,
                                 // The operator just typed a rate: this is now an EXPLICIT override
                                 // (including a deliberate 0 percent), never echoed as a stale
                                 // classified default again.
                                 tax_rate_bp_overridden: true,
                               })
-                            }
+                            }}
+                            onBlur={() => setTaxText(bpToPercentInput(line().tax_rate_bp))}
                             class={cx(CELL, "w-16 text-right tabular-nums")}
                           />
                         </td>
-                        <td class="px-2 py-1.5">
-                          <input
-                            data-testid={`editor-line-${idx + 1}-hs`}
-                            disabled={ro() || frozen()}
-                            value={line().hs_code ?? ""}
-                            onInput={(e) =>
-                              updateLine(idx, { hs_code: e.currentTarget.value || null })
-                            }
-                            placeholder="-"
-                            class={cx(CELL, "w-24 font-mono")}
-                          />
-                        </td>
-                        <td class="px-2 py-1.5">
-                          <input
-                            data-testid={`editor-line-${idx + 1}-coo`}
-                            disabled={ro() || frozen()}
-                            value={line().country_of_origin ?? ""}
-                            onInput={(e) =>
-                              updateLine(idx, { country_of_origin: e.currentTarget.value || null })
-                            }
-                            placeholder="-"
-                            class={cx(CELL, "w-14 font-mono uppercase")}
-                          />
-                        </td>
-                        <td class="px-2 py-1.5 text-right">
+                        <Show when={customsColumns()}>
+                          <td class={cx("px-2 py-1.5", props.compact && "max-sm:block")}>
+                            <input
+                              data-testid={`editor-line-${idx + 1}-hs`}
+                              disabled={ro() || frozen()}
+                              value={line().hs_code ?? ""}
+                              onInput={(e) =>
+                                updateLine(idx, { hs_code: e.currentTarget.value || null })
+                              }
+                              placeholder="-"
+                              class={cx(CELL, "w-24 font-mono")}
+                            />
+                          </td>
+                          <td class={cx("px-2 py-1.5", props.compact && "max-sm:block")}>
+                            <input
+                              data-testid={`editor-line-${idx + 1}-coo`}
+                              disabled={ro() || frozen()}
+                              value={line().country_of_origin ?? ""}
+                              onInput={(e) =>
+                                updateLine(idx, {
+                                  country_of_origin: e.currentTarget.value || null,
+                                })
+                              }
+                              placeholder="-"
+                              class={cx(CELL, "w-14 font-mono uppercase")}
+                            />
+                          </td>
+                        </Show>
+                        <td class={cx("px-2 py-1.5 text-right", props.compact && "max-sm:block")}>
                           <span class="font-mono tabular-nums text-text">
                             {fmtMoney(total(), draft().currency)}
                           </span>
                         </td>
-                        <td class="px-1 py-1.5 text-center">
+                        <td class={cx("px-1 py-1.5 text-center", props.compact && "max-sm:block")}>
                           <Show when={!ro() && !frozen() && draft().lines.length > 1}>
                             <button
                               type="button"
@@ -2157,14 +2268,16 @@ export const Editor: Component<EditorProps> = (props) => {
         </div>
 
         {/* Right: summary */}
-        <aside class="w-72 shrink-0 overflow-y-auto border-l border-border-subtle bg-bg">
-          <EditorSummary
-            draft={draft()}
-            totals={totals()}
-            readiness={readiness()}
-            validation={validation()}
-          />
-        </aside>
+        <Show when={!props.compact}>
+          <aside class="w-72 shrink-0 overflow-y-auto border-l border-border-subtle bg-bg">
+            <EditorSummary
+              draft={draft()}
+              totals={totals()}
+              readiness={readiness()}
+              validation={validation()}
+            />
+          </aside>
+        </Show>
       </div>
     </section>
   )

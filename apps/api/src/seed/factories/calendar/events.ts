@@ -53,6 +53,11 @@ export async function seedTeamCalendar(
     timezone: string
     people: Record<string, SeedPerson | undefined>
     events: readonly EventSpec[]
+    /**
+     * `person`: the actor's own account instead of the team's, so its events are theirs alone
+     * (a personal calendar no colleague's grant opens). Defaults to `org`.
+     */
+    owner?: "org" | "person"
   },
 ): Promise<{ eventIds: string[]; calendarId: string }> {
   const { orgId } = ctx
@@ -70,10 +75,10 @@ export async function seedTeamCalendar(
       orgId,
       {
         data: {
-          id: ctx.id("calendar-connection", "team"),
+          id: ctx.id("calendar-connection", input.owner === "person" ? actor.userId : "team"),
           appName: "calendar",
-          ownerType: "org",
-          ownerId: null,
+          ownerType: input.owner === "person" ? "user" : "org",
+          ownerId: input.owner === "person" ? actor.userId : null,
           identifier: input.accountEmail,
           connectionName: "google-calendar",
         },

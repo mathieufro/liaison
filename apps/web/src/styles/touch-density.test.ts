@@ -38,6 +38,23 @@ describe("compact tier touch density", () => {
     expect(block).toMatch(/height:\s*22px/)
   })
 
+  // A result card's disclosure ("How this number is worked out") and its links are targets the
+  // floor above does not list (a summary, a plain anchor): at 390 px the disclosure was 15 px
+  // tall. Inside a card they get the same 44px floor, without losing the disclosure's marker.
+  test("gives a result card's summaries and links the 44px floor", () => {
+    const at = css.indexOf("[data-tool-card]")
+    expect(at).toBeGreaterThan(-1)
+    const rule = css.slice(
+      css.lastIndexOf(":is(", at),
+      css.indexOf("}", css.indexOf("a[href]", at)),
+    )
+    expect(rule).toContain('[data-shell-tier="phone"]')
+    expect(rule).toContain('[data-shell-tier="tablet"]')
+    expect(rule).toContain("summary")
+    expect(rule).toContain("a[href]")
+    expect(rule).toMatch(/min-height:\s*44px/)
+  })
+
   test("never applies at the desktop tier", () => {
     expect(css).not.toContain('[data-shell-tier="desktop"]')
   })

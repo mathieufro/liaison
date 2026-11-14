@@ -6,8 +6,8 @@
 // and whether status updates arrive by webhook. The platform, cut-over date and
 // send / booking switches are plain fields of the same section, saved through
 // `einvoicing_settings_set`.
-import { app } from "@liaison/host"
-import { type Component, createResource, For } from "solid-js"
+import { app, onEntityChange } from "@liaison/host"
+import { type Component, createResource, For, onCleanup } from "solid-js"
 import { tr } from "../i18n"
 
 export interface EinvoicingSettingsData {
@@ -55,7 +55,10 @@ async function load(): Promise<EinvoicingSettingsData | null> {
 }
 
 export const EinvoicingRegistration: Component = () => {
-  const [data] = createResource(load)
+  const [data, { refetch }] = createResource(load)
+  // Saving the platform above emits its binding change: read the platform again, so the lines
+  // never keep saying what was true before the save.
+  onCleanup(onEntityChange("invoicing:einvoicing", () => void refetch()))
   return (
     <ul
       data-testid="settings-einvoicing-registration"

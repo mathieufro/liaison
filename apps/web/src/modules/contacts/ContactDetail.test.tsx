@@ -9,8 +9,11 @@ const mocks = vi.hoisted(() => ({
   // suite, so an empty list is the realistic payload.
   api: { get: vi.fn(async () => ({ panels: [] })) },
   loadContact: vi.fn(async () => undefined),
-  loadBacklinks: vi.fn(async () => undefined),
-  loadTicketBacklinks: vi.fn(),
+  loadOptOut: vi.fn(async (..._args: unknown[]) => undefined),
+  scopes: [] as string[],
+  companyStore: { companies: {} as Record<string, any> },
+  loadCompany: vi.fn(async (..._args: unknown[]) => null),
+  openCompanyTab: vi.fn(),
   openContactDiscussion: vi.fn(async (..._args: unknown[]) => "t-c1"),
   updateContact: vi.fn(),
   deleteContact: vi.fn(),
@@ -18,8 +21,7 @@ const mocks = vi.hoisted(() => ({
   mergeStore: { open: false, step: "search", targetCandidates: [], resolvedFields: {} },
   contactDetailStore: {
     contacts: {} as Record<string, any>,
-    backlinks: {} as Record<string, any>,
-    ticketBacklinks: {} as Record<string, any[]>,
+    optOuts: {} as Record<string, any>,
     discussions: {} as Record<string, string>,
   },
 }))
@@ -27,26 +29,23 @@ const mocks = vi.hoisted(() => ({
 vi.mock("~/modules/shell/ApiContext", () => ({ useApi: () => mocks.api }))
 vi.mock("~/modules/auth/auth-store", () => ({
   userFromToken: () => ({ userId: "u-me" }),
-  hasScope: () => false,
+  hasScope: (scope: string) => mocks.scopes.includes(scope),
 }))
-vi.mock("~/modules/shell/entity-preview/EntityPreview", () => ({
-  default: (props: any) => (
-    <span
-      data-testid="entity-preview"
-      data-app={props.app}
-      data-entity-type={props.entityType}
-      data-entity-id={props.entityId}
-      data-trigger={props.trigger ?? "click-or-hover"}
-    >
-      {props.children}
-    </span>
-  ),
+vi.mock("~/modules/contacts/ActivityPanel", () => ({
+  ActivityPanel: (props: any) => <div data-testid={props.testId} data-path={props.path} />,
+}))
+vi.mock("~/modules/contacts/company-store", () => ({
+  companyStore: mocks.companyStore,
+  loadCompany: mocks.loadCompany,
+}))
+vi.mock("~/modules/contacts/company-visuals", () => ({
+  openCompanyTab: mocks.openCompanyTab,
+  dealText: (deal: any) => `Deal in ${deal.stage}`,
 }))
 vi.mock("~/modules/contacts/contact-detail-store", () => ({
   contactDetailStore: mocks.contactDetailStore,
   loadContact: mocks.loadContact,
-  loadBacklinks: mocks.loadBacklinks,
-  loadTicketBacklinks: mocks.loadTicketBacklinks,
+  loadOptOut: mocks.loadOptOut,
   openContactDiscussion: mocks.openContactDiscussion,
   updateContact: mocks.updateContact,
   deleteContact: mocks.deleteContact,
@@ -84,17 +83,19 @@ describe("ContactDetail", () => {
         metadata: null,
       },
     }
-    mocks.contactDetailStore.backlinks = {}
+    mocks.contactDetailStore.optOuts = {}
+    mocks.companyStore.companies = {}
+    mocks.scopes = []
     mocks.contactDetailStore.discussions = {}
   })
 
-  it("loads contact and first 20 backlinks on mount", async () => {
+  it("loads the contact and asks the opt-out list about its address on mount", async () => {
     const { ContactDetail } = await import("./ContactDetail")
 
     render(() => <ContactDetail entityId="c1" />)
 
     expect(mocks.loadContact).toHaveBeenCalledWith(mocks.api, "c1")
-    expect(mocks.loadBacklinks).toHaveBeenCalledWith(mocks.api, "c1")
+    expect(mocks.loadOptOut).toHaveBeenCalledWith(mocks.api, "c1", "a@x.com")
   })
 
   it("opens the contact's discussion and draws it in the side rail, named for the contact", async () => {
@@ -141,85 +142,6 @@ describe("ContactDetail", () => {
       expect(screen.getByTestId("contact-visibility")).toHaveAttribute("data-visibility", expected)
       expect(screen.getByTestId("contact-share-open")).toBeInTheDocument()
       unmount()
-    }
-  })
-
-  it("renders contact fields and backlink load more", async () => {
-    mocks.contactDetailStore.backlinks.c1 = {
-      byId: { m1: { id: "m1", subject: "Hello", snippet: "Snippet" } },
-      ids: ["m1"],
-      cursor: "next",
-      hasMore: true,
-      loading: false,
-    }
-    const { ContactDetail } = await import("./ContactDetail")
-
-    render(() => <ContactDetail entityId="c1" />)
-
-    // Name appears twice: once in the hero h1, once in the inline-edit Name field.
-    expect(screen.getAllByText("Alice").length).toBeGreaterThan(0)
-    expect(screen.getAllByText("a@x.com")[0]).toBeInTheDocument()
-    expect(screen.getByText("Hello")).toBeInTheDocument()
-    const preview = screen.getByTestId("entity-preview")
-    expect(preview).toHaveAttribute("data-app", "mail")
-    expect(preview).toHaveAttribute("data-entity-type", "conversation")
-    expect(preview).toHaveAttribute("data-entity-id", "m1")
-    expect(preview).toHaveAttribute("data-trigger", "click-or-hover")
-    fireEvent.click(screen.getByRole("button", { name: "Show all" }))
-    expect(mocks.loadBacklinks).toHaveBeenLastCalledWith(mocks.api, "c1", {
-      cursor: "next",
-      append: true,
-    })
-  })
-
-  it("a sealed related mail opened by this browser shows its decrypted subject, no locked text", async () => {
-    mocks.contactDetailStore.backlinks.c1 = {
-      byId: {
-        m1: {
-          id: "m1",
-          subject: "Contract renewal",
-          snippet: "Signed copy",
-          sealed: true,
-          encState: "opened",
-        },
-      },
-      ids: ["m1"],
-      cursor: null,
-      hasMore: false,
-      loading: false,
-    }
-    const { ContactDetail } = await import("./ContactDetail")
-    render(() => <ContactDetail entityId="c1" />)
-
-    expect(screen.getByText("Contract renewal")).toBeInTheDocument()
-    expect(screen.getByText("Signed copy")).toBeInTheDocument()
-    expect(screen.queryByText(/locked/i)).toBeNull()
-    expect(screen.queryByTestId("contact-backlinks-locked")).toBeNull()
-  })
-
-  it("a sealed related mail on a locked mailbox says it is locked and how to unlock", async () => {
-    mocks.contactDetailStore.backlinks.c1 = {
-      byId: { m1: { id: "m1", subject: null, snippet: null, sealed: true, encState: "locked" } },
-      ids: ["m1"],
-      cursor: null,
-      hasMore: false,
-      loading: false,
-    }
-    const unlockRequests: unknown[] = []
-    const listener = (event: Event) => unlockRequests.push((event as CustomEvent).detail)
-    window.addEventListener("mailbox:unlock-requested", listener)
-    try {
-      const { ContactDetail } = await import("./ContactDetail")
-      render(() => <ContactDetail entityId="c1" />)
-
-      expect(screen.getByText("Locked conversation")).toBeInTheDocument()
-      expect(screen.queryByText(/no subject/i)).toBeNull()
-      const hint = screen.getByTestId("contact-backlinks-locked")
-      expect(hint).toHaveTextContent("Unlock")
-      fireEvent.click(screen.getByTestId("contact-backlinks-unlock"))
-      expect(unlockRequests).toEqual([{ view: "unlock" }])
-    } finally {
-      window.removeEventListener("mailbox:unlock-requested", listener)
     }
   })
 
@@ -276,5 +198,118 @@ describe("ContactDetail", () => {
     )
     get.mockImplementation((async () => ({ panels: [] })) as any)
     delete (mocks.api as any).post
+  })
+  describe("follow-ups, company and timeline", () => {
+    const stateOf = () => screen.getByTestId("contact-follow-ups-state")
+
+    it("an opted-out person shows Opted out with since when and by what", async () => {
+      mocks.contactDetailStore.optOuts.c1 = {
+        state: "opted_out",
+        since: "2026-11-06T09:00:00.000Z",
+        by: "link",
+      }
+      mocks.contactDetailStore.contacts.c1.lawfulBasis = "customer"
+      const { ContactDetail } = await import("./ContactDetail")
+      render(() => <ContactDetail entityId="c1" />)
+      expect(stateOf()).toHaveAttribute("data-state", "opted_out")
+      expect(stateOf()).toHaveTextContent("Opted out")
+      expect(screen.getByTestId("contact-follow-ups-detail")).toHaveTextContent(
+        "Since Nov 6, 2026, by the link in an earlier message.",
+      )
+      expect(screen.getByTestId("contact-follow-ups")).not.toHaveTextContent("allowed")
+    })
+
+    it("an opt-out recorded since the page was open shows on the next load, never the old Allowed", async () => {
+      // The page asks on every load; the answer it gets after the proposal was approved wins.
+      mocks.contactDetailStore.contacts.c1.lawfulBasis = "customer"
+      mocks.contactDetailStore.optOuts.c1 = { state: "allowed" }
+      const first = await import("./ContactDetail")
+      const view = render(() => <first.ContactDetail entityId="c1" />)
+      expect(stateOf()).toHaveAttribute("data-state", "allowed")
+      view.unmount()
+      mocks.contactDetailStore.optOuts.c1 = { state: "opted_out" }
+      render(() => <first.ContactDetail entityId="c1" />)
+      expect(mocks.loadOptOut).toHaveBeenLastCalledWith(mocks.api, "c1", "a@x.com")
+      expect(stateOf()).toHaveAttribute("data-state", "opted_out")
+      expect(screen.queryByTestId("contact-follow-ups-detail")).toBeNull()
+    })
+
+    it("a recorded basis reads Allowed with its basis and date", async () => {
+      mocks.contactDetailStore.optOuts.c1 = { state: "allowed" }
+      mocks.contactDetailStore.contacts.c1.lawfulBasis = "professional_interest"
+      mocks.contactDetailStore.contacts.c1.lawfulBasisAt = "2025-03-12T10:00:00.000Z"
+      const { ContactDetail } = await import("./ContactDetail")
+      render(() => <ContactDetail entityId="c1" />)
+      expect(stateOf()).toHaveTextContent("Sales follow-ups allowed: professional interest.")
+      expect(screen.getByTestId("contact-follow-ups-detail")).toHaveTextContent(
+        "Recorded Mar 12, 2025.",
+      )
+    })
+
+    it("no basis shows the skipped line and never Allowed", async () => {
+      mocks.contactDetailStore.optOuts.c1 = { state: "allowed" }
+      mocks.contactDetailStore.contacts.c1.lawfulBasis = null
+      const { ContactDetail } = await import("./ContactDetail")
+      render(() => <ContactDetail entityId="c1" />)
+      expect(stateOf()).toHaveAttribute("data-state", "no_basis")
+      expect(stateOf()).toHaveTextContent(
+        "No recorded basis. Commercial follow-ups skip this person.",
+      )
+      expect(screen.getByTestId("contact-follow-ups")).not.toHaveTextContent("allowed")
+    })
+
+    it("an opt-out check that could not run never reads Allowed", async () => {
+      mocks.contactDetailStore.optOuts.c1 = { state: "unavailable" }
+      mocks.contactDetailStore.contacts.c1.lawfulBasis = "customer"
+      const { ContactDetail } = await import("./ContactDetail")
+      render(() => <ContactDetail entityId="c1" />)
+      expect(stateOf()).toHaveAttribute("data-state", "unknown")
+      expect(screen.getByTestId("contact-follow-ups")).not.toHaveTextContent("allowed")
+    })
+
+    it("the timeline reads only this contact's route, and only with the companies scope", async () => {
+      const { ContactDetail } = await import("./ContactDetail")
+      const without = render(() => <ContactDetail entityId="c1" />)
+      expect(screen.queryByTestId("contact-activity")).toBeNull()
+      without.unmount()
+      mocks.scopes = ["kernel:companies:read"]
+      render(() => <ContactDetail entityId="c1" />)
+      expect(screen.getByTestId("contact-activity")).toHaveAttribute(
+        "data-path",
+        "/contacts/c1/activity",
+      )
+      // The mail and ticket lists the timeline replaced are gone.
+      expect(screen.queryByTestId("contact-ticket-backlinks")).toBeNull()
+    })
+
+    it("a readable company shows as a link with its line and opens its page", async () => {
+      mocks.scopes = ["kernel:companies:read"]
+      mocks.contactDetailStore.contacts.c1.companyId = "co1"
+      mocks.companyStore.companies.co1 = {
+        id: "co1",
+        name: "Maison Arlon",
+        domain: "maison-arlon.example",
+        openDeal: { stage: "Proposal" },
+      }
+      const { ContactDetail } = await import("./ContactDetail")
+      render(() => <ContactDetail entityId="c1" />)
+      fireEvent.click(screen.getByTestId("contact-company-link"))
+      expect(mocks.openCompanyTab).toHaveBeenCalledWith("co1", "Maison Arlon")
+      expect(screen.getByTestId("contact-company-line")).toHaveTextContent("Deal in Proposal")
+      expect(screen.getByTestId("contact-activity.scope-note")).toHaveTextContent(
+        "Everything at the company is on Maison Arlon.",
+      )
+    })
+
+    it("a restricted company shows the company text with no link and no error", async () => {
+      mocks.scopes = ["kernel:companies:read"]
+      mocks.contactDetailStore.contacts.c1.companyId = "co1"
+      mocks.companyStore.companies.co1 = null
+      const { ContactDetail } = await import("./ContactDetail")
+      render(() => <ContactDetail entityId="c1" />)
+      expect(screen.queryByTestId("contact-company-link")).toBeNull()
+      expect(screen.getByTestId("contact-company-input")).toBeInTheDocument()
+      expect(screen.queryByRole("alert")).toBeNull()
+    })
   })
 })

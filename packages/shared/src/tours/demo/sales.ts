@@ -11,23 +11,39 @@
  * order, and the resumed run posts its summary in the visitor's chat with
  * their personal agent.
  */
-import { defineTour, RUN_CONVERSATION, type TourStep } from "../schema"
+import { RUN_CONVERSATION, type Tour, type TourStep } from "../schema"
 import {
   APPROVED_EVENT,
   dockToRunConversation,
   hop,
+  PRODUCTS_CFG,
   RUN_CONVERSATION_ROUTE,
   railHop,
   routineWorkOn,
+  type ScenarioCfg,
   scenarioKey,
+  scenarioTour,
   undoWindow,
   WAIT_FOR_AGENT_STEPS,
 } from "./shared"
 
-const k = scenarioKey("sales")
+/** What the sales scenario takes from its world besides the base configuration. */
+export interface SalesScenarioCfg extends ScenarioCfg {
+  /** The seeded routine the scenario switches on (demo seed, prospect routine). */
+  prospectRoutineName: string
+  /**
+   * The tools the one request's first step can run (its row on Home is found
+   * by them). Default: the CRM record or the quote.
+   */
+  bundleHeadTools?: readonly string[]
+}
 
-/** The seeded routine the scenario switches on (demo seed, prospect routine). */
-export const PROSPECT_ROUTINE_NAME = "Research interested prospects"
+export const PRODUCTS_SALES_CFG: SalesScenarioCfg = {
+  ...PRODUCTS_CFG,
+  prospectRoutineName: "Research interested prospects",
+}
+
+export const PROSPECT_ROUTINE_NAME = PRODUCTS_SALES_CFG.prospectRoutineName
 
 /** The CRM write the routine proposes for a new prospect (its record, or a note on one). */
 export const CRM_WRITE_TOOL = "api-connector:connector_write"
@@ -54,10 +70,6 @@ export const HOME_ROUTE = "/"
 const homeRow = (tools: string | readonly string[]) =>
   `attention-row-*[data-tool-name=${typeof tools === "string" ? tools : tools.join("|")}]`
 
-/** The request's expanded card in Home, and its Approve button. */
-const headCard = `approval-card[data-tool-name=${BUNDLE_HEAD_TOOLS.join("|")}]`
-const headApprove = `approval-card-action-approve[data-tool-name=${BUNDLE_HEAD_TOOLS.join("|")}]`
-
 /** Wait for the request's row in Home, then open it unless its card is open already. */
 const openInHome = (tools: readonly string[]): TourStep[] => {
   const value = [...tools]
@@ -83,184 +95,192 @@ const approveInHome = (tools: readonly string[]): TourStep[] => {
   ]
 }
 
-/** From the Agents app to the person's own agent's Routines tab, each hop ringed. */
-const toOwnRoutines = (beat: string) => [
-  railHop("Agents"),
-  hop(k(`${beat}.way2`), "agent-sidebar-row-*[data-agent-mine=true]"),
-  hop(k(`${beat}.way3`), "agent-page-tab-routines"),
-]
-
-export const scenarioSalesTour = defineTour({
-  id: "kernel.scenario-sales",
-  app: "kernel",
-  demoOnly: true,
-  // The routine's run lands in the person's one conversation with their agent
-  // (its report conversation, routine-report.ts): the tour opens that chat.
-  talksToAgent: true,
-  title: k("title"),
-  summary: k("summary"),
-  requires: { apps: ["mail"] },
-  beats: [
-    {
-      id: "crm",
-      kind: "show",
-      title: k("crm.title"),
-      body: k("crm.body"),
-      role: k("crm.role"),
-      anchor: "customer-card",
-      path: [railHop("Mail"), hop(k("crm.way2"), "conversation-row")],
-      route: "/mail",
-      // The card shows next to an open conversation: open the first one.
-      reach: [{ click: "conversation-row", unlessVisible: "customer-card" }],
-    },
-    {
-      id: "routine",
-      kind: "show",
-      title: k("routine.title"),
-      body: k("routine.body"),
-      role: k("routine.role"),
-      anchor: "routines-list",
-      path: toOwnRoutines("routine"),
-      route: "/agents/self/routines",
-    },
-    {
-      id: "enable",
-      kind: "do",
-      title: k("enable.title"),
-      body: k("enable.body"),
-      role: k("enable.role"),
-      anchor: "routines-list",
-      route: "/agents/self/routines",
-      // Switching on THIS routine, never another one: Next is no way past it.
-      event: {
-        app: "kernel",
-        entity: "routine",
-        action: "update",
-        match: { enabled: true, name: PROSPECT_ROUTINE_NAME },
+export function buildSalesTour(cfg: SalesScenarioCfg): Tour {
+  const k = scenarioKey(cfg.copy ?? "sales")
+  const routineName = cfg.prospectRoutineName
+  const head = cfg.bundleHeadTools ?? BUNDLE_HEAD_TOOLS
+  /** The request's expanded card in Home, and its Approve button. */
+  const headCard = `approval-card[data-tool-name=${head.join("|")}]`
+  const headApprove = `approval-card-action-approve[data-tool-name=${head.join("|")}]`
+  /** From the Agents app to the person's own agent's Routines tab, each hop ringed. */
+  const toOwnRoutines = (beat: string) => [
+    railHop("Agents"),
+    hop(k(`${beat}.way2`), "agent-sidebar-row-*[data-agent-mine=true]"),
+    hop(k(`${beat}.way3`), "agent-page-tab-routines"),
+  ]
+  return scenarioTour("sales", cfg, {
+    app: "kernel",
+    demoOnly: true,
+    // The routine's run lands in the person's one conversation with their agent
+    // (its report conversation, routine-report.ts): the tour opens that chat.
+    talksToAgent: true,
+    title: k("title"),
+    summary: k("summary"),
+    requires: { apps: ["mail"] },
+    beats: [
+      {
+        id: "crm",
+        kind: "show",
+        title: k("crm.title"),
+        body: k("crm.body"),
+        role: k("crm.role"),
+        anchor: "customer-card",
+        path: [railHop("Mail"), hop(k("crm.way2"), "conversation-row")],
+        route: "/mail",
+        // The card shows next to an open conversation: open the first one.
+        reach: [{ click: "conversation-row", unlessVisible: "customer-card" }],
       },
-      autoplay: [
-        { waitFor: `routine-enable-toggle-${PROSPECT_ROUTINE_NAME}` },
-        { click: `routine-enable-toggle-${PROSPECT_ROUTINE_NAME}`, unlessActive: true },
-        { waitEvent: true },
-      ],
-    },
-    {
-      id: "live-email",
-      kind: "world",
-      title: k("liveEmail.title"),
-      body: k("liveEmail.body"),
-      role: k("liveEmail.role"),
-      injector: "sales-email",
-      // Where it lands: that stays bright while the rest dims.
-      anchor: "mail-inbox",
-      path: [railHop("Mail")],
-      route: "/mail",
-    },
-    {
-      // The routine at work on the prospect's email: it checks the CRM, reads
-      // the sender's site when they are new, then prepares its one request,
-      // step by step. The step moves on when the request's LAST step (the
-      // reply) is proposed by the routine this run switched on: the request is
-      // then complete. A spinner shows meanwhile (`waitsOn`).
-      id: "researching",
-      kind: "do",
-      title: k("researching.title"),
-      body: k("researching.body"),
-      role: k("researching.role"),
-      event: routineWorkOn("kernel", "approval_request", "create", {
-        toolName: REPLY_TOOL,
-        "metadata.originRoutineId": "{enable}",
-      }),
-      waitsOn: "routine",
-      autoplay: WAIT_FOR_AGENT_STEPS,
-    },
-    {
-      // The one request, its row in Home. While the routine still works on it
-      // (or works again on a corrected one after a failed step) the step shows
-      // the spinner rather than an invitation to a row that is not there yet.
-      id: "bundle",
-      kind: "show",
-      title: k("bundle.title"),
-      body: k("bundle.body"),
-      role: k("bundle.role"),
-      anchor: homeRow(BUNDLE_HEAD_TOOLS),
-      path: [railHop("Home")],
-      route: HOME_ROUTE,
-      waitsOn: "routine",
-    },
-    {
-      // Opened: its three steps, in the order they run. Next waits for the open card.
-      id: "bundle-steps",
-      kind: "show",
-      title: k("bundleSteps.title"),
-      body: k("bundleSteps.body"),
-      role: k("bundleSteps.role"),
-      anchor: headCard,
-      path: [railHop("Home"), hop(k("bundleSteps.way2"), homeRow(BUNDLE_HEAD_TOOLS))],
-      route: HOME_ROUTE,
-      reach: openInHome(BUNDLE_HEAD_TOOLS),
-      waitsOn: "routine",
-    },
-    {
-      // Approved once; the step completes when the LAST step, the reply on
-      // the prospect's conversation this run injected, has run. A failed step
-      // sends the run back to work (its spinner) and a corrected request comes
-      // back to this row.
-      id: "approve",
-      kind: "do",
-      title: k("approve.title"),
-      body: k("approve.body"),
-      role: k("approve.role"),
-      anchor: headApprove,
-      path: [railHop("Home"), hop(k("approve.way2"), homeRow(BUNDLE_HEAD_TOOLS))],
-      route: HOME_ROUTE,
-      event: {
-        ...APPROVED_EVENT,
-        match: {
-          ...APPROVED_EVENT.match,
-          toolName: REPLY_TOOL,
-          "currentPayload.conversationId": "{live-email}",
+      {
+        id: "routine",
+        kind: "show",
+        title: k("routine.title"),
+        body: k("routine.body"),
+        role: k("routine.role"),
+        anchor: "routines-list",
+        path: toOwnRoutines("routine"),
+        route: "/agents/self/routines",
+      },
+      {
+        id: "enable",
+        kind: "do",
+        title: k("enable.title"),
+        body: k("enable.body"),
+        role: k("enable.role"),
+        anchor: "routines-list",
+        route: "/agents/self/routines",
+        // Switching on THIS routine, never another one: Next is no way past it.
+        event: {
+          app: "kernel",
+          entity: "routine",
+          action: "update",
+          match: { enabled: true, name: routineName },
         },
+        autoplay: [
+          { waitFor: `routine-enable-toggle-${routineName}` },
+          { click: `routine-enable-toggle-${routineName}`, unlessActive: true },
+          { waitEvent: true },
+        ],
       },
-      waitsOn: "routine",
-      autoplay: approveInHome(BUNDLE_HEAD_TOOLS),
-      undo: undoWindow(k("approve.undo")),
-    },
-    {
-      // The routine's summary, posted at the end of its run in the person's
-      // chat with their agent. Next waits until it is there.
-      id: "brief",
-      kind: "show",
-      title: k("brief.title"),
-      body: k("brief.body"),
-      role: k("brief.role"),
-      // The summary itself, the whole message, in the conversation it was posted to.
-      anchor: `message-row[data-routine-report-thread={${RUN_CONVERSATION}}]`,
-      path: dockToRunConversation(k("brief.way1"), k("brief.way3")),
-      route: HOME_ROUTE,
-      routePhone: RUN_CONVERSATION_ROUTE,
-      reach: [{ openRunConversation: true }],
-      waitsOn: "routine",
-    },
-    {
-      id: "card",
-      kind: "show",
-      title: k("card.title"),
-      body: k("card.body"),
-      role: k("card.role"),
-      anchor: "customer-card",
-      path: [
-        railHop("Mail"),
-        hop(k("card.way2"), "conversation-row[data-conversation-id={live-email}]"),
-      ],
-      route: "/mail/{live-email}",
-    },
-    {
-      id: "done",
-      kind: "show",
-      title: k("done.title"),
-      body: k("done.body"),
-      role: k("done.role"),
-    },
-  ],
-})
+      {
+        id: "live-email",
+        kind: "world",
+        title: k("liveEmail.title"),
+        body: k("liveEmail.body"),
+        role: k("liveEmail.role"),
+        injector: cfg.injector ?? "sales-email",
+        // Where it lands: that stays bright while the rest dims.
+        anchor: "mail-inbox",
+        path: [railHop("Mail")],
+        route: "/mail",
+      },
+      {
+        // The routine at work on the prospect's email: it checks the CRM, reads
+        // the sender's site when they are new, then prepares its one request,
+        // step by step. The step moves on when the request's LAST step (the
+        // reply) is proposed by the routine this run switched on: the request is
+        // then complete. A spinner shows meanwhile (`waitsOn`).
+        id: "researching",
+        kind: "do",
+        title: k("researching.title"),
+        body: k("researching.body"),
+        role: k("researching.role"),
+        event: routineWorkOn("kernel", "approval_request", "create", {
+          toolName: REPLY_TOOL,
+          "metadata.originRoutineId": "{enable}",
+        }),
+        waitsOn: "routine",
+        autoplay: WAIT_FOR_AGENT_STEPS,
+      },
+      {
+        // The one request, its row in Home. While the routine still works on it
+        // (or works again on a corrected one after a failed step) the step shows
+        // the spinner rather than an invitation to a row that is not there yet.
+        id: "bundle",
+        kind: "show",
+        title: k("bundle.title"),
+        body: k("bundle.body"),
+        role: k("bundle.role"),
+        anchor: homeRow(head),
+        path: [railHop("Home")],
+        route: HOME_ROUTE,
+        waitsOn: "routine",
+      },
+      {
+        // Opened: its three steps, in the order they run. Next waits for the open card.
+        id: "bundle-steps",
+        kind: "show",
+        title: k("bundleSteps.title"),
+        body: k("bundleSteps.body"),
+        role: k("bundleSteps.role"),
+        anchor: headCard,
+        path: [railHop("Home"), hop(k("bundleSteps.way2"), homeRow(head))],
+        route: HOME_ROUTE,
+        reach: openInHome(head),
+        waitsOn: "routine",
+      },
+      {
+        // Approved once; the step completes when the LAST step, the reply on
+        // the prospect's conversation this run injected, has run. A failed step
+        // sends the run back to work (its spinner) and a corrected request comes
+        // back to this row.
+        id: "approve",
+        kind: "do",
+        title: k("approve.title"),
+        body: k("approve.body"),
+        role: k("approve.role"),
+        anchor: headApprove,
+        path: [railHop("Home"), hop(k("approve.way2"), homeRow(head))],
+        route: HOME_ROUTE,
+        event: {
+          ...APPROVED_EVENT,
+          match: {
+            ...APPROVED_EVENT.match,
+            toolName: REPLY_TOOL,
+            "currentPayload.conversationId": "{live-email}",
+          },
+        },
+        waitsOn: "routine",
+        autoplay: approveInHome(head),
+        undo: undoWindow(k("approve.undo")),
+      },
+      {
+        // The routine's summary, posted at the end of its run in the person's
+        // chat with their agent. Next waits until it is there.
+        id: "brief",
+        kind: "show",
+        title: k("brief.title"),
+        body: k("brief.body"),
+        role: k("brief.role"),
+        // The summary itself, the whole message, in the conversation it was posted to.
+        anchor: `message-row[data-routine-report-thread={${RUN_CONVERSATION}}]`,
+        path: dockToRunConversation(k("brief.way1"), k("brief.way3")),
+        route: HOME_ROUTE,
+        routePhone: RUN_CONVERSATION_ROUTE,
+        reach: [{ openRunConversation: true }],
+        waitsOn: "routine",
+      },
+      {
+        id: "card",
+        kind: "show",
+        title: k("card.title"),
+        body: k("card.body"),
+        role: k("card.role"),
+        anchor: "customer-card",
+        path: [
+          railHop("Mail"),
+          hop(k("card.way2"), "conversation-row[data-conversation-id={live-email}]"),
+        ],
+        route: "/mail/{live-email}",
+      },
+      {
+        id: "done",
+        kind: "show",
+        title: k("done.title"),
+        body: k("done.body"),
+        role: k("done.role"),
+      },
+    ],
+  })
+}
+
+export const scenarioSalesTour = buildSalesTour(PRODUCTS_SALES_CFG)

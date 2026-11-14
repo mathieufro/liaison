@@ -616,6 +616,11 @@ never a value. `--dry-run` prints the same comparison as a plan line for an
 org that already exists, and writes nothing. So a renamed host is corrected by
 editing the config and applying it again.
 
+Before a new or changed key is stored, `config apply` runs the connection's own
+check of it, as the settings page does (Stripe, for example, reads its account
+with the new key). A refused key stops the run (exit `2`) with the reason, and
+nothing is stored: the connection keeps the key it had.
+
 After the connection is applied, changed or not, `config apply` runs the app's
 `config verify` check (its `provisioning.verify` handler) against the stored
 connection when the app has one. The result is the entry's `health`

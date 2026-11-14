@@ -36,9 +36,12 @@ import {
 } from "~/apps/knowledge/synced-sources"
 import { extractRows } from "~/db"
 import { __privileged_db__ as db } from "~/db/connection"
+import { withPrivilegedDb } from "~/db/privileged"
 import { withRlsContext } from "~/db/rls"
 import { knowledgeSourceKindRegistry } from "~/modules/apps/app-registries"
+import { createExternalUser } from "~/modules/users/external-user"
 import * as minimal from "~/seed/tiers/minimal"
+import { createTestCompany } from "~/tests/helpers/company"
 import { createTestOrg } from "~/tests/helpers/org"
 import { acquireTestLock, releaseTestLock } from "~/tests/route-test-setup"
 
@@ -447,6 +450,20 @@ describe("an app source syncs into Knowledge", () => {
     expect(await loadAppSourceOwnerScopes(orgB, owner.id)).toBeNull()
     await db.execute(sql`UPDATE kernel.users SET status = 'deactivated' WHERE id = ${owner.id}`)
     expect(await loadAppSourceOwnerScopes(orgA, owner.id)).toBeNull()
+  })
+
+  it("an external user's scopes are never an app source owner's", async () => {
+    const companyId = await createTestCompany(orgA)
+    const created = await withPrivilegedDb(orgA, "app-source-external-owner-test", (tx) =>
+      createExternalUser(tx, {
+        orgId: orgA,
+        companyId,
+        email: `client-${crypto.randomUUID().slice(0, 8)}@client.example`,
+        name: "Client",
+      }),
+    )
+    if (!created.ok) throw new Error(created.code)
+    expect(await loadAppSourceOwnerScopes(orgA, created.userId)).toBeNull()
   })
 })
 

@@ -20,6 +20,16 @@ import {
   WEB_BASE,
 } from "./client"
 
+/** `redactSecrets` over a text field that may be absent. */
+function redacted<T extends string | null | undefined>(text: T): T {
+  return (typeof text === "string" ? redactSecrets(text) : text) as T
+}
+
+/** A diff list with every diff's text redacted. */
+function redactedDiffs<T extends { diff: string }>(diffs: T[]): T[] {
+  return diffs.map((d) => ({ ...d, diff: redactSecrets(d.diff ?? "") }))
+}
+
 export type ToolError = { error: { code: string; message: string } }
 
 export function toolError(err: unknown): ToolError {
@@ -126,8 +136,8 @@ interface Issue {
 
 const mrShape = (mr: MergeRequest) => ({
   iid: mr.iid,
-  title: mr.title,
-  description: mr.description,
+  title: redactSecrets(mr.title ?? ""),
+  description: redacted(mr.description),
   state: mr.state,
   targetBranch: mr.target_branch,
   sourceBranch: mr.source_branch,
@@ -143,8 +153,8 @@ const mrShape = (mr: MergeRequest) => ({
 
 const issueShape = (i: Issue) => ({
   iid: i.iid,
-  title: i.title,
-  description: i.description,
+  title: redactSecrets(i.title ?? ""),
+  description: redacted(i.description),
   state: i.state,
   labels: i.labels ?? [],
   milestone: i.milestone?.title ?? null,
@@ -159,8 +169,8 @@ const issueShape = (i: Issue) => ({
 const commitShape = (c: Commit) => ({
   sha: c.id,
   shortSha: c.short_id,
-  title: c.title,
-  message: c.message,
+  title: redactSecrets(c.title ?? ""),
+  message: redactSecrets(c.message ?? ""),
   author: c.author_name,
   date: c.committed_date,
   url: c.web_url,
@@ -216,12 +226,14 @@ export async function gitlabGetCommit(
     const base = `/projects/${encodeId(params.project)}/repository/commits/${encodeURIComponent(params.sha)}`
     const commit = await getJson<Commit>(ctx, base)
     const diffs = params.withDiff
-      ? (
-          await getList<{ old_path: string; new_path: string; diff: string }>(
-            ctx,
-            `${base}/diff?per_page=100`,
-          )
-        ).items
+      ? redactedDiffs(
+          (
+            await getList<{ old_path: string; new_path: string; diff: string }>(
+              ctx,
+              `${base}/diff?per_page=100`,
+            )
+          ).items,
+        )
       : undefined
     return { commit: { ...commitShape(commit), stats: commit.stats, diffs } }
   })
@@ -264,12 +276,14 @@ export async function gitlabGetMergeRequest(
     const base = `/projects/${encodeId(params.project)}/merge_requests/${encodeURIComponent(String(params.iid))}`
     const mr = await getJson<MergeRequest>(ctx, base)
     const changes = params.withChanges
-      ? (
-          await getList<{ old_path: string; new_path: string; diff: string }>(
-            ctx,
-            `${base}/diffs?per_page=100`,
-          )
-        ).items
+      ? redactedDiffs(
+          (
+            await getList<{ old_path: string; new_path: string; diff: string }>(
+              ctx,
+              `${base}/diffs?per_page=100`,
+            )
+          ).items,
+        )
       : undefined
     return { mergeRequest: { ...mrShape(mr), changes } }
   })
@@ -321,8 +335,8 @@ export async function gitlabListMilestones(
       {
         milestones: items.map((m) => ({
           iid: m.iid,
-          title: m.title,
-          description: m.description,
+          title: redactSecrets(m.title ?? ""),
+          description: redacted(m.description),
           state: m.state,
           startDate: m.start_date,
           dueDate: m.due_date,
@@ -350,7 +364,7 @@ export async function gitlabListLabels(params: { project: string }, ctx: GitlabC
         labels: items.map((l) => ({
           name: l.name,
           color: l.color,
-          description: l.description,
+          description: redacted(l.description),
           openIssues: l.open_issues_count,
           closedIssues: l.closed_issues_count,
           openMRs: l.open_merge_requests_count,
@@ -377,8 +391,8 @@ export async function gitlabListReleases(params: { project: string }, ctx: Gitla
       {
         releases: items.map((r) => ({
           tagName: r.tag_name,
-          name: r.name,
-          description: r.description,
+          name: redacted(r.name),
+          description: redacted(r.description),
           createdAt: r.created_at,
           releasedAt: r.released_at,
           author: r.author?.username ?? null,
@@ -407,10 +421,10 @@ export async function gitlabListTags(params: { project: string }, ctx: GitlabCtx
       {
         tags: items.map((t) => ({
           name: t.name,
-          message: t.message,
+          message: redacted(t.message),
           commit: { sha: t.commit.id, title: t.commit.title, date: t.commit.committed_date },
           release: t.release
-            ? { tagName: t.release.tag_name, description: t.release.description }
+            ? { tagName: t.release.tag_name, description: redacted(t.release.description) }
             : null,
         })),
       },
@@ -505,7 +519,7 @@ function searchHitShape(scope: string, r: Record<string, unknown>): Record<strin
     path: r.path,
     filename: r.filename,
     ref: r.ref,
-    snippet: r.data,
+    snippet: typeof r.data === "string" ? redactSecrets(r.data) : r.data,
     startLine: r.startline,
     projectId: r.project_id,
   }

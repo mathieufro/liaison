@@ -179,7 +179,7 @@ const KERNEL_SETTINGS_TOOLS = [
   "approveFromHome.set",
 ]
 
-describe("the tickets manifest declares a table for every one of its 59 tools", () => {
+describe("the tickets manifest declares a table for every one of its 62 tools", () => {
   it("every write tool names the table it writes, every read names the table it reads", () => {
     const undeclared: string[] = []
     for (const [name, def] of Object.entries(manifestTools)) {
@@ -194,7 +194,10 @@ describe("the tickets manifest declares a table for every one of its 59 tools", 
     }
     expect(undeclared).toEqual([])
     // 59: + categories.tree / categories.reorder, the settings page's categories tree.
-    expect(Object.keys(manifestTools).length).toBe(59)
+    // 60: + approval_route_read, who an approval about a ticket is for.
+    // 61: + activity_read, a company's or a contact's tickets for their timeline.
+    // 62: + company_tickets, the open tickets on a company's page.
+    expect(Object.keys(manifestTools).length).toBe(62)
     expect(manifestTools["idSegment.get"]?.readOnly).toBe(true)
     expect(manifestTools["idSegment.set"]?.writesToTable).toBeUndefined()
     expect(manifestTools["idSegment.set"]?.readOnly).not.toBe(true)

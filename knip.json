@@ -143,6 +143,10 @@
       "entry": ["handlers.ts", "ui.tsx", "scripts/*.ts"],
       "ignoreDependencies": ["bun-types"]
     },
+    "bundled-apps/stripe": {
+      "entry": ["handlers.ts"],
+      "ignoreDependencies": ["bun-types"]
+    },
     "bundled-apps/social": {
       "entry": ["handlers.ts", "ui.tsx", "src/**/*.vitest.tsx", "vitest.config.ts"],
       "ignoreDependencies": ["bun-types", "vitest", "@solidjs/testing-library"]

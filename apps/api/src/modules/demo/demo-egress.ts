@@ -47,6 +47,8 @@ export type DemoRestrictedAction =
   | "app_fetch"
   /** Adding, replacing or removing an API connector connection, or giving it credentials. */
   | "api_connector_change"
+  /** A request the card-payments stand-in does not model (never answered empty). */
+  | "payments_unsupported"
 
 const MESSAGE_KEY: Record<DemoRestrictedAction, string> = {
   outbound_mail: "kernel.demo.mailBlocked",
@@ -54,6 +56,7 @@ const MESSAGE_KEY: Record<DemoRestrictedAction, string> = {
   web_search: "kernel.demo.webSearchBlocked",
   app_fetch: "kernel.demo.appFetchBlocked",
   api_connector_change: "kernel.demo.apiConnectorBlocked",
+  payments_unsupported: "kernel.demo.paymentsUnsupported",
 }
 
 /**

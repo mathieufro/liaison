@@ -27,6 +27,7 @@ import { homeFilter, setHomeFilter } from "~/modules/shell/home-filter"
 import { tabStore } from "~/modules/shell/tab-store"
 import { resetSidebarSections } from "~/modules/threads/sidebar-sections"
 import HomeAttentionSidebar from "./HomeAttentionSidebar"
+import HomeBriefCard from "./HomeBriefCard"
 
 const item = (over: Partial<AttentionItem> & { id: string }): AttentionItem => ({
   app: "tickets",
@@ -95,7 +96,8 @@ describe("HomeAttentionSidebar", () => {
   it("lists Needs you, Your queues and Agents with the feed's counts", () => {
     attentionStore._setForTest({ items: busy })
     render(() => <HomeAttentionSidebar />)
-    expect(screen.getByTestId("home-side-needs-total").textContent).toBe("6")
+    // The two system alerts are one row: 4 approvals + 1 alert row.
+    expect(screen.getByTestId("home-side-needs-total").textContent).toBe("5")
     // The access request is in Approvals (its own facet), not a row apart.
     expect(count("home-side-approvals")).toBe("4")
     expect(count("home-side-approvals-contacts:group_delete")).toBe("2")
@@ -105,7 +107,7 @@ describe("HomeAttentionSidebar", () => {
       "Access requests",
     )
     expect(screen.queryByTestId("home-side-access")).toBeNull()
-    expect(count("home-side-alerts")).toBe("2")
+    expect(count("home-side-alerts")).toBe("1")
     // Tickets awaiting a reply are Support queue volume, with the nudge.
     expect(count("home-side-queue-tickets")).toBe("3")
     expect(count("home-side-queue-tickets-awaiting_agent")).toBe("2")
@@ -128,8 +130,8 @@ describe("HomeAttentionSidebar", () => {
         <HomeAttentionSidebar />
       </>
     ))
-    expect(screen.getByTestId("home-side-needs-total").textContent).toBe("6")
-    expect(screen.getByTestId("activity-bar-home-badge").textContent).toBe("6")
+    expect(screen.getByTestId("home-side-needs-total").textContent).toBe("5")
+    expect(screen.getByTestId("activity-bar-home-badge").textContent).toBe("5")
   })
 
   it("shows a member no access requests, and the badge agrees", () => {
@@ -143,8 +145,8 @@ describe("HomeAttentionSidebar", () => {
     ))
     expect(screen.queryByTestId("home-side-approvals-kernel:access_requests")).toBeNull()
     expect(count("home-side-approvals")).toBe("3")
-    expect(screen.getByTestId("home-side-needs-total").textContent).toBe("5")
-    expect(screen.getByTestId("activity-bar-home-badge").textContent).toBe("5")
+    expect(screen.getByTestId("home-side-needs-total").textContent).toBe("4")
+    expect(screen.getByTestId("activity-bar-home-badge").textContent).toBe("4")
   })
 
   it("says Nothing needs you, and hides the empty sections", () => {
@@ -198,6 +200,46 @@ describe("HomeAttentionSidebar", () => {
     expect((await screen.findByTestId("home-side-computer-status")).dataset.online).toBe("true")
     expect(count("home-side-computer")).toContain("2")
     expect((await screen.findByTestId("home-side-waiting-count")).textContent).toBe("1")
+  })
+
+  it("the brief shows one time, its newest message's, the same as Home's brief card", async () => {
+    apiGet.mockImplementation(async (path: string) => {
+      if (path.startsWith("/agent/routines/latest-brief"))
+        return {
+          routineId: "r",
+          name: "Morning brief",
+          status: "active",
+          enabled: true,
+          // The routine ran an hour before its brief was written.
+          lastRunAt: "2026-10-12T08:00:00.000Z",
+          lastRunStatus: "succeeded",
+          outputThreadId: "th",
+          messageId: "m1",
+          messageAt: "2026-10-12T09:15:00.000Z",
+        }
+      if (path.startsWith("/home/brief"))
+        return {
+          routineId: "r",
+          routineName: "Morning brief",
+          message: { id: "m1", threadId: "th", text: "Today", at: "2026-10-12T09:15:00.000Z" },
+        }
+      return []
+    })
+    attentionStore._setForTest({ items: busy })
+    render(() => (
+      <>
+        <HomeAttentionSidebar />
+        <HomeBriefCard />
+      </>
+    ))
+    const cardTime = (await screen.findByTestId("home-brief-time")).textContent
+    await screen.findByTestId("home-side-brief")
+    await vi.waitFor(() => expect(count("home-side-brief")).toBe(cardTime))
+    const ranAt = new Date("2026-10-12T08:00:00.000Z").toLocaleTimeString("en", {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    expect(count("home-side-brief")).not.toBe(ranAt)
   })
 
   it("offers to set up a morning brief when there is none", async () => {

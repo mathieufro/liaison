@@ -138,6 +138,7 @@ export interface IsolatedHost {
     decision: "approve" | "deny",
     payloadHash?: string,
   ) => Promise<unknown>
+  editApproval?: (app: string, id: string, fields: Record<string, unknown>) => Promise<unknown>
   openExternal?: (app: string, url: string) => Promise<void>
   openRecord?: (caller: string, app: string, entity: string, id: string) => void
   openApprovals?: () => void
@@ -445,6 +446,20 @@ export async function answerFrameCall(
         decision,
         typeof payloadHash === "string" ? payloadHash : undefined,
       )
+    }
+    case "editApproval": {
+      const [id, fields] = args
+      if (
+        typeof id !== "string" ||
+        !fields ||
+        typeof fields !== "object" ||
+        Array.isArray(fields) ||
+        !host.editApproval
+      ) {
+        throw new Error("editApproval: an approval id and the fields to change are required")
+      }
+      // The host checks the approval is this app's; the server checks each field is editable.
+      return host.editApproval(app, id, fields as Record<string, unknown>)
     }
     case "openExternal": {
       const [url] = args

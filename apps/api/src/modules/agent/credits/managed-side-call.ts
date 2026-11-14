@@ -12,7 +12,7 @@
 // Unlike `preCheck`, the model is fixed by the caller (an OpenRouter id), not
 // resolved from the org's enabled models: a side call's model is the
 // product's choice, never the org's list.
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { withPrivilegedDb } from "~/db/privileged"
 import { resolveKey, spendGate } from "~/modules/agent/credits/credit-meter"
 import { openRouterModelKey } from "~/modules/agent/credits/model-keys"
@@ -96,7 +96,11 @@ export async function systemWorkUserId(orgId: string): Promise<string | null> {
   if (attributionUsers.has(orgId)) return attributionUsers.get(orgId) ?? null
   const { users } = await import("~/db/schema/kernel")
   const [u] = await withPrivilegedDb(orgId, "side-call-attribution-user", (tx) =>
-    tx.select({ id: users.id }).from(users).where(eq(users.orgId, orgId)).limit(1),
+    tx
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.orgId, orgId), eq(users.userType, "member")))
+      .limit(1),
   )
   const id = u?.id ?? null
   if (id) attributionUsers.set(orgId, id)

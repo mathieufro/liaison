@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { describe, expect, it } from "bun:test"
+import { carriedGuideNotesRow, trimHistoryToBudget } from "~/modules/agent/context/checkpoint"
 import { convertToCoreMessages } from "~/modules/agent/context/context"
 import {
   GUIDE_NOTES_META_KEY,
@@ -106,5 +107,40 @@ describe("guide notes", () => {
       "step-note",
       "Done.",
     ])
+  })
+
+  it("a guide sent in a row the tail cap dropped stays in the history, so it is not sent again", () => {
+    const tickets = renderGuideNote(["### tickets\nUse tickets."], ["tickets"])
+    const mail = renderGuideNote(["### mail\nUse mail."], ["mail"])
+    const row = (id: string, authorType: string, content: string, notes: string[] = []) => ({
+      id,
+      authorType,
+      content,
+      metadata: notes.length
+        ? { [GUIDE_NOTES_META_KEY]: notes.map((c) => ({ afterToolCallId: null, content: c })) }
+        : {},
+    })
+    const rows = [
+      row("u1", "user", "x".repeat(4_000)),
+      row("a1", "agent", "y".repeat(4_000), [tickets]),
+      row("u2", "user", "z".repeat(4_000)),
+      row("a2", "agent", "w".repeat(4_000), [mail, tickets]),
+      row("a3", "agent", "short answer", [mail]),
+      row("u3", "user", "last question"),
+    ]
+    const trimmed = trimHistoryToBudget(rows, 1_200)
+    expect(trimmed.droppedRows).toBeGreaterThan(1)
+    const carried = carriedGuideNotesRow(rows.slice(0, trimmed.droppedRows), trimmed.rows, {
+      threadId: "t",
+      orgId: "o",
+    })
+    expect(carried).not.toBeNull()
+    const replayed = convertToCoreMessages([carried as never, ...trimmed.rows] as never)
+    expect([...guidePartsInMessages(replayed as never)]).toContain("tickets")
+    // Each note once, however many dropped rows carried it.
+    expect(replayed.filter((m) => m.content === tickets)).toHaveLength(1)
+    expect(replayed.filter((m) => m.content === mail)).toHaveLength(1)
+    expect(trimmed.rows.map((r) => r.id)).toEqual(["a3", "u3"])
+    expect(carriedGuideNotesRow([rows[0] as never], [], { threadId: "t", orgId: "o" })).toBeNull()
   })
 })

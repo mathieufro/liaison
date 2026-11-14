@@ -1,0 +1,17 @@
+{
+  "entry": "tool:issuer_stream_get",
+  "params": {},
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": ["issuer_profiles", "{\"limit\":100}"],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": ["stripe_streams", "{\"limit\":100}"],
+      "reply": "[]"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

@@ -286,7 +286,52 @@ async function probeRedisAlive(): Promise<boolean> {
   }
 }
 
+/** The project the dev substrate's compose file names (`name:` in docker-compose.yml). */
+export const DEV_COMPOSE_PROJECT = "liaison"
+
+/**
+ * The self-host stack's compose file, when the project's containers came from it. The
+ * self-host stack (deploy/docker-compose.yml, the trial's quickstart) also runs as project
+ * `liaison`, with the same service names: neither name can change without renaming running
+ * containers and volumes, so the dev tooling refuses to act on a project that holds it.
+ */
+export function selfHostComposeIn(configFiles: readonly string[]): string | null {
+  for (const entry of configFiles) {
+    for (const file of entry.split(",")) {
+      if (/(^|[/\\])deploy[/\\][^/\\]*compose[^/\\]*\.ya?ml$/i.test(file.trim())) return file.trim()
+    }
+  }
+  return null
+}
+
+/** Throw before a dev compose command would recreate or restart the self-host stack. */
+export function assertDevComposeProject(): void {
+  const listed = spawnSync(
+    "docker",
+    [
+      "ps",
+      "-a",
+      "--filter",
+      `label=com.docker.compose.project=${DEV_COMPOSE_PROJECT}`,
+      "--format",
+      '{{.Label "com.docker.compose.project.config_files"}}',
+    ],
+    { stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8", timeout: DOCKER_CMD_TIMEOUT_MS },
+  )
+  if (listed.status !== 0) return
+  const selfHost = selfHostComposeIn(listed.stdout.split("\n"))
+  if (selfHost) {
+    throw new Error(
+      `The compose project '${DEV_COMPOSE_PROJECT}' holds the self-host stack (${selfHost}), ` +
+        "and the dev substrate uses the same project name. Running the dev compose now would " +
+        "recreate or restart its containers. Stop it first (deploy/quickstart.sh --down keeps " +
+        "its data), or start it under another name (deploy/quickstart.sh --project <name>).",
+    )
+  }
+}
+
 async function runDockerCompose(args: string[]): Promise<void> {
+  assertDevComposeProject()
   const result = spawnSync("docker", ["compose", ...args], {
     cwd: REPO_ROOT,
     stdio: ["ignore", "pipe", "pipe"],

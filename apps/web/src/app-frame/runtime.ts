@@ -142,6 +142,8 @@ export function startFrameRuntime(win: Window & typeof globalThis = window): voi
     },
     createResource: <T>(fetcher: () => T | Promise<T>) => createResource(fetcher),
     mountSlot: () => ({ resolved: false, dispose: () => {} }),
+    // An isolated frame has no kernel tree to render the discussion in: the caller's fallback shows.
+    mountEntityDiscussion: () => ({ resolved: false, dispose: () => {} }),
     // A browser path, not the shell's: an isolated app opens no file natively.
     openFile: async () => false,
     // Host API 1.3: answered by the page for this app only (host-app-calls.ts).
@@ -157,6 +159,11 @@ export function startFrameRuntime(win: Window & typeof globalThis = window): voi
     listMyApprovals: (_app: string) => call("listMyApprovals", []),
     decideApproval: (_app: string, id: string, decision: string, payloadHash?: string) =>
       call("decideApproval", [id, decision, payloadHash ?? null]),
+    editApproval: (_app: string, id: string, fields: Record<string, unknown>) =>
+      call("editApproval", [id, fields]) as Promise<{
+        currentPayload?: Record<string, unknown>
+        payloadHash?: string
+      }>,
     openExternal: async (_app: string, url: string) => {
       await call("openExternal", [url])
     },

@@ -47,6 +47,7 @@ import {
   subsetOfScopes,
 } from "~/modules/agent/tools/skills-routines-tools"
 import { skillRegistry } from "~/modules/apps/app-registries"
+import { isFeatureOffForTool } from "~/modules/apps/org-apps"
 
 const log = rootLogger.child({ module: "skills-routes" })
 
@@ -313,7 +314,10 @@ skillsRoutes.post("/:id/fork", async (c) => {
     if (!m) throw new HTTPException(400, { message: "Invalid skill id" })
     const [, appName, skillName] = m
     const entry = skillRegistry.get([actor.orgId, appName, skillName])
-    if (!entry) throw new HTTPException(404, { message: "Source skill not found" })
+    // A skill of a feature the org has off cannot be read, so it cannot be forked either.
+    if (!entry || isFeatureOffForTool(actor.orgId, { appName, feature: entry.feature })) {
+      throw new HTTPException(404, { message: "Source skill not found" })
+    }
     source = {
       name: entry.name,
       description: entry.description,
@@ -377,6 +381,7 @@ appSkillsRoutes.get("/", async (c) => {
   for (const [key, entry] of skillRegistry.entriesOf(actor.orgId)) {
     const [, appName, skillName] = key
     if (!subsetOfScopes(entry.requiredScopes ?? [], scopes)) continue
+    if (isFeatureOffForTool(actor.orgId, { appName, feature: entry.feature })) continue
     out.push({
       appName,
       name: skillName,
@@ -405,7 +410,8 @@ appSkillsRoutes.get("/:app/:name", async (c) => {
     throw new HTTPException(404, { message: `App '${appName}' is not enabled for this org` })
   }
   target = skillRegistry.get([actor.orgId, appName, skillName])
-  if (!target) {
+  // Off with its feature, as in the listing: the skill is not there to read.
+  if (!target || isFeatureOffForTool(actor.orgId, { appName, feature: target.feature })) {
     throw new HTTPException(404, { message: `Skill '${skillName}' not found in app '${appName}'` })
   }
   const disabled = await resolveDisabledAppSkills(actor.orgId, actor.userId)

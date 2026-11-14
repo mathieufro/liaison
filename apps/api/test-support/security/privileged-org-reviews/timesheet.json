@@ -1,0 +1,5 @@
+{
+  "reviewedOrigins": {
+    "apps/api/src/apps/projects/service/timesheet.ts#exportTimesheet": "the dated sheet's export: the viewer is the bridge's own person (writeActor: the org of the person's row-security context and their user id), the sheet was read under that person's row security first, and the file is staged in that one org for that one person"
+  }
+}

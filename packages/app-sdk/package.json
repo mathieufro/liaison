@@ -11,7 +11,8 @@
     "./bytes": "./src/bytes.ts",
     "./connection-credentials": "./src/connection-credentials.ts",
     "./contracts": "./src/contracts/index.ts",
-    "./effects": "./src/effects.ts"
+    "./effects": "./src/effects.ts",
+    "./errors": "./src/errors.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

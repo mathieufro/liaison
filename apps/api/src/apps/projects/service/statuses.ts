@@ -4,6 +4,7 @@ import { sql as drizzleSql } from "drizzle-orm"
 import { projectsRel } from "~/apps/projects/schema-refs"
 import { extractRows, type RlsClient } from "~/db"
 import type { UserContext } from "~/db/rls"
+import { assertKeepsClosingStages, syncDealOutcome } from "./deals"
 import { loadTaskDetails } from "./task-detail"
 import { recordTransitions, type TransitionActor, transitionActorFor } from "./transitions"
 
@@ -176,10 +177,16 @@ export async function updateStatus(args: UpdateStatusArgs): Promise<ProjectStatu
               FOR UPDATE
             `),
           )[0]?.terminal
+    // A stage that stops being terminal stops closing deals (a deal outcome
+    // lives only on a terminal stage), unless it is the pipeline's last won or
+    // lost stage, which is refused.
+    const stopsClosing = patch.terminal === false && before === true
+    if (stopsClosing) await assertKeepsClosingStages(innerTx, orgId, projectId, statusId)
     const sets: ReturnType<typeof drizzleSql>[] = []
     if (patch.label !== undefined) sets.push(drizzleSql`label = ${patch.label}`)
     if (patch.color !== undefined) sets.push(drizzleSql`color = ${patch.color}`)
     if (patch.terminal !== undefined) sets.push(drizzleSql`terminal = ${patch.terminal}`)
+    if (stopsClosing) sets.push(drizzleSql`deal_outcome = NULL`)
     sets.push(drizzleSql`updated_at = now()`)
     const setSql = sets.reduce<ReturnType<typeof drizzleSql> | null>(
       (acc, frag) => (acc === null ? frag : drizzleSql`${acc}, ${frag}`),
@@ -204,13 +211,23 @@ export async function updateStatus(args: UpdateStatusArgs): Promise<ProjectStatu
         const completedAtSql = patch.terminal
           ? drizzleSql`COALESCE(completed_at, now())`
           : drizzleSql`NULL`
-        await innerTx.execute(drizzleSql`
-          UPDATE ${projectsRel("tasks")}
-          SET completed_at = ${completedAtSql}, updated_at = now()
-          WHERE status_id = ${statusId}::uuid
-            AND project_id = ${projectId}::uuid
-            AND org_id = ${orgId}::uuid
-        `)
+        const inColumn = extractRows<{ id: string }>(
+          await innerTx.execute(drizzleSql`
+            UPDATE ${projectsRel("tasks")}
+            SET completed_at = ${completedAtSql}, updated_at = now()
+            WHERE status_id = ${statusId}::uuid
+              AND project_id = ${projectId}::uuid
+              AND org_id = ${orgId}::uuid
+            RETURNING id
+          `),
+        )
+        // Deals in a stage that stopped closing reopen.
+        await syncDealOutcome(
+          innerTx,
+          orgId,
+          actor,
+          inColumn.map((r) => r.id),
+        )
       }
       await innerTx.queueEvent({
         app: "projects",
@@ -352,6 +369,10 @@ export async function migrateStatusTasks(
       `),
     )
     const movedTaskIds = movedRows.map((r) => r.id)
+    // Each moved deal's outcome follows the stage it now sits in.
+    await syncDealOutcome(innerTx, orgId, actor, movedTaskIds, {
+      fromStatusIds: Object.fromEntries(movedTaskIds.map((id) => [id, sourceStatusId])),
+    })
     // One query loads every moved row so each event carries the full task
     // (key, completedAt, position...) without a detail load per task.
     const movedDetails = new Map(
@@ -440,6 +461,7 @@ export async function deleteStatus(args: DeleteStatusArgs): Promise<{ deleted: t
     if ((totalRows[0]?.count ?? 0) <= 1) {
       throw new ProjectsServiceError(400, "last_status", "project must keep at least one status")
     }
+    await assertKeepsClosingStages(innerTx, orgId, projectId, statusId)
     const taskCountRows = extractRows<{ count: number }>(
       await innerTx.execute(drizzleSql`
         SELECT COUNT(*)::int AS count

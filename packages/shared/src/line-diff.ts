@@ -37,11 +37,14 @@ export function lineDiff(oldText: string, newText: string): DiffLine[] {
 
   const n = a.length
   const m = b.length
-  // dp[i][j] = length of the LCS of a[i:] and b[j:].
-  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0))
+  // lcs(i, j) = length of the LCS of a[i:] and b[j:], one flat row-major table.
+  const width = m + 1
+  const dp = new Array<number>((n + 1) * width).fill(0)
+  const lcs = (i: number, j: number): number => dp[i * width + j] ?? 0
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+      dp[i * width + j] =
+        a[i] === b[j] ? lcs(i + 1, j + 1) + 1 : Math.max(lcs(i + 1, j), lcs(i, j + 1))
     }
   }
 
@@ -49,20 +52,22 @@ export function lineDiff(oldText: string, newText: string): DiffLine[] {
   let i = 0
   let j = 0
   while (i < n && j < m) {
-    if (a[i] === b[j]) {
-      out.push({ type: "same", text: a[i] })
+    const left = a[i] ?? ""
+    const right = b[j] ?? ""
+    if (left === right) {
+      out.push({ type: "same", text: left })
       i++
       j++
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      out.push({ type: "del", text: a[i] })
+    } else if (lcs(i + 1, j) >= lcs(i, j + 1)) {
+      out.push({ type: "del", text: left })
       i++
     } else {
-      out.push({ type: "add", text: b[j] })
+      out.push({ type: "add", text: right })
       j++
     }
   }
-  while (i < n) out.push({ type: "del", text: a[i++] })
-  while (j < m) out.push({ type: "add", text: b[j++] })
+  for (const text of a.slice(i)) out.push({ type: "del", text })
+  for (const text of b.slice(j)) out.push({ type: "add", text })
   return out
 }
 
@@ -86,22 +91,23 @@ export function withCollapsedContext(lines: DiffLine[], context = 3): DiffRow[] 
   const rows: DiffRow[] = []
   let i = 0
   while (i < lines.length) {
-    if (lines[i].type !== "same") {
-      rows.push(lines[i])
+    const line = lines[i]
+    if (line && line.type !== "same") {
+      rows.push(line)
       i++
       continue
     }
     let j = i
-    while (j < lines.length && lines[j].type === "same") j++
-    const runLen = j - i
+    while (j < lines.length && lines[j]?.type === "same") j++
+    const run = lines.slice(i, j)
     const lead = i === 0 ? 0 : context
     const trail = j === lines.length ? 0 : context
-    if (runLen <= lead + trail + 1) {
-      for (let k = i; k < j; k++) rows.push(lines[k])
+    if (run.length <= lead + trail + 1) {
+      rows.push(...run)
     } else {
-      for (let k = i; k < i + lead; k++) rows.push(lines[k])
-      rows.push({ type: "gap", count: runLen - lead - trail })
-      for (let k = j - trail; k < j; k++) rows.push(lines[k])
+      rows.push(...run.slice(0, lead))
+      rows.push({ type: "gap", count: run.length - lead - trail })
+      rows.push(...run.slice(run.length - trail))
     }
     i = j
   }

@@ -8,11 +8,13 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import crypto from "node:crypto"
 import { and, eq } from "drizzle-orm"
 import { type FetchLike, formatPendingApprovals, runAgentAsk } from "~/cli/agent/ask"
-import { withSystemDb } from "~/db/privileged"
+import { withPrivilegedDb, withSystemDb } from "~/db/privileged"
 import { auditLog, sessions } from "~/db/schema/kernel"
 import { createSession } from "~/modules/auth/auth"
 import { ensureOrg } from "~/modules/provisioning/ensure-org"
 import { ensureUser } from "~/modules/provisioning/ensure-user"
+import { createExternalUser } from "~/modules/users/external-user"
+import { createTestCompany } from "~/tests/helpers/company"
 import { acquireTestLock, releaseTestLock } from "~/tests/route-test-setup"
 
 beforeAll(acquireTestLock)
@@ -242,6 +244,35 @@ describe("liaison agent ask", () => {
     expect(noAs.exitCode).toBe(2)
     expect(noAs.report.error).toContain("--as")
     expect(calls).toEqual([])
+  })
+
+  test("an external row is refused before any token or request, and leaves no audit row", async () => {
+    const { slug, orgId } = await freshOrg()
+    const email = `client-${crypto.randomUUID().slice(0, 8)}@client.example`
+    const companyId = await createTestCompany(orgId)
+    const created = await withPrivilegedDb(orgId, "cli-ask-external-test", (tx) =>
+      createExternalUser(tx, { orgId, companyId, email, name: "Client" }),
+    )
+    if (!created.ok) throw new Error(created.code)
+    const calls: string[] = []
+    const fetchImpl: FetchLike = async (url) => {
+      calls.push(url)
+      return Response.json({ data: { id: "t" } })
+    }
+    const result = await runAgentAsk(
+      { question: "Hi", orgSlug: slug, asEmail: email, timeoutSeconds: 5, baseUrl: BASE },
+      fetchImpl,
+    )
+    expect(result.exitCode).toBe(2)
+    expect(result.report.error).toContain("portal")
+    expect(calls).toEqual([])
+    const audit = await withSystemDb("cli-ask-external-audit", (tx) =>
+      tx
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(and(eq(auditLog.orgId, orgId), eq(auditLog.action, "cli_agent_ask"))),
+    )
+    expect(audit).toEqual([])
   })
 
   test("a turn that failed at the provider is a failure carrying the provider's reason", async () => {

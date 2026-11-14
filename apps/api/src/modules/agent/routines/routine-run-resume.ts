@@ -164,6 +164,11 @@ async function approvalsOfRun(orgId: string, tickRunId: string): Promise<RunAppr
   )
 }
 
+/** How many of a run's approvals no person has decided yet. */
+export async function undecidedApprovalCount(orgId: string, tickRunId: string): Promise<number> {
+  return (await approvalsOfRun(orgId, tickRunId)).filter((a) => UNDECIDED.has(a.status)).length
+}
+
 /** The last thing the routine's agent wrote in the output thread since `since`. */
 async function lastAgentText(
   orgId: string,
@@ -242,6 +247,9 @@ export async function pauseRunIfWaiting(args: {
   runFrame?: Pick<RunContext, "tokenAccount">
 }): Promise<RoutineTickResult | null> {
   const { orgId, routine } = args
+  // A follow-up routine does not wait: its drafts stand on their own, each
+  // decided when a person gets to it, and the run ends (routine-worker.ts).
+  if (routine.followUp) return null
   const approvals = await approvalsOfRun(orgId, args.tickRunId)
   const waiting = approvals.filter((a) => UNDECIDED.has(a.status)).map((a) => a.id)
   if (waiting.length === 0) return null
@@ -808,8 +816,13 @@ async function resumeUnderLock(
   if (!routine) return { status: "no_run" }
 
   const startedAt = Date.parse(state.startedAt)
-  const end = (agentError: string | null, turnsAdded: number, reportSince: number) =>
-    finishRun({
+  const end = async (agentError: string | null, turnsAdded: number, reportSince: number) => {
+    // A run made a follow-up while it waited ends now: its line counts what still waits.
+    const draftsWaiting =
+      routine.followUp && agentError === null
+        ? await undecidedApprovalCount(orgId, state.tickRunId)
+        : 0
+    return finishRun({
       orgId,
       routine,
       outputThreadId: state.outputThreadId,
@@ -825,7 +838,9 @@ async function resumeUnderLock(
       eventId: null,
       runId,
       reportSince,
+      ...(draftsWaiting > 0 ? { draftsWaiting } : {}),
     })
+  }
 
   const loadScopes = deps.loadOwnerScopes ?? defaultLoadOwnerScopes
   const ownerScopes = await loadScopes(orgId, routine.ownerUserId)
@@ -886,6 +901,8 @@ async function resumeUnderLock(
         background: true,
         routineId: routine.id,
         routineRunId: state.tickRunId,
+        // Made a follow-up while this run waited: it runs on and ends now.
+        ...(routine.followUp ? { routineFollowUp: true } : {}),
         ...(tokenAccount ? { tokenAccount } : {}),
       },
       () =>

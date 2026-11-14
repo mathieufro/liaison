@@ -59,6 +59,7 @@ if [ "$1" = inspect ]; then
   case "$3" in
     *IPAddress*) cat "$S/ip_$4" ;;
     *Image*) cat "$S/img_$4" ;;
+    *Env*) cat "$S/env_$4" 2>/dev/null || : ;;
   esac
   exit 0
 fi
@@ -189,6 +190,26 @@ describe("sandbox-firewall.sh check finds the stack the way compose does", () =>
     })
     expect(r.stderr).toBe("")
     expect(r.code).toBe(0)
+  })
+})
+
+describe("sandbox-firewall.sh check on a host that runs its apps on QuickJS", () => {
+  it("with no sandbox service and the app on LIAISON_APP_RUNTIME=quickjs, there is nothing to check", () => {
+    stack({ subnet: "10.73.250.0/24", sandboxIp: "10.73.250.10", appIp: "10.73.250.2" })
+    put("ps_sandbox", "")
+    put("env_app1", "PATH=/usr/bin\nLIAISON_APP_RUNTIME=quickjs\n")
+    const r = run(["check"], { COMPOSE_PROJECT_NAME: "liaison" })
+    expect(r.code).toBe(0)
+    expect(r.stdout).toContain("no sandbox service runs and the app runs every app on QuickJS")
+  })
+
+  it("with no sandbox service and the app not on QuickJS, it still fails", () => {
+    stack({ subnet: "10.73.250.0/24", sandboxIp: "10.73.250.10", appIp: "10.73.250.2" })
+    put("ps_sandbox", "")
+    put("env_app1", "PATH=/usr/bin\n")
+    const r = run(["check"], { COMPOSE_PROJECT_NAME: "liaison" })
+    expect(r.code).toBe(1)
+    expect(r.stderr).toContain("no running sandbox service")
   })
 })
 

@@ -13,7 +13,7 @@
  * roles are checked against `kernel.roles` at plan time (the users provisioner),
  * env interpolation is `parse.ts`.
  */
-import { googleOAuthClientIdSchema, orgCapsSchema } from "@liaison/shared"
+import { commercialIdentitySchema, googleOAuthClientIdSchema, orgCapsSchema } from "@liaison/shared"
 import { z } from "zod"
 import { MAIL_PROVIDER_IDS } from "~/modules/mail/provider-ids"
 
@@ -118,6 +118,8 @@ export const emailSchema = z
   .object({
     from: z.string().optional(),
     replyTo: z.string().optional(),
+    // The legal name and postal address every commercial mail states (its footer).
+    commercialIdentity: commercialIdentitySchema.optional(),
   })
   .optional()
 

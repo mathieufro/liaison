@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+import { api } from "@liaison/test-helpers"
 import { expect, loginAs, test } from "./fixtures/test"
 import { attachMailToContact, resolveContact } from "./helpers/contacts-seed"
 import { freshAccessToken } from "./helpers/fresh-token"
 import { seedMailBaseline } from "./helpers/mail-fixtures"
 
-test("EntityPreview: mail conversation backlink hover from contact detail", async ({
+// The contact page lists a person's conversations in its timeline (rows open the
+// conversation; the old hover backlinks were removed with it). The mail
+// conversation preview is reached where entity previews live: a mention of the
+// conversation in a message.
+test("EntityPreview: mail conversation mention hover, and the contact's timeline opens it", async ({
   page,
   env,
   world,
@@ -29,21 +34,43 @@ test("EntityPreview: mail conversation backlink hover from contact detail", asyn
     baseline.account.id,
     subject,
   )
+  const ref = `mail:conversation:${conversationId}`
+  const threadRes = await api(env.serverUrl, "/api/threads", {
+    token: adminToken,
+    body: {
+      forceCreate: true,
+      participantIds: [qa.admin.id],
+      title: `Mail preview ${unique}`,
+      initialMessage: { content: `See @[${subject}](${ref}) before replying.` },
+    },
+  })
+  expect(threadRes.status, JSON.stringify(threadRes.body)).toBe(200)
+  const threadId = threadRes.body.data.id as string
 
   await loginAs(page, env, qa.admin.email, "12345678")
+
+  // The contact's timeline lists the conversation; its row opens it.
   await page.goto(`http://localhost:${env.ports[1]}/contacts/${contact.id}`)
   await expect(page.getByTestId("contact-detail")).toBeVisible({ timeout: 10000 })
+  const row = page.getByTestId("contact-activity").locator("button", { hasText: subject })
+  await expect(row).toBeVisible({ timeout: 15000 })
+  await row.click()
+  await page.waitForURL(new RegExp(`/mail/${conversationId}`), { timeout: 10000 })
+  await expect(page.getByTestId("mail-conversation")).toBeVisible({ timeout: 10000 })
 
-  const backlink = page.getByTestId(`contact-backlink-${conversationId}`)
-  await expect(backlink).toBeVisible({ timeout: 10000 })
-  await expect(backlink).toContainText(subject)
+  // The mention previews the conversation on hover; pinned, its Open button opens it.
+  await page.goto(`http://localhost:${env.ports[1]}/threads/${threadId}`)
+  const mention = page
+    .locator('[data-testid="entity-preview"]')
+    .filter({ has: page.locator(`[data-mention-ref="${ref}"]`) })
+  await expect(mention).toBeVisible({ timeout: 15000 })
 
   const fetchPromise = page.waitForResponse(
     (response) =>
       response.url().includes(`/api/mail/conversations/${conversationId}`) &&
       response.url().includes("messageLimit=0"),
   )
-  await backlink.hover()
+  await mention.hover()
   const fetchResponse = await fetchPromise
   expect(fetchResponse.status()).toBe(200)
   const fetchBody = await fetchResponse.json()
@@ -51,11 +78,11 @@ test("EntityPreview: mail conversation backlink hover from contact detail", asyn
 
   const previewContent = page.getByTestId("entity-preview-content")
   await expect(previewContent).toBeVisible({ timeout: 2500 })
+  await expect(previewContent).toContainText(subject)
 
-  await page.mouse.move(0, 0)
-  await expect(previewContent).toBeHidden({ timeout: 2000 })
-
-  await backlink.click()
+  // Leaving the mention closes a hover preview; a click pins it open.
+  await mention.click()
+  await page.getByTestId("entity-preview-open").click()
   await page.waitForURL(new RegExp(`/mail/${conversationId}`), {
     timeout: 10000,
   })

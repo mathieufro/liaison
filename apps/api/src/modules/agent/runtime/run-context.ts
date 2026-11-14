@@ -105,6 +105,8 @@ export interface RunContext {
    * chat, sub-runs). Undefined ⇒ not a routine tick.
    */
   routineId?: string
+  /** On a routine tick: this routine follows up, so its mail runs the send check as a follow-up. */
+  routineFollowUp?: boolean
   /**
    * On a routine tick (and the agent turn it starts for that same routine):
    * the person whose SERVER-MANAGED mailbox the tick may read, its owner, set
@@ -184,6 +186,12 @@ export interface RunContext {
    * A demo visitor's turn (box key or the visitor's own key): its tool results
    * reach the model at the visitor limits (result-truncation.ts).
    */
+  /**
+   * The person this turn answers has no computer set up for Liaison (no
+   * enabled node). Tools marked `needsOwnComputer` are then in no catalog and
+   * no tool set of the turn. Absent: offered as usual.
+   */
+  noOwnComputer?: boolean
   visitorTurn?: boolean
   /**
    * Mutable set of deferred-tool SDK names the model has unlocked in THIS run
@@ -557,6 +565,11 @@ export interface SpawnParentFrame {
    */
   run?: { runId: string; rootRunId: string; nestingDepth: number }
   /**
+   * Whether a person is behind the captured turn (`runHasPerson`), so an app handler reached
+   * after a hop that loses the frame can still tell a person's turn from a routine's (`ctx.turn`).
+   */
+  hasPerson?: boolean
+  /**
    * The message the captured turn answers (`RunContext.turnMessageId`), so an
    * event queued after a hop that loses the frame still says which request
    * caused it (a guided tour's `causedBy` binding reads it). Undefined when the
@@ -596,6 +609,7 @@ export function captureSpawnParentFrame(
     taintScopes,
     agentId: frame.agentId,
     run: { runId: frame.runId, rootRunId: frame.rootRunId, nestingDepth: frame.nestingDepth },
+    hasPerson: runHasPerson(frame),
     // An approved call's re-entry has no message of its own: the ask it continues.
     ...((frame.turnMessageId ?? frame.askId)
       ? { turnMessageId: frame.turnMessageId ?? frame.askId }

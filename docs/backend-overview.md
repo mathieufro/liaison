@@ -449,7 +449,7 @@ interface AppContext {
 
 Manifest apps receive the same capabilities through the RPC bridge — the sandbox executor constructs the bridge from the same underlying services (RLS transaction, outbox, job queue, contact resolver).
 
-**Registries** — in-memory Maps populated at startup via `initAppsForOrg()`: `toolRegistry`, `webhookHandlers`, `dimensionDefRegistry`, `timelineDeclarations`, `viewRegistry`, `slotRegistry`, `contributionRegistry`, `entityRegistry`, `exportRegistry`, `skillRegistry`, `manifestRegistry`, `connectionConfigRegistry`, `declaredEmits`.
+**Registries** — in-memory Maps populated at startup via `initAppsForOrg()`: `toolRegistry`, `webhookHandlers`, `dimensionDefRegistry`, `timelineDeclarations`, `viewRegistry`, `slotRegistry`, `entityRegistry`, `exportRegistry`, `skillRegistry`, `manifestRegistry`, `connectionConfigRegistry`, `declaredEmits`.
 
 ---
 

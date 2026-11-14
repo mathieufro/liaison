@@ -43,9 +43,16 @@ let mailLock: AppSchemaLockHandle
 
 let orgId: string
 
+// Without the tables whose read policies a migration owns (`rlsGovernedByMigration`), and their entities:
+// the fixture schema below carries no migration's policies, so registration would
+// rightly refuse to create those tables there, readable by administrators only.
+const { messages: _messages, drafts: _drafts, ...ownTables } = (mailAppManifest as any).schema
+const { message: _message, draft: _draft, ...ownEntities } = (mailAppManifest as any).entities ?? {}
 const mailOnlyManifest = {
   ...(mailAppManifest as any),
   dependencies: { ...((mailAppManifest as any).dependencies ?? {}), tools: [] },
+  schema: ownTables,
+  entities: ownEntities,
 }
 
 async function liveColumns(table: string): Promise<Set<string>> {
@@ -120,6 +127,6 @@ describe("the boot registration reconciles a schema that drifted while the proce
       expect({ column: col, present: after.has(col) }).toEqual({ column: col, present: true })
     }
     // And a table the narrow shape did not carry at all is created.
-    expect((await liveColumns("messages")).size).toBeGreaterThan(0)
+    expect((await liveColumns("accounts")).size).toBeGreaterThan(0)
   }, 120_000)
 })

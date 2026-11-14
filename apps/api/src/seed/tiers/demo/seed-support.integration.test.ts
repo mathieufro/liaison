@@ -413,6 +413,22 @@ describe("seedDemoSupport against a real database", () => {
     expect(foundPairs.length).toBe(first.duplicateContactPairs.length)
   })
 
+  it("records each dealer's and customer's world country as their recipient country", async () => {
+    // Mutation caught: no seeded contact had a recipient country, so the send check never knew one.
+    const row = await withPrivilegedDb(org.orgId, "demo-support-test-country", async (tx) => {
+      const result = await tx.execute(
+        sql`SELECT count(*) FILTER (WHERE metadata->>'country' IS NOT NULL)::int AS named,
+                   count(*) FILTER (WHERE metadata->>'country' IS NOT NULL
+                     AND recipient_country = upper(metadata->>'country'))::int AS recorded
+              FROM kernel.contacts WHERE org_id = ${org.orgId}`,
+      )
+      const list = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? [])
+      return list[0] as { named: number; recorded: number } | undefined
+    })
+    expect(Number(row?.named)).toBeGreaterThanOrEqual(20)
+    expect(Number(row?.recorded)).toBe(Number(row?.named))
+  })
+
   it("serves thread history, including a role agent's own turns", async () => {
     const amina = await userActor(org.orgId, org.peopleByKey.amina?.userId as string)
     const threadId = await withPrivilegedDb(org.orgId, "test-find-thread", async (tx) => {

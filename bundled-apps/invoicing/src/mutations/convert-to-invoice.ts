@@ -188,6 +188,14 @@ export async function documentsConvertToInvoicePreflight(
   return toPreflightResult(await preflightConvertToInvoiceParams(ctx, input))
 }
 
+/**
+ * `documents_convert_to_invoice`. The tool holds no transaction of its own, so
+ * the two Shopify calls of a Shopify-linked quote keep no database connection or transaction open
+ * while Shopify answers; the quote is stamped in one write once Shopify has completed the draft
+ * order. A local convert (the quote marked, the invoice numbered and written) lands in one commit
+ * through the app's internal `documents_convert_local` tool, so a failure leaves the quote as it
+ * was and uses no number.
+ */
 export async function documentsConvertToInvoice(
   ctx: MutationsCtx,
   input: ConvertToInvoiceInput,
@@ -195,6 +203,39 @@ export async function documentsConvertToInvoice(
   // The status guard below ALSO runs at stage time (the preflight export above shares this exact
   // code), but it stays here: a source document can legitimately move on between staging and
   // approval, so the executed call re-checks rather than trusts.
+  const pre = await preflightConvertToInvoiceParams(ctx, input)
+  if (!pre.ok) return pre.error
+  // Shopify-linked quote: converting means COMPLETING the draft order in Shopify. Shopify
+  // creates the real order, and the existing `shopify/order:created` auto-flow issues the
+  // invoice(s) from it -- issuing one here too would double-invoice the customer.
+  // `paymentPending: true` because a B2B customer pays against the invoice, not at checkout.
+  const draftOrderId = readDraftOrderId(pre.source)
+  if (draftOrderId)
+    return convertViaShopifyDraftOrder(ctx, pre.source, draftOrderId, pre.nextStatus)
+  const env = await ctx.executeTool("invoicing:documents_convert_local", { ...input })
+  if (env.status === "pending_approval")
+    return { status: "pending_approval", approval_id: env.approval_id }
+  if (env.status !== "completed") {
+    return {
+      status: "error",
+      error: {
+        code: env.error?.code ?? "convert_failed",
+        message: `The ${pre.source.type} ${pre.source.number ?? pre.source.id} was not converted and no number was used: ${env.error?.message ?? "the convert returned an error"}.`,
+      },
+    }
+  }
+  return env.result as ConvertToInvoiceResult
+}
+
+/**
+ * `documents_convert_local`, internal: the local half of a convert. The source's new status
+ * commits with the invoice in one batch. A Shopify-linked source is refused here: it converts
+ * through Shopify instead.
+ */
+export async function documentsConvertLocal(
+  ctx: MutationsCtx,
+  input: ConvertToInvoiceInput,
+): Promise<ConvertToInvoiceResult> {
   const pre = await preflightConvertToInvoiceParams(ctx, input)
   if (!pre.ok) return pre.error
   const { source, issuer, counterparty, notes, sourceLines } = pre
@@ -210,13 +251,14 @@ export async function documentsConvertToInvoice(
   // The old handler-level two-eyes + threshold checks parked a SECOND approval on top of that
   // and made the human's own click unusable.
 
-  // Shopify-linked quote: converting means COMPLETING the draft order in Shopify. Shopify
-  // creates the real order, and the existing `shopify/order:created` auto-flow issues the
-  // invoice(s) from it -- issuing one here too would double-invoice the customer.
-  // `paymentPending: true` because a B2B customer pays against the invoice, not at checkout.
-  const draftOrderId = readDraftOrderId(source)
-  if (draftOrderId) {
-    return convertViaShopifyDraftOrder(ctx, source, draftOrderId, trans.next)
+  if (readDraftOrderId(source)) {
+    return {
+      status: "error",
+      error: {
+        code: "shopify_linked",
+        message: `Document ${source.number ?? source.id} is linked to a Shopify draft order, so it converts through documents_convert_to_invoice, which completes the draft order; nothing was written.`,
+      },
+    }
   }
 
   // Before anything changes: a refused zone leaves the source as it was.

@@ -43,8 +43,28 @@ export const contacts = kernel.table(
      *  "tickets:team=<team>"); contacts are kept apart per audience. */
     audienceKey: text("audience_key"),
     orgWide: boolean("org_wide").generatedAlwaysAs(sql`org_access IN ('viewer', 'editor')`),
+    /** The company the contact works for (0296), kernel.companies; set NULL
+     *  when the company is deleted. `company` (free text) stays beside it. */
+    companyId: uuid("company_id"),
+    /** What is recorded about writing to this person (0296). NULL everywhere
+     *  means unknown: nothing is claimed until someone who knows records it. */
+    lawfulBasis: text("lawful_basis", {
+      enum: ["consent", "customer", "professional_interest", "generic_address"],
+    }),
+    lawfulBasisSource: text("lawful_basis_source"),
+    lawfulBasisAt: timestamp("lawful_basis_at", { withTimezone: true }),
+    /** NULL = unknown, which a commercial send treats as a consumer. */
+    isConsumer: boolean("is_consumer"),
+    /** ISO 3166-1 alpha-2. */
+    recipientCountry: text("recipient_country"),
+    /** NULL = unknown, which the Art. 14 notice treats as a third party. */
+    dataSource: text("data_source", { enum: ["direct", "third_party", "enrichment"] }),
+    art14NoticeAt: timestamp("art14_notice_at", { withTimezone: true }),
   },
   (table) => [
+    index("contacts_company_idx")
+      .on(table.orgId, table.companyId)
+      .where(sql`company_id IS NOT NULL`),
     uniqueIndex("contacts_org_email_idx")
       .on(table.orgId, table.email)
       .where(sql`org_access <> 'none'`),

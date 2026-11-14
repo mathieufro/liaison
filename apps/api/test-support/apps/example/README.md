@@ -12,11 +12,17 @@ only (`TEST_ONLY_APPS`, `modules/apps/discover-apps.ts`).
 
 | Handler | SDK surface | What to copy from it |
 |---|---|---|
+| `item_notes_count` | manifest `feature` | A tool that exists only where its feature is on: top-level `features` declares it, `kernel.org_app_features` switches it per org |
+| `items_count_on_turn` | manifest `humanTurnOnly` | First-party apps only: runs on a person's own turn (chat, the app, their own MCP client); a routine, a sub-run or a job is refused `human_turn_only` |
+| `items_count_in_dm` | manifest `dmOnly` | First-party apps only: an agent runs it only in its DM with the person; a shared thread is refused `dm_only` |
+| `item_context` | manifest `contextProviders` | A read-only tool that gives the agent a few lines about the item in view: it returns `{lines, source}` or null, and the host fences the lines, keeps them under 2 KB and records the scope |
 | `items_list` | `ctx.db.findMany` | Reading your app's entity rows, scoped to the org |
 | `items_create` | `ctx.db.insert` + `ctx.emit` | Persisting a row and emitting a domain event |
 | `external_fetch` | `ctx.connections` + `ctx.fetch` | Calling an external API with a connection token |
 | `resolve_contact` | `ctx.resolveContact` | The contacts integration surface |
 | `nightly_summary` | manifest `jobs` + `ctx.emit` | A scheduled (cron) background job |
+| (no handler) | manifest `slots` | A panel or action on each host slot (task tabs and actions, project, contact, ticket panel and actions), shown only to holders of `example:items:read` and only where the `slot_panels` feature is on |
+| (no handler) | `entities.items.discussion` + `views.tabTypes.items` | One discussion per item, readable by whoever can read the item: `POST /api/threads/entity-discussion`, or `host.mountEntityDiscussion` in a UI bundle. Delete it with the item through `threads_deleteEntityDiscussion`, and prune its seats through `threads_pruneEntityDiscussion` when an item's sharing narrows |
 
 ## Layout
 

@@ -10,6 +10,10 @@
 #                    Non-zero when a migration or a catalog app install fails.
 #                    Both refuse an image older than the database's schema
 #                    (src/db/schema-guard.ts), with or without the migration.
+#   embedder         the host's embedding process for tool search
+#                    (src/modules/agent/tools/embedder-main.ts): loads the
+#                    model once and answers the host's processes on a Unix
+#                    socket. No migration, no server, no privileged URL.
 #   sandbox          the app sandbox service (packages/sandbox-supervisor): a
 #                    supervised pool of workerd processes, the compose
 #                    `sandbox` service. No database, no secret.
@@ -83,6 +87,10 @@ case "${1:-serve}" in
     # deploy stops before starting new processes. Exec'd so a stop during it
     # reaches it directly.
     LIAISON_ONESHOT=1 exec bun src/db/reconcile-catalog-boot.ts --strict
+    ;;
+  embedder)
+    cd "$APP_DIR/apps/api"
+    exec env -u MIGRATION_DATABASE_URL bun src/modules/agent/tools/embedder-main.ts
     ;;
   serve) ;;
   *) exec "$@" ;;

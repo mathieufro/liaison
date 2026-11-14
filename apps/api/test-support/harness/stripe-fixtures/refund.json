@@ -1,0 +1,12 @@
+{
+  "id": "re_FIXTURE0001",
+  "object": "refund",
+  "amount": 1000,
+  "charge": "ch_FIXTURE0001",
+  "created": 1767232800,
+  "currency": "eur",
+  "metadata": {},
+  "payment_intent": "pi_FIXTURE0001",
+  "reason": "requested_by_customer",
+  "status": "pending"
+}

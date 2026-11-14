@@ -376,7 +376,12 @@ describe("the agent's repository discovery tools (S19)", () => {
     // Read-only, so never an approval card; the share they lead to stays gated.
     for (const name of [FIND, REMOTES]) {
       const def = toolRegistry.get([owner.orgId, "kernel", name])
-      expect(def).toMatchObject({ readOnly: true, notForNodeSessions: true })
+      // A person with no computer is not offered them (tool-bridge.own-computer.test.ts).
+      expect(def).toMatchObject({
+        readOnly: true,
+        notForNodeSessions: true,
+        needsOwnComputer: true,
+      })
       expect(def?.gated).toBeFalsy()
     }
     expect(toolRegistry.get([owner.orgId, "kernel", "share_folder_on_my_computer"])?.gated).toBe(

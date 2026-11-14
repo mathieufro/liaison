@@ -88,7 +88,7 @@ export function acceptRevocationList(highestSeenSeq: number | null, list: Revoca
 }
 
 function parseVersion(v: string): { nums: number[]; pre: string | null } {
-  const [core, ...pre] = v.split("-")
+  const [core = "", ...pre] = v.split("-")
   return {
     nums: core.split(".").map((n) => Number.parseInt(n, 10) || 0),
     pre: pre.join("-") || null,

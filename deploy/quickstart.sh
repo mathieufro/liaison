@@ -108,6 +108,24 @@ COMPOSE=(docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}")
 # Prerequisites
 # ---------------------------------------------------------------------------
 
+# A source checkout's dev substrate (the repository root's docker-compose.yml)
+# also runs as project `liaison`, with the same service names. Starting this
+# stack under that name would recreate its containers, so stop and say how to
+# pick another name.
+refuse_foreign_project() {
+  local files file
+  files="$(docker ps -a --filter "label=com.docker.compose.project=${PROJECT_NAME}" \
+    --format '{{.Label "com.docker.compose.project.config_files"}}' 2>/dev/null | tr ',' '\n' | sort -u)"
+  while IFS= read -r file; do
+    [ -z "${file}" ] && continue
+    case "${file}" in
+      */deploy/*) ;;
+      */docker-compose.yml | */docker-compose.yaml) die "the docker compose project '${PROJECT_NAME}' already runs another stack (${file}). Run again with --project <another name>, for example --project liaison-selfhost." ;;
+      *) ;;
+    esac
+  done <<<"${files}"
+}
+
 check_prereqs() {
   if ! command -v docker >/dev/null 2>&1; then
     die "docker is not installed or not on PATH. Install Docker: https://docs.docker.com/get-docker/"
@@ -399,6 +417,7 @@ do_up() {
   # the compose file's default tag.
   set_var LIAISON_IMAGE "${LIAISON_IMAGE}"
 
+  refuse_foreign_project
   log "Starting the stack (docker compose project '${PROJECT_NAME}')..."
   LIAISON_IMAGE="${LIAISON_IMAGE}" "${COMPOSE[@]}" --env-file "${ENV_FILE}" up -d
 

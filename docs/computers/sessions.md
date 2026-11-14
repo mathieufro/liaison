@@ -85,7 +85,7 @@ In **Auto**, a session asks before shell commands once it has read text from out
 
 A browser test (a Playwright run) runs outside the sandbox. Its card warns that the repository's own code it loads runs with your full rights, and lists the files of that kind that changed. It is never allowed automatically.
 
-You can also steer through your agent. In a chat it can list, read, message, stop, answer and change settings for your sessions with `computer_session_list`, `computer_session_read`, `computer_session_send`, `computer_session_stop`, `computer_session_answer` and `computer_session_settings`. Sending a message or an answer, or switching a session to run on its own, only works from a message you typed yourself. It is refused for routines, other agents and MCP clients, and waits for your approval if the turn read outside text. Raising a level cannot be done by an agent: it answers that a confirmation is required.
+You can also steer through your agent. In a chat it can list, read, message, stop, answer and change settings for your sessions with `computer_session_list`, `computer_session_read`, `computer_session_send`, `computer_session_stop`, `computer_session_answer` and `computer_session_settings`. Sending a message or an answer, or switching a session to run on its own, only works from a message you typed yourself. It is refused for routines, other agents and MCP clients, and waits for your approval if the turn read outside text. Raising a level cannot be done by an agent: it answers that a confirmation is required. A read of a session that has opened no pull request says so, with the session's status.
 
 ## When a computer goes offline
 

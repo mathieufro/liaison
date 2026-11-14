@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { randomUUID } from "node:crypto"
 import type { TestWorld, WorkerEnv } from "@liaison/test-helpers"
 import { allocatePorts, api, createUserWithScopes } from "@liaison/test-helpers"
+import { Queue } from "bullmq"
 import {
   queryConversations,
   queryMessages,
@@ -14,6 +15,43 @@ import {
 } from "./helpers/mail-seed"
 import { startMockOidc } from "./helpers/mock-oidc"
 import { setupScenario, teardownScenario } from "./setup"
+
+/**
+ * Waits until the mail app's queue holds a job of `name` whose payload matches,
+ * in any state. A job id is a deduplication id that the queue releases once the
+ * job finishes, and the job's own key carries a minted id, so a key-name scan
+ * misses a job a quick worker already ran: the queue's job lists do not.
+ */
+async function waitForMailJob(
+  env: WorkerEnv,
+  name: string,
+  matches: (data: Record<string, unknown>) => boolean,
+  timeoutMs = 3000,
+): Promise<boolean> {
+  const queue = new Queue("app-mail", {
+    connection: env.redis.redis,
+    prefix: `${env.redisPrefix ?? ""}bull`,
+  })
+  try {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const jobs = await queue.getJobs([
+        "waiting",
+        "prioritized",
+        "delayed",
+        "active",
+        "completed",
+        "failed",
+      ])
+      if (jobs.some((j) => j?.name === name && matches((j.data ?? {}) as Record<string, unknown>)))
+        return true
+      await Bun.sleep(100)
+    }
+    return false
+  } finally {
+    await queue.close()
+  }
+}
 
 // ─── Helpers ───
 
@@ -1070,18 +1108,11 @@ describe("Mail Backend Scenario", () => {
       expect(res.status).toBe(200)
       expect(res.body.data.received).toBe(true)
 
-      // Check Redis for BullMQ job
-      let jobFound = false
-      const deadline = Date.now() + 3000
-      const redisPrefix = env.redisPrefix ?? ""
-      while (Date.now() < deadline) {
-        const keys = await env.redis.redis.keys(`${redisPrefix}bull:app-mail:*`)
-        if (keys.some((k: string) => k.includes("gmail-incremental-sync"))) {
-          jobFound = true
-          break
-        }
-        await Bun.sleep(100)
-      }
+      const jobFound = await waitForMailJob(
+        env,
+        "gmail-incremental-sync",
+        (d) => d.orgId === orgId && d.push === true && d.historyId === "12345",
+      )
       expect(jobFound).toBe(true)
     }, 10_000)
 
@@ -1183,18 +1214,11 @@ describe("Mail Backend Scenario", () => {
       expect(res.status).toBe(200)
       expect(res.body.data.enqueued).toBe(true)
 
-      // Check Redis for job
-      let jobFound = false
-      const deadline = Date.now() + 3000
-      const redisPrefix = env.redisPrefix ?? ""
-      while (Date.now() < deadline) {
-        const keys = await env.redis.redis.keys(`${redisPrefix}bull:app-mail:*`)
-        if (keys.some((k: string) => k.includes("gmail-incremental-sync"))) {
-          jobFound = true
-          break
-        }
-        await Bun.sleep(100)
-      }
+      const jobFound = await waitForMailJob(
+        env,
+        "gmail-incremental-sync",
+        (d) => d.orgId === orgId && d.accountId === syncAccountRow.id,
+      )
       expect(jobFound).toBe(true)
     }, 10_000)
 

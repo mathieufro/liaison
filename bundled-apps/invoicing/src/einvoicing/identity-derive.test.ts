@@ -101,4 +101,40 @@ describe("ensureDerivedIdentity", () => {
     expect(db.__all("counterparty_identities")).toHaveLength(1)
     expect(db.__all("counterparty_identities")[0]?.customer_kind).toBe("individual")
   })
+
+  test("an identity another writer recorded first (a unique-key race) is left as it is", async () => {
+    const db = {
+      findMany: async () => [],
+      insert: async () => {
+        throw new Error(
+          'duplicate key value violates unique constraint "counterparty_identities_org_id_contact_id_key" (23505)',
+        )
+      },
+    }
+    const id = await ensureDerivedIdentity(db, { contact_id: "c-1", customer_kind: "individual" })
+    expect(id).toBeNull()
+  })
+
+  test("the same race in a sandboxed run, where the failed insert rejects with its text alone", async () => {
+    const db = {
+      findMany: async () => [],
+      insert: async () => {
+        throw 'Failed query — pg: duplicate key value violates unique constraint "counterparty_identities_org_id_contact_id_key" (23505)'
+      },
+    }
+    const id = await ensureDerivedIdentity(db, { contact_id: "c-1", customer_kind: "individual" })
+    expect(id).toBeNull()
+  })
+
+  test("any other insert failure still throws", async () => {
+    const db = {
+      findMany: async () => [],
+      insert: async () => {
+        throw new Error("connection reset")
+      },
+    }
+    await expect(
+      ensureDerivedIdentity(db, { contact_id: "c-1", customer_kind: "individual" }),
+    ).rejects.toThrow("connection reset")
+  })
 })

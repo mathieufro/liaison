@@ -53,8 +53,10 @@ const RAW_FETCH_ALLOW = "purity-allow: absolute-url"
 const RAW_FETCH_REASON =
   "raw window.fetch in an app UI (use @liaison/host fetch or fetchBlob; relative paths break under the desktop and mobile shells)"
 
+// `*.testkit.ts` files are test helpers (a mock harness, an in-memory table):
+// only tests import them, so they never reach the frozen bundle either.
 function isTestFile(file: string): boolean {
-  return /\.test\.tsx?$/.test(file)
+  return /\.test(kit)?\.tsx?$/.test(file)
 }
 
 function* walk(dir: string): Generator<string> {

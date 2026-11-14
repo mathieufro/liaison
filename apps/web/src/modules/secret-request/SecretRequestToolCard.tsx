@@ -45,6 +45,7 @@ import {
 } from "solid-js"
 import type { ApiClient } from "~/lib/api-client"
 import { ApiError } from "~/lib/api-error"
+import { appLabel } from "~/lib/app-label"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { MailboxSetupCard } from "~/modules/mailbox/MailboxSetupCard"
 import { runShellOAuth, shellRunsOAuth } from "~/modules/settings/oauth-connect"
@@ -318,13 +319,23 @@ const SecretRequestToolCard: Component<{ requestId: string }> = (props) => {
 
   const title = (r: SecretRequestRow) => {
     const t = r.target
-    return i18n.t(`secret-request.title.${r.kind}`, {
-      provider: i18n.t(`secret-request.provider.${text(t.provider)}`),
-      app: text(t.app),
-      connection: text(t.connection),
-      identifier: text(t.identifier),
-      label: text(t.label),
-    })
+    // An app with one connection of its own name reads "Sign-in for Shop", never "(shop)".
+    const sameName =
+      (r.kind === "connection_credentials" ||
+        r.kind === "oauth_client" ||
+        r.kind === "oauth_connect") &&
+      text(t.app) !== "" &&
+      text(t.connection) === text(t.app)
+    return i18n.t(
+      sameName ? `secret-request.titleOneConnection.${r.kind}` : `secret-request.title.${r.kind}`,
+      {
+        provider: i18n.t(`secret-request.provider.${text(t.provider)}`),
+        app: text(t.app) ? appLabel(text(t.app), i18n.t) : "",
+        connection: text(t.connection),
+        identifier: text(t.identifier),
+        label: text(t.label),
+      },
+    )
   }
 
   const connectLabel = (r: SecretRequestRow) => {
@@ -339,18 +350,31 @@ const SecretRequestToolCard: Component<{ requestId: string }> = (props) => {
   const destinationValue = (d: { name: string; value: string }) =>
     d.name === "mode" && (d.value === "personal" || d.value === "org")
       ? i18n.t(`secret-request.mode.${d.value}`)
-      : d.value
+      : d.name === "app"
+        ? appLabel(d.value, i18n.t)
+        : d.value
+
+  /** The read-only rows a person reads: the app by its name, and a connection only when it is not the app's own. */
+  const destinationRows = (r: SecretRequestRow) => {
+    const app = r.destination.find((d) => d.name === "app")?.value
+    return r.destination.filter((d) => !(d.name === "connection" && d.value === app))
+  }
 
   const fieldLabel = (field: { name: string; label?: string }) =>
     field.label ??
     (KNOWN_FIELDS.has(field.name) ? i18n.t(`secret-request.field.${field.name}`) : field.name)
 
-  /** A provider key's refusal (400/502) is worded by the key route without the key; others stay generic. */
-  function failureText(r: SecretRequestRow, err: unknown): string {
+  /**
+   * The server's own refusal, which says why and what to do (a key of the wrong kind, a key the
+   * provider refused), for every kind of card: the routes word it without the secret. A failure
+   * with no such words (a network error, a 5xx other than the provider's 502) stays generic.
+   */
+  function failureText(_r: SecretRequestRow, err: unknown): string {
     if (
-      r.kind === "byok" &&
       err instanceof ApiError &&
-      (err.status === 400 || err.status === 502)
+      err.message &&
+      ((err.status >= 400 && err.status < 500 && err.status !== 401 && err.status !== 403) ||
+        err.status === 502)
     ) {
       return err.message
     }
@@ -614,9 +638,9 @@ const SecretRequestToolCard: Component<{ requestId: string }> = (props) => {
               : i18n.t("secret-request.askedFor", { requester: r().requesterName ?? "" })}
           </p>
           <p class="mt-0.5 text-xs text-text-secondary">{i18n.t("secret-request.subtitle")}</p>
-          <Show when={r().destination.length > 0}>
+          <Show when={destinationRows(r()).length > 0}>
             <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-              <For each={r().destination}>
+              <For each={destinationRows(r())}>
                 {(d) => (
                   <>
                     <dt class="text-text-tertiary">

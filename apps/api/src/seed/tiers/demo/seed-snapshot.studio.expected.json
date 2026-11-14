@@ -1,0 +1,146 @@
+{
+  "app_calendar.accounts": {
+    "rows": 1,
+    "digest": "8ead91950c03b545"
+  },
+  "app_calendar.calendars": {
+    "rows": 1,
+    "digest": "5d2710ebe85bc3e5"
+  },
+  "app_mail.accounts": {
+    "rows": 1,
+    "digest": "f56a60a92048de2d"
+  },
+  "app_projects.cost_rates": {
+    "rows": 10,
+    "digest": "0d62f563a3c3aab9"
+  },
+  "app_projects.deal_values": {
+    "rows": 9,
+    "digest": "1222c7c4babdf60f"
+  },
+  "app_projects.deals": {
+    "rows": 9,
+    "digest": "383440247ae7a15a"
+  },
+  "app_projects.project_billing_terms": {
+    "rows": 5,
+    "digest": "4d39d0748c09f53e"
+  },
+  "app_projects.project_statuses": {
+    "rows": 36,
+    "digest": "1cba72f40f0719af"
+  },
+  "app_projects.project_time_plan": {
+    "rows": 5,
+    "digest": "3983fba41f77ab4e"
+  },
+  "app_projects.project_timeboxes": {
+    "rows": 7,
+    "digest": "1cf24999f6e48912"
+  },
+  "app_projects.projects": {
+    "rows": 7,
+    "digest": "ad55e46eea315070"
+  },
+  "app_projects.task_time": {
+    "rows": 79,
+    "digest": "0378e2cac07d5b25"
+  },
+  "app_projects.task_transitions": {
+    "rows": 120,
+    "digest": "c5a00e4782f0c447"
+  },
+  "app_projects.tasks": {
+    "rows": 120,
+    "digest": "2b410c41e079dc79"
+  },
+  "app_projects.time_settings": {
+    "rows": 1,
+    "digest": "12753614a46ae1d9"
+  },
+  "app_tickets.inboxes": {
+    "rows": 3,
+    "digest": "bdc159b87305c653"
+  },
+  "kernel.agents": {
+    "rows": 25,
+    "digest": "c8171562361f7df4"
+  },
+  "kernel.app_seeded_assets": {
+    "rows": 9,
+    "digest": "524db101cc33e4a6"
+  },
+  "kernel.apps": {
+    "rows": 19,
+    "digest": "a574308049107243"
+  },
+  "kernel.away_ranges": {
+    "rows": 1,
+    "digest": "f2f95245063203a2"
+  },
+  "kernel.companies": {
+    "rows": 6,
+    "digest": "49e4672526bdbaaf"
+  },
+  "kernel.config_applied_fields": {
+    "rows": 8,
+    "digest": "a1ac404aad12146f"
+  },
+  "kernel.contacts": {
+    "rows": 7,
+    "digest": "7fb535ae7813dc1c"
+  },
+  "kernel.credit_balances": {
+    "rows": 1,
+    "digest": "3ccfcc1199e7c352"
+  },
+  "kernel.disabled_app_skills": {
+    "rows": 5,
+    "digest": "7ab21419f2813b9b"
+  },
+  "kernel.org_app_features": {
+    "rows": 1,
+    "digest": "38dce2dbee08f02e"
+  },
+  "kernel.pending_events": {
+    "rows": 354,
+    "digest": "02b89233287e854d"
+  },
+  "kernel.roles": {
+    "rows": 32,
+    "digest": "b5d0feb3a042f17a"
+  },
+  "kernel.saved_views": {
+    "rows": 8,
+    "digest": "b4ec2e3fc5bae2c9"
+  },
+  "kernel.sub_agent_definitions": {
+    "rows": 1,
+    "digest": "52b5dce6e8ef1bde"
+  },
+  "kernel.thread_participants": {
+    "rows": 240,
+    "digest": "f1bef0e090c2656f"
+  },
+  "kernel.threads": {
+    "rows": 120,
+    "digest": "f6267fb37c56973f"
+  },
+  "kernel.user_dimension_grants": {
+    "rows": 24,
+    "digest": "eec6a21c9a7518fb"
+  },
+  "kernel.user_roles": {
+    "rows": 26,
+    "digest": "f2fbc49b92c963a1"
+  },
+  "kernel.user_thread_state": {
+    "rows": 120,
+    "digest": "6276f11109bd61dd"
+  },
+  "kernel.users": {
+    "rows": 24,
+    "digest": "4cb10a60d3acd721"
+  }
+}

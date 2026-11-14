@@ -339,21 +339,27 @@ routinesRoutes.get("/latest-brief", async (c) => {
       .orderBy(desc(routinesTbl.lastRunAt))
       .limit(1)
     if (!routine) return null
+    // The brief's one time is its newest message's, the same row and the same
+    // column Home's brief card reads (GET /api/home/brief), so the two never
+    // show two different times. The routine's last run is not the brief's time.
     let messageId: string | null = null
+    let messageAt: string | null = null
     if (routine.outputThreadId) {
       const [latest] = await tx
-        .select({ id: messages.id })
+        .select({ id: messages.id, createdAt: messages.createdAt })
         .from(messages)
         .where(
           and(
             eq(messages.orgId, actor.orgId),
             eq(messages.threadId, routine.outputThreadId),
             eq(messages.authorType, "agent"),
+            isNull(messages.deletedAt),
           ),
         )
         .orderBy(desc(messages.createdAt))
         .limit(1)
       messageId = latest?.id ?? null
+      messageAt = latest ? latest.createdAt.toISOString() : null
     }
     return {
       routineId: routine.id,
@@ -364,6 +370,7 @@ routinesRoutes.get("/latest-brief", async (c) => {
       lastRunStatus: routine.lastRunStatus,
       outputThreadId: routine.outputThreadId,
       messageId,
+      messageAt,
     }
   })
   return c.json({ data })

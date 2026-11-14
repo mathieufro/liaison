@@ -622,6 +622,24 @@ export interface CivilTime {
   zone: string
 }
 
+/** What `ctx.turn.get()` answers: the turn a handler runs in. */
+export interface TurnInfo {
+  /** The acting agent, or null when no agent acts (a job, a webhook, a person's own click). */
+  agentId: string | null
+  /** A person is behind the turn. False for a routine tick, a background turn and a job. */
+  hasPerson: boolean
+}
+
+/** What `ctx.approvals.restagePayload` answers. */
+export type RestagePayloadResult =
+  | { ok: true; approval_id: string; payload_hash: string; changed: boolean }
+  | {
+      ok: false
+      /** `not_pending`: decided, expired or withdrawn, so stage a new approval for the change. */
+      code: "not_pending" | "forbidden" | "not_found" | "invalid_edit" | string
+      message: string
+    }
+
 export interface AppContext {
   userId: string
   orgId: string
@@ -971,6 +989,25 @@ export interface AppContext {
    * to the app and the organization.
    */
   effects: EffectsBridge
+  /** The turn this handler runs in, read-only. No capability needed. */
+  turn: {
+    get(): Promise<TurnInfo>
+  }
+  /** This app's own approval requests. */
+  approvals: {
+    /**
+     * Rewrites fields of one of this app's approvals still awaiting a decision, after the records
+     * its payload describes changed. `fields` maps payload paths to new values. Recorded sign-offs
+     * reset and the approval's thread gets one note (`note`, or one naming the app and the fields).
+     * Another app's approval answers `forbidden`; a decided, expired or withdrawn one `not_pending`.
+     * The card is rebuilt from the new payload by the tool's own summarizer.
+     */
+    restagePayload(
+      approvalId: string,
+      fields: Record<string, unknown>,
+      note?: string,
+    ): Promise<RestagePayloadResult>
+  }
   /**
    * K6 — Post-approval re-entry signal. `undefined` on first invocation;
    * populated on the kernel's re-invocation of a previously-gated tool

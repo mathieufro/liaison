@@ -48,6 +48,7 @@ import {
 } from "~/modules/permissions/roles"
 import { getScopeCatalog, type ScopeCatalogEntry } from "~/modules/permissions/scope-catalog"
 import type { PermissionMutationContext } from "~/modules/permissions/types"
+import { awayOf, readWhoIsAway } from "~/modules/users/away-today"
 import { createInvitation } from "~/modules/users/invites"
 import { getUserDetail, listUsers } from "~/modules/users/service"
 
@@ -86,16 +87,32 @@ export async function handleGetRole(
 export async function handleUsersList(
   params: { limit?: number; offset?: number },
   ctx: OrgConfigToolCtx,
-): Promise<{ users: Array<{ id: string; name: string; email: string; roles: unknown }> }> {
+): Promise<{
+  users: Array<{
+    id: string
+    name: string
+    email: string
+    roles: unknown
+    away: { until: string | null } | null
+  }>
+}> {
   const actor = await resolveActor(ctx)
   const limit = Math.min(params.limit ?? 50, 100)
   const offset = params.offset ?? 0
   const page = Math.floor(offset / limit) + 1
-  const result = await withRlsContext(actor, (tx) =>
-    listUsers(tx, { orgId: ctx.orgId, page, limit }),
-  )
+  // Who is away today, as Home reads it, in the same transaction: until when, no source, no reason.
+  const { result, away } = await withRlsContext(actor, async (tx) => ({
+    result: await listUsers(tx, { orgId: ctx.orgId, page, limit }),
+    away: await readWhoIsAway(tx, ctx.orgId),
+  }))
   return {
-    users: result.rows.map((u) => ({ id: u.id, name: u.name, email: u.email, roles: u.roles })),
+    users: result.rows.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      roles: u.roles,
+      away: awayOf(away, u.id),
+    })),
   }
 }
 

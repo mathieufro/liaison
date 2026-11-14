@@ -38,6 +38,7 @@ export const FRAME_METHODS = [
   "printDocuments",
   "listMyApprovals",
   "decideApproval",
+  "editApproval",
   "openExternal",
   "openRecord",
   "openApprovals",

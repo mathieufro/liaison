@@ -1,0 +1,1 @@
+Companies, deals, quiet-deal follow-ups and opt-outs exist -> docs/sales/companies.md ; docs/sales/deals.md ; docs/sales/opt-outs.md

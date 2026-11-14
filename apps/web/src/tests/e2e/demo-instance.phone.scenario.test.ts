@@ -93,7 +93,7 @@ test.describe("the demo entry on a phone", () => {
     await expect(page.getByTestId("demo-continue")).toBeInViewport({ ratio: 1 })
     await page.getByTestId("demo-continue").click()
     await expect(page.getByTestId("demo-company-step")).toBeVisible()
-    await expect(page.getByTestId("demo-company-example")).toContainText("example company")
+    await expect(page.getByTestId("demo-example-line")).toContainText("example company")
     await expectNoHorizontalClipping(page)
     await page.getByTestId("demo-company-continue").click()
 

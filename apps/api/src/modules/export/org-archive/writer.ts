@@ -47,6 +47,7 @@ import {
   redactJsonPaths,
   scrubsCiphertext,
 } from "~/modules/export/org-archive/redaction"
+import { WITHHELD_ROWS } from "~/modules/export/org-archive/withheld"
 import {
   ExportTooLargeError,
   fileEntryName,
@@ -83,6 +84,8 @@ export interface OrgArchiveManifest {
     jsonPaths: Array<{ column: string; path: string; why: string }>
   }
   kept: Array<{ column: string; why: string }>
+  /** Tables whose rows the archive holds only in part (withheld.ts), with why. */
+  withheld: Array<{ table: string; why: string }>
 }
 
 export interface BuildOrgArchiveOptions {
@@ -120,6 +123,12 @@ function columnExpr(col: ExportColumn, redacted: boolean): string {
 }
 
 function scopeWhere(t: ExportTable, orgId: string): SQL {
+  const withheld = WITHHELD_ROWS[`${t.logicalSchema}.${t.table}`]
+  const org = orgScopeWhere(t, orgId)
+  return withheld ? drizzleSql`${org} AND (${drizzleSql.raw(withheld.keep())})` : org
+}
+
+function orgScopeWhere(t: ExportTable, orgId: string): SQL {
   switch (t.reach.kind) {
     case "org":
       return drizzleSql`t.org_id = ${orgId}::uuid`
@@ -502,6 +511,9 @@ export async function buildOrgArchive(
       kept: Object.entries(KEPT_COLUMNS)
         .map(([column, why]) => ({ column, why }))
         .sort(byColumn),
+      withheld: Object.entries(WITHHELD_ROWS)
+        .map(([table, w]) => ({ table, why: w.why }))
+        .sort((a, b) => a.table.localeCompare(b.table)),
     }
     await writer.addEntry("manifest.json", `${JSON.stringify(manifest, null, 2)}\n`, {
       deflate: true,

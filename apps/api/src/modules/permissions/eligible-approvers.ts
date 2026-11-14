@@ -31,10 +31,13 @@ export function scopeMatchesFragment(scopeColumnExpr: SQL, requiredExpr: SQL): S
  * (`loadEffectivePermissions`) adds them to the stored grants, so a reader of the grant tables that
  * leaves them out answers differently from the decide check. The one SQL statement of
  * `everyMemberScopeGrants`, with the app restriction a real check applies to these grants
- * (migration 0261).
+ * (migration 0261). An external user holds none of them. The SQL function reads the row as its
+ * caller, so `approval_requests_select` under liaison_rls already cannot see an external row
+ * (users_members_only); this fragment runs on a privileged handle, which that policy does not
+ * narrow, so it says so itself.
  */
 export function everyMemberScopeFragment(orgId: string, userExpr: SQL, requiredExpr: SQL): SQL {
-  return drizzleSql`${K}.every_member_scope_covers(${orgId}::uuid, ${userExpr}, ${requiredExpr}::text)`
+  return drizzleSql`(${K}.every_member_scope_covers(${orgId}::uuid, ${userExpr}, ${requiredExpr}::text) AND EXISTS (SELECT 1 FROM ${K}.users m WHERE m.id = ${userExpr} AND m.user_type = 'member'))`
 }
 
 /**
@@ -71,6 +74,7 @@ export async function eligibleApprovers(
     FROM ${K}.users u
     WHERE u.org_id = ${orgId}::uuid
       AND u.status = 'active'
+      AND u.user_type = 'member'
       -- A restricted app's approvals go to the people who keep the app (S20).
       AND NOT ${K}.app_access_denied(${orgId}::uuid, u.id, ${app}::text)
       AND (
@@ -154,6 +158,7 @@ export async function eligibleApproversWithDimension(
     FROM ${K}.users u
     WHERE u.org_id = ${orgId}::uuid
       AND u.status = 'active'
+      AND u.user_type = 'member'
       -- A restricted app's approvals go to the people who keep the app (S20).
       AND NOT ${K}.app_access_denied(${orgId}::uuid, u.id, ${app}::text)
       AND (

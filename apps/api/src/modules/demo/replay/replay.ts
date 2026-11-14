@@ -41,7 +41,8 @@ import {
 } from "~/db/schema/kernel"
 import { rootLogger } from "~/lib/logger"
 import { redis } from "~/lib/redis"
-import { isDemoOrgId } from "~/modules/demo/demo-org"
+import { demoWorldOf, isDemoOrgId, loadDemoMarker } from "~/modules/demo/demo-org"
+import saasRecordingJson from "~/modules/demo/worlds/saas/recording.saas.json"
 import {
   type Appended,
   appendReplayEvents,
@@ -113,8 +114,19 @@ export const recordingSchema = z
 export type Recording = z.infer<typeof recordingSchema>
 export type RecordedEvent = Recording["events"][number]
 
-/** The committed recording, validated once at load. */
+/** The committed recording, validated once at load: the products world's. */
 export const RECORDING: Recording = recordingSchema.parse(recordingJson)
+
+/** The software world's recording: a fix to a customer's reported bug. */
+const SAAS_RECORDING: Recording = recordingSchema.parse(saasRecordingJson)
+
+/**
+ * The recording the org's world plays: each world's developer scenario has its
+ * own. A world without one plays the products world's.
+ */
+export async function recordingOf(orgId: string): Promise<Recording> {
+  return demoWorldOf(await loadDemoMarker(orgId)) === "saas" ? SAAS_RECORDING : RECORDING
+}
 
 /** Event types the server (or the replay's decision step) writes; never a recorded one. */
 const SERVER_TYPES = new Set(["status", "decision", "command_applied"])
@@ -293,7 +305,7 @@ export async function startReplay(
   opts: ReplayOptions & { launch?: boolean; notBefore?: Date } = {},
 ): Promise<StartedReplay> {
   const node = await prepareRecordedLaptop(input.orgId, input.ownerUserId)
-  const recording = opts.recording ?? RECORDING
+  const recording = opts.recording ?? (await recordingOf(input.orgId))
   const [live] = await withPrivilegedDb(input.orgId, "demo-replay:live", (tx) =>
     tx
       .select({ sessionId: nodeSessions.id, jobId: nodeJobs.id, row: nodeSessions })
@@ -582,7 +594,7 @@ export async function runReplay(
   opts: ReplayOptions = {},
 ): Promise<ReplayOutcome> {
   const clock = opts.clock ?? realClock
-  const recording = opts.recording ?? RECORDING
+  const recording = opts.recording ?? (await recordingOf(orgId))
   const pollMs = opts.pollMs ?? REPLAY_POLL_MS
   const waitMs = opts.decisionWaitMs ?? REPLAY_DECISION_WAIT_MS
   const factor = pacingFactor(recording)

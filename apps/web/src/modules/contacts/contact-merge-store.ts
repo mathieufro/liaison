@@ -17,6 +17,8 @@ interface MergeState {
   targetId: string | null
   targetCandidates: Contact[]
   resolvedFields: Record<string, string>
+  /** The source contact's mail conversations the merge moves to the target (first 100). */
+  sourceConversations: number
   loading: boolean
   error: string | null
 }
@@ -28,6 +30,7 @@ const initialState: MergeState = {
   targetId: null,
   targetCandidates: [],
   resolvedFields: {},
+  sourceConversations: 0,
   loading: false,
   error: null,
 }
@@ -61,6 +64,21 @@ export async function searchTargets(api: MergeApi, query: string): Promise<void>
   } finally {
     setMergeStore("loading", false)
   }
+}
+
+/** Count the source contact's mail conversations; none when the reader cannot read mail. */
+export async function loadSourceConversations(api: MergeApi): Promise<void> {
+  const sourceId = mergeStore.sourceId
+  if (!sourceId) return
+  const params = new URLSearchParams({ contactId: sourceId, limit: "100" })
+  let count = 0
+  try {
+    const res = await api.getEnvelope<unknown[]>(`/mail/conversations?${params.toString()}`)
+    count = Array.isArray(res.data) ? res.data.length : 0
+  } catch {
+    count = 0
+  }
+  if (mergeStore.sourceId === sourceId) setMergeStore("sourceConversations", count)
 }
 
 export function selectTarget(targetId: string): void {

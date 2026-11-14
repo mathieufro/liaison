@@ -170,7 +170,7 @@ export function singleFileBundleProblems(source: string): string[] {
     ),
     // import "s" (side effect only)
     ...source.matchAll(/(?:^|[;}])\s*import\s*["']([^"'\n]*)["']/gm),
-  ].map((m) => m[1])
+  ].flatMap((m) => (m[1] === undefined ? [] : [m[1]]))
   for (const spec of new Set(specifiers)) {
     if (!APP_BUNDLE_BARE_IMPORTS.includes(spec)) problems.push(`import "${spec}"`)
   }

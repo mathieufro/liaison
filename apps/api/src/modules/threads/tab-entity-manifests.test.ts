@@ -36,7 +36,14 @@ function manifests(): Manifest[] {
 }
 
 /** Kernel kinds reference-display.ts reads by name. */
-const KERNEL_ENTITIES = new Set(["thread", "contact", "approval_request", "routine", "skill"])
+const KERNEL_ENTITIES = new Set([
+  "thread",
+  "contact",
+  "company",
+  "approval_request",
+  "routine",
+  "skill",
+])
 
 describe("every tab whose id is a record resolves to an entity", () => {
   const all = manifests()

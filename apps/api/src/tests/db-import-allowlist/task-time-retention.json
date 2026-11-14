@@ -1,0 +1,5 @@
+{
+  "privileged": {
+    "apps/projects/service/task-time-anonymise.ts": "Time rows past 36 months: once a month it freezes each old row's cost at the rate in force on its day, then removes its person. Decides by the row's work day alone; reads no activity, tells no one."
+  }
+}

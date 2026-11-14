@@ -32,7 +32,10 @@ import { registerJobWorker } from "~/infra/jobs/jobs"
 import { env } from "~/lib/env"
 import { rootLogger } from "~/lib/logger"
 import { publishRedis, REDIS_PREFIX, RESP_PROTOCOL } from "~/lib/redis"
-import { buildDeferredToolsAnnouncement } from "~/modules/agent/context/context"
+import {
+  buildDeferredToolsAnnouncement,
+  undeliveredGuideBlocks,
+} from "~/modules/agent/context/context"
 import { renderGuideNote, renderLoadedToolsBlock } from "~/modules/agent/context/guide-notes"
 import {
   checkMidStep,
@@ -458,28 +461,43 @@ export async function runSubRun(
     // A repeat fetch pins the earlier result through it (web-fetch-repeat.ts).
     subRunFrame.clipLedger = clippedResultIds
     const rollingCache = credit.model.provider === "anthropic"
-    // The guide parts (a loaded tool's schema) already sent this run.
-    const guidePartsDelivered = new Set<string>()
-    /** The note describing the loaded tools the fixed list leaves out, each once; null when none is new. */
-    const takeLoadedToolsNote = (): string | null => {
-      if (!fixedToolList || !activeToolsForStep) return null
-      const { loaded, parts } = undeliveredLoadedTools(
-        activeToolsForStep(),
-        fixedToolList,
-        tools,
-        guidePartsDelivered,
-      )
-      if (loaded.length === 0) return null
+    // The guide parts already sent this run: guides and loaded tools' schemas.
+    // The kernel's own guide is the main agent's system prompt; a sub-agent's
+    // role prompt stands in its place, so it is never sent here.
+    const guidePartsDelivered = new Set<string>(["kernel"])
+    /**
+     * The note for what the run's loaded tools need and the model lacks, each
+     * once; null when nothing is new. A loaded tool's guides (its app's, and a
+     * kernel guide naming it) arrive with its first load, as in a thread
+     * (agent-service.ts): an allowlisted run loads its whole list at the
+     * start, a discovering run a tool at a time through tool_search. A tool
+     * the fixed list leaves out also gets its description and parameters.
+     */
+    const takeGuideNote = (): string | null => {
+      const guidedTools = new Set(def.toolAllowlist == null ? subrunDiscovered : Object.keys(tools))
+      const guides = undeliveredGuideBlocks(orgId, guidedTools, guidePartsDelivered)
+      const parts = [...guides.parts]
+      const { loaded, parts: toolParts } =
+        fixedToolList && activeToolsForStep
+          ? undeliveredLoadedTools(activeToolsForStep(), fixedToolList, tools, guidePartsDelivered)
+          : { loaded: [], parts: [] }
+      parts.push(...toolParts)
+      if (guides.blocks.length === 0 && loaded.length === 0) return null
       for (const part of parts) guidePartsDelivered.add(part)
-      return renderGuideNote([], parts, renderLoadedToolsBlock(loaded))
+      return renderGuideNote(
+        guides.blocks,
+        parts,
+        loaded.length > 0 ? renderLoadedToolsBlock(loaded) : undefined,
+      )
     }
     const prepareStep = (options: unknown) => {
       const step = options as { messages?: unknown[] } | undefined
       const base = activeToolsForStep ? { activeTools: activeToolsForStep() } : {}
-      const note = takeLoadedToolsNote()
+      const note = takeGuideNote()
       if (!Array.isArray(step?.messages)) return base
-      // A tool the last step loaded outside the fixed list: its schema rides a
-      // note right after that step's results. The SDK hands this step's
+      // A tool the last step loaded: its guides (and, outside the fixed list,
+      // its schema) ride a note right after that step's results; the tools
+      // the run starts with get theirs before the first step. The SDK hands this step's
       // messages to the next step with its output appended, so the note keeps
       // its place on every later step (an append-only request).
       const messages = note ? [...step.messages, { role: "user", content: note }] : step.messages

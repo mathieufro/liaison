@@ -59,6 +59,7 @@ import { expireApproval, stageGatedApproval } from "./gated-approval"
 import { injectInboundMail, injectThreadMessage } from "./inject"
 import { appendMailMessages, ensureMailAccount, seedMailConversation, seedMailDraft } from "./mail"
 import { ensureMockConnection } from "./mock-connections"
+import { seedMonthEndClient } from "./month-end"
 import { ensureSecondOrg } from "./second-org"
 
 export interface SeedRouteFactory<A extends z.ZodTypeAny = z.ZodTypeAny> {
@@ -855,5 +856,25 @@ export const SEED_FACTORIES: Record<string, SeedRouteFactory> = {
       const userId = createdBy ?? (await orgAdmin(ctx.orgId)).id
       return createTicketApiKey(ctx, { userId, ...a })
     },
+  ),
+
+  /** One subscription customer of an issuer: its contact and billing address, a paid invoice and the active monthly schedule continuing it. */
+  "invoicing.monthEndClient": factory(
+    zod.object({
+      issuerId: uuid,
+      previousDocumentId: uuid,
+      scheduleKey: zod.string().min(1),
+      name: zod.string().min(1),
+      street: zod.string().min(1),
+      postalCode: zod.string().min(1),
+      city: zod.string().min(1),
+      email: zod.string().min(3),
+      priceMinor: zod.number().int().positive(),
+      taxRateBp: zod.number().int().min(0),
+      nextIssueOn: zod.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      nextDraftOn: zod.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      createdBy: zod.string().min(1),
+    }),
+    (ctx, a) => seedMonthEndClient(ctx, a),
   ),
 }

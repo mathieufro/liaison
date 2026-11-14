@@ -288,6 +288,7 @@ describe("registerApps integration — schema migration", () => {
     const v1 = {
       name: "migration-test",
       version: "1.0.0",
+      scopes: ["migration-test:records:read"],
       schema: {
         records: {
           fields: { title: "string", status: "string" },
@@ -319,6 +320,7 @@ describe("registerApps integration — schema migration", () => {
     const v2 = {
       name: "migration-test",
       version: "2.0.0",
+      scopes: ["migration-test:records:read"],
       schema: {
         records: {
           fields: { title: "string", status: "string", priority: "string?" },
@@ -351,6 +353,7 @@ describe("registerApps integration — schema migration", () => {
     const v1 = {
       name: "liveupgrade-test",
       version: "1.0.0",
+      scopes: ["liveupgrade-test:records:read"],
       schema: { records: { fields: { title: "string" } } },
     }
     await registerApps([v1], TEST_ORG_ID)
@@ -358,6 +361,7 @@ describe("registerApps integration — schema migration", () => {
     const v2 = {
       name: "liveupgrade-test",
       version: "1.0.1",
+      scopes: ["liveupgrade-test:records:read"],
       schema: { records: { fields: { title: "string", extra: "string?" } } },
     }
     // NO resetAppRegistries here — this is the live-upgrade path.
@@ -391,6 +395,7 @@ describe("registerApps — failed registration records errored state (BL-103)", 
   const badApp = (name: string) => ({
     name,
     version: "1.0.0",
+    scopes: [`${name}:records:read`],
     schema: { records: { fields: { title: "string", bad: "binary" } } },
   })
 

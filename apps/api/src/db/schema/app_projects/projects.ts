@@ -41,6 +41,18 @@ export const projects = appProjects.table(
     taskFields: jsonb("task_fields").$type<ProjectField[]>().notNull().default([]),
     // Sidebar group heading (0250): trimmed free text, NULL = ungrouped.
     group: text("group"),
+    // A work project or a sales pipeline (0295). Migration-owned: written by
+    // the projects service only.
+    kind: text("kind", { enum: ["work", "pipeline"] })
+      .notNull()
+      .default("work"),
+    // The client of this project (0295): a soft reference to kernel.companies.
+    companyId: uuid("company_id"),
+    // Time and budgets for this project (0319): off by default, work projects
+    // only (CHECK projects_time_budgets_work_only); who turned it and when.
+    timeBudgetsOn: boolean("time_budgets_on").notNull().default(false),
+    timeBudgetsChangedBy: uuid("time_budgets_changed_by"),
+    timeBudgetsChangedAt: timestamp("time_budgets_changed_at", { withTimezone: true }),
     ownerId: uuid("owner_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),

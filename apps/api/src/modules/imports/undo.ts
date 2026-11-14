@@ -88,7 +88,14 @@ const TEXT_LINK_CHILDREN: Record<string, Array<{ table: string; column: string }
 }
 
 /** Child tables that hold derived state, not work: viewing a task seats the viewer. */
-const NOT_WORK_CHILDREN = new Set(["kernel.thread_participants", "kernel.user_thread_state"])
+const NOT_WORK_CHILDREN = new Set([
+  "kernel.thread_participants",
+  "kernel.user_thread_state",
+  // A deal's rows hang off its task and have no id of their own: they go with
+  // the task, and a change to them after the import is checked in rowFacts.
+  "app_projects.deals",
+  "app_projects.deal_values",
+])
 
 /**
  * Person columns that carry no foreign key yet name a user (or a contact).
@@ -115,6 +122,8 @@ const PERSON_TABLES = new Set(["kernel.users", "kernel.contacts"])
 const SHARED_TABLES = new Set([
   "kernel.users",
   "kernel.contacts",
+  // A company a contact or deal record created may be used by later records.
+  "kernel.companies",
   "app_projects.projects",
   "app_projects.project_statuses",
   // A tag a document created may tag other documents since.
@@ -233,6 +242,19 @@ async function rowFacts(
   if (row.predates) return { exists: true, refusal: "predates_run" }
   if (row.changed) return { exists: true, refusal: "changed_after_import" }
   if (PERSON_TABLES.has(e.table)) return { exists: true, refusal: null }
+  if (e.table === "app_projects.tasks") {
+    // A deal's amount, company or outcome edited since the import is someone's work.
+    const [deal] = extractRows<{ changed: boolean }>(
+      await tx.execute(drizzleSql`
+        SELECT (d.updated_at > ${e.recordedAt}::timestamptz
+                OR COALESCE(v.updated_at > ${e.recordedAt}::timestamptz, false)) AS changed
+        FROM ${tableRel("app_projects.deals")} d
+        LEFT JOIN ${tableRel("app_projects.deal_values")} v ON v.task_id = d.task_id
+        WHERE d.task_id = ${e.id}::uuid AND d.org_id = ${orgId}::uuid
+      `),
+    )
+    if (deal?.changed) return { exists: true, refusal: "changed_after_import" }
+  }
   const K = drizzleSql.raw(schemaRef("kernel"))
   for (const spec of await cascadeChildren(tx, e.table)) {
     const childCols = await columnsOf(tx, spec.table)
@@ -334,6 +356,43 @@ async function personInUse(
     if (hit.length > 0) return "still_referenced"
   }
   return null
+}
+
+/**
+ * A company is held by soft references (no foreign key): contacts, deals,
+ * pipelines and portal users. It goes only when nothing outside this undo
+ * still names it, and no other run created it too.
+ */
+async function companyInUse(
+  tx: PrivilegedDb,
+  orgId: string,
+  runId: string,
+  e: LedgerEntry,
+): Promise<boolean> {
+  const K = drizzleSql.raw(schemaRef("kernel"))
+  const other = extractRows(
+    await tx.execute(drizzleSql`
+      SELECT 1 FROM ${K}.import_ledger
+      WHERE table_name = ${e.table} AND row_id = ${e.id}::uuid AND run_id <> ${runId}::uuid
+      LIMIT 1
+    `),
+  )
+  if (other.length > 0) return true
+  for (const [table, column] of [
+    ["kernel.contacts", "company_id"],
+    ["kernel.users", "company_id"],
+    ["app_projects.deals", "company_id"],
+    ["app_projects.projects", "company_id"],
+  ] as const) {
+    const hit = extractRows(
+      await tx.execute(drizzleSql`
+        SELECT 1 FROM ${tableRel(table)}
+        WHERE ${drizzleSql.identifier(column)} = ${e.id}::uuid AND org_id = ${orgId}::uuid LIMIT 1
+      `),
+    )
+    if (hit.length > 0) return true
+  }
+  return false
 }
 
 /** Delete one ledgered row of the run's org; returns its storage keys (files). */
@@ -495,6 +554,10 @@ async function undoInTransaction(
         out.refused.push({ table: e.table, id: e.id, reason: inUse })
         continue
       }
+    }
+    if (e.table === "kernel.companies" && (await companyInUse(tx, orgId, runId, e))) {
+      out.refused.push({ table: e.table, id: e.id, reason: "still_referenced" })
+      continue
     }
     try {
       await tx.transaction(async (sp) => {

@@ -18,6 +18,8 @@ export interface CrossProjectTaskSummary {
   projectName: string
   assigneeId: string | null
   dueDate: string | null
+  /** The task's timebox: present only on a task of a project using time and budgets. */
+  timeboxMinutes?: number | null
   /** Why it is listed, when "Recently involved" is on (rows then come newest involvement first). */
   involvement?: Involvement
 }

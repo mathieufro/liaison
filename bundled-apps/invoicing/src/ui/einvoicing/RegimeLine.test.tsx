@@ -32,6 +32,8 @@ describe("RegimeLine", () => {
       "Awaiting a decision",
     )
     expect(regimeLineView({ regime: null, reasons: [] }, {}).label).toBe("Not classified yet")
+    // Never a bare state: it says what it means.
+    expect(regimeLineView({ regime: null, reasons: [] }, {}).reason).toContain("not yet known")
   })
 
   it("reads the reason in the reader's language", () => {

@@ -81,6 +81,7 @@ import {
   type WatchedSpec,
 } from "~/seed/factories/commerce/social"
 import { actorFor } from "~/seed/factories/people/actors"
+import { seedCompanies } from "~/seed/factories/people/companies"
 import { resolveContacts } from "~/seed/factories/people/contacts"
 import { DEMO_COMPANY, type DemoSku } from "~/seed/world/fiction"
 import {
@@ -1829,21 +1830,36 @@ export async function seedDemoCommerce(
   // As the admin, through the contacts service. A customer the support layer
   // already resolved is that same contact, found by email and left as it is
   // (its tag is already there); dealers and suppliers are new.
+  const adminActor = await actorFor(ctx, org.adminUserId)
   const contactIdsByKey = Object.fromEntries(
     (
       await resolveContacts(
         ctx,
-        await actorFor(ctx, org.adminUserId),
+        adminActor,
         parties.map((p) => ({
           key: p.key,
           name: p.name,
           email: p.email,
           ...(p.kind === "customer" ? {} : { company: p.name }),
           tags: [p.kind],
-          ...(p.kind === "customer" ? {} : { metadata: { country: p.country, kind: p.kind } }),
+          ...(p.kind === "customer"
+            ? {}
+            : { recipientCountry: p.country, metadata: { country: p.country, kind: p.kind } }),
         })),
       )
     ).map(([key, c]) => [key, c.id]),
+  )
+  // A dealer's sales address works at that dealer: put it on the company the
+  // support layer wrote (found by name; none is created here), so the company
+  // page lists the address its mail comes from.
+  await seedCompanies(
+    ctx,
+    adminActor,
+    parties
+      .filter((p) => p.kind === "dealer")
+      .map((p) => ({ key: p.key, name: p.name, contactKeys: [p.key] })),
+    contactIdsByKey,
+    { onlyExisting: true },
   )
   const { issuerProfileId } = await seedInvoicingHistory(ctx, {
     issuer: shopIssuer(),

@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { describe, expect, it } from "bun:test"
-import { humanizeToolName, splitToolName } from "~/modules/approvals/event-data"
+import { TICKET_MERGED_REASON } from "~/modules/approvals/cancel"
+import {
+  buildApprovalSummary,
+  humanizeToolName,
+  splitToolName,
+} from "~/modules/approvals/event-data"
 
 describe("splitToolName", () => {
   it("splits app and short name on the first colon", () => {
@@ -54,5 +59,39 @@ describe("humanizeToolName", () => {
     expect(humanizeToolName("kernel:update_skill")).toBe("Workspace: update skill")
     expect(humanizeToolName("kernel:contacts_merge")).toBe("Workspace: contacts merge")
     expect(humanizeToolName("kernel")).toBe("Workspace")
+  })
+})
+
+describe("a cancelled request's reason", () => {
+  const row = (reason: string) =>
+    buildApprovalSummary({
+      raw: {
+        id: "00000000-0000-4000-8000-000000000001",
+        handle: "APR-1",
+        status: "cancelled",
+        created_at: "2026-10-01T09:00:00Z",
+        expires_at: "2026-10-04T09:00:00Z",
+        tool_name: "tickets:reply",
+        approve_scope: null,
+        summary: { kind: "Reply", title: "Reply to the customer", lines: [] },
+        current_payload: {},
+        thread_id: "00000000-0000-4000-8000-000000000002",
+        originating_thread_id: "00000000-0000-4000-8000-000000000002",
+        requested_by: "00000000-0000-4000-8000-000000000003",
+        notify_user_ids: [],
+        reason,
+      },
+      requester: { kind: "user", id: "00000000-0000-4000-8000-000000000003", name: "Ada" },
+      editableFields: [],
+      lastEdit: null,
+    })
+
+  it("a row a merge cancelled under the old code reads as the sentence a merge stores today", () => {
+    expect(row("ticket_merged").reason).toBe(TICKET_MERGED_REASON)
+  })
+
+  it("a sentence stored as the reason reads as stored", () => {
+    expect(row(TICKET_MERGED_REASON).reason).toBe(TICKET_MERGED_REASON)
+    expect(row("Not this week").reason).toBe("Not this week")
   })
 })

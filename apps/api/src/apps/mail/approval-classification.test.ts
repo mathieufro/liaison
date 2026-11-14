@@ -53,6 +53,7 @@ function bridgeFor(status: number) {
           payload: payload ? JSON.parse(payload) : undefined,
         })
       },
+      mail_checkSendGuard: async () => JSON.stringify({ applies: false }),
       approval_recordFailedNoEffect: async (toolName: string, payload: string) => {
         calls.push({ method: "failed_no_effect", toolName, payload: JSON.parse(payload) })
       },

@@ -10,7 +10,7 @@
 // spec-compliant CSV with field-escaping (commas, quotes, newlines).
 import { csvCell } from "../../csv"
 import { currencyExponent } from "../../money"
-import type { DocumentRow } from "./types"
+import { type DashboardFilter, DEFAULT_FILTER, type DocumentRow } from "./types"
 
 export interface DashboardColumn<R = DocumentRow> {
   /** Header label (used by both the table head and the CSV header row). */
@@ -202,6 +202,30 @@ export const EMPTY_STATE: Record<DashboardKey, string> = {
   awaiting_payment: "All issued documents are paid. ✓",
   b2b_sales: "No documents to group by customer.",
   by_market: "No documents to group by market.",
+}
+
+/**
+ * The list's empty line, naming the period it looked at: "in this period" with no dates set read
+ * as if a period were chosen. No dates and no other filter means there are no documents yet.
+ * `t` translates and fills; `date` writes an ISO day in the reader's language.
+ */
+export function emptyListText(
+  f: DashboardFilter,
+  t: (english: string, params?: Record<string, string>) => string,
+  date: (iso: string) => string,
+): string {
+  if (f.date_from && f.date_to) {
+    return t("No documents from {{from}} to {{to}}.", {
+      from: date(f.date_from),
+      to: date(f.date_to),
+    })
+  }
+  if (f.date_from) return t("No documents since {{from}}.", { from: date(f.date_from) })
+  if (f.date_to) return t("No documents up to {{to}}.", { to: date(f.date_to) })
+  const filtered = (["query", "status", "market", "channel", "buyer_type"] as const).some(
+    (k) => f[k] !== DEFAULT_FILTER[k],
+  )
+  return filtered ? t("No documents match these filters.") : t("No documents yet.")
 }
 
 export type DashboardKey = "all_sales" | "awaiting_payment" | "b2b_sales" | "by_market"

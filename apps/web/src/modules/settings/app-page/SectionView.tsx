@@ -14,6 +14,7 @@ import {
   Show,
   Switch,
 } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import { cn } from "~/lib/cn"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { appsStore } from "~/modules/settings/apps-store"
@@ -57,6 +58,13 @@ export const SectionView: Component<SectionViewProps> = (props) => {
     props.section.description
       ? labelOf(i18n.t, props.section.descriptionKey, props.section.description)
       : undefined
+  // An app may draw a note under a section's blocks: its UI export named after the section id,
+  // then "SettingsNote" (the section "time" reads `TimeSettingsNote`). Nothing is shown without one.
+  const sectionNote = (): Component | null => {
+    const id = props.section.id
+    const note = props.exports?.[`${id.charAt(0).toUpperCase()}${id.slice(1)}SettingsNote`]
+    return typeof note === "function" ? (note as Component) : null
+  }
   const headingId = () => `settings-section-h-${props.app}-${props.section.id}`
   const fieldsOnly = () => props.section.blocks.every((b) => b.block === "field")
   // A connect form offers Personal and Organization to whoever administers the
@@ -229,6 +237,7 @@ export const SectionView: Component<SectionViewProps> = (props) => {
         )}
       >
         <For each={props.section.blocks}>{(b, i) => block(b, i())}</For>
+        <Show when={sectionNote()}>{(note) => <Dynamic component={note()} />}</Show>
         <Show when={unit() && unitPending()}>
           <div
             class="text-xs text-text-secondary"

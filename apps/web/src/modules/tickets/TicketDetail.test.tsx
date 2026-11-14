@@ -305,7 +305,9 @@ describe("TicketDetail", () => {
 
   // The assignee menu reads the member directory, never the people search.
   function routeMembers(
-    members: { id: string; name: string; email: string }[] | Error,
+    members:
+      | { id: string; name: string; email: string; away?: { until: string | null } | null }[]
+      | Error,
     total?: number,
   ) {
     const membersCalls: string[] = []
@@ -335,6 +337,21 @@ describe("TicketDetail", () => {
       .find((el) => el.textContent?.includes("Morgan Lee"))!
     fireEvent.click(morgan.closest("[role=menuitem]")!)
     expect(state.assignTicket).toHaveBeenCalledWith(state.api, "t1", "u-morgan", "Morgan Lee")
+  })
+
+  it("shows away until a date beside a teammate who is away; the list is unchanged", async () => {
+    routeMembers([
+      { id: "u-morgan", name: "Morgan Lee", email: "morgan@x.test", away: { until: "2099-12-20" } },
+      { id: "u-alice", name: "Alice Chen", email: "alice@x.test", away: null },
+    ])
+    render(() => <TicketDetail entityId="t1" />)
+    await waitFor(() =>
+      expect(screen.getAllByTestId("tickets-detail-assign-member").length).toBe(2),
+    )
+    expect(screen.getByTestId("tickets-detail-assign-away-u-morgan").textContent).toMatch(
+      /away until (20 Dec|Dec 20)/,
+    )
+    expect(screen.queryByTestId("tickets-detail-assign-away-u-alice")).toBeNull()
   })
 
   it("offers teammates while the people search is unavailable (only 'Assign to me' was left)", async () => {
@@ -609,12 +626,49 @@ describe("TicketDetail layout", () => {
   // An app can add a panel to the details sidepanel (the CRM customer card is
   // one) through the `ticket:detail:panel` contribution slot; the panel gets
   // the ticket id and sits in the sidepanel, never outside it.
+  it("shows the header actions other apps add to the ticket, with the ticket id", async () => {
+    const { registerContribution, unregisterContributions } = await import(
+      "~/framework/app-registry"
+    )
+    state.api.get = vi.fn(async (path: string) =>
+      path === "/v1/slots/ticket:detail:actions"
+        ? { panels: [{ id: "action", app: "fixture-app", label: "Act" }] }
+        : { panels: [] },
+    )
+    registerContribution("ticket:detail:actions", {
+      appId: "fixture-app",
+      id: "action",
+      label: "Act",
+      component: ((props: { entityId?: string }) => (
+        <button type="button" data-testid="ticket-action-contribution">
+          {props.entityId}
+        </button>
+      )) as never,
+    })
+    try {
+      render(() => <TicketDetail entityId="t1" />)
+      const action = await screen.findByTestId("ticket-action-contribution")
+      expect(action.textContent).toBe("t1")
+      expect(screen.getByTestId("tickets-detail-header").contains(action)).toBe(true)
+    } finally {
+      unregisterContributions("fixture-app")
+      delete state.api.get
+    }
+  })
+
   it("renders the ticket:detail:panel contributions inside the sidepanel with the ticket id", async () => {
     const { registerContribution, unregisterContributions } = await import(
       "~/framework/app-registry"
     )
+    // The server lists the panel for this viewer; the app's UI registered its component.
+    state.api.get = vi.fn(async (path: string) =>
+      path === "/v1/slots/ticket:detail:panel"
+        ? { panels: [{ id: "panel", app: "test-panel-app", label: "Panel" }] }
+        : { panels: [] },
+    )
     registerContribution("ticket:detail:panel", {
       appId: "test-panel-app",
+      id: "panel",
       label: "Test panel",
       component: ((props: { ticketId: string }) => (
         <div data-testid="ticket-panel-contribution">{props.ticketId}</div>
@@ -628,6 +682,7 @@ describe("TicketDetail layout", () => {
       expect(screen.getByTestId("ticket-panel-contribution").textContent).toBe("t1")
     } finally {
       unregisterContributions("test-panel-app")
+      delete state.api.get
     }
   })
 })

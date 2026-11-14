@@ -1345,7 +1345,9 @@ export async function runRoutineTick(opts: RoutineTickOpts): Promise<RoutineTick
     // approval (routine-run-resume.ts) is skipped: that run carries on once the
     // decision comes, and a second one would pile up behind the same approval.
     // Event ticks run (each is for its own event), and so does a run-now.
-    if (!opts.triggerEvent && !opts.requestUuid) {
+    // A follow-up routine never waits, so a row left from before it was one
+    // cannot hold its ticks back: that run finishes on its own decisions.
+    if (!opts.triggerEvent && !opts.requestUuid && !routine.followUp) {
       const [waiting] = await withPrivilegedDb(opts.orgId, "routine-waiting-run-check", (tx) =>
         tx
           .select({ id: routineRuns.id })
@@ -1510,6 +1512,7 @@ export async function runRoutineTick(opts: RoutineTickOpts): Promise<RoutineTick
           background: true,
           routineId: opts.routineId,
           routineRunId: tickRunId,
+          ...(routine.followUp ? { routineFollowUp: true } : {}),
           ...(opts.triggerEvent?.hop ? { eventHop: opts.triggerEvent.hop } : {}),
           ...(tokenAccount ? { tokenAccount } : {}),
           ...(mailboxReader ? { routineMailboxReaderUserId: mailboxReader } : {}),
@@ -1583,6 +1586,14 @@ export async function runRoutineTick(opts: RoutineTickOpts): Promise<RoutineTick
         turnsAdded,
       })
     }
+    // A follow-up run does not wait for what it staged: it ends, and its line
+    // says how many drafts wait for a person.
+    const draftsWaiting =
+      routine.followUp && agentError === null
+        ? await (
+            await import("~/modules/agent/routines/routine-run-resume")
+          ).undecidedApprovalCount(opts.orgId, tickRunId)
+        : 0
     return finishRun({
       orgId: opts.orgId,
       routine,
@@ -1593,6 +1604,7 @@ export async function runRoutineTick(opts: RoutineTickOpts): Promise<RoutineTick
       ownerScopes,
       agentError,
       turnsAdded,
+      ...(draftsWaiting > 0 ? { draftsWaiting } : {}),
       ...(opts.mailboxWaitRunId ? { runId: opts.mailboxWaitRunId } : {}),
       requestedByUserId: opts.requestedByUserId,
       trigger: routineRunTrigger(opts).trigger,
@@ -1641,6 +1653,8 @@ interface RunEnd {
   runId?: string
   /** The tick's options, for a row written here. */
   tick?: Pick<RoutineTickOpts, "triggerEvent" | "requestUuid">
+  /** A follow-up run's drafts still waiting for a person: its line says how many. */
+  draftsWaiting?: number
 }
 
 /**
@@ -1680,7 +1694,12 @@ export async function finishRun(end: RunEnd): Promise<RoutineTickResult> {
           ownerScopes,
         })
       : null
-  await settleRunStarted(orgId, runLineId, agentError ? "failed" : "succeeded")
+  await settleRunStarted(
+    orgId,
+    runLineId,
+    agentError ? "failed" : "succeeded",
+    end.draftsWaiting ? { draftsWaiting: end.draftsWaiting } : undefined,
+  )
   const runId = end.runId
     ? end.runId
     : await writeRunRow(orgId, routine.id, status, {

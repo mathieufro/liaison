@@ -1,0 +1,1 @@
+Reads of apps in a row show as one line; an app reads as not answering only when none of its calls answered -> apps/web/src/modules/agent/ToolCallRow.tsx (ReadRollup)

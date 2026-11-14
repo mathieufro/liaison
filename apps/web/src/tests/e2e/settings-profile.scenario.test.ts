@@ -324,7 +324,7 @@ test.describe("Settings — Security", () => {
     })
     expect(hasPixels).toBe(true)
 
-    const recoveryGrid = authenticatedPage.locator(".grid.grid-cols-2")
+    const recoveryGrid = authenticatedPage.getByTestId("recovery-codes-grid")
     await expect(recoveryGrid).toBeVisible()
     const codes = await recoveryGrid.locator("span").count()
     expect(codes).toBeGreaterThanOrEqual(8)

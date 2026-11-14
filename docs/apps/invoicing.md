@@ -11,7 +11,7 @@ The Invoicing app issues invoices, quotes, proformas, purchase orders and credit
 
 An issuer profile is the legal entity your documents are issued from. Nothing can be issued until one exists.
 
-1. Open **Settings › Invoicing › Issuer profiles**.
+1. Open **Settings › Invoicing › Issuer profiles**, or click **Invoicing settings** at the foot of the Invoicing side panel (shown to people who may read the settings).
 2. Click **+ New issuer profile**.
 3. Fill in **Legal name**, **Country** and **Default currency** (required), and optionally **VAT ID**, **IBAN** and **Default language** (`en`, `fr` or `de`).
 4. Turn **Prices include tax** on if the prices you type include tax. Match your Shopify tax setting when the profile is mapped to a shop.
@@ -20,6 +20,10 @@ An issuer profile is the legal entity your documents are issued from. Nothing ca
 Reading profiles needs `invoicing:settings:read` and editing their ordinary fields needs `invoicing:settings:write`. Changing a bank or control field (`iban`, `swift_bic`, `bank_name`, the approval thresholds, `require_two_eyes`, `auto_email_enabled`, `mail_account_id`) or deleting a profile also needs `invoicing:issuer:admin`. Only the admin role holds that scope by default. A profile still referenced by documents cannot be deleted.
 
 A document's issue date and its number year are the date in the issuer's time zone when its number is taken. Set the zone in **Time zone** on the profile, for example `Europe/Paris`; an unknown name is refused. A profile with no zone chosen follows the organization's time zone, or UTC when the organization has none, and the profile list shows **Not chosen** until someone picks one. To keep UTC on purpose, type `UTC`. An agent reads the same reminder from `einvoicing_readiness` and sets the zone with `settings_issuer_profile_update`.
+
+The first time a document is issued on a profile with no zone chosen, in an organization that has none either, Home shows one line to people who can edit settings: the profile has no time zone and dates follow UTC until one is set. Issuing is not blocked and nothing issued changes. Setting a zone, or typing `UTC` to keep it, clears the line, and it is never raised again for that profile. A profile that already has issued documents is not asked.
+
+A line is one of four kinds: goods, software, service or shipping. A service line (consulting, a retainer) counts as a service in the operation type of an e-invoice and in the legal mention, as a software line does; it is never customs goods. A document issued before the service kind existed reads exactly as it did.
 
 A credit note can state an earlier date. The date decides the number's year: a date in a past year takes that year's series, never this year's number. A date before the last number of that series is refused, and so is a date after today. A payment date nobody states, from **Mark paid** or from a Shopify order, is read in the same time zone. A credit note that names its invoice cannot be dated before it, and moving either date later cannot put the credit note first. An imported document keeps the date it came with.
 
@@ -94,16 +98,16 @@ An amount in minor units is a whole number: 41940 for 419.40. Anything else, suc
 1. Open the quote (once it is sent or accepted) or the proforma (once it is sent).
 2. Click **Convert to invoice** and confirm.
 
-For a quote linked to a Shopify draft order, this completes the draft order in Shopify with payment pending. Shopify creates the order and the invoice is issued from it moments later. Do not issue a second invoice by hand.
+For a quote linked to a Shopify draft order, this completes the draft order in Shopify with payment pending. Shopify creates the order and the invoice is issued from it moments later. Do not issue a second invoice by hand. Any other quote or proforma converts here in one step: if it fails, the quote is left as it was and no number is used.
 
 ## Work with an issued document
 
-Open a document from **Documents** in the sidebar (**All**, **Invoices**, **Quotes**, **Proformas**, **Purchase Orders**, **Credit notes**). The list footer counts the rows with the right noun ("1 invoice", "2 invoices"). The buttons at the top of a document, next to its number and status, offer:
+Open a document from **Documents** in the sidebar (**All**, **Invoices**, **Quotes**, **Proformas**, **Purchase Orders**, **Credit notes**). The list footer counts the rows with the right noun ("1 invoice", "2 invoices"). An empty list names the dates it looked at ("No documents from 1 Oct 2026 to 31 Oct 2026."), or says "No documents yet." when no date or filter is set. The buttons at the top of a document, next to its number and status, offer:
 
 | Button | What it does |
 | --- | --- |
 | **Edit** | Edit the document. Saving re-renders its PDF. |
-| **Mark paid** | Record full payment. Not shown on credit notes. |
+| **Mark paid** | Record full payment. Not shown on credit notes, nor on an invoice Stripe collects: that one shows **Collected by Stripe** with its Stripe invoice, which opens the Stripe customer. |
 | **Send to customer** | Email the PDF to the customer. |
 | **Convert to invoice** | Quotes and proformas only, see above. |
 | **Preview PDF** / **Download PDF** | Open or download the rendered PDF. When it is not ready, they say so. |
@@ -122,6 +126,13 @@ Issued documents are never deleted. A correction is a credit note, with its own 
 - **Received** in the sidebar lists supplier e-invoices received through the platform. Refusing or disputing one goes through an approval.
 - An e-invoice in another currency than the euro also states its VAT in euros, at the European Central Bank reference rate, fetched when the invoice is issued (once per currency and day). If the ECB cannot be reached and no rate from the last 7 days is stored, the invoice is not issued and uses no number: issue it again a few minutes later. A paid Shopify order waits in **Deferred** and is retried by itself.
 - An approved e-invoice is deposited at the platform once, even when the server restarts in the middle of the send: the deposit is claimed before it is made, and a run that cannot tell whether an earlier one reached the platform asks the platform first and keeps the invoice it already holds.
+- **Month-end runs.** Approving a run's card also approves its e-invoice sends: each row's invoice is sent once it is issued, with no card of its own. A send goes only for the invoice its row names; if the row changed, nothing is sent and the send is asked for again.
+- **Daily send card.** An e-invoice issued with no person (a run whose schedules all issue by themselves) waits, and once a day one card lists every such invoice and the oldest wait. Approving it sends them. A rejected or expired card keeps them for the next day's card. An invoice waiting more than two days raises one Home line for people who hold `invoicing:settings:write`.
+- **Standing authorization.** A person can let the card-subscription stream or the recurring-by-transfer stream send its e-invoices issued with no person at issue, with no daily card: `issuer_stream_set` with `stream` and `einvoiceStanding: true`. It is off on every stream until then, an agent's call waits for a person, and it records who turned it on and when. It lasts 90 days: a renewal card goes to the person who turned it on a week before the end, and if it is not renewed the stream goes back to the daily card, said once on Home. `einvoice_standing_off` turns it off at once. A send goes only for an invoice of that stream. In **Settings, Invoicing, Issuer profiles**, under **Who issues what**, each stream shows whether it is on, who turned it on, when and until when. **Turn on** asks you to confirm what it does, and your confirm is the decision; an agent's call waits for a person instead. With no e-invoicing platform chosen, the section says to choose one first and offers no **Turn on**. **Turn off** counts down 8 seconds before it runs, and **Undo** inside those seconds changes nothing.
+- **Collections.** Where VAT is due on receipt (a domestic sale, not on the debits option), marking an invoice paid, a refund and a Stripe payment report the amounts by VAT rate to the platform, once per payment. The debits option, reverse charge and sales out of French VAT report nothing ("Not needed"). A platform that does not take collections shows "To report at your platform" and one Home line, "Enter this collection at your platform".
+- **Status on an invoice.** An issued invoice shows one e-invoice status: **Waiting for payment**, **Collected** (only once the platform accepted the collection report), **Partly collected**, **Not needed**, **Refused by the buyer**, **Not sent** or **To report at your platform**. An invoice from a Stripe payment or a schedule also shows **Issued by Liaison**, and a card payment through Stripe that is in shows **Collected by Stripe**.
+- **Refusals.** A buyer refusing an e-invoice on their platform opens a Home item; no invoice or credit note is made by itself.
+- **Payment reminders.** A payment reminder about an invoice that is paid, credited or voided by the time it would leave is not sent.
 - When the organization is deleted, its issued invoices and credit notes (with their lines and PDFs) and its e-invoicing transmission records go into the encrypted legal archive; drafts, quotes and proformas do not ([Delete an organization](../admin/backups.md#delete-an-organization)).
 
 ## Import past documents
@@ -135,6 +146,88 @@ Invoices, credit notes and proformas issued in another tool can be imported with
 - An imported document keeps its PDF as its original: marking it paid or editing it never renders a new one.
 - The import does not record legal originals. Once you have checked the imported documents, run `einvoicing_backfill_legacy_originals` to record them from the PDFs.
 - Until then, the run can be undone under **Settings › Organization › Imports**. A document that changed since, for example once its legal original is recorded, is kept.
+
+## Recurring invoice schedules
+
+The task-first guide is [Recurring invoices](recurring.md). This section is the reference.
+
+A schedule bills one customer on a fixed cadence: every month, quarter or year, on the last day of the period, on a day from 1 to 28, or on a given date for a year. It names the issuer profile, the customer and the lines. A line may hold `{period}`, filled in with the period it bills. Prices are in minor units and the VAT rate is in basis points (2000 is 20%). A schedule shows on its customer's **Activity** timeline, with its cadence and its amount before VAT.
+
+- **Dates.** An invoice issues on its billing day, and the draft is made three days before it. A draft day that falls on a Saturday or Sunday moves back to the Friday; no holiday calendar is held, so a public holiday does not move it. The billing day itself never moves, even on a Saturday. A day past the end of the month, such as 30 February, is that month's last day. All dates are the issuer's civil dates, in the time zone set on its profile.
+- **Starting one.** `recurring_schedule_create` saves a schedule and starts it, or saves it as a draft that bills nothing yet. It refuses a missing customer, billing day or line and says which. A schedule created this way always issues for review: **issue by itself** is off, and only `recurring_schedule_update` turns it on.
+- **Approval.** When an agent asks to save or change a schedule, it files an approval and nothing is saved until a person approves it. Turning **issue by itself** on is never approved by an organization's auto-approve policy, and the schedule records who turned it on and when. When a person saves a schedule in the editor, it is saved at once.
+- **Pausing.** `recurring_schedule_pause` stops the schedule: nothing is drafted while it is paused. With `until`, it resumes on that date and the days inside the pause are not billed afterwards. Pausing a paused schedule changes nothing. A pause asked for by an agent that has read outside text (a customer's email, for example) waits for a person.
+- **Ending.** `recurring_schedule_update` with `status` set to `ended` stops billing for good. A schedule whose end date falls before a period creates nothing for it.
+- **Reading.** `recurring_list` shows the schedules with their next issue day and draft day. Reading and saving need `invoicing:documents:read` and `invoicing:documents:write`; reading the issuer's time zone needs `invoicing:settings:read`, and a member without it is told the issuer cannot be read.
+- **Importing.** Schedules from another tool can be imported as **Recurring invoice schedules** (`recurring-schedule`) records. They arrive as drafts that bill nothing until a person starts them.
+
+### Work with schedules in the app
+
+- **Recurring, Schedules** in the sidebar lists the schedules soonest first, with how many active schedules bill. Its first line says when the next drafts come and when they issue, for example "Soonest first. Next: 7 drafts on Fri 27 Nov, to issue on Mon 30 Nov." Filter **All**, **Active** or **Paused**. A schedule for a customer who also pays a Stripe subscription shows what it bills instead in its **Bills** column.
+- **New schedule** opens the editor in a tab. **Pause**, **Preview next invoice** and **Start** (or **Save** for an existing schedule) sit at the top. **Start** stays off until the schedule has an issuer, a customer and a valid line. With **Card link** as **Paid by**, give the link's https address. The side column shows the totals, the next invoices with their draft days, and how the number is taken: no number shows before an invoice issues.
+- When the customer already pays a live Stripe subscription, saving opens a panel with **Open their subscription**, **Pick another customer** and **Bill something else**. **Bill something else** asks "What does this schedule bill instead?" (at least 5 characters); **Start** stays off until it is answered.
+- A month-end run opens in its own tab (`/invoicing/run/<id>`). Before it issues, it says where it stands (drafted and waiting for approval, approved and not issued yet, past its last day), lists the drafts it will issue with no number, and says nothing is billed yet. Once issued: when it issued, who approved it (on the issuer's day), the period and the number range. "None missing" shows only when the run's numbers follow each other in one series. Each invoice shows its e-invoice status. A partial run lists the rows that could not issue, each with **Fix**, which opens its draft. **Download all** saves each invoice's PDF.
+
+## The month-end run
+
+Each schedule's invoice for a period is made by the **month-end run** of its issuer and issue day, in four steps. No model is asked anything along the way.
+
+- **Drafted.** On a schedule's draft day (in the issuer's time zone), an hourly job makes one unnumbered draft for the period from the schedule alone: its lines, prices, rates and terms, with `{period}` filled. Each draft joins the run as one row, with flags taken from the data ("First invoice", "Same as October", "Changed since October", "October is still unpaid"). A row that bills five times its schedule's last invoice or more, or a fifth of it or less, also reads "Check the amount: October was 149.00 EUR excl.", on the row, on the card and in what the agent reads of the run, and the flag follows each edit of the row. It stays on the card: the approver decides. A first invoice has nothing to compare with and gets no such flag. Running the job twice, or twice at the same time, adds nothing: the draft, the row and the run each have a unique key. A draft and its lines are written in one transaction, so a job stopped halfway leaves no draft and the next hour writes it whole. A draft found already written whose lines differ from its schedule gets the row **needs fix** ("Lines differ from the schedule") and never issues by itself. The draft bills the customer of the schedule's last invoice; for a first invoice, it bills the schedule's company when it names one (the company's name, the contact's billing address and the VAT number recorded for the contact), else the contact's name and email.
+- **Approved.** The run gets one card listing every row, its total and its account manager. The card is for the rows' account manager when they all have the same one. Approving it records each row as approved; **no number is taken at approval**. To change a row, change its draft (`drafts_update`, `drafts_create`, `drafts_discard`): the card follows. A run draft is never issued, edited in place or deleted around its run: `invoice_issue`, `documents_update` and `drafts_discard` refuse it and name the run. `recurring_run_unapprove` undoes an approval until the first number is taken, keeping every edit.
+- **Issued.** From 08:00 on the issue day, and only until the run's last issue day, the rows issue in order, each in its own transaction, at most 25 every five minutes: a large run takes several passes and stays **issuing** until done. A row that fails stays an unnumbered draft and uses no number; the others keep consecutive numbers and the run ends **partial**, with one attention item naming the draft. A row whose draft changed after approval is not issued and waits for a new approval. Two passes, or a pass and a person, never issue a row twice. Only the run's own job issues a row: no person, agent, API or MCP client can call `recurring_item_issue`. A one-off invoice issued meanwhile simply takes the next number.
+- **Late.** Three days before the run's last issue day (the billing month's last day), its attention item rises; on the day it says it ends today; after it, the run is **late** and nothing issues by itself: a person decides. A rejected card keeps the drafts and asks again on the issue day, or the next working day.
+
+When the organisation reaches its daily app limit, the run's jobs wait for the next day, and one attention item says until when ("Month-end invoicing is held until ...") instead of the run going quiet. A run whose last issue day passes during the hold is late the next day.
+
+A run where every row comes from a schedule set to **issue by itself**, and none is above the issuer's approval threshold, issues with no card.
+
+`recurring_run_get` shows a run: its state, issue and last days, and each row with its draft id, amounts, account manager, latest change and flags.
+
+### Change the run from its card
+
+The run's card on Home shows every row under its summary, with the line **Drafts, no legal numbers yet. Everything here can still change: click a row to open it.** At the top it counts the invoices to approve and their total; a row that waits for a fix says, before any row, that it stays a draft, uses no number and comes back to you once fixed.
+
+- **Open a row.** A click opens the row where it is, with the document editor's own fields: customer, notes, due date and lines. The row's amounts, the total and the count change as you type, and the row says **Not saved yet**. **Save for November only** or **Save from now on** saves it (an added row has one **Save**); **Cancel** puts the saved amounts back. **Open the full editor** opens the draft in its own tab.
+- **Take out.** **Take out of November** leaves the row out this month only; **End the schedule** with **Last month billed** stops the schedule. A taken-out row has **Put back**.
+- **Add an invoice someone forgot.** Lists the active schedules whose customer has no row in the run; picking one adds its invoice for the run's period. A customer with no schedule is added with one line (what it bills, quantity, unit price excl. VAT). The run refuses a second row with the same customer and lines, and the card says why.
+- **Fix an address.** A row held for a missing billing address has **Fix**, which takes the address in place. When an agent found one, the row shows it with **Use it**. Either saves the address on this month's draft.
+- **Ask.** Each row names its account manager, or **None**. **Ask** puts a mention of that person and the row's customer in the run's discussion, for you to finish and send.
+- **Rights.** People with `invoicing:documents:write` change rows. Without it, a row opens read-only. Without the right to decide, the card says someone who can approve invoices decides it. Everyone who can decide has **Approve N** (with the total) at the top of the panel. The card names the period, the customers and the total, and a card the run's job drafted reads as the job's, never as a person's request.
+- **A long run.** Above 20 rows, rows with nothing to look at fold under one line ("280 same as October"); they still count in the total. Search finds any row by customer.
+- **A run that changed.** When a row changes while you have the card open, the card lists what changed, who changed it, and the total you saw against the total now, and offers **Approve N** on what is there now.
+
+### The month-end check routine
+
+The **month-end-check** routine template runs when a month-end run is drafted. It reads the run with `recurring_run_get` and what other records say about its customers (deals, Stripe subscriptions, payments and earlier invoices, where those apps are installed), and says in at most two sentences what may be worth a look, naming what it read. It holds read scopes only, so it never changes a row, and the card is complete without it. It is off until someone turns it on from **Routines**.
+
+## Who issues what
+
+When Stripe is connected, each issuer profile sells in three streams, and each stream has exactly one issuer. **Settings, Invoicing, Issuer profiles** shows them under **Who issues what**:
+
+| Stream | Who invoices |
+| --- | --- |
+| **Subscriptions paid by card** (only while Stripe is connected) | Your choice: **Liaison** (a legal invoice from Liaison for each charge, in your series) or **Stripe** (Stripe's invoice is the legal one, Liaison keeps a copy) |
+| **Recurring by transfer** | Always Liaison: not billed from Stripe |
+| **One-off invoices** | Always Liaison: not billed from Stripe |
+
+- **Deciding.** When Stripe connects, each issuer profile gets a card asking who invoices its card subscriptions. A French profile (country FR, or a VAT number starting with FR) has Liaison pre-selected, with the reason; another profile has nothing selected. Until a person decides, the stream is **Not decided yet**. The choice (`issuer_stream_set`, `invoicing:settings:write`) always waits for a person: no auto-approve policy decides it.
+- **Switching.** A change applies to Stripe invoices finalized after you confirm it. Invoices issued before keep their issuer and their numbers, and if some of them are unpaid an attention item says so. Check a change with your accountant.
+- **Stripe's own emails.** Stripe can email customers its own invoices, credit notes and receipts, and Liaison cannot read that setting. The section asks you to turn them off in Stripe (Settings, Billing) until a person clicks **I checked, they are off**; the date is kept. An agent cannot say it for you: its request waits for a person.
+- **One customer, one issuer.** A customer who pays a live Stripe subscription is not invoiced again by hand. `invoice_issue`, `invoice_create_and_issue`, `drafts_create` (invoices), `drafts_update` (when the customer changes), `recurring_schedule_create` and `recurring_schedule_update` refuse with `subscription_stream_conflict`, and a month-end row for such a customer shows **Billed by Stripe** and is not issued, including a schedule made before Stripe was connected. Stripe customers not yet linked to a contact are found by email. When the invoice bills something else, a person says what in `billsOtherThanStripe` (at least 5 characters); an agent's statement waits for a person.
+- **While Stripe cannot answer.** Until Stripe's customers and subscriptions are fully imported, or while its key is refused or cannot read them, the same calls refuse with `subscription_check_unavailable`: try again later. Liaison asks Stripe whether it is connected rather than trusting its own record, so a missed connection is caught at the next invoice. When Stripe says it is not connected, or the Stripe app is off, nothing is refused. Shopify orders, credit notes and quotes are never checked.
+
+### Card payments when Liaison issues them
+
+When **Subscriptions paid by card** is issued by **Liaison**, each Stripe invoice becomes one Liaison invoice, on its own:
+
+- **Finalized.** One invoice per Stripe invoice, in your series, with Stripe's lines, the period in each line's description and the tax Stripe charged. It is dated, and numbered, on the day it is issued in the issuer's time zone, never on Stripe's finalization date, and it is due that day. A second delivery of the same event makes nothing more. A total of zero makes no invoice; a negative total waits for a person.
+- **Waits instead of guessing.** A missing email or address, a tax that differs from Liaison's by more than 1 cent on a line, or an e-invoicing identity that is not complete keeps the invoice in **Waiting** with the reason, and no number is taken. Above the issuer's approval threshold, a person approves it first.
+- **Paid.** The invoice is marked paid on the day of the card payment and its PDF shows the amount paid. A failed payment never changes the invoice; you are told only when Stripe will not try again or the card has expired. A Stripe invoice voided or marked uncollectible is reported and changes nothing.
+- **Refunds.** Each refund that Stripe confirms becomes one credit note (CN- series) citing the invoice, split over the invoice's VAT rates (89.40 at 20% is 74.50 plus 14.90 VAT); a cent left over by the split goes on one **Rounding adjustment** line, so the credit note equals the refund. A pending refund waits, a failed one makes none and is reported. A refund made directly in Stripe gets the same credit note. When Stripe issues the invoices, no credit note is made.
+- **A payment with no invoice** waits in the queue with an attention item. A person creates its invoice (`invoice_from_stripe_payment`, which takes the next number) or links it to an invoice already issued (`payment_link_to_invoice`, once). Both always wait for a person: no auto-approve policy runs them.
+- **Before a decision.** Stripe invoices finalized while nobody had decided who issues stay waiting; once a person picks Liaison, an attention item lists them, and each is issued only on a person's click.
+- **Missed events.** Every 10 minutes Liaison asks Stripe what an event may have missed (invoicing turned off, an event that failed) and hands it to the same steps: the missing invoice, a payment, a credit note. It never issues anything by itself beyond that.
+
 
 ## Settings
 
@@ -198,10 +291,16 @@ Invoices, credit notes and proformas issued in another tool can be imported with
 | `documents_update` | Edit a document | Always |
 | `documents_send_to_customer` | Email a document | Always |
 | `documents_mark_paid`, `documents_record_refund` | Record a payment or a refund (payment status only) | Always |
+| `recurring_list` | List recurring invoice schedules with their next issue day | No |
+| `recurring_schedule_create`, `recurring_schedule_update` | Save or change a recurring schedule; turning on issue by itself is never auto-approved | Always |
+| `recurring_schedule_pause` | Pause a schedule, until a date or until resumed | No, unless the turn read outside text |
+| `recurring_run_get` | Read a month-end run and its rows | No |
+| `recurring_run_issue` | Stage a month-end run's card when it has none (a waiting card is decided by a person on it); numbers are taken on the issue day | Always, never auto-approved |
+| `recurring_run_unapprove` | Undo a run's approval before its first number | No, unless the turn read outside text |
 | `documents_retry_pdf` | Re-render a failed PDF | No |
 | `order_reissue_apply` | Reissue an invoice after a Shopify order edit changed lines or amounts: the credit note and the replacement invoice are issued together or not at all | Always |
 | `deferred_tax_override` | Issue a parked order with a chosen tax decision | Always |
-| `drafts_create`, `drafts_update`, `drafts_discard` | Legacy unnumbered drafts | No |
+| `drafts_create`, `drafts_update`, `drafts_discard` | Unissued drafts; a month-end run's draft issues only through its run's card | No |
 | `einvoicing_classify`, `einvoicing_readiness`, `einvoicing_settings_get` | Explain e-invoicing status and blockers | No |
 | `einvoicing_settings_set` | Change e-invoicing settings | Always |
 | `counterparty_identity_get`, `counterparty_identity_lookup`, `counterparty_identity_set` | Read, look up and record a customer's SIREN/SIRET identity | No |

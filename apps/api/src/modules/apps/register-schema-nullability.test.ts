@@ -9,6 +9,9 @@
 // boot (production: app_calendar.events.push_attempts, app_mail enc_version and
 // encryption_state). Nothing ever tightened the column afterwards either.
 //
+// The other way, a field a later version makes nullable has its NOT NULL dropped: additive for the
+// code already running, which keeps writing the value.
+//
 // Fails-without-fix: after the v2 registration `attempts` is nullable, and the
 // v3 registration leaves the NULL row and the nullable column as they were.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
@@ -25,6 +28,7 @@ function manifest(version: string, fields: Record<string, unknown>) {
     version,
     _format: "manifest" as const,
     _bundlePath: "/apps/nn-drift-app/handlers.js",
+    scopes: [`${APP}:rows:read`],
     schema: { rows: { fields } },
   }
 }
@@ -96,5 +100,30 @@ describe("registerApps keeps declared NOT NULL columns NOT NULL", () => {
     )
     // No value to give the existing row: NOT NULL would abort the registration.
     expect((await column("note")).is_nullable).toBe("YES")
+  })
+
+  it("drops NOT NULL when a later version makes a field nullable, keeping its rows", async () => {
+    expect((await column("attempts")).is_nullable).toBe("NO")
+
+    await registerApps(
+      [
+        manifest("1.4.0", {
+          title: "string",
+          attempts: { type: "integer", default: 0, required: false },
+          note: "string?",
+        }) as any,
+      ],
+      TEST_ORG,
+    )
+
+    expect((await column("attempts")).is_nullable).toBe("YES")
+    const rows = await sql.unsafe(`SELECT attempts FROM "${SCHEMA}"."rows"`)
+    expect(rows.map((r: any) => r.attempts)).toEqual([0])
+    // A row without the value can now be written.
+    await sql.unsafe(
+      `INSERT INTO "${SCHEMA}"."rows" (org_id, title, attempts) VALUES ('${TEST_ORG}', 'later', NULL)`,
+    )
+    // The columns the manifest still declares NOT NULL stay so.
+    expect((await column("title")).is_nullable).toBe("NO")
   })
 })

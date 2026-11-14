@@ -203,6 +203,7 @@ describe("the compact scenario card", () => {
     expect(role.className).toContain("text-text-tertiary")
     const steps = screen.getByTestId("tour-step-count")
     expect(steps.getAttribute("aria-label")).toBe("Step 1 of 2")
-    expect(steps.children).toHaveLength(2)
+    expect(steps.querySelectorAll("span.rounded-full")).toHaveLength(2)
+    expect(steps.textContent).toBe("Step 1 of 2")
   })
 })

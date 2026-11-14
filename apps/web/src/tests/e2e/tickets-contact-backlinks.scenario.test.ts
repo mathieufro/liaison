@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
-// tickets-contact-backlinks — verifies Tickets show as backlinks in
-// Contacts detail and the row reflects the seeded handle/subject/status.
+// tickets-contact-backlinks — verifies a contact's tickets show in the
+// Activity timeline of the contact page.
 import { api } from "@liaison/test-helpers"
 import { expect, loginAs, test } from "./fixtures/test"
 import { resolveContact } from "./helpers/contacts-seed"
 import { seedInbox, seedTicket } from "./helpers/seed"
 
-test("[SC11] tickets-contact-backlinks: contact detail lists tickets and links open the ticket tab", async ({
+test("[SC11] tickets-contact-backlinks: the contact's timeline lists their tickets", async ({
   page,
   env,
   qa,
@@ -52,17 +52,8 @@ test("[SC11] tickets-contact-backlinks: contact detail lists tickets and links o
   await page.goto(`http://localhost:${env.ports[1]}/contacts/${contact.id}`)
   await expect(page.getByTestId("contact-detail")).toBeVisible({ timeout: 10000 })
 
-  const backlinkList = page.getByTestId("contact-ticket-backlinks")
-  await expect(backlinkList).toBeVisible({ timeout: 10000 })
-
-  // Both seeded tickets surface as backlinks under the Contact's right-rail Tickets section.
-  await expect(page.getByTestId(`contact-ticket-backlink-${ticketA.id}`)).toContainText(
-    ticketA.subject,
-  )
-  await expect(page.getByTestId(`contact-ticket-backlink-${ticketB.id}`)).toContainText(
-    ticketB.subject,
-  )
-  await expect(page.getByTestId(`contact-ticket-backlink-${ticketB.id}`)).toContainText(
-    "awaiting_customer",
-  )
+  // Both seeded tickets surface in the contact's own timeline, the one list of what involves them.
+  const timeline = page.getByTestId("contact-activity")
+  await expect(timeline).toContainText(ticketA.subject, { timeout: 15000 })
+  await expect(timeline).toContainText(ticketB.subject)
 })

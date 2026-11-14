@@ -135,6 +135,15 @@ export async function serveDemoOrgRead(page: Page): Promise<void> {
     const body = (await response.json()) as { data?: Record<string, unknown> }
     return route.fulfill({ response, json: { ...body, data: { ...body.data, demo: true } } })
   })
+  // The visitor workspace's world: the products world, as a start from the
+  // products door creates. The example line and the limits panel name it.
+  await page.route("**/api/demo/world", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { worldId: "products" } }),
+    }),
+  )
 }
 
 /** The door to the product: three picks, the company page, the name and address. */

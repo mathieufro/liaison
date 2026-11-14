@@ -1,0 +1,14 @@
+{
+  "entry": "tool:subscription_cancel",
+  "params": {
+    "subscriptionId": "sub_contract_1"
+  },
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)",
+  "unrecorded": {
+    "reason": "hand-written, not recorded: a recording needs a restricted Stripe key, which the recording run does not have yet. Awaiting a recording against a Stripe test account."
+  },
+  "expectError": {
+    "reason": "called without its approval, the gated tool refuses and sends nothing; the approved path waits for a recording against a Stripe test account"
+  },
+  "calls": []
+}

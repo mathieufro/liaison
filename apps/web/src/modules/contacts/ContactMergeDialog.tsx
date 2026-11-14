@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
-import { type Component, createSignal, For, Show } from "solid-js"
+import { type Component, createEffect, createSignal, For, Show } from "solid-js"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { useApi } from "~/modules/shell/ApiContext"
 import { addToast } from "~/modules/shell/toast-store"
@@ -11,6 +11,7 @@ import type { Contact } from "./contact-list-store"
 import {
   closeMerge,
   confirmMerge,
+  loadSourceConversations,
   mergeStore,
   searchTargets,
   selectTarget,
@@ -30,8 +31,9 @@ export const ContactMergeDialog: Component = () => {
         mergeStore.targetCandidates.find((candidate) => candidate.id === mergeStore.targetId) ??
         null)
       : null
-  const visibleConversationCount = () =>
-    mergeStore.sourceId ? (contactDetailStore.backlinks[mergeStore.sourceId]?.ids.length ?? 0) : 0
+  createEffect(() => {
+    if (mergeStore.open && mergeStore.sourceId) void loadSourceConversations(api)
+  })
   // Returns null when the field is absent so the ?? chain can fall through
   // to the next candidate. An empty string returned here would short-circuit
   // the chain and prevent source values from ever becoming the default.
@@ -179,7 +181,9 @@ export const ContactMergeDialog: Component = () => {
                 })}
               </div>
               <div class="mt-1">
-                {i18n.t("contacts.conversationsReassigned", { count: visibleConversationCount() })}
+                {i18n.t("contacts.conversationsReassigned", {
+                  count: mergeStore.sourceConversations,
+                })}
               </div>
               <Show when={sourceContact()?.email}>
                 <div class="mt-1 text-text-tertiary">

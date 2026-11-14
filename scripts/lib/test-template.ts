@@ -417,6 +417,37 @@ export async function cloneDatabase(opts: {
 }
 
 /**
+ * Roles are cluster wide, and an older migration replayed on the way (a chain
+ * cut at an earlier file) takes back any extra membership of the request login.
+ * A checkout whose migrations make `liaison_request` a member of
+ * `liaison_portal` gets that membership back before its tests run, so the
+ * request pool can step into the portal role whatever ran last on this server.
+ */
+async function ensurePortalMembership(opts: {
+  root: string
+  coords: TestCoordinates
+}): Promise<void> {
+  const dir = path.join(opts.root, "apps/api/src/db/migrations")
+  const wantsIt = readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .some((f) => /GRANT liaison_portal TO/.test(readFileSync(path.join(dir, f), "utf8")))
+  if (!wantsIt) return
+  const sql = admin(opts.coords)
+  try {
+    await sql.unsafe(`DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'liaison_portal')
+           AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'liaison_request')
+           AND NOT pg_has_role('liaison_request', 'liaison_portal', 'MEMBER') THEN
+          GRANT liaison_portal TO liaison_request;
+        END IF;
+      END $$`)
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}
+
+/**
  * Makes the namespace database ready: a fresh clone when `fresh` (the suites
  * that need a clean substrate) or when it is missing or was cloned from another
  * migration set; otherwise it is left as it is.
@@ -442,6 +473,7 @@ export async function prepareNamespaceDb(opts: {
     }
   }
   if (!opts.fresh && current === template.hash) {
+    await ensurePortalMembership(opts)
     return {
       action: "reused",
       template: template.name,
@@ -450,6 +482,7 @@ export async function prepareNamespaceDb(opts: {
     }
   }
   await cloneDatabase({ coords: opts.coords, template, dbName: opts.coords.dbName })
+  await ensurePortalMembership(opts)
   return {
     action: "cloned",
     template: template.name,

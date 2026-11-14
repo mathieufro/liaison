@@ -19,7 +19,10 @@ const MANIFEST_SCHEMA = (
   }
 ).schema
 
-export function createMockDb(opts: MockDbOptions = {}): MockDb {
+/** `bridgeWhereOperators`: read `{ in }` and `null` in a `where` as the bridge does. */
+export function createMockDb(
+  opts: MockDbOptions & { bridgeWhereOperators?: boolean } = {},
+): MockDb {
   return createSharedMockDb(opts, {
     // Mirror prod (gen_random_uuid()): generated ids must be uuid-SHAPED, because
     // document lookups route uuid input to an id lookup and everything else to a
@@ -31,5 +34,6 @@ export function createMockDb(opts: MockDbOptions = {}): MockDb {
     // handler that orders by an undeclared or snake_cased base column
     // (`created_at`) fails here, in a unit test, instead of on every prod event.
     orderByManifestSchema: MANIFEST_SCHEMA,
+    bridgeWhereOperators: opts.bridgeWhereOperators === true,
   })
 }

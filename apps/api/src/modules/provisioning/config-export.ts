@@ -12,7 +12,7 @@
  * mail and tickets have no reader yet and say so.
  */
 
-import { orgKernelSettingsSchema } from "@liaison/shared"
+import { commercialIdentitySchema, orgKernelSettingsSchema } from "@liaison/shared"
 import { and, sql as drizzleSql, eq, isNull } from "drizzle-orm"
 import { listKnowledgeCollections } from "~/apps/knowledge/collections"
 import { knowledgeActorFromContext } from "~/apps/knowledge/service"
@@ -116,9 +116,11 @@ export async function exportEmail(priv: Priv, orgId: string) {
   const settings = await priv("config-export-email", (tx) =>
     getOrgKernelSettings(tx, orgId, orgKernelSettingsSchema),
   )
+  const identity = commercialIdentitySchema.safeParse(settings.commercialIdentity)
   return {
     ...(settings.email?.from !== undefined ? { from: settings.email.from } : {}),
     ...(settings.email?.replyTo !== undefined ? { replyTo: settings.email.replyTo } : {}),
+    ...(identity.success ? { commercialIdentity: identity.data } : {}),
   }
 }
 

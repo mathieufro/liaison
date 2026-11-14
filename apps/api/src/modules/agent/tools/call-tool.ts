@@ -12,12 +12,16 @@
 //   - arguments that do not fit the tool: the tool's name, what is wrong and
 //     its expected parameters, so the next call can be right;
 //   - a tool the turn has not loaded: it is loaded now, and called next step;
+//   - a tool that left with its feature, for a caller holding its scope: `feature_off`;
 //   - a name no tool has: the closest names.
 
 import { ToolError } from "@liaison/app-sdk"
 import { CALL_TOOL_SDK_NAME } from "~/modules/agent/providers/fixed-tool-list"
 import { currentRunContext } from "~/modules/agent/runtime/run-context"
-import { resolveHeldToolName } from "~/modules/agent/tools/tool-name-resolve"
+import {
+  featureOffAnswerForCall,
+  resolveHeldToolName,
+} from "~/modules/agent/tools/tool-name-resolve"
 import { loadToolsForNextStep } from "~/modules/agent/tools/tool-search"
 
 interface CallToolContext {
@@ -78,6 +82,10 @@ export async function handleCallTool(
   const held = [...(frame?.turnToolNames ?? [])]
   const resolution = resolveHeldToolName(params.name, held)
   if (resolution.kind !== "exact" && resolution.kind !== "resolved") {
+    // Returned, not thrown: the refusal is about that tool, and a throw would count
+    // against this entry, which every other loaded tool still needs.
+    const off = featureOffAnswerForCall(ctx.orgId, params.name, ctx.scopes ?? [])
+    if (off) return { ran: false, ...off }
     if (resolution.kind === "ambiguous") {
       throw refusal(
         `No tool is named "${params.name}", and several tools you hold match it: ${resolution.candidates.join(", ")}. Call the one you mean by its exact name through ${CALL_TOOL_SDK_NAME}.`,

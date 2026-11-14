@@ -57,6 +57,8 @@ import {
   selectAppGuideParts,
 } from "~/modules/agent/context/app-guide"
 import {
+  CARRIED_GUIDE_NOTES_TYPE,
+  carriedGuideNotesRow,
   checkpointAsHistoryRow,
   loadBoundedHistory,
   reportRevokeRebuild,
@@ -78,6 +80,10 @@ import {
   connectorCatalogNotes,
   loadConnectedSystems,
 } from "~/modules/agent/context/connected-systems"
+import {
+  applyContextProviderBlocks,
+  loadContextProviderBlocks,
+} from "~/modules/agent/context/context-providers"
 import {
   applyCustomerContext,
   type CustomerContextSource,
@@ -147,7 +153,7 @@ import {
   skillRegistry,
   toolRegistry,
 } from "~/modules/apps/app-registries"
-import { isAppUnavailableFor, primeOrgApps } from "~/modules/apps/org-apps"
+import { isAppUnavailableFor, isFeatureOffForTool, primeOrgApps } from "~/modules/apps/org-apps"
 import { isVisitorDemoOrgId } from "~/modules/demo/demo-org"
 import { listMcpTools } from "~/modules/mcp/tool-projection"
 import { liveDesktopConnections } from "~/modules/nodes/presence"
@@ -840,6 +846,34 @@ export function buildAppInstructionBlock(
 }
 
 /**
+ * The guide blocks the tools in `guided` need that `delivered` does not hold:
+ * each of their apps' guides (the core and the sections of those tools) and
+ * each guide that names one of them (coveringGuideKeys), with the guide parts
+ * the blocks deliver. The agent loop and sub-agent runs send them as a note
+ * where the tools are loaded (guide-notes.ts).
+ */
+export function undeliveredGuideBlocks(
+  orgId: string,
+  guided: Set<string>,
+  delivered: ReadonlySet<string>,
+): { blocks: string[]; parts: string[] } {
+  const blocks: string[] = []
+  const parts: string[] = []
+  for (const app of new Set([...discoveredAppNames(guided), ...coveringGuideKeys(orgId, guided)])) {
+    const instr = agentInstructionsRegistry.get([orgId, app])
+    if (!instr) continue
+    const selected = selectAppGuideParts(app, normalizeAppGuide(instr), guided)
+    const core = delivered.has(app) ? undefined : selected.core
+    const sections = selected.sections.filter((section) => !delivered.has(section.key))
+    if (core === undefined && sections.length === 0) continue
+    blocks.push(renderAppGuideBlock(app, { core, sections }))
+    if (core !== undefined) parts.push(app)
+    for (const section of sections) parts.push(section.key)
+  }
+  return { blocks, parts }
+}
+
+/**
  * The per-turn system-prompt budget (spec.md Budgets): 8,000 tokens over the
  * INJECTED composed content, i.e. the agent definition, the app instruction
  * blocks and the surfaced skill bodies.
@@ -1230,6 +1264,14 @@ async function readNodePresence(
   }
 }
 
+/**
+ * True when the person a turn answers has no computer set up for Liaison (a
+ * failed read counts as none; the tools it hides refuse without one anyway).
+ */
+export async function personHasNoComputer(orgId: string, actor: UserContext): Promise<boolean> {
+  return (await readNodePresence(orgId, actor)) === undefined
+}
+
 // --- Main assembler ---
 
 export async function assembleContext(
@@ -1480,6 +1522,11 @@ Write numbers, amounts and dates the way that language writes them, never as a r
   // (agent-service.ts, guide-notes.ts).
   // The turn's tool scopes, as buildToolSet and tool_search judge them.
   const turnScopes = turnToolScopes(actor.scopes ?? [], { effectiveScope })
+  // Whether the person has a computer set up for Liaison: read once, for the
+  // runtime-context tail below and for the catalogs, which leave out the
+  // tools that read the person's own computer when they have none.
+  const nodePresenceRead = readNodePresence(orgId, actor)
+  const catalogTurn = { noOwnComputer: (await nodePresenceRead) === undefined }
   // The customer behind the ticket or mail in view, from the org's API
   // connector (customer-context.ts): only for a turn whose effective scopes
   // hold the connector's read scope, bounded at 1.5 s. Looked up BEFORE the
@@ -1498,22 +1545,50 @@ Write numbers, amounts and dates the way that language writes them, never as a r
     const names = customerContextTools(source)
     customerTools ??= new Set(
       discoveredTools
-        ? listDeferredTools(orgId, { ...actor, scopes: turnScopes })
+        ? listDeferredTools(orgId, { ...actor, scopes: turnScopes }, "agent", false, catalogTurn)
             .filter((tool) => tool.appName === source.app && names.has(tool.toolName))
             .map((tool) => tool.sdkName)
         : [],
     )
     return customerTools
   }
-  const customerBlock = await loadCustomerContextBlock({
-    currentView,
-    orgId,
-    actor,
-    effectiveScopes: contextViewer.grants,
-    callableTools: connectorTools,
-  })
+  // App context providers (context-providers.ts) run beside it, under the same
+  // wall clock: the record in view and the record the conversation was made for.
+  const [customerBlock, providerBlocks] = await Promise.all([
+    loadCustomerContextBlock({
+      currentView,
+      orgId,
+      actor,
+      effectiveScopes: contextViewer.grants,
+      callableTools: connectorTools,
+    }),
+    loadContextProviderBlocks({
+      orgId,
+      actor,
+      grants: contextViewer.grants,
+      currentView,
+      createdFrom: threadInfo?.createdFrom,
+      callableTools: discoveredTools
+        ? (app, names) =>
+            new Set(
+              listDeferredTools(
+                orgId,
+                { ...actor, scopes: turnScopes },
+                "agent",
+                false,
+                catalogTurn,
+              )
+                .filter((tool) => tool.appName === app && names.includes(tool.toolName))
+                .map((tool) => tool.sdkName),
+            )
+        : undefined,
+    }),
+  ])
   if (customerBlock && discoveredTools) {
     for (const name of connectorTools(customerBlock.source)) discoveredTools.add(name)
+  }
+  if (providerBlocks && discoveredTools) {
+    for (const name of providerBlocks.loadTools) discoveredTools.add(name)
   }
   const discoveredApps = discoveredAppNames(discoveredTools)
   const canDiscover = canCallToolSearch(orgId, turnScopes)
@@ -1521,23 +1596,25 @@ Write numbers, amounts and dates the way that language writes them, never as a r
   // step 0, so their full guide must be always-on — same invariant as
   // discovery: a tool is never callable without its app's full instructions.
   const hotApps = new Set<string>()
-  // The app tools every turn is shown: the hot ones. A guide SECTION rides in
-  // the system prompt only while one of its tools is in this set
-  // (app-guide.ts); the core rides with the app. The sections of a loaded
-  // tool arrive as a message.
-  const loadedAppTools = new Set<string>()
-  // Every tool every turn is shown, kernel included: a guide that names its
-  // tools (kernel-config, ...) renders in full while one of them is loaded.
+  // Every tool every turn is shown (the hot ones), kernel included. A guide
+  // SECTION rides in the system prompt only while one of its tools is in this
+  // set, for an app's guide, the kernel's and a guide that names its tools
+  // alike (app-guide.ts); the core rides with the app, or with a named tool.
+  // The sections of a tool loaded later arrive as a message. A tool the turn's scopes do not
+  // reach is in no tool set, so it selects no guide part: the agent loop drops it the same way.
   const loadedTools = new Set<string>()
   for (const [tkey, tdef] of toolRegistry.entriesOf(orgId)) {
+    if (!checkToolScopes(tdef, turnScopes).authorized) continue
     if (tkey[1] === "kernel") {
       if (!isDeferredTool(tkey[1], tdef)) loadedTools.add(`kernel__${tkey[2]}`)
       continue
     }
     if (isAppUnavailableFor(orgId, tkey[1], actor.userId)) continue
+    // A tool of a feature that is off is loaded nowhere, so a guide section about
+    // it alone stays out of the prompt.
+    if (isFeatureOffForTool(orgId, tdef)) continue
     if (!isDeferredTool(tkey[1], tdef)) {
       hotApps.add(tkey[1])
-      loadedAppTools.add(`${tkey[1]}__${tkey[2]}`)
       loadedTools.add(`${tkey[1]}__${tkey[2]}`)
     }
   }
@@ -1560,10 +1637,8 @@ Write numbers, amounts and dates the way that language writes them, never as a r
     const app = key[1]
     // An Off (or restricted-away) app gets neither its guide nor a summary line.
     if (isAppUnavailableFor(orgId, app, actor.userId)) continue
-    if (app === "kernel") {
-      withGuide(app, instrText, "all")
-    } else if (hotApps.has(app) || guideCoversLoaded(instrText, loadedTools)) {
-      withGuide(app, instrText, loadedAppTools)
+    if (app === "kernel" || hotApps.has(app) || guideCoversLoaded(instrText, loadedTools)) {
+      withGuide(app, instrText, loadedTools)
     } else {
       summaryLines.push(`- **${app}**: ${appInstructionSummary(instrText)}`)
     }
@@ -1892,7 +1967,7 @@ Write numbers, amounts and dates the way that language writes them, never as a r
   )
   // Where the person is, per turn, and whether they have a node: which way
   // to their computer applies.
-  const node = await readNodePresence(orgId, actor)
+  const node = await nodePresenceRead
   tailLines.push(renderClientSurfaceLine(clientSurface, node?.presence, node?.recordedComputer))
 
   // A step budget, said where the model plans: the semi-stable suffix, the
@@ -1919,7 +1994,13 @@ Write numbers, amounts and dates the way that language writes them, never as a r
   // The catalog is the whole deferred set, loaded or not: which of them the
   // thread has loaded changes from turn to turn, and the system prompt must not
   // (the guide note above). A loaded tool is in the tool list, which says so.
-  const allDeferred = listDeferredTools(orgId, { ...actor, scopes: turnScopes })
+  const allDeferred = listDeferredTools(
+    orgId,
+    { ...actor, scopes: turnScopes },
+    "agent",
+    false,
+    catalogTurn,
+  )
   // A run without tool_search keeps what it was given for the whole run.
   const deferred = allDeferred.filter((t) => !discoveredTools?.has(t.sdkName))
   // The org's connected business systems (API connections), on every surface:
@@ -2080,8 +2161,22 @@ Write numbers, amounts and dates the way that language writes them, never as a r
     },
   })
 
+  // The provider lines likewise: each provider's scope recorded, the thread tainted.
+  const providersAdded = await applyContextProviderBlocks({
+    blocks: providerBlocks,
+    tailLines,
+    turnScopeAccumulator,
+    markTainted: async () => {
+      if (threadInfo?.tainted || customerAdded) return
+      const { setTaintFlag } = await import("~/modules/agent/scopes/taint")
+      await setTaintFlag(threadId, orgId)
+    },
+  })
+
   // Taint notice
-  if (threadInfo?.tainted || customerAdded) tailLines.push(UNTRUSTED_CONTENT_NOTICE)
+  if (threadInfo?.tainted || customerAdded || providersAdded) {
+    tailLines.push(UNTRUSTED_CONTENT_NOTICE)
+  }
 
   // MEMORY.md — the agent's always loaded index, in the EPHEMERAL TAIL (I2).
   //
@@ -2274,9 +2369,22 @@ Write numbers, amounts and dates the way that language writes them, never as a r
       "history_tail_trimmed_to_budget",
     )
   }
-  const historyMessages = bounded.checkpoint
-    ? [checkpointAsHistoryRow(bounded.checkpoint, { threadId, orgId }), ...trimmed.rows]
-    : trimmed.rows
+  // The guides the dropped rows were sent stay in the history, ahead of the kept tail, so a
+  // sliding window never sends them again (carriedGuideNotesRow).
+  const carriedNotes =
+    trimmed.droppedRows > 0
+      ? carriedGuideNotesRow(bounded.messages.slice(0, trimmed.droppedRows), trimmed.rows, {
+          threadId,
+          orgId,
+        })
+      : null
+  const historyMessages = [
+    ...(bounded.checkpoint
+      ? [checkpointAsHistoryRow(bounded.checkpoint, { threadId, orgId })]
+      : []),
+    ...(carriedNotes ? [carriedNotes] : []),
+    ...trimmed.rows,
+  ]
 
   // Fresh-context anchor (routine ticks) — history starts at the tick's own
   // trigger message; earlier ticks' transcripts stay in the thread for humans
@@ -3007,8 +3115,10 @@ function replayedToolResultPart(tc: ToolCallMetadata, replayId: (id: string) => 
  *
  * Null (the caller replays the one-message form) when the timeline cannot be
  * trusted to say the same thing as the row: absent or malformed, its words not
- * exactly the stored text (a guard rewrote the text after the turn), or a
- * stored call it does not place. Calls the replay leaves out (retrieval
+ * the stored text (a guard rewrote the text after the turn), or a stored call
+ * it does not place. The words are compared without their whitespace: the
+ * stored text sets each step's words apart as a paragraph (reply-flatten.ts),
+ * the timeline keeps them as streamed. Calls the replay leaves out (retrieval
  * calls on a dropRetrievalToolParts replay) are skipped where they stood.
  */
 export function stepsFromTimeline(
@@ -3056,7 +3166,9 @@ export function stepsFromTimeline(
     }
   }
   steps.push(current)
-  if (toolEntries === 0 || words !== storedText || placed.size !== calls.length) return null
+  const unspaced = (t: string) => t.replace(/\s+/g, "")
+  if (toolEntries === 0 || placed.size !== calls.length) return null
+  if (words !== storedText && unspaced(words) !== unspaced(storedText)) return null
   return steps.filter((step) => step.calls.length > 0 || step.text !== "")
 }
 
@@ -3221,6 +3333,13 @@ export function convertToCoreMessages(
       handles && handles.size > 0 ? relabelAgentMentions(text, (id) => handles.get(id)) : text
     if (msg.authorType === "system") {
       const meta = msg.metadata as { type?: string } | null
+      // The guide notes of rows the raw tail cap dropped, as they were sent.
+      if (meta?.type === CARRIED_GUIDE_NOTES_TYPE) {
+        for (const note of readGuideNotes(msg.metadata)) {
+          result.push({ role: "user", content: note.content })
+        }
+        continue
+      }
       if (meta?.type === "compaction_summary" || meta?.type === "checkpoint_summary") {
         result.push({
           role: "user",

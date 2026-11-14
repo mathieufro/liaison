@@ -521,6 +521,11 @@ export const SINK_KERNEL_SCOPE_REQUESTS = "kernel.scope_requests"
 export const SINK_KERNEL_USER_PREFERENCES = "kernel.user_preferences"
 export const SINK_KERNEL_ATTENTION_SUBSCRIPTIONS = "kernel.attention_subscriptions"
 export const SINK_KERNEL_USER_THREAD_STATE = "kernel.user_thread_state"
+//
+// Away days (kernel.away_ranges, `set_away`): dates, weekdays and member ids, no free text and
+// never a reason, so nothing scoped a turn read can be carried in one. Who may write which
+// person's range is the tool's own rule (outside text and non-person turns park it).
+export const SINK_KERNEL_AWAY_RANGES = "kernel.away_ranges"
 
 export const TAINT_CONTROL_PLANE_SINKS: ReadonlySet<string> = new Set([
   SINK_KERNEL_AGENT_RUNS,
@@ -529,6 +534,7 @@ export const TAINT_CONTROL_PLANE_SINKS: ReadonlySet<string> = new Set([
   SINK_KERNEL_USER_PREFERENCES,
   SINK_KERNEL_ATTENTION_SUBSCRIPTIONS,
   SINK_KERNEL_USER_THREAD_STATE,
+  SINK_KERNEL_AWAY_RANGES,
 ])
 
 // LOW-SENSITIVITY SINKS (owner decision, 2026-09-30). Project tasks, their checklist items and
@@ -864,6 +870,29 @@ export type TaintOriginRows = Readonly<Record<string, readonly string[]>>
 export type TaintOriginStore = {
   originRows: () => TaintOriginRows
   recordOriginRows: (table: string, rowIds: readonly string[]) => void
+  /** Adds scopes a read's result carried (a tool's `resultTaintWhen`) to the turn's set. */
+  recordInjected: (requiredScopes: string[]) => void
+  /** The same, remembered as read just now, so a window that stamps read times can stamp them. */
+  recordResultScopes: (requiredScopes: string[]) => void
+}
+
+/** How deep `resultHoldsField` looks; a part nested deeper counts as held (fail closed). */
+const RESULT_FIELD_DEPTH = 8
+
+/**
+ * Does a successful result hold one of `fields` with a value (not null), at any depth? A tool's
+ * `resultTaintWhen` asks this of what it returned: the parts it names are classified by a
+ * narrower read scope than the tool's own. A result nested past the walk counts as holding one.
+ */
+export function resultHoldsField(result: unknown, fields: readonly string[], depth = 0): boolean {
+  if (result === null || typeof result !== "object") return false
+  if (depth > RESULT_FIELD_DEPTH) return true
+  if (Array.isArray(result)) return result.some((item) => resultHoldsField(item, fields, depth + 1))
+  const row = result as Record<string, unknown>
+  for (const field of fields) {
+    if (Object.hasOwn(row, field) && row[field] !== null && row[field] !== undefined) return true
+  }
+  return Object.values(row).some((child) => resultHoldsField(child, fields, depth + 1))
 }
 
 /**

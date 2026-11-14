@@ -13,8 +13,10 @@ const daySchema = z
   .max(48)
   .refine((wins) => {
     const sorted = [...wins].sort((x, y) => (x[0] < y[0] ? -1 : 1))
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i][0] < sorted[i - 1][1]) return false
+    let previous: (typeof sorted)[number] | undefined
+    for (const current of sorted) {
+      if (previous && current[0] < previous[1]) return false
+      previous = current
     }
     return true
   }, "windows must not overlap")

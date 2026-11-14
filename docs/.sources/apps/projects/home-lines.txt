@@ -1,0 +1,8 @@
+The shared calendar is read once a day for the next twelve months -> apps/api/src/apps/projects/service/days-off-calendar.ts (syncDaysOffCalendar)
+Whole-day ordinary events only; a typed day on the same date wins; a removed event removes its day -> apps/api/src/apps/projects/service/days-off-calendar.ts (readWholeDays)
+A calendar that can no longer be read keeps its days as typed, clears the setting, tells settings admins once -> apps/api/src/apps/projects/service/days-off-calendar.ts (endSource)
+The daily job -> apps/api/src/infra/jobs/kernel-jobs.ts (days-off-calendar)
+Home lines sit under Time and budgets -> apps/web/src/modules/shell/attention-groups.ts (TIME_GROUP_KEY)
+More planned than fits: leads with capacity read, never the person, once per person and week -> apps/api/src/apps/projects/service/home-lines.ts (raiseCapacityLines)
+Month close: last working day before the month's last day -> apps/api/src/apps/projects/service/home-lines.ts (monthCloseDay)
+Month close: to the biller, daily, hourly and retainer projects, nothing reconciled -> apps/api/src/apps/projects/service/home-lines.ts (monthCloseItems)

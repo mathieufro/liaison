@@ -111,10 +111,12 @@ import { fileDownloadRelay, files as filesRoutes, fileUploadRelay } from "~/modu
 import { health } from "~/modules/health/routes"
 import { healthzRoutes, systemHealthRoutes } from "~/modules/healthz"
 import { readyzRoutes } from "~/modules/healthz/readyz"
+import { homeBriefRoutes } from "~/modules/home/brief-route"
 import { serverT } from "~/modules/i18n/server-i18n"
 import { importRoutes } from "~/modules/imports/routes"
 import { importUploadRoutes } from "~/modules/imports/uploads/routes"
 import { liaisonTeamRoutes } from "~/modules/liaison-team/routes"
+import { OPT_OUT_PATH, optOutRefusalPage, optOutRoutes } from "~/modules/mail/opt-out-routes"
 import { mailRoutes } from "~/modules/mail/routes"
 import { mailboxJobsRoutes } from "~/modules/mailbox-jobs/routes"
 import { mailboxEncryptionRoutes } from "~/modules/mailbox-keys/encryption-mode-routes"
@@ -237,6 +239,12 @@ registerKernelAttentionProvider({
   handler: "computeApprovalAttentionItems",
   scope: "kernel:approvals:read",
   bundlePath: new URL("./modules/approvals/attention.ts", import.meta.url).pathname,
+})
+// "While you were away": decisions taken for the person while they were away, once back.
+registerKernelAttentionProvider({
+  appName: "kernel.away_recap",
+  handler: "getAwayRecapAttentionItems",
+  bundlePath: new URL("./modules/approvals/away-recap.ts", import.meta.url).pathname,
 })
 registerKernelAttentionProvider({
   appName: "kernel.attention_events",
@@ -648,6 +656,18 @@ app.route("/api/client-policy", clientPolicyRoutes)
 if (env.LIAISON_DEMO_MODE) {
   const { mountDemoRoutes } = await import("~/modules/demo/routes")
   mountDemoRoutes(app)
+}
+
+// The card-payments stand-in's signed QA write (outside objects of a demo org).
+// Mounted ONLY when LIAISON_DEMO_PAYMENTS_FIXTURES is set, like the demo
+// routes above: with the flag off the route does not exist. Mounted, every
+// request still 404s unless the harness signature is valid and the org is demo
+// marked (modules/demo/worlds/saas/payments/harness-route.ts).
+if (env.LIAISON_DEMO_PAYMENTS_FIXTURES) {
+  const { demoPaymentsHarnessRoutes } = await import(
+    "~/modules/demo/worlds/saas/payments/harness-route"
+  )
+  app.route("/api/demo-payments", demoPaymentsHarnessRoutes)
 }
 
 // Phase 14: top-level /healthz (outside /api/) — version + migration head +
@@ -1081,6 +1101,10 @@ app.route("/api/apps", appRoutes)
 app.use("/api/attention-items", authMw, orgLimiter)
 app.use("/api/attention-items/*", authMw, orgLimiter)
 app.route("/api/attention-items", attentionRoutes)
+
+// Home's "Today's brief": the caller's own morning-brief routine's newest output.
+app.use("/api/home/*", authMw, orgLimiter)
+app.route("/api/home", homeBriefRoutes)
 
 // Phase 16 Task A8a — user-scoped subscription rules + installed-app axes registry.
 app.use("/api/attention/subscriptions", authMw, orgLimiter)
@@ -1598,6 +1622,15 @@ if (qaSeedRoutesEnabled) {
 // limiter, so the public MCP OAuth / device-grant / discovery routes and the MCP
 // transport get their own cap and per-IP budgets, applied before any parsing.
 app.use("/.well-known/*", publicSurfaceBodyLimit(), publicSurfaceRateLimit(redis))
+// A commercial mail's opt-out link: public, no session, no cookie. Its refusals
+// render the page's own states (modules/mail/opt-out-routes.ts).
+app.use(
+  `${OPT_OUT_PATH}/*`,
+  optOutRefusalPage,
+  publicSurfaceBodyLimit(),
+  publicSurfaceRateLimit(redis),
+)
+app.route(OPT_OUT_PATH, optOutRoutes)
 app.use("/mcp/oauth/*", publicSurfaceBodyLimit(), publicSurfaceRateLimit(redis))
 app.use("/mcp/device/*", publicSurfaceBodyLimit(), publicSurfaceRateLimit(redis))
 app.use("/mcp", publicSurfaceBodyLimit())

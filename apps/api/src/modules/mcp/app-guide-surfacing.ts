@@ -9,6 +9,7 @@
 // of its tools is called. Delivered parts are remembered in the connection's
 // surfaced set under `app-guide:` keys, beside the skill names.
 import {
+  type AppGuideInput,
   guideCoversLoaded,
   normalizeAppGuide,
   renderAppGuideBlock,
@@ -38,31 +39,28 @@ export function selectAppGuideToSurface(
   const sdkName = `${app}__${canonical.slice(sep + 1)}`
   const keys: string[] = []
   const blocks: string[] = []
+  const loaded = new Set([sdkName])
 
+  // The app's own guide, and each kernel guide registered under its own key
+  // (`kernel-config`, ...) that covers the tool: the core once, and each
+  // section about the called tool once, through the selection the in-app
+  // assembler uses.
+  const guides: Array<[string, AppGuideInput]> = []
   const own = agentInstructionsRegistry.get([orgId, app])
-  if (own !== undefined) {
-    const parts = selectAppGuideParts(app, normalizeAppGuide(own), new Set([sdkName]))
-    const coreKey = appGuideSurfacedKey(app)
-    const core = surfaced.has(coreKey) ? undefined : parts.core
-    const sections = parts.sections.filter((s) => !surfaced.has(appGuideSurfacedKey(s.key)))
-    if (core || sections.length > 0) {
-      if (core) keys.push(coreKey)
-      for (const s of sections) keys.push(appGuideSurfacedKey(s.key))
-      blocks.push(renderAppGuideBlock(app, { core, sections }))
-    }
-  }
-
-  // A kernel guide registered under its own key (`kernel-config`, ...) covers
-  // the tools it names: the whole guide, once, like the in-app assembler.
+  if (own !== undefined) guides.push([app, own])
   for (const [key, guide] of agentInstructionsRegistry.entriesOf(orgId)) {
     if (key[0] !== orgId || key[1] === app) continue
-    if (!guideCoversLoaded(guide, [sdkName])) continue
-    const coreKey = appGuideSurfacedKey(key[1])
-    if (surfaced.has(coreKey)) continue
-    keys.push(coreKey)
-    blocks.push(
-      renderAppGuideBlock(key[1], selectAppGuideParts(key[1], normalizeAppGuide(guide), "all")),
-    )
+    if (guideCoversLoaded(guide, loaded)) guides.push([key[1], guide])
+  }
+  for (const [key, guide] of guides) {
+    const parts = selectAppGuideParts(key, normalizeAppGuide(guide), loaded)
+    const coreKey = appGuideSurfacedKey(key)
+    const core = surfaced.has(coreKey) ? undefined : parts.core
+    const sections = parts.sections.filter((s) => !surfaced.has(appGuideSurfacedKey(s.key)))
+    if (!core && sections.length === 0) continue
+    if (core) keys.push(coreKey)
+    for (const s of sections) keys.push(appGuideSurfacedKey(s.key))
+    blocks.push(renderAppGuideBlock(key, { core, sections }))
   }
 
   if (blocks.length === 0) return null

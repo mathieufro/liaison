@@ -35,6 +35,8 @@ Above the list, choose how channels are ordered: **Recent activity**, **Name A-Z
 2. Use **Attach** for files, **Emoji** for emoji, **Fix spelling & grammar** to clean up your text, or **Dictate** to speak.
 3. Press Enter to send.
 
+A message holding a Stripe key (a restricted key `rk_live_` or `rk_test_`, a secret key `sk_live_` or `sk_test_`, or a webhook signing secret `whsec_`) is not sent: the message box keeps it and says "That looks like a Stripe key, so it was not sent." Take the key out and send again. A key or a card number that reaches the server another way is stored masked: a key keeps only its prefix, a card number shows as `•••• •••• •••• 4242`, and the message ends with a note such as "[A card number was hidden.]". Agents only ever see the masked text.
+
 A message is posted once, even when the app sends it again after a network drop. When the network loses the answer to a send, the app sends the same message once more after a second; the server keeps only one copy. While the app is reconnecting, a page that fails to load does not show an error message: it loads again once the connection is back.
 
 Hover a message to **Reply in thread**, **Quote** it, **Copy text**, or **Edit** and **Delete** your own messages. Replies in a thread stay under the original message. Threads you follow are listed under **Followed threads**.
@@ -54,6 +56,7 @@ A channel notifies you on your phone and computer only when a post mentions you 
 ## Work with agents in chat
 
 - Message an agent directly: pick it under **Agents** in **New message**. It answers every message.
+- **A question from a page.** Some pages (a project's budget panel) put a question in your conversation with your agent, ready to send. Nothing is sent until you press Send; you can change the words first.
 - Bring an agent into a group or channel: @-mention it. The agent replies in that conversation.
 - The agent's turn shows under your message as soon as the server takes it on, before its first words. Ask it something new while it still answers and both turns show, each with its own progress, until each answer lands.
 - In a new workspace, the first administrator's conversation with their agent opens with a **Set up your space** card: what is set up, what is left, and a link to the demo. See [Set up a new workspace with your agent](../agents/how-agents-work.md#set-up-a-new-workspace-with-your-agent).
@@ -61,6 +64,7 @@ A channel notifies you on your phone and computer only when a post mentions you 
 - Each agent's picture or bolt sits on its own color, the same in the chats list, in messages and on its page. The agents of a workspace get different colors; change one in the agent's **Settings** under **Color**.
 - Your own agent's handle names it as yours, never as you: Ada's agent is `@adas-agent`. A mention of an agent always shows its current handle, also in older messages.
 - A personal agent's messages are signed with its owner's name, **Ada's agent** (**Agent de Ada** in French), with the **Agent** badge, also in older messages and in a reply thread's list of who answered. So when your agent posts into your conversation with a colleague, they see that your agent wrote it, not you. Other agents sign with their own name, and a routine's posts with **Routine *name***.
+- Under its newest reply an agent may offer up to four next steps as buttons: one sends its words as your message, another opens a tab. They are gone once anything is said after that reply.
 - A message an agent writes after reading data that needs a scope is shown only to the people who hold that scope. When your agent would post into a group conversation where some people do not, the message waits for your approval first; approving shares it with them, and later messages with the same kind of data in that conversation no longer ask. A direct message to one person is posted and shown to them, unless it carries data you cannot see yourself. No message is ever silently hidden from the people it is meant for.
 
 A globe beside the conversation name means the agent read text from outside your company here, so what it writes or sends waits for your approval. Click it to see what it read, or to clear the mark. See [See and clear the mark](../agents/approvals.md#see-and-clear-the-mark).
@@ -102,6 +106,8 @@ From a conversation's header menu you can:
 Use **Search threads...** at the top of the list to find a conversation by name.
 
 A task's discussion is a conversation too. Opened as a conversation (from an old link, for example), it shows the task it belongs to above the messages, with **Open task**. A conversation started from a ticket follows the ticket when it is merged into another: it then belongs to the ticket that remains. While the app of the record is switched off, the conversation keeps its name but shows **Its app is switched off, so it cannot be opened** instead of the button.
+
+Any app can give its records a discussion the same way: one conversation per record, which everyone who can see the record may read and write. Opening the record's page seats you in it. Someone who cannot see the record never sees its discussion, and when a record's sharing narrows, people who lost access are taken out of it. If the discussion cannot be opened, the page says **The discussion could not be opened.** with **Retry**, and the rest of the page still works.
 
 ## Scopes
 

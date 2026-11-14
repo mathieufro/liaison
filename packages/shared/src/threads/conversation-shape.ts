@@ -59,8 +59,9 @@ export function otherSeats(facts: ConversationFacts): ConversationSeat[] {
 export function soleAgentCounterpart(facts: ConversationFacts): ConversationSeat | null {
   if (facts.type === "routine") return null
   const others = otherSeats(facts)
-  if (others.length !== 1) return null
-  return others[0].participantType === "agent" ? others[0] : null
+  const [only] = others
+  if (others.length !== 1 || !only) return null
+  return only.participantType === "agent" ? only : null
 }
 
 /**

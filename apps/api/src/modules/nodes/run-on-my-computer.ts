@@ -50,7 +50,7 @@ import { rootLogger } from "~/lib/logger"
 import { persistAgentTurn } from "~/modules/agent/runtime/persist-agent-turn"
 import { currentRunContext } from "~/modules/agent/runtime/run-context"
 import { agentPostRequiredScopes } from "~/modules/agent/tools/chat-tools"
-import { RECORDING, recordedLaptopOf, startReplay } from "~/modules/demo/replay/replay"
+import { recordedLaptopOf, recordingOf, startReplay } from "~/modules/demo/replay/replay"
 import {
   type FolderRef,
   loadNodeCandidates,
@@ -69,20 +69,7 @@ import { createNodeJob, loadNodeProfile, NodeJobRefusedError } from "./jobs"
 const log = rootLogger.child({ module: "run-on-my-computer" })
 
 export const RUN_ON_MY_COMPUTER_DESCRIPTION =
-  "Hand this request to the person's own computer (one of their computers running Liaison), where it runs as a session with their own Claude sign-in, local files and tools, and no cloud token budget. " +
-  'Call it BEFORE saying anything about a session: never write that a session started, is starting or will start until this tool has answered status "started"; a refused call starts nothing. ' +
-  "Call it ONLY when the person asked for it ('on my computer', 'on my Mac', 'run it locally') or said yes after you suggested it; never call it on your own initiative and never move work there silently. " +
-  "SUGGEST it (ask first, do not call) when the task needs local tools or files, a heavy or expensive model, or a large token budget. " +
-  "`task` is the request exactly as the person means it, complete enough to run on its own. " +
-  "Where it works and which model runs it are the person's choice, never yours. When the person said them for this request in this conversation, pass them as they said them and never ask again: `folder`, the name of a folder their computer shares, or `repo`, a git URL or the name of a shared repo (`noFolder: true` only when they said it needs neither); `model`, the model's name as they said it (such as \"Opus 5.5\") or its id from a `models` list this tool gave. " +
-  "When they did not say one, leave it out: the tool then answers what to ask and the choices to offer (folders, and models by name); ask what is missing in one message, then call again. " +
-  "`effort` is a reasoning level (low, medium, high, xhigh, max), passed only when the person states one for this request; never chosen by you. " +
-  '`autonomy: "autonomous"` only when the person asked for the session to run on its own without asking them; never chosen by you. ' +
-  '`finishWith` ("pr", "commit" or "none") only when the person said how the work should end; never chosen by you; left out, the session opens a pull request. ' +
-  "Never pick a model yourself, never reuse one from memory, an earlier request or another conversation, and never write a model id from your own knowledge. " +
-  'If the folder is refused as folder_unresolved: with `candidates` among the shared folders, ask which one they mean; never guess. When it is not shared at all, the result says what to do: follow its `instruction`. If `lookup.status` is "found", offer to share the folder it found (kernel__share_folder_on_my_computer, after the person says yes; they confirm in Liaison). If there is a `cloneOffer`, offer to clone the repository, for this session (this tool again with `repo`: its git URL, which you ask for when `cloneOffer.repo` is null) or into their shared folders so it stays (kernel__clone_repo_on_my_computer, which they approve in Liaison), asking first, never cloning on your own. Never invent menus, buttons or steps: to explain how to share it themselves, use `howToShare` as written, with its link. ' +
-  "The person follows the session in Sessions and on the card it posts in this conversation, which shows its progress and result: once it started, reply with the one sentence the tool gives you and nothing about its output or result. " +
-  "The answer carries the session's `sessionId`. When the person later asks how it is going, read it with kernel__computer_session_read; when they ask you to stop it, to tell it something or to answer what it asks, do it yourself with the other kernel__computer_session_* tools (list, send, stop, answer, settings); never send them to the card for that."
+  "Hand this request to the person's own computer (one of their computers running Liaison), where it runs as a session with their own Claude sign-in, local files and tools, and no cloud token budget. Call it BEFORE saying anything about a session: never write that a session started, is starting or will start until this tool has answered status \"started\"; a refused call starts nothing. Call it ONLY when the person asked for it ('on my computer', 'on my Mac', 'run it locally') or said yes after you suggested it; never call it on your own initiative and never move work there silently."
 
 export interface RunOnMyComputerContext {
   userId: string
@@ -448,13 +435,14 @@ async function runOnRecordedLaptop(
     ownerUserId: ctx.userId,
     dispatch: { agentId, threadId, sourceRequiredScopes },
   })
+  const recording = await recordingOf(ctx.orgId)
   const answer: RunOnMyComputerResult = {
     status: "started",
     sessionId: started.sessionId,
     on: laptop.name,
     nodeOnline: true,
-    folder: RECORDING.repo,
-    model: RECORDING.model,
+    folder: recording.repo,
+    model: recording.model,
     level: "strict",
     say: `Started on ${laptop.name}. Follow it in the card above.`,
     instruction: STARTED,
@@ -474,7 +462,7 @@ async function runOnRecordedLaptop(
     orgId: ctx.orgId,
     userId: ctx.userId,
     threadId,
-    content: `Started on ${laptop.name}: ${RECORDING.title}`,
+    content: `Started on ${laptop.name}: ${recording.title}`,
     agentId,
     ...(agent?.displayName ? { agentAuthorLabel: agent.displayName } : {}),
     requiredScopes: sourceRequiredScopes,

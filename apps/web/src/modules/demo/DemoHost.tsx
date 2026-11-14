@@ -26,6 +26,7 @@ import {
   openDemoNextStepsOnce,
   syncDemoWorkspace,
 } from "~/modules/demo/demo-store"
+import { forgetDemoWorld, loadDemoWorld } from "~/modules/demo/demo-world"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { useOptionalApi } from "~/modules/shell/ApiContext"
 import { demoOrgSurfaces } from "~/modules/shell/branding-store"
@@ -72,6 +73,18 @@ export const DemoHost: Component = () => {
   // The FIRST refusal that says the budget is spent opens the next-steps
   // dialog, unless it already opened by itself in this workspace.
   const api = useOptionalApi()
+
+  // The workspace's own world: the example line, the limits panel and the
+  // welcome read it. A failed read (or an org that is not a visitor's, as the
+  // reserved review org is not) leaves it unknown, and they show no world's
+  // name. Read again whenever the session becomes a demo one.
+  createEffect(() => {
+    if (!demoOrgSurfaces() || !api) {
+      forgetDemoWorld()
+      return
+    }
+    void loadDemoWorld(api)
+  })
   createEffect(
     on(
       demoExhaustedRequest,

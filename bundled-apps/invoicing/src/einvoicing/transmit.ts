@@ -27,6 +27,7 @@ import { appEffectOnce, EffectOutcomeUnknown, type EffectsBridge } from "@liaiso
 import { base64, utf8Bytes } from "../legal-originals/bytes"
 import { base64ToBytes, sha256OfBase64 } from "./backfill-sha256"
 import { isValidSiren } from "./identity"
+import { documentStreamRef, prepareStandingSend } from "./standing"
 import { buyerTerritory } from "./territory"
 
 export const CONTRACT = "einvoicing-pa@1"
@@ -61,6 +62,8 @@ export interface ApprovalInput {
   current_payload: unknown
   editable_fields?: string[]
   on_behalf_of?: string | null
+  /** Who decides the card: the holders of this scope of the app (default: the app's approve scope). */
+  approve_scope?: string
 }
 
 export interface EinvCtx {
@@ -571,11 +574,17 @@ export async function stageSendApproval(
 }
 
 /** After issue: stage the send approval when the document is an e_invoice issued on or after the
- *  cut-over and sending is on. Returns the approval id, or null when nothing was staged. */
+ *  cut-over and sending is on. Returns the approval id, or null when nothing was staged.
+ *  `send: "batch"`: issued with no person, the document waits for the daily send card instead
+ *  (`awaiting_send_batch`), and nothing is staged for it alone. `send: "held"`: the issue's own
+ *  caller prepares the send under a grant it holds (a person-approved month-end run). */
 export async function stageSendAfterIssue(
   ctx: EinvCtx,
   documentId: string,
+  opts: { send?: "stage" | "batch" | "held" } = {},
 ): Promise<string | null> {
+  // A month-end run's row approved by a person holds its own send grant: its issue path prepares it.
+  if (opts.send === "held") return null
   const settings = await readEinvoicingSettings(ctx.db)
   if (!settings.provider_app || !settings.send_enabled) return null
   const doc = (
@@ -583,6 +592,16 @@ export async function stageSendAfterIssue(
   )[0]
   if (!doc || doc.regime !== "e_invoice" || !onOrAfterCutover(doc.issued_at, settings.cutover_date))
     return null
+  if (doc.einvoice_state === "awaiting_send_batch") return null
+  if (opts.send === "batch") {
+    // A stream a person authorized to send on its own: prepared now, under that standing grant.
+    if (await prepareStandingSend(ctx, documentId)) return null
+    await ctx.db.update("documents", documentId, {
+      einvoice_state: "awaiting_send_batch",
+      einvoice_send_requested_at: new Date().toISOString(),
+    })
+    return null
+  }
   const r = await stageSendApproval(ctx, documentId)
   if ("approval_id" in r) return r.approval_id
   // The issuer may send it themselves: nothing was staged and nothing is blocked.
@@ -942,6 +961,42 @@ async function stepSend(ctx: EinvCtx, row: Row): Promise<StepOutcome> {
       f.doc,
     )
   }
+  // A send under a stream's standing grant goes only for a document of that very stream, read
+  // from the document now, never from what was stored with the send.
+  const rowStream = str(row.stream_ref)
+  if (rowStream && documentStreamRef(f.doc) !== rowStream) {
+    return recordFailure(
+      ctx,
+      row,
+      {
+        code: "stream_mismatch",
+        message: `Document ${String(f.doc.number)} is not in the stream whose standing authorization prepared this send; nothing was sent. Ask for its send on the daily card.`,
+      },
+      f.doc,
+    )
+  }
+  // A send under a month-end row's grant goes only for the invoice that row names now.
+  const rowItem = str(row.run_item_ref)
+  if (rowItem) {
+    const item = (
+      (await ctx.db.findMany("recurring_run_items", { where: { id: rowItem }, limit: 1 })) as Row[]
+    )[0]
+    if (!item || String(item.document_id) !== String(row.document_id)) {
+      return recordFailure(
+        ctx,
+        row,
+        {
+          code: "run_item_mismatch",
+          message: `Document ${String(f.doc.number)} is not the invoice of the month-end row whose approval prepared this send; nothing was sent. Ask for its send again.`,
+        },
+        f.doc,
+      )
+    }
+  }
+  const streamParam = {
+    ...(rowStream ? { stream_ref: rowStream } : {}),
+    ...(rowItem ? { run_item_ref: rowItem } : {}),
+  }
   // The switches, right before any provider call: sending switched off since the approval holds
   // the row (it resumes when switched back on); a document before the cut-over never goes.
   const switched = sendSwitchProblem(await readEinvoicingSettings(ctx.db), f.doc)
@@ -1021,6 +1076,7 @@ async function stepSend(ctx: EinvCtx, row: Row): Promise<StepOutcome> {
         },
       },
       idempotency_key: String(row.idempotency_key),
+      ...streamParam,
     }
     const submitted = await submitOnce(ctx, row, submitParams, number, issueDate)
     if (submitted === "in_flight") {
@@ -1070,6 +1126,7 @@ async function stepSend(ctx: EinvCtx, row: Row): Promise<StepOutcome> {
       issue_date: issueDate,
       document_ref: String(row.document_id),
       legal_original_sha256: f.binding.legal_original_sha256,
+      ...streamParam,
     },
     rowOpts(row, true),
   )

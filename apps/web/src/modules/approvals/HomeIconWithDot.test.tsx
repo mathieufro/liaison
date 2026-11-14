@@ -119,7 +119,7 @@ describe("HomeIconWithDot", () => {
 
     it("does not count peer requests Home folds away", () => {
       attentionStore._setForTest({
-        items: [approval("a1"), approval("a2", { metadata: { peerSelfApprovable: true } })],
+        items: [approval("a1"), approval("a2", { metadata: { placement: "others" } })],
         errors: [],
       })
       const { queryByTestId } = render(() => <HomeIconWithDot />)

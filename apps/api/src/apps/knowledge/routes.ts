@@ -915,7 +915,8 @@ knowledgeRoutes.get("/synced-sources", async (c) => {
   }
 })
 
-// The knowledge source kinds installed apps declare that the caller may add.
+// The knowledge source kinds installed apps declare that the caller may add. Adding any
+// source takes at least the knowledge reader floor, so a caller below it gets no list.
 knowledgeRoutes.get("/synced-sources/kinds", async (c) => {
   try {
     const actor = getActor(c)

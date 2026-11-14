@@ -10,7 +10,7 @@ export interface OperationResult {
   source: "lines_authoritative" | "lines_default"
 }
 
-/** Shipping counts with goods, a software line is a service, a missing kind is the goods default. */
+/** Shipping counts with goods, a software or service line is a service, a missing kind is the goods default. */
 export function operationCategory(
   lines: ReadonlyArray<{ line_kind?: string | null }>,
   opts: { authoritative: boolean },
@@ -20,7 +20,7 @@ export function operationCategory(
   let goods = false
   let services = false
   for (const l of lines) {
-    if (l.line_kind === "software") services = true
+    if (l.line_kind === "software" || l.line_kind === "service") services = true
     else goods = true
   }
   return { category: goods && services ? "mixed" : services ? "services" : "goods", source }

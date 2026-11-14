@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { ApiError } from "~/lib/api-error"
 import { formatDay } from "~/lib/relative-time"
 import { I18nProvider } from "~/modules/i18n/i18n-context"
+import type { BoardColumn, BoardDeal, CurrencySum, DealBoard } from "~/modules/projects/deal-api"
 import { dndState } from "~/modules/projects/dnd-state"
 import { ProjectKanbanView } from "~/modules/projects/ProjectKanbanView"
 import { type ProjectStatus, projectStore, type Task } from "~/modules/projects/project-store"
@@ -613,5 +614,267 @@ describe("ProjectKanbanView label chips", () => {
     })
     await waitFor(() => expect(childChip()?.textContent).toBe("maintenance"))
     expect(api.get).not.toHaveBeenCalled()
+  })
+})
+
+describe("ProjectKanbanView on a sales pipeline", () => {
+  const stages: ProjectStatus[] = [
+    { id: "lead", projectId: "p1", label: "Lead", color: null, order: 0, terminal: false },
+    { id: "proposal", projectId: "p1", label: "Proposal", color: null, order: 1, terminal: false },
+    { id: "won", projectId: "p1", label: "Won", color: null, order: 2, terminal: true },
+    { id: "lost", projectId: "p1", label: "Lost", color: null, order: 3, terminal: true },
+  ]
+
+  function deal(over: Partial<BoardDeal> & { taskId: string }): BoardDeal {
+    return {
+      key: `SALES-${over.taskId}`,
+      title: `Deal ${over.taskId}`,
+      assigneeId: null,
+      companyId: "c1",
+      companyName: "Maison Arlon",
+      contactId: null,
+      nextStep: null,
+      closedAt: null,
+      quietDays: null,
+      ...over,
+    }
+  }
+
+  function board(withAccess: boolean, openDeals: BoardDeal[] = []): DealBoard {
+    const column = (
+      statusId: string,
+      label: string,
+      dealOutcome: "won" | "lost" | null,
+      deals: BoardDeal[],
+      sums: CurrencySum[],
+    ): BoardColumn => ({
+      statusId,
+      label,
+      dealOutcome,
+      count: deals.length,
+      deals,
+      ...(withAccess ? { sums } : {}),
+    })
+    return {
+      projectId: "p1",
+      timeZone: "Europe/Paris",
+      closedMonth: "2026-11",
+      columns: [
+        column("lead", "Lead", null, openDeals, [
+          { currency: "EUR", sum_minor: 1_230_000 },
+          { currency: "USD", sum_minor: 200_000 },
+        ]),
+        column("proposal", "Proposal", null, [], []),
+        column("won", "Won", "won", [], []),
+        column("lost", "Lost", "lost", [], []),
+      ],
+    }
+  }
+
+  function makeApi(post: ReturnType<typeof vi.fn>) {
+    return { post, patch: vi.fn(), get: vi.fn(), delete: vi.fn(), getEnvelope: vi.fn() } as any
+  }
+
+  function columnOf(container: HTMLElement, statusId: string): HTMLElement {
+    return container.querySelector(
+      `[data-testid="project-kanban-column"][data-status-id="${statusId}"]`,
+    ) as HTMLElement
+  }
+
+  function dropOnColumn(column: HTMLElement, taskId: string, fromStatusId: string) {
+    const payload = JSON.stringify({ taskId, fromStatusId })
+    fireEvent.drop(column, {
+      dataTransfer: {
+        getData: (type: string) => (type === "application/x-liaison-task" ? payload : ""),
+      },
+    })
+  }
+
+  afterEach(() => {
+    resetToastStore()
+  })
+
+  it("a column shows one sum per currency and none without deal access", () => {
+    const withAccess = board(true, [
+      deal({
+        taskId: "1",
+        amount: { amountMinor: 1_230_000, currency: "EUR", amountPeriod: "year" },
+      }),
+    ])
+    const first = render(() => (
+      <ProjectKanbanView
+        statuses={stages}
+        workspaceWidth={1400}
+        projectId="p1"
+        api={makeApi(vi.fn())}
+        pipeline={{ board: withAccess, onChanged: vi.fn() }}
+      />
+    ))
+    const sum = columnOf(first.container, "lead").querySelector('[data-testid="deal-column.sum"]')
+    // Two currencies: two sums, never one added total.
+    expect(sum?.textContent).toContain("12,300")
+    expect(sum?.textContent).toContain("2,000")
+    expect(sum?.textContent).toContain("·")
+    expect(
+      columnOf(first.container, "proposal").querySelector('[data-testid="deal-column.sum"]'),
+    ).toBeNull()
+    expect(
+      columnOf(first.container, "won").querySelector('[data-testid="project-kanban-column-header"]')
+        ?.textContent,
+    ).toBe("Won this month")
+    first.unmount()
+
+    const without = board(false, [deal({ taskId: "1" })])
+    const second = render(() => (
+      <ProjectKanbanView
+        statuses={stages}
+        workspaceWidth={1400}
+        projectId="p1"
+        api={makeApi(vi.fn())}
+        pipeline={{ board: without, onChanged: vi.fn() }}
+      />
+    ))
+    expect(second.container.querySelector('[data-testid="deal-column.sum"]')).toBeNull()
+    expect(second.getByTestId("deal-card.amount").textContent).toBe("Needs deal access")
+  })
+
+  it("open columns keep the board's order, quietest first and no quiet line when quiet is unknown", () => {
+    const b = board(true, [
+      deal({ taskId: "9", quietDays: 9, nextStep: "send pricing", assigneeId: "u1" }),
+      deal({ taskId: "3", quietDays: 3 }),
+      deal({ taskId: "0", quietDays: null }),
+    ])
+    const { container } = render(() => (
+      <ProjectKanbanView
+        statuses={stages}
+        workspaceWidth={1400}
+        projectId="p1"
+        api={makeApi(vi.fn())}
+        pipeline={{
+          board: b,
+          memberName: (id) => (id === "u1" ? "Tom Reyes" : null),
+          onChanged: vi.fn(),
+        }}
+      />
+    ))
+    const cards = [
+      ...columnOf(container, "lead").querySelectorAll('[data-testid="project-kanban-card"]'),
+    ] as HTMLElement[]
+    expect(cards.map((c) => c.dataset.taskId)).toEqual(["9", "3", "0"])
+    expect(cards[0]!.querySelector('[data-testid="deal-card.quiet"]')?.textContent).toBe(
+      "Quiet for 9 days",
+    )
+    expect(cards[0]!.querySelector('[data-testid="deal-card.owner"]')?.textContent).toBe("TR")
+    expect(cards[0]!.querySelector('[data-testid="deal-card.next-step"]')?.textContent).toBe(
+      "Next: send pricing",
+    )
+    expect(cards[0]!.querySelector('[data-testid="deal-card.amount"]')?.textContent).toBe(
+      "No amount",
+    )
+    // Unknown quiet: no line at all, never "Quiet for 0 days".
+    expect(cards[2]!.querySelector('[data-testid="deal-card.quiet"]')).toBeNull()
+  })
+
+  it("a move to Lost shows the note with an optional reason and Undo, and the reason is saved on blur", async () => {
+    // The server's side: where the deal sits; the board is read again after a move.
+    let at = "lead"
+    const post = vi.fn(async (url: string, body: { statusId?: string }) => {
+      if (url.endsWith("/move") && body.statusId) at = body.statusId
+      return {}
+    })
+    const [current, setCurrent] = createSignal(board(true, [deal({ taskId: "14" })]))
+    const onChanged = vi.fn(async () => {
+      const b = board(true, [])
+      b.columns.find((c) => c.statusId === at)!.deals.push(deal({ taskId: "14" }))
+      setCurrent(b)
+    })
+    const { container, getByTestId, queryByTestId } = render(() => (
+      <ProjectKanbanView
+        statuses={stages}
+        workspaceWidth={1400}
+        projectId="p1"
+        api={makeApi(post)}
+        pipeline={{ board: current(), onChanged }}
+      />
+    ))
+    dropOnColumn(columnOf(container, "lost"), "14", "lead")
+    await waitFor(() => expect(getByTestId("deal-move-note")).toBeTruthy())
+    expect(post).toHaveBeenCalledWith("/projects/p1/tasks/14/move", { statusId: "lost" })
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(getByTestId("deal-move-note.text").textContent).toBe(
+      "SALES-14 moved to Lost this month.",
+    )
+
+    // Leaving the empty reason saves nothing: the reason is optional.
+    const reason = getByTestId("deal-move-note.reason") as HTMLInputElement
+    fireEvent.blur(reason)
+    expect(post).toHaveBeenCalledTimes(1)
+
+    fireEvent.input(reason, { target: { value: "  Went with a cheaper rota tool  " } })
+    fireEvent.blur(reason)
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/apps/run-tool", {
+        toolName: "projects:deals_update",
+        params: { taskId: "14", outcome: "lost", reason: "Went with a cheaper rota tool" },
+      }),
+    )
+    // The same text again is not saved twice.
+    fireEvent.blur(reason)
+    expect(post).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(getByTestId("deal-move-note.undo"))
+    await waitFor(() =>
+      expect(post).toHaveBeenLastCalledWith("/projects/p1/tasks/14/move", { statusId: "lead" }),
+    )
+    expect(queryByTestId("deal-move-note")).toBeNull()
+    await waitFor(() =>
+      expect(columnOf(container, "lead").querySelector('[data-task-id="14"]')).not.toBeNull(),
+    )
+  })
+
+  it("a move to an open stage shows Undo and no reason field", async () => {
+    const post = vi.fn(async () => ({}))
+    const { container, getByTestId, queryByTestId } = render(() => (
+      <ProjectKanbanView
+        statuses={stages}
+        workspaceWidth={1400}
+        projectId="p1"
+        api={makeApi(post)}
+        pipeline={{ board: board(true, [deal({ taskId: "14" })]), onChanged: vi.fn() }}
+      />
+    ))
+    dropOnColumn(columnOf(container, "proposal"), "14", "lead")
+    await waitFor(() => expect(getByTestId("deal-move-note.undo")).toBeTruthy())
+    expect(queryByTestId("deal-move-note.reason")).toBeNull()
+  })
+
+  it("a failed move puts the card back and says no deal was moved", async () => {
+    let fail: (err: unknown) => void = () => {}
+    const post = vi.fn(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject
+        }),
+    )
+    const { container, queryByTestId } = render(() => (
+      <ProjectKanbanView
+        statuses={stages}
+        workspaceWidth={1400}
+        projectId="p1"
+        api={makeApi(post)}
+        pipeline={{ board: board(true, [deal({ taskId: "14" })]), onChanged: vi.fn() }}
+      />
+    ))
+    dropOnColumn(columnOf(container, "proposal"), "14", "lead")
+    // Shown in its new column at once, before the server answers.
+    await waitFor(() =>
+      expect(columnOf(container, "proposal").querySelector('[data-task-id="14"]')).not.toBeNull(),
+    )
+    fail(new ApiError("x", 503, "unavailable", undefined, {}))
+    await waitFor(() => expect(toasts()).toHaveLength(1))
+    expect(toasts()[0]!.message).toBe("Projects did not answer. No deal was moved.")
+    expect(columnOf(container, "lead").querySelector('[data-task-id="14"]')).not.toBeNull()
+    expect(columnOf(container, "proposal").querySelector('[data-task-id="14"]')).toBeNull()
+    expect(queryByTestId("deal-move-note")).toBeNull()
   })
 })

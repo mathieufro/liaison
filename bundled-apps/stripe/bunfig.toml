@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+#
+# `bun test` cannot load a test that imports a Solid `.tsx` module without a
+# JSX runtime Solid does not ship; the preload supplies Solid's own (see its
+# header). Same preload as the invoicing app.
+[test]
+preload = ["../../scripts/lib/bun-solid-jsx-preload.ts"]

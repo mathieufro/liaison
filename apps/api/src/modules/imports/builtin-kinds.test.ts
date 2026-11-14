@@ -73,9 +73,11 @@ describe("built-in kinds: declarations", () => {
     const names = Object.keys(BUILTIN_IMPORT_KINDS).sort()
     expect(names).toEqual([
       "calendar.event",
+      "contacts.company",
       "contacts.contact",
       "knowledge.collection",
       "knowledge.document",
+      "projects.deal",
       "projects.project",
       "projects.task",
       "projects.template",

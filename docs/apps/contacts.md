@@ -7,7 +7,9 @@ screenshotAlt: "The Contacts list showing people with their email addresses and 
 
 Contacts is the list of people your organization deals with. It fills itself: contacts appear as you exchange mail or when an agent mentions someone. You edit, group, share and merge them here, and agents read and update them for you.
 
-For sales workflows built on Contacts, see [Keep customers and prospects in Contacts](../sales/contacts.md) and [Find and merge duplicate contacts](../sales/duplicates.md).
+For sales workflows built on Contacts, see [Keep customers and prospects in Contacts](../sales/contacts.md), [Keep companies and see everything about one](../sales/companies.md) and [Find and merge duplicate contacts](../sales/duplicates.md).
+
+Companies are the second list of Contacts: click **Companies** in the sidebar.
 
 ## Find a contact
 
@@ -25,7 +27,7 @@ From a row you can start an **Email** or a **Call**.
 
 Under **Addresses** you add, edit, verify, mark stale or archive the contact's postal addresses. See [Keep verified postal addresses](../sales/contacts.md#keep-verified-postal-addresses).
 
-Under **Activity** you see the contact's mail conversations and **Tickets**.
+Under **Activity** you see the person's timeline: mail, tickets, invoices, meetings and deals. **Follow-ups** says whether commercial mail to them is allowed. Click their company to open its page. See [Companies](../sales/companies.md).
 
 To delete a contact, open **More actions** and click **Delete contact**.
 
@@ -42,6 +44,10 @@ Deleting a group keeps its contacts.
 2. Choose who can see it, for example everyone with access to a shared mailbox.
 
 A contact becomes the organization's only when it is shared.
+
+## When an account manager changes
+
+When a company is given to someone else, its previous account manager gets one row on **Home** naming who gave which companies to whom. When an account manager is deactivated, the admin who does it says who takes their companies over (see [Deactivate a user](../admin/users.md#deactivate-a-user)).
 
 ## Merge duplicates
 
@@ -86,9 +92,10 @@ See the [scope reference](../reference/scopes.md).
 | Tool | What it does | Approval |
 |---|---|---|
 | `contacts_search` | Search contacts by name, email or company | No |
-| `contacts_read` | Read a contact with recent mail and timeline | No |
+| `contacts_read` | Read a contact with recent mail and timeline, and one line per other app that holds records for them (only what you may read there) | No |
 | `contacts_write` | Create or update a contact | Yes, unless an auto-approve policy covers it |
 | `threads_reply` with `contactId` | Post in a contact's discussion, as the agent | No |
+| `threads_create` with `createdFrom` naming the contact | Post in the contact's discussion, as the agent: the same conversation, never a second one | No |
 | `contacts_export` | Export the contacts you can see to a CSV file | Yes |
 | `contacts_find_duplicates` | Find likely duplicates across the whole list | No |
 | `contacts_merge` | Merge two duplicate contacts | Yes |

@@ -18,6 +18,7 @@ import {
   _resetDemoStore,
   type DemoProvisioningState,
 } from "~/modules/demo/demo-store"
+import { _setDemoWorld, demoWorldId } from "~/modules/demo/demo-world"
 import { I18nProvider } from "~/modules/i18n/i18n-context"
 import { ApiProvider } from "~/modules/shell/ApiContext"
 import {
@@ -86,6 +87,8 @@ function storeWorkspace(state: DemoProvisioningState, expiresAt: string | null):
 function serverAnswers(answers: {
   status?: { state: DemoProvisioningState; expiresAt?: string }
   models?: string[]
+  /** What `GET /demo/world` says; absent: the read is refused (404), as for the reserved org. */
+  world?: string
 }): string[] {
   const seen: string[] = []
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
@@ -94,6 +97,11 @@ function serverAnswers(answers: {
     let data: unknown = {}
     if (url.includes("/demo/orgs/") && url.endsWith("/status") && answers.status) {
       data = answers.status
+    } else if (url.includes("/demo/world")) {
+      if (!answers.world) {
+        return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404 })
+      }
+      data = { worldId: answers.world }
     } else if (url.includes("/credits/models") && answers.models) {
       data = { models: answers.models.map((modelId) => ({ modelId })) }
     }
@@ -164,6 +172,34 @@ describe("a deployment that is not the demo", () => {
   })
 })
 
+describe("the workspace's world", () => {
+  it("is read from the server into the demo world store", async () => {
+    serverAnswers({ status: { state: "ready" }, world: "saas" })
+    await serverSays(true)
+    renderHost()
+    await waitFor(() => expect(demoWorldId()).toBe("saas"))
+  })
+
+  it("stays unknown when the read is refused, as it is for the reserved review org", async () => {
+    _setDemoWorld("saas")
+    const seen = serverAnswers({ status: { state: "ready" } })
+    await serverSays(true)
+    renderHost()
+    await waitFor(() => expect(seen.some((u) => u.includes("/demo/world"))).toBe(true))
+    await waitFor(() => expect(demoWorldId()).toBeNull())
+  })
+
+  it("is never read, and is forgotten, in an org that is not a demo one", async () => {
+    _setDemoWorld("saas")
+    const seen = serverAnswers({ world: "saas" })
+    await serverSays(true, false)
+    renderHost()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(seen.some((u) => u.includes("/demo/world"))).toBe(false)
+    expect(demoWorldId()).toBeNull()
+  })
+})
+
 describe("a real workspace on the demo deployment", () => {
   it("shows no banner and no demo gates: the org is not a demo one", async () => {
     await serverSays(true, false)
@@ -225,8 +261,10 @@ describe("the standing banner", () => {
   })
 
   it("opens a list of exactly what the demo cannot do", async () => {
+    serverAnswers({ world: "products" })
     await serverSays(true)
     renderHost()
+    await waitFor(() => expect(demoWorldId()).toBe("products"))
     fireEvent.click(screen.getByTestId("demo-limits-open"))
     const list = await screen.findByTestId("demo-limits")
     const text = list.textContent ?? ""

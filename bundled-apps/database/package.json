@@ -1,6 +1,6 @@
 {
   "name": "@liaison/database-app",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Liaison database connector: read-only SQL through platform-held connections",
   "license": "FSL-1.1-ALv2",
   "private": true,

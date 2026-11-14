@@ -16,12 +16,13 @@
 // answer rides on the org's demo marker, like the picks: one visitor owns a
 // visitor org, so the popup opens by itself only until they have answered it.
 import {
-  DEMO_NEED_SPECS,
-  DEMO_NEEDS,
+  DEMO_WORLD_NEEDS,
   type DemoNeed,
   type DemoWelcomeState,
   demoNeedsSchema,
+  demoScenarioTourId,
   demoWelcomeChoiceSchema,
+  demoWorldIdOf,
   type TourStatus,
 } from "@liaison/shared"
 import { Hono } from "hono"
@@ -58,6 +59,8 @@ export interface DemoScenarioItem {
   status: TourStatus | "new"
   beatIndex: number
   beatCount: number
+  /** Played once: the visitor starts it over with the workspace, never again on its own. */
+  singleRun?: true
 }
 
 export interface DemoScenarioRetryResponse {
@@ -71,7 +74,7 @@ export interface DemoScenarioRetryResponse {
  */
 export function pickedNeeds(marker: Record<string, unknown> | null): DemoNeed[] {
   const parsed = demoNeedsSchema.safeParse(marker?.needs)
-  return parsed.success ? parsed.data : [...DEMO_NEEDS]
+  return parsed.success ? parsed.data : [...DEMO_WORLD_NEEDS[demoWorldIdOf(marker?.worldId)]]
 }
 
 /** The session org's visitor marker, else 404 (a regular org, the reserved org). */
@@ -95,7 +98,8 @@ export const demoScenariosRoutes = new Hono<AppEnv>()
     const byTour = new Map(rows.map((r) => [r.tourId, r]))
     const items: DemoScenarioItem[] = []
     for (const need of pickedNeeds(marker)) {
-      const tourId = DEMO_NEED_SPECS[need].scenarioTourId
+      // The scenario of the need in the org's own world.
+      const tourId = demoScenarioTourId(demoWorldIdOf(marker.worldId), need)
       const tour = findServerTour(tourId)
       if (!tour) continue
       const beats = tourBeats(tour, ctx)
@@ -107,6 +111,7 @@ export const demoScenariosRoutes = new Hono<AppEnv>()
         status: progress?.status ?? "new",
         beatIndex: progress?.beatIndex ?? 0,
         beatCount: beats.length,
+        ...(tour.singleRun ? { singleRun: true as const } : {}),
       })
     }
     return success(c, items)

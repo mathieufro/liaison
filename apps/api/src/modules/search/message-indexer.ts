@@ -1451,19 +1451,25 @@ async function attachVectorsOrLeave(
 }
 
 /**
- * A contact merge that moved the merged-away contact's discussion messages
- * into the survivor's (contacts/discussion.ts, mergeContactDiscussion): their
+ * A contact or company merge that moved the merged-away record's discussion
+ * messages into the survivor's (contacts/discussion.ts, companies.ts): their
  * documents name the thread they were in, and the survivor's windows now quote
  * them. Every message of the survivor's discussion is re-indexed from the
  * committed rows, through the same coalescing queue as a live edit. Best
  * effort, like every message indexing (see below).
  */
-async function reindexMergedContactDiscussion(orgId: string, data: unknown): Promise<void> {
+async function reindexMergedDiscussion(
+  orgId: string,
+  entity: "contact" | "company",
+  data: unknown,
+): Promise<void> {
   const d = (data ?? {}) as { targetId?: unknown; discussionMoved?: unknown }
   if (d.discussionMoved !== true || typeof d.targetId !== "string") return
-  const handle = `contact-primary:${d.targetId}`
+  // A company's discussion is an entity discussion (threads/entity-discussion.ts).
+  const handle =
+    entity === "contact" ? `contact-primary:${d.targetId}` : `entity:kernel:company:${d.targetId}`
   try {
-    const ids = await withPrivilegedDb(orgId, "message-indexer:contact-merge", async (tx) =>
+    const ids = await withPrivilegedDb(orgId, `message-indexer:${entity}-merge`, async (tx) =>
       rowsOf(
         await tx.execute(
           sql`SELECT m.id::text AS id FROM ${kernelTable("messages")} m
@@ -1480,15 +1486,19 @@ async function reindexMergedContactDiscussion(orgId: string, data: unknown): Pro
       )
     }
   } catch (err) {
-    log.error({ err, orgId, handle }, "Could not queue re-indexing of a merged contact discussion")
+    log.error({ err, orgId, handle }, "Could not queue re-indexing of a merged discussion")
   }
 }
 
 async function messageIndexerDurableHandler(ctx: DurableEventContext): Promise<void> {
   const { event } = ctx
   if (event.ephemeral) return
-  if (event.app === MESSAGE_APP && event.entity === "contact" && event.action === "merge") {
-    await reindexMergedContactDiscussion(event.orgId, event.data)
+  if (
+    event.app === MESSAGE_APP &&
+    (event.entity === "contact" || event.entity === "company") &&
+    event.action === "merge"
+  ) {
+    await reindexMergedDiscussion(event.orgId, event.entity, event.data)
     return
   }
   // `tickets:message` is a different entity with its own derived-reindex rule

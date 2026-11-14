@@ -1,0 +1,11 @@
+{
+  "reviewedOrigins": {
+    "apps/api/src/apps/projects/service/days-off-calendar.ts#runDaysOffCalendarAll": "the daily days-off calendar pass: each org id is read from the database itself (an org with a shared days-off calendar chosen and a live work project using time and budgets), with moving orgs left out, and each org's sync reads and writes that one org's own calendar rows and days off",
+    "apps/api/src/apps/projects/service/home-lines.ts#raiseCapacityLinesAll": "the daily capacity-lines pass: each org id is read from the database itself (an org with a live work project using time and budgets), with moving orgs left out, and each org's lines, in writeUnlessMoving for that one org, are computed and written for that one org, from that org's own timeboxes, people and scope holders",
+    "apps/api/src/apps/projects/service/reconcile-sweep.ts#healTimeBudgets": "the daily projects sweep: each org id is read from the database itself (an org with a project whose time and budgets switch is on, or with a time and budgets feature row), with moving orgs left out, and each org's recompute runs in writeUnlessMoving for that one org; it writes only that org's own feature row from that org's own projects",
+    "apps/api/src/apps/projects/service/time-plan.ts#orgTimezone": "the org's zone for a projects read or write: every caller passes the org of the person's own row-security context (the bridge's orgId), and the call reads that one org's timezone, nothing else"
+  },
+  "reviewedOutsideRoutes": {
+    "apps/api/src/seed/tiers/minimal.ts#postUserMessage": "the minimal seed tier (tests only, no product caller): one privileged write of a message by that org's own person in that org's thread, in the org a test just created"
+  }
+}

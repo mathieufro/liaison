@@ -13,10 +13,13 @@
 // tool's own result, error or argument schema, where the model reads them at
 // the moment it acts.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { z } from "zod"
 import { sql } from "~/db"
 import { estimateTokens } from "~/modules/agent/context/compaction"
-import { isDeferredTool } from "~/modules/agent/tools/tool-bridge"
+import { isDeferredTool, listGatewayTools } from "~/modules/agent/tools/tool-bridge"
+import { approvalActionRequiredClause } from "~/modules/approvals/agent-guidance"
 import {
   agentInstructionsRegistry,
   skillRegistry,
@@ -32,6 +35,7 @@ const ORG_ID = "00000000-0000-0000-0000-000000db0001"
  *  behind `deferLoading: true` and tool_search. */
 const EXPECTED_HOT = [
   "kernel__agents_ask",
+  "kernel__approvals_list",
   // The stable entry for a tool loaded outside the thread's fixed tool list
   // (providers/fixed-tool-list.ts): without it, such a tool is uncallable.
   "kernel__call_tool",
@@ -41,10 +45,7 @@ const EXPECTED_HOT = [
   "kernel__files_read",
   "kernel__list_locked_capabilities",
   "kernel__memory_create",
-  "kernel__memory_delete",
   "kernel__memory_insert",
-  "kernel__memory_open",
-  "kernel__memory_rename",
   "kernel__memory_search",
   "kernel__memory_str_replace",
   "kernel__memory_view",
@@ -53,10 +54,13 @@ const EXPECTED_HOT = [
   "kernel__request_scope",
   "kernel__skill_read",
   "kernel__skill_search",
+  "kernel__suggest_next_steps",
+  "kernel__threads_create",
   "kernel__threads_read",
   "kernel__threads_reply",
   "kernel__threads_search",
   "kernel__tool_search",
+  "kernel__users_search",
   "kernel__web_fetch",
   "kernel__web_search",
 ]
@@ -136,6 +140,21 @@ describe("kernel hot tool set budget", () => {
     ).toBeLessThanOrEqual(HOT_TOKEN_BUDGET)
   })
 
+  it("suggest_next_steps over MCP is absent from tools/list", () => {
+    const actor = {
+      actorType: "user" as const,
+      userId: "00000000-0000-0000-0000-000000db0002",
+      orgId: ORG_ID,
+      scopes: ["*"],
+      dimensionGrants: {},
+    }
+    const names = listGatewayTools(ORG_ID, actor).map((t) => `${t.appName}:${t.toolName}`)
+    expect(names.length).toBeGreaterThan(0)
+    expect(names).toContain("kernel:threads_read")
+    expect(names).not.toContain("kernel:suggest_next_steps")
+    expect(toolRegistry.get([ORG_ID, "kernel", "suggest_next_steps"])).toBeDefined()
+  })
+
   it("every hot description names the capability instead of carrying the rulebook", () => {
     const offenders = hotKernelTools()
       .filter((t) => t.description.length > (DESCRIPTION_MAX_BY_TOOL[t.sdkName] ?? DESCRIPTION_MAX))
@@ -144,5 +163,22 @@ describe("kernel hot tool set budget", () => {
       offenders,
       `these hot descriptions exceed their limit (${DESCRIPTION_MAX} chars, ${DESCRIPTION_MAX_BY_TOOL.kernel__tool_search} for tool_search): ${offenders.join(", ")}. A rule that no longer fits belongs on the tool's result, its error text, or an argument's .describe().`,
     ).toEqual([])
+  })
+
+  it("the tools the standing prompt and the approval guidance name by hand are hot on every turn", () => {
+    const hot = hotKernelTools().map((t) => t.sdkName)
+    const prompt = readFileSync(join(import.meta.dir, "../prompts/system.md"), "utf8")
+    for (const name of ["kernel__users_search", "kernel__threads_create"]) {
+      expect(prompt, `system.md no longer names ${name}`).toContain(name)
+      expect(hot).toContain(name)
+    }
+    // Every kernel tool the messaging paragraph names must be hot too, not only the two pinned above.
+    const messaging = prompt.split("\n").find((l) => l.includes("use a Liaison conversation")) ?? ""
+    const named = [...messaging.matchAll(/kernel__[a-z_]+/g)].map((m) => m[0])
+    expect(named.length, "the messaging paragraph names no kernel tool").toBeGreaterThan(0)
+    for (const name of named)
+      expect(hot, `${name} is named in the standing prompt but not hot`).toContain(name)
+    expect(approvalActionRequiredClause(true)).toContain("kernel__approvals_list")
+    expect(hot).toContain("kernel__approvals_list")
   })
 })

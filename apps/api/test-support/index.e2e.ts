@@ -70,6 +70,7 @@ import {
   shouldInstallShopifyMock,
 } from "./harness/shopify-mock-fetch"
 import { makeSocialMockFetch, socialMockHandlesHost } from "./harness/social-mock-fetch"
+import { makeStripeMockFetch, stripeMockHandlesHost } from "./harness/stripe-mock-fetch"
 
 // Self-terminate if the harness that spawned us dies without running teardown.
 // Without this, an aborted e2e run leaves a full API server (HTTP + BullMQ
@@ -177,12 +178,16 @@ registerProcessShutdownPhases({})
 // The Meta Ads Graph mock composes into the SAME chain, always active (like social).
 // It intercepts `graph.facebook.com` so the meta-ads E2E suite can run against
 // deterministic fixture campaigns/adsets/ads/insights without real Meta credentials.
+// The payments API mock composes into the SAME chain, always active: it answers
+// `api.stripe.com` only, refuses a call without the pinned Stripe-Version, and the
+// `_test/stripe` routes seed and inspect it (stripe-install-routes.ts).
 if (shouldInstallBoxtalMock()) {
   const real = globalThis.fetch.bind(globalThis)
   // The invoicing e-invoicing boundaries (business registry, ECB) answer from loaded fixtures.
   let inner = makeGmailFixtureFetch(makeEinvoicingMockFetch(real))
   if (shouldInstallPennylaneMock()) inner = makePennylaneMockFetch(inner)
   if (shouldInstallShopifyMock()) inner = makeShopifyMockFetch(inner)
+  inner = makeStripeMockFetch(inner)
   const chain = makeMetaMockFetch(makeSocialMockFetch(makeBoxtalMockFetch(inner)))
   SandboxBridgeTestAccess.setFetch(chain)
   SandboxBridgeTestAccess.setFetchInterceptsHost(
@@ -192,6 +197,7 @@ if (shouldInstallBoxtalMock()) {
       gmailFixtureHandlesHost(host) ||
       socialMockHandlesHost(host) ||
       metaMockHandlesHost(host) ||
+      stripeMockHandlesHost(host) ||
       (shouldInstallPennylaneMock() && pennylaneMockHandlesHost(host)) ||
       (shouldInstallShopifyMock() && shopifyMockHandlesHost(host)),
   )
@@ -202,6 +208,7 @@ if (shouldInstallBoxtalMock()) {
   let inner = makeGmailFixtureFetch(makeEinvoicingMockFetch(real))
   if (shouldInstallPennylaneMock()) inner = makePennylaneMockFetch(inner)
   if (shouldInstallShopifyMock()) inner = makeShopifyMockFetch(inner)
+  inner = makeStripeMockFetch(inner)
   const chain = makeMetaMockFetch(makeSocialMockFetch(inner))
   SandboxBridgeTestAccess.setFetch(chain)
   SandboxBridgeTestAccess.setFetchInterceptsHost(
@@ -210,6 +217,7 @@ if (shouldInstallBoxtalMock()) {
       gmailFixtureHandlesHost(host) ||
       socialMockHandlesHost(host) ||
       metaMockHandlesHost(host) ||
+      stripeMockHandlesHost(host) ||
       (shouldInstallPennylaneMock() && pennylaneMockHandlesHost(host)) ||
       (shouldInstallShopifyMock() && shopifyMockHandlesHost(host)),
   )

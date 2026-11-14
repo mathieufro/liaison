@@ -77,6 +77,10 @@ To turn an email into a ticket, open the conversation in [Mail](mail.md) and cli
 
 Your own reply is sent right away. If your organization requires two approvals for replies, it waits for a second person and the composer says so.
 
+### Card numbers in tickets and mail
+
+A card number a customer writes in a mail or a ticket message is hidden before it is stored: it shows as `•••• •••• •••• 4242` (its last four digits), and a security code written next to it (CVC, CVV, cryptogramme, security code) as `•••`. The message ends with a note, "[A card number was hidden.]". Notes you add are masked the same way, and so are Stripe keys (only their prefix is kept). Only numbers that are real card numbers are hidden: a number counts as a card only when its first digits and its length match a card network, so an order or invoice number, a tracking number, a SIRET, SIREN or VAT number, an IMEI, an IBAN or a phone number stays as written, and so does any number right after a label that names it (SIRET, IMEI, order, invoice). People and agents only ever see the masked text. In a mailbox with end-to-end encryption the server never holds the text, so it is masked where an agent reads it.
+
 An open ticket catches up after a connection drop: a reply or note written while you were offline, by a person or a routine, shows within seconds of the app reconnecting. A ticket in another tab catches up when you switch to it.
 
 Earlier emails quoted under a customer's message are folded away. Click **··· N earlier emails** to list them: **In this thread ↑** takes you to a copy already in the ticket, and **Show original** shows the quoted part as it was sent. A reply sent from Liaison is always shown whole.

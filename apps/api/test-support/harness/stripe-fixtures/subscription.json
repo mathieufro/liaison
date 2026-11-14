@@ -1,0 +1,57 @@
+{
+  "id": "sub_FIXTURE0001",
+  "object": "subscription",
+  "billing_cycle_anchor": 1767225600,
+  "cancel_at": null,
+  "cancel_at_period_end": false,
+  "canceled_at": null,
+  "collection_method": "charge_automatically",
+  "created": 1767225600,
+  "currency": "eur",
+  "customer": "cus_FIXTURE0001",
+  "default_payment_method": "pm_FIXTURE0001",
+  "discounts": [],
+  "ended_at": null,
+  "items": {
+    "object": "list",
+    "data": [
+      {
+        "id": "si_FIXTURE0001",
+        "object": "subscription_item",
+        "created": 1767225600,
+        "current_period_end": 1769904000,
+        "current_period_start": 1767225600,
+        "metadata": {},
+        "price": {
+          "id": "price_FIXTURE0001",
+          "object": "price",
+          "active": true,
+          "billing_scheme": "per_unit",
+          "currency": "eur",
+          "product": "prod_FIXTURE0001",
+          "recurring": {
+            "interval": "month",
+            "interval_count": 1,
+            "usage_type": "licensed"
+          },
+          "tax_behavior": "exclusive",
+          "type": "recurring",
+          "unit_amount": 4900
+        },
+        "quantity": 3,
+        "subscription": "sub_FIXTURE0001"
+      }
+    ],
+    "has_more": false,
+    "url": "/v1/subscription_items?subscription=sub_FIXTURE0001"
+  },
+  "latest_invoice": "in_FIXTURE0001",
+  "livemode": false,
+  "metadata": {},
+  "pause_collection": null,
+  "start_date": 1767225600,
+  "status": "active",
+  "test_clock": "clock_FIXTURE0001",
+  "trial_end": null,
+  "trial_start": null
+}

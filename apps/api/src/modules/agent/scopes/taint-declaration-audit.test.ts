@@ -79,7 +79,7 @@ const FIXED_HOST_READS = new Set([
   "boxtal:prep_list", // Boxtal quote API, read
   "ads:insights_query", // Meta insights on the fixed Graph host (large pulls: a transient report run)
   "ads:metrics_run", // the formula's inputs through the ads/shopify reads; writes nothing
-  "kernel:ai_models_get", // OpenRouter's public model list (GET /models, no query), filtered locally
+  "kernel:ai_models_get", // OpenRouter's whole model list, no query sent; searched locally
 ])
 
 const EXTERNAL_WRITES = new Set([
@@ -140,6 +140,7 @@ const KERNEL_TABLE_WRITES = new Set([
   "knowledge:synced_sources.run_now", // a kernel job row (the forced harvest)
   "mail:providers.set", // kernel.apps (the mail app's provider config)
   "database:report_access_set", // the app's own store document (Report access rules)
+  "mail:suppression_add", // a kernel.suppressions row (an opt-out)
 ])
 
 let orgId: string
@@ -160,7 +161,12 @@ describe("taint declaration audit", () => {
   it("the sweep covers kernel tools and every bundled app (non-vacuous)", () => {
     const apps = new Set(orgTools().map(([[, app]]) => app))
     expect(bundled.length).toBeGreaterThanOrEqual(5)
-    expect(bundled.filter((name) => !apps.has(name))).toEqual([])
+    // An app that declares no tool (a connector whose tools come later) registers none.
+    const withTools = bundled.filter(
+      (name) => Object.keys((bundledDescriptor(name).tools as object | undefined) ?? {}).length > 0,
+    )
+    expect(withTools.length).toBeGreaterThanOrEqual(5)
+    expect(withTools.filter((name) => !apps.has(name))).toEqual([])
     expect(apps.has("kernel")).toBe(true)
     expect(orgTools().length).toBeGreaterThan(100)
   })

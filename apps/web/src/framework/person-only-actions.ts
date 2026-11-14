@@ -77,7 +77,11 @@ export function normalizeKernelPath(path: string): string {
     pathname = path.split(/[?#]/)[0] ?? path
   }
   const decoded = safeDecode(pathname).replace(/\/{2,}/g, "/")
-  return decoded.length > 1 ? decoded.replace(/\/+$/, "") : decoded
+  // Trailing slashes trimmed by index, not by an end-anchored pattern a long run of
+  // slashes would make slow.
+  let end = decoded.length
+  while (end > 0 && decoded[end - 1] === "/") end--
+  return decoded.length > 1 ? decoded.slice(0, end) : decoded
 }
 
 function matchesTool(qualified: string, entry: PersonOnlyTool): boolean {

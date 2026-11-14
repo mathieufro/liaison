@@ -272,6 +272,15 @@ describe("markdown-content", () => {
     expect(container.textContent).not.toContain("](")
   })
 
+  it("a link whose text carries the @ mention marker reads with the chip's prefix only", () => {
+    const { container } = render(() => (
+      <div>{renderContent("Closing [@Stock data](projects:project:p-1) now", () => {})}</div>
+    ))
+    const chip = container.querySelector("[data-mention-ref]") as HTMLElement
+    expect(chip.getAttribute("data-mention-ref")).toBe("projects:project:p-1")
+    expect(chip.textContent).toBe("#Stock data")
+  })
+
   it("does not double the prefix when the label already carries it (a ticket handle)", () => {
     const { container } = render(() => (
       <div>

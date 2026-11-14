@@ -111,7 +111,7 @@ async function resolveTarget(
     tx
       .select({ id: users.id })
       .from(users)
-      .where(and(eq(users.id, userId), eq(users.orgId, ctx.orgId)))
+      .where(and(eq(users.id, userId), eq(users.orgId, ctx.orgId), eq(users.userType, "member")))
       .limit(1),
   )
   if (found.length === 0) {

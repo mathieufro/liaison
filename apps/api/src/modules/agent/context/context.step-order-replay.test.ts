@@ -50,6 +50,21 @@ describe("replaying an earlier turn step by step", () => {
     expect(JSON.stringify(out)).not.toContain("Plan.")
   })
 
+  it("replays step by step a stored text whose steps are set apart as paragraphs", () => {
+    const steps = stepsFromTimeline(TIMELINE, "Looking.\n\nFound it.\n\nDone.", [
+      call("a"),
+      call("b"),
+    ])
+    expect(steps?.map((s) => s.text)).toEqual(["Looking.", "Found it.", "Done."])
+    // Different words are still a rewrite, whatever the spacing.
+    expect(
+      stepsFromTimeline(TIMELINE, "Looking.\n\nFound it.\n\nDone, and more.", [
+        call("a"),
+        call("b"),
+      ]),
+    ).toBeNull()
+  })
+
   it("groups parallel calls of one step into one message", () => {
     const steps = stepsFromTimeline(
       [

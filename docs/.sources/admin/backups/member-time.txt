@@ -1,0 +1,2 @@
+Member export: own time on tasks, away days, days per week -> apps/api/src/modules/export/member-data-subject-bundle.ts (MEMBER_SECTIONS: ownTaskTime, awayRanges, daysPerWeek)
+Member export by someone else: own time read under the requester's row security -> apps/api/src/modules/export/member-data-subject-bundle.ts (readMemberSections)

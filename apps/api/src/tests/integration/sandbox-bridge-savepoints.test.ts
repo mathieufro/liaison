@@ -42,6 +42,8 @@ const manifest = {
   name: APP,
   version: "1.0.0",
   _format: "manifest",
+  // The scope that reads its table: registration refuses a table no declared scope reaches.
+  scopes: [`${APP}:claims:read`],
   schema: {
     claims: { fields: { key: "string" }, constraints: { unique: [["key"]] } },
   },

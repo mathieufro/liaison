@@ -3,9 +3,10 @@
 // Test support for the demo seeders: install catalog apps the way a demo box
 // has them, from the tarball the CURRENT source builds to
 // (`bash scripts/build-bundled-app.sh <app>` writes it under the app's `dist/`).
-import { existsSync, readFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import { installAppFromTarball } from "~/modules/apps/install-service"
+import { ensureBundledAppBuilt } from "~/tests/helpers/bundled-app-build"
 import { bakeIntoTestCatalog } from "~/tests/helpers/test-app-catalog"
 
 const ROOT = path.join(import.meta.dir, "..", "..", "..", "..")
@@ -15,7 +16,7 @@ const ROOT = path.join(import.meta.dir, "..", "..", "..", "..")
  * `app-catalog/` artifact. The baked catalog is a release snapshot that lags
  * the tree, and a stale app there (a boxtal with no `prep_meta` table) fails
  * reads for a reason that has nothing to do with the seed. A missing tarball
- * throws with the build command, never skips.
+ * is built from the current source first, never skipped.
  */
 export async function installFromDist(name: string, installedBy: string): Promise<void> {
   const manifestPath = path.join(ROOT, "bundled-apps", name, "app.manifest.json")
@@ -24,18 +25,9 @@ export async function installFromDist(name: string, installedBy: string): Promis
     scopes?: string[]
     connections?: Record<string, unknown>
   }
-  const tarballPath = path.join(
-    ROOT,
-    "bundled-apps",
-    name,
-    "dist",
-    `${name}-${manifest.version}.liaisonapp`,
-  )
-  if (!existsSync(tarballPath)) {
-    throw new Error(
-      `${name} ${manifest.version} is not built: run \`bash scripts/build-bundled-app.sh ${name} --skip-sign\``,
-    )
-  }
+  // Built here when absent, never left to whichever test happened to build it
+  // first: a file that ran before any such test found no tarball and failed.
+  const tarballPath = ensureBundledAppBuilt(name)
   await installAppFromTarball({
     // Baked into the test catalog, as on a demo box: the first-party app, not an outside one.
     tarballPath: bakeIntoTestCatalog(tarballPath),

@@ -76,6 +76,12 @@ describe("Show me how", () => {
     // Ended with × before the last beat: shown as stopped, never as new.
     expect(tourStatusLabel(item(progress({ status: "abandoned" })), t)).toBe("Stopped")
     expect(tourActionLabel(item(progress({ status: "abandoned" })), t)).toBe("Start again")
+    // A single-run scenario is played, and only the whole demo starts over.
+    const single = (p: TourProgress): TourListItem => ({ ...item(p), singleRun: true })
+    expect(tourStatusLabel(single(progress({ status: "completed" })), t)).toBe("Played")
+    expect(tourActionLabel(single(progress({ status: "completed" })), t)).toBe("Start over")
+    expect(tourActionLabel(single(progress({ status: "abandoned" })), t)).toBe("Start over")
+    expect(tourActionLabel(single(progress({ status: "paused" })), t)).toBe("Resume")
   })
 
   it("phone list: a new tour starts from the help source", async () => {

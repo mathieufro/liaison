@@ -61,6 +61,13 @@ describe("InvoicingSidebar (Phase 17 F1)", () => {
     expect(sidebarSource).not.toContain('tr("Settings")')
   })
 
+  it("the footer opens this app's settings page for a viewer who may read them, and is plain text otherwise", () => {
+    expect(sidebarSource).toContain('SETTINGS_PATH = "/settings/apps/invoicing"')
+    expect(sidebarSource).toContain("onClick={() => navigate(SETTINGS_PATH)}")
+    expect(sidebarSource).toContain("when={access().settings_read}")
+    expect(sidebarSource).toContain('tr("Invoicing settings")')
+  })
+
   it("the New-document menu offers exactly quote, proforma and purchase order", () => {
     // Invoices come from orders or from converting a quote/proforma; credit
     // notes come from refunds. Neither can be started by hand.
@@ -147,5 +154,31 @@ describe("InvoicingSidebar (Phase 17 F1)", () => {
   it("links the e-invoicing readiness tab from the Admin section", () => {
     expect(sidebarSource).toContain('href="/invoicing/readiness"')
     expect(sidebarSource).toContain('tr("E-invoicing readiness")')
+  })
+
+  it("puts a Recurring group with Schedules and its count before Views, and the three recurring tabs exist", () => {
+    const recurring = sidebarSource.indexOf('label={tr("Recurring")}')
+    const views = sidebarSource.indexOf('label={tr("Views")}')
+    expect(recurring).toBeGreaterThan(-1)
+    expect(recurring).toBeLessThan(views)
+    expect(sidebarSource).toContain('{ href: "/invoicing/recurring", label: "Schedules" }')
+    expect(sidebarSource).toContain("badge={scheduleCount()}")
+    // The count is the app's own list, the same the agent reads.
+    expect(sidebarSource).toContain('"recurring_list"')
+    const tabs = (manifest as any).views.tabTypes
+    expect(tabs.recurring).toMatchObject({
+      component: "InvoicingRecurringList",
+      urlPattern: "/invoicing/recurring",
+      singleton: true,
+    })
+    expect(tabs.schedule).toMatchObject({
+      component: "InvoicingScheduleEditor",
+      urlPattern: "/invoicing/schedule/:scheduleId",
+    })
+    expect(tabs.recurring_run).toMatchObject({
+      entity: "recurring_run",
+      component: "InvoicingRunDetail",
+      urlPattern: "/invoicing/run/:runId",
+    })
   })
 })

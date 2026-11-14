@@ -1,0 +1,2 @@
+Org export leaves out private time, cost rates, proposed reconciliations; lists them under withheld -> apps/api/src/modules/export/org-archive/withheld.ts (WITHHELD_ROWS) ; apps/api/src/modules/export/org-archive/writer.ts (scopeWhere)
+Each time entry's cost written as null -> apps/api/src/modules/export/org-archive/redaction.ts (REDACTED_COLUMNS)

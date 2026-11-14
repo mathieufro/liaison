@@ -1,45 +1,45 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
-import { Check, Lock, MoreHorizontal, Pencil, Share2, Trash2, Users, X } from "lucide-solid"
 import {
-  type Component,
-  createEffect,
-  createSignal,
-  For,
-  lazy,
-  onMount,
-  Show,
-  Suspense,
-} from "solid-js"
+  Building2,
+  Check,
+  Lock,
+  MoreHorizontal,
+  Pencil,
+  Share2,
+  Trash2,
+  Users,
+  X,
+} from "lucide-solid"
+import { type Component, createEffect, createSignal, lazy, onMount, Show, Suspense } from "solid-js"
 import { cn } from "~/lib/cn"
 import { relativeTime } from "~/lib/relative-time"
-import { userFromToken } from "~/modules/auth/auth-store"
+import { hasScope, userFromToken } from "~/modules/auth/auth-store"
 import { useI18n } from "~/modules/i18n/i18n-context"
-import { MailboxLockedPanel } from "~/modules/mailbox/MailboxLockedPanel"
 import { useApi } from "~/modules/shell/ApiContext"
-import EntityPreview from "~/modules/shell/entity-preview/EntityPreview"
 import { SlotPanels } from "~/modules/shell/SlotPanels"
 import { shellTier } from "~/modules/shell/shell-tier"
-import { openTab } from "~/modules/shell/tab-store"
 import { DISCUSSION_RAIL_BOTTOM_PAD } from "~/modules/threads/discussion-rail"
 import { Button } from "~/ui/Button"
+import { ActivityPanel } from "./ActivityPanel"
 import { AddToGroupMenu } from "./AddToGroupMenu"
 import { ContactAddresses } from "./ContactAddresses"
 import { ContactAvatar } from "./ContactAvatar"
 import { ContactMergeDialog } from "./ContactMergeDialog"
 import { ContactShareDialog } from "./ContactShareDialog"
+import { type Company, companyStore, loadCompany } from "./company-store"
+import { dealText, openCompanyTab } from "./company-visuals"
 import {
   contactDetailStore,
   deleteContact,
-  loadBacklinks,
   loadContact,
-  loadTicketBacklinks,
+  loadOptOut,
   openContactDiscussion,
   updateContact,
 } from "./contact-detail-store"
 import { loadContactGroups } from "./contact-groups-store"
 import { openMerge } from "./contact-merge-store"
-import { contactDisplayName, formatAbsoluteTime, formatRelativeTime } from "./contact-visuals"
+import { contactDisplayName } from "./contact-visuals"
 import { TrustedSenderControl } from "./TrustedSenderControl"
 
 const EntityDiscussion = lazy(() => import("~/modules/threads/EntityDiscussion"))
@@ -52,12 +52,57 @@ export const ContactDetail: Component<ContactDetailProps> = (props) => {
   const i18n = useI18n()
   const api = useApi()
   const contact = () => contactDetailStore.contacts[props.entityId]
-  const backlinks = () => contactDetailStore.backlinks[props.entityId]
-  // A sealed related mail the mailbox could not open: the page says how to
-  // unlock rather than listing it as "(No subject)".
-  const anyBacklinkLocked = () => {
-    const state = backlinks()
-    return !!state?.ids.some((id) => state.byId[id]?.encState === "locked")
+  // The contact's company, read as the viewer: a link and a line when they can see it, the plain
+  // `company` text (no link, no error) when they cannot.
+  const canReadCompanies = () => hasScope("kernel:companies:read")
+  const linkedCompany = (): Company | null => {
+    const id = contact()?.companyId
+    return id ? (companyStore.companies[id] ?? null) : null
+  }
+  const companyLine = (company: Company): string =>
+    company.openDeal
+      ? dealText(company.openDeal, i18n)
+      : (company.domain ?? i18n.t("contacts.companies.noDeal"))
+  const canSeeTimeline = () => canReadCompanies()
+  const day = (iso: string) =>
+    i18n.fmtDate(new Date(iso), { day: "numeric", month: "short", year: "numeric" })
+  /** What commercial mail to this person rests on, never "allowed" without a recorded basis. */
+  const followUps = (): { state: string; headline: string; detail: string | null } => {
+    const c = contact()
+    const optOut = contactDetailStore.optOuts[props.entityId]
+    if (optOut?.state === "opted_out") {
+      const by = optOut.by ? i18n.t(`contacts.followUps.by.${optOut.by}`) : null
+      const detail =
+        optOut.since && by
+          ? i18n.t("contacts.followUps.sinceBy", { date: day(optOut.since), by })
+          : optOut.since
+            ? i18n.t("contacts.followUps.since", { date: day(optOut.since) })
+            : null
+      return { state: "opted_out", headline: i18n.t("contacts.followUps.optedOut"), detail }
+    }
+    if (!optOut || optOut.state === "unavailable") {
+      return {
+        state: "unknown",
+        headline: i18n.t("contacts.followUps.unknown"),
+        detail: null,
+      }
+    }
+    if (!c?.lawfulBasis) {
+      return {
+        state: "no_basis",
+        headline: i18n.t("contacts.followUps.noBasis"),
+        detail: null,
+      }
+    }
+    return {
+      state: "allowed",
+      headline: i18n.t("contacts.followUps.allowed", {
+        basis: i18n.t(`contacts.followUps.basis.${c.lawfulBasis}`),
+      }),
+      detail: c.lawfulBasisAt
+        ? i18n.t("contacts.followUps.recorded", { date: day(c.lawfulBasisAt) })
+        : null,
+    }
   }
   const [overflowOpen, setOverflowOpen] = createSignal(false)
   const [confirmingDelete, setConfirmingDelete] = createSignal(false)
@@ -99,12 +144,24 @@ export const ContactDetail: Component<ContactDetailProps> = (props) => {
       })
   })
 
+  // Once the contact shows: its company (when the viewer may read companies) and its opt-out state.
+  let followedContactId: string | null = null
+  createEffect(() => {
+    const c = contact()
+    if (!c || followedContactId === c.id) return
+    followedContactId = c.id
+    void loadOptOut(api, c.id, c.email)
+  })
+  createEffect(() => {
+    const id = contact()?.companyId
+    if (!id || !canReadCompanies() || companyStore.companies[id] !== undefined) return
+    loadCompany(api as never, id).catch(() => {})
+  })
+
   onMount(() => {
     // A missing contact resolves to null (the not-found state below); any other failure is the
     // api client's to report (its global toast), never an uncaught rejection on the page.
     loadContact(api, props.entityId).catch(() => {})
-    loadBacklinks(api, props.entityId).catch(() => {})
-    void loadTicketBacklinks(api, props.entityId)
     void refreshGroups()
   })
 
@@ -354,99 +411,91 @@ export const ContactDetail: Component<ContactDetailProps> = (props) => {
                     placeholder={i18n.t("contacts.addAPhone")}
                     onCommit={(value) => void updateContact(api, props.entityId, { phone: value })}
                   />
-                  <InlineField
-                    label={i18n.t("contacts.fieldCompany")}
-                    testId="contact-company-input"
-                    value={contact()?.company ?? ""}
-                    placeholder={i18n.t("contacts.addACompany")}
-                    onCommit={(value) =>
-                      void updateContact(api, props.entityId, { company: value })
+                  <Show
+                    when={linkedCompany()}
+                    fallback={
+                      <InlineField
+                        label={i18n.t("contacts.fieldCompany")}
+                        testId="contact-company-input"
+                        value={contact()?.company ?? ""}
+                        placeholder={i18n.t("contacts.addACompany")}
+                        onCommit={(value) =>
+                          void updateContact(api, props.entityId, { company: value })
+                        }
+                      />
                     }
-                  />
+                  >
+                    {(company) => (
+                      <>
+                        <div class="pt-1.5 text-[11.5px] uppercase tracking-wide text-text-tertiary">
+                          {i18n.t("contacts.fieldCompany")}
+                        </div>
+                        <div
+                          data-testid="contact-company"
+                          class="flex min-w-0 flex-wrap items-baseline gap-x-3 py-1.5 text-[13px]"
+                        >
+                          <button
+                            type="button"
+                            data-testid="contact-company-link"
+                            class="inline-flex items-center gap-1.5 text-accent underline-offset-2 hover:underline"
+                            onClick={() => openCompanyTab(company().id, company().name)}
+                          >
+                            <Building2 size={14} aria-hidden="true" />
+                            {company().name}
+                          </button>
+                          <span data-testid="contact-company-line" class="text-text-tertiary">
+                            {companyLine(company())}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </Show>
+                  <div class="pt-1.5 text-[11.5px] uppercase tracking-wide text-text-tertiary">
+                    {i18n.t("contacts.followUps.label")}
+                  </div>
+                  <div class="min-w-0 py-1.5 text-[13px]" data-testid="contact-follow-ups">
+                    <p data-testid="contact-follow-ups-state" data-state={followUps().state}>
+                      {followUps().headline}
+                    </p>
+                    <Show when={followUps().detail}>
+                      <p
+                        data-testid="contact-follow-ups-detail"
+                        class="mt-0.5 text-[12px] text-text-tertiary"
+                      >
+                        {followUps().detail}
+                      </p>
+                    </Show>
+                  </div>
                 </div>
               </section>
 
               {/* ── Addresses: the contact's address book ───────── */}
               <ContactAddresses contactId={props.entityId} />
 
-              {/* ── Activity feed ────────────────────────────────── */}
-              <section class="mt-12">
-                <SectionHeading eyebrow={i18n.t("contacts.eyebrowActivity")} />
-                <div class="mt-4">
-                  <Show
-                    when={(backlinks()?.ids.length ?? 0) > 0}
-                    fallback={
-                      <div class="rounded-md border border-dashed border-border-subtle px-4 py-6 text-center text-[12.5px] text-text-tertiary">
-                        {i18n.t("contacts.noMailConversationsYet")}
-                      </div>
-                    }
-                  >
-                    <Show when={anyBacklinkLocked()}>
-                      <div data-testid="contact-backlinks-locked" class="mb-4">
-                        <MailboxLockedPanel
-                          variant="card"
-                          body={i18n.t("contacts.lockedMailHint")}
-                          unlockTestId="contact-backlinks-unlock"
-                        />
-                      </div>
-                    </Show>
-                    <ol class="divide-y divide-border-subtle">
-                      <For each={backlinks()?.ids ?? []}>
-                        {(id) => {
-                          const row = () => backlinks()!.byId[id]
-                          return (
-                            <li>
-                              <EntityPreview app="mail" entityType="conversation" entityId={id}>
-                                <BacklinkRow id={id} row={row()} />
-                              </EntityPreview>
-                            </li>
-                          )
-                        }}
-                      </For>
-                    </ol>
-                    <Show when={backlinks()?.hasMore}>
-                      <button
-                        type="button"
-                        aria-label={i18n.t("contacts.showAll")}
-                        class="mt-4 inline-flex items-center gap-1 text-[12px] text-accent hover:text-accent-hover"
-                        onClick={() =>
-                          void loadBacklinks(api, props.entityId, {
-                            cursor: backlinks()?.cursor,
-                            append: true,
-                          })
-                        }
-                      >
-                        <span>{i18n.t("contacts.showAll")}</span>
-                        <span aria-hidden="true">→</span>
-                      </button>
-                    </Show>
-                  </Show>
-
-                  <Show
-                    when={(contactDetailStore.ticketBacklinks?.[props.entityId]?.length ?? 0) > 0}
-                  >
-                    <h3 class="mt-6 text-[12.5px] font-medium text-text-tertiary">
-                      {i18n.t("contacts.tickets")}
-                    </h3>
-                    <ol
-                      class="mt-2 divide-y divide-border-subtle"
-                      data-testid="contact-ticket-backlinks"
+              {/* ── Activity: only what involves this person, read from each app
+                  as the reader. Without the companies scope the page has no
+                  timeline (there is no older list behind it). ───────────── */}
+              <Show when={canSeeTimeline()}>
+                <section class="mt-12" data-testid="contact-detail.timeline">
+                  <ActivityPanel
+                    path={`/contacts/${props.entityId}/activity`}
+                    testId="contact-activity"
+                    title={i18n.t("contacts.eyebrowActivity")}
+                    emptyText={i18n.t("contacts.activity.emptyContact")}
+                  />
+                  <Show when={linkedCompany()}>
+                    <p
+                      data-testid="contact-activity.scope-note"
+                      class="mt-4 text-[12px] text-text-tertiary"
                     >
-                      <For each={contactDetailStore.ticketBacklinks?.[props.entityId] ?? []}>
-                        {(t) => (
-                          <li
-                            class="py-2 text-[13px]"
-                            data-testid={`contact-ticket-backlink-${t.id}`}
-                          >
-                            <span class="text-text-tertiary">{t.handle}</span> · {t.subject}
-                            <span class="ml-2 text-[11px] text-text-tertiary">{t.status}</span>
-                          </li>
-                        )}
-                      </For>
-                    </ol>
+                      {i18n.t("contacts.activity.onlyThisPerson", {
+                        name: contactDisplayName(contact()),
+                        company: linkedCompany()?.name ?? "",
+                      })}
+                    </p>
                   </Show>
-                </div>
-              </section>
+                </section>
+              </Show>
 
               {/* Phase 17 (B10) — extension point: panels contributed by other
                 apps (Invoicing's Documents panel, etc.) mount here, gated by
@@ -657,63 +706,5 @@ const InlineField: Component<{
         </div>
       </Show>
     </>
-  )
-}
-
-// ── Activity (backlink) row ────────────────────────────────────────
-
-interface BacklinkRow {
-  id: string
-  subject?: string | null
-  snippet?: string | null
-  isRead?: boolean
-  lastMessageAt?: string | null
-  status?: string | null
-  sealed?: boolean
-  encState?: "sealed" | "locked" | "opened"
-}
-
-const BacklinkRow: Component<{ id: string; row: BacklinkRow }> = (props) => {
-  const i18n = useI18n()
-  // A sealed row this browser has not opened has ciphertext only: it reads
-  // "Locked conversation", never "(No subject)", which would be false.
-  const unopened = () => !!props.row?.sealed && props.row?.encState !== "opened"
-  const subject = () =>
-    props.row?.subject?.trim() || i18n.t(unopened() ? "kernel.mailSubjectLocked" : "mail.noSubject")
-  const snippet = () => props.row?.snippet?.trim() ?? ""
-  const ts = () => formatRelativeTime(props.row?.lastMessageAt)
-  const tsAbs = () => formatAbsoluteTime(props.row?.lastMessageAt) ?? ""
-  const isUnread = () => props.row?.isRead === false
-
-  return (
-    <button
-      type="button"
-      data-testid={`contact-backlink-${props.id}`}
-      onClick={() => openTab({ type: "mail:conversation", entityId: props.id, label: subject() })}
-      class="grid w-full grid-cols-[auto_1fr_auto] items-baseline gap-x-4 px-1 py-3 text-left transition-colors hover:bg-surface-hover/60"
-    >
-      <span
-        class={cn(
-          "mt-2 h-1.5 w-1.5 shrink-0 rounded-full",
-          isUnread() ? "bg-accent" : "bg-transparent",
-        )}
-        aria-hidden="true"
-      />
-      <div class="min-w-0">
-        <div
-          class={cn("truncate text-[13px]", isUnread() ? "font-semibold text-text" : "text-text")}
-        >
-          {subject()}
-        </div>
-        <Show when={snippet()}>
-          <div class="mt-0.5 truncate text-[12px] text-text-tertiary">{snippet()}</div>
-        </Show>
-      </div>
-      <div class="shrink-0 self-start pt-[3px] font-mono text-[11px] tabular-nums text-text-tertiary">
-        <Show when={ts()} fallback={<span aria-hidden="true">·</span>}>
-          <span title={tsAbs()}>{ts()}</span>
-        </Show>
-      </div>
-    </button>
   )
 }

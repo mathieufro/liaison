@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { Route, Router } from "@solidjs/router"
 import { fireEvent, render, screen } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
@@ -10,6 +12,7 @@ import {
   resolveRegisteredTabType,
 } from "~/framework/app-registry"
 import { bootstrapKernelApps, resetBootstrap } from "~/framework/bootstrap"
+import { setUnavailableApps } from "~/framework/unavailable-apps"
 import { installFakeBridge, uninstallFakeBridge } from "~/modules/desktop/fake-bridge"
 import { ActivityBar } from "~/modules/shell/ActivityBar"
 import { appIconColor } from "~/modules/shell/app-color"
@@ -538,5 +541,67 @@ describe("ActivityBar - touch tiers", () => {
       renderBar()
       expect(screen.queryByTestId("activity-servers")).toBeNull()
     })
+  })
+})
+
+describe("the rail's order", () => {
+  // The in-tree apps' own manifests, read as they ship: the order is theirs to declare.
+  const manifestRail = (app: string) => {
+    // Tests run from apps/web.
+    const path = join(process.cwd(), "..", "api", "src", "apps", app, "app.manifest.json")
+    const manifest = JSON.parse(readFileSync(path, "utf8")) as {
+      views: { activityBar: { label: string; order: number } }
+    }
+    return manifest.views.activityBar
+  }
+  const seat = (appId: string, label: string, order: number) =>
+    registerActivityBarEntry({
+      id: appId,
+      icon: () => null,
+      label,
+      order,
+      appId,
+      position: "top",
+      tabAction: { type: `${appId}:home`, entityId: appId, label },
+    })
+  const railIds = () =>
+    getActivityBarEntries()
+      .filter((e) => e.position !== "bottom")
+      .sort((a, b) => a.order - b.order)
+      .map((e) => e.id)
+
+  beforeEach(() => {
+    resetRegistry()
+    resetBootstrap()
+    bootstrapKernelApps()
+    setUnavailableApps([])
+    for (const app of ["contacts", "projects", "calendar", "tickets", "knowledge", "mail"]) {
+      seat(app, manifestRail(app).label, manifestRail(app).order)
+    }
+  })
+  afterEach(() => setUnavailableApps([]))
+
+  it("order by manifest, a new app gets a seat by declaration, an Off app none", () => {
+    const fixed = ["home", "messages", "search", "mail", "knowledge", "tickets"]
+    const middle = ["calendar", "projects", "contacts"]
+    let ids = railIds()
+    const at = (id: string) => ids.indexOf(id)
+    for (const [a, b] of [...fixed, ...middle]
+      .slice(1)
+      .map((id, i) => [[...fixed, ...middle][i], id])) {
+      expect(at(a!)).toBeLessThan(at(b!))
+    }
+    // Terminal closes the rail.
+    expect(ids[ids.length - 1]).toBe("sessions")
+
+    // A world's app is seated by its own declaration, after Contacts and before Terminal.
+    seat("studio", "Studio", 62)
+    ids = railIds()
+    expect(ids.indexOf("studio")).toBeGreaterThan(ids.indexOf("contacts"))
+    expect(ids.indexOf("studio")).toBeLessThan(ids.indexOf("sessions"))
+
+    // An app that is Off has no seat.
+    setUnavailableApps(["studio"])
+    expect(railIds()).not.toContain("studio")
   })
 })

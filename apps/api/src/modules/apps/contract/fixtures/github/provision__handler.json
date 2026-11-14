@@ -1,0 +1,9 @@
+{
+  "entry": "provision:handler",
+  "params": {
+    "config": {},
+    "dryRun": false
+  },
+  "recordedFrom": "no egress: GitHub needs nothing beyond its connection, so the handler changes nothing and calls nothing",
+  "calls": []
+}

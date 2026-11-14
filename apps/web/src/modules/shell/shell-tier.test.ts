@@ -69,9 +69,45 @@ describe("shell-tier", () => {
     // the viewport without any component being mounted.
     expect(subscriptions).toHaveLength(3)
 
-    tier = "phone"
-    for (const { listener } of subscriptions) listener()
+    vi.useFakeTimers()
+    try {
+      tier = "phone"
+      for (const { listener } of subscriptions) listener()
+      // It follows where the viewport settles.
+      expect(mod.shellTier()).toBe("desktop")
+      vi.advanceTimersByTime(mod.SHELL_TIER_SETTLE_MS)
+      expect(mod.shellTier()).toBe("phone")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
-    expect(mod.shellTier()).toBe("phone")
+  it("a viewport narrowed for a moment and restored keeps the tier", async () => {
+    // Chromium resizes the viewport to the capture area while it screenshots an
+    // element taller than the window, then restores it: the queries fire twice.
+    const subscriptions: Array<{ query: string; listener: Listener }> = []
+    let tier: "desktop" | "tablet" | "phone" = "desktop"
+    mockMatchMedia((q) => {
+      if (q.includes("max-width: 639px")) return tier === "phone"
+      if (q.includes("min-width: 1024px")) return tier === "desktop"
+      return tier === "tablet"
+    }, subscriptions)
+    vi.resetModules()
+    const mod = await import("./shell-tier")
+    const seen: string[] = []
+    const { createRoot, createEffect } = await import("solid-js")
+    vi.useFakeTimers()
+    try {
+      createRoot(() => createEffect(() => seen.push(mod.shellTier())))
+      tier = "phone"
+      for (const { listener } of subscriptions) listener()
+      vi.advanceTimersByTime(mod.SHELL_TIER_SETTLE_MS / 2)
+      tier = "desktop"
+      for (const { listener } of subscriptions) listener()
+      vi.advanceTimersByTime(mod.SHELL_TIER_SETTLE_MS * 2)
+      expect(seen).toEqual(["desktop"])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -1,0 +1,48 @@
+{
+  "id": "in_FIXTURE0001",
+  "object": "invoice",
+  "account_country": "FR",
+  "amount_due": 17640,
+  "amount_paid": 17640,
+  "amount_remaining": 0,
+  "attempt_count": 1,
+  "attempted": true,
+  "auto_advance": false,
+  "billing_reason": "subscription_cycle",
+  "collection_method": "charge_automatically",
+  "created": 1767225600,
+  "currency": "eur",
+  "customer": "cus_FIXTURE0001",
+  "customer_email": "billing@client.example",
+  "customer_name": "Client Example SAS",
+  "due_date": null,
+  "hosted_invoice_url": "https://invoices.example/i/FIXTURE0001",
+  "livemode": false,
+  "metadata": {},
+  "next_payment_attempt": null,
+  "number": "FIX0001-0001",
+  "parent": {
+    "subscription_details": {
+      "subscription": "sub_FIXTURE0001"
+    },
+    "type": "subscription_details"
+  },
+  "period_end": 1767225600,
+  "period_start": 1764547200,
+  "status": "paid",
+  "status_transitions": {
+    "finalized_at": 1767229200,
+    "marked_uncollectible_at": null,
+    "paid_at": 1767229300,
+    "voided_at": null
+  },
+  "subtotal": 14700,
+  "total": 17640,
+  "total_taxes": [
+    {
+      "amount": 2940,
+      "tax_behavior": "exclusive",
+      "type": "tax_rate_details"
+    }
+  ]
+}

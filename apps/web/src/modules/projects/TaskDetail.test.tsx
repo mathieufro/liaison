@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { registerTabType, resetRegistry } from "~/framework/app-registry"
+import {
+  registerContribution,
+  registerTabType,
+  resetRegistry,
+  unregisterContributions,
+} from "~/framework/app-registry"
 import type { ApiClient } from "~/lib/api-client"
 import { ApiError } from "~/lib/api-error"
 import { installAudioContext, installMic, removeMic } from "~/modules/assist/dictation-fakes"
@@ -135,6 +140,48 @@ beforeEach(() => {
 })
 
 describe("TaskDetail", () => {
+  it("shows the tabs and actions other apps add to the task, each with the task id", async () => {
+    for (const [slot, id] of [
+      ["project:task:tabs", "fixture-tab"],
+      ["project:task:actions", "fixture-action"],
+    ] as const) {
+      registerContribution(slot, {
+        appId: "fixture-app",
+        id,
+        label: id,
+        component: (props) => <span data-testid={id}>{props.entityId}</span>,
+      })
+    }
+    const api = {
+      post: vi.fn().mockResolvedValue(task()),
+      get: vi.fn(async (path: string) => {
+        if (path === "/v1/slots/project:task:tabs") {
+          return { panels: [{ id: "fixture-tab", app: "fixture-app", label: "Tab" }] }
+        }
+        if (path === "/v1/slots/project:task:actions") {
+          return { panels: [{ id: "fixture-action", app: "fixture-app", label: "Act" }] }
+        }
+        return { id: "thread-1", hiddenFromList: true }
+      }),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      getEnvelope: vi.fn(),
+    } as any
+    try {
+      render(() => (
+        <ApiContext.Provider value={api}>
+          <TaskDetail entityId="t1" />
+        </ApiContext.Provider>
+      ))
+      expect((await screen.findByTestId("fixture-tab")).textContent).toBe("t1")
+      const action = await screen.findByTestId("fixture-action")
+      expect(action.textContent).toBe("t1")
+      expect(screen.getByTestId("task-detail.meta-row").contains(action)).toBe(true)
+    } finally {
+      unregisterContributions("fixture-app")
+    }
+  })
+
   describe("author line", () => {
     const apiFor = (row: Record<string, unknown>) =>
       ({
@@ -660,7 +707,12 @@ describe("TaskDetail status follows the store (LIF-25)", () => {
 })
 
 describe("TaskDetail assignee chip (assign to anyone, not only me)", () => {
-  type Member = { id: string; name: string; email: string }
+  type Member = {
+    id: string
+    name: string
+    email: string
+    away?: { until: string | null } | null
+  }
 
   function apiWithMembers(members: Member[] | Error, patch = vi.fn()) {
     const memberCalls: string[] = []
@@ -713,6 +765,24 @@ describe("TaskDetail assignee chip (assign to anyone, not only me)", () => {
     await waitFor(() =>
       expect(patch).toHaveBeenCalledWith("/projects/p1/tasks/t1", { assigneeId: "u-morgan" }),
     )
+  })
+
+  it("shows away until a date beside a teammate who is away; the list is unchanged", async () => {
+    const { api } = apiWithMembers([
+      { id: "u-morgan", name: "Morgan Lee", email: "morgan@x.test", away: { until: "2099-12-20" } },
+      { id: "u-alice", name: "Alice Chen", email: "alice@x.test", away: null },
+    ])
+    render(() => (
+      <ApiContext.Provider value={api}>
+        <TaskDetail entityId="t1" />
+      </ApiContext.Provider>
+    ))
+    await openAssigneeMenu()
+    await waitFor(() => expect(screen.getAllByTestId("task-detail.assign-member").length).toBe(2))
+    expect(screen.getByTestId("task-detail.assign-away-u-morgan").textContent).toMatch(
+      /away until (20 Dec|Dec 20)/,
+    )
+    expect(screen.queryByTestId("task-detail.assign-away-u-alice")).toBeNull()
   })
 
   it("shows an error with a retry when teammates cannot be loaded", async () => {
@@ -989,5 +1059,61 @@ describe("TaskDetail copy link", () => {
       expect(items[1]!.textContent).toContain("Created in Backlog")
       expect(items[1]!.textContent).toContain("a routine")
     })
+  })
+})
+
+describe("TaskDetail on a sales pipeline", () => {
+  it("the task page renders when the deal read fails", async () => {
+    projectStore._setForTest({
+      projectId: "p1",
+      current: { ...project(), kind: "pipeline" },
+      tasks: [],
+    })
+    const api = {
+      post: vi.fn(async (path: string, body?: { toolName?: string }) => {
+        if (path === "/apps/run-tool" && body?.toolName === "projects:deals_search") {
+          throw new Error("deals are down")
+        }
+        return task()
+      }),
+      get: vi.fn().mockResolvedValue({ id: "thread-1", hiddenFromList: true }),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      getEnvelope: vi.fn(),
+    } as any
+    const { findByTestId, getByTestId } = render(() => (
+      <ApiContext.Provider value={api}>
+        <TaskDetail entityId="t1" />
+      </ApiContext.Provider>
+    ))
+    expect((await findByTestId("deal-panel.error")).textContent).toBe(
+      "Could not read the deal. The task below is not affected.",
+    )
+    expect(getByTestId("task-detail.description-section")).toBeTruthy()
+    expect(getByTestId("task-detail.meta-row")).toBeTruthy()
+  })
+
+  it("a subtask of a pipeline shows no deal panel", async () => {
+    projectStore._setForTest({
+      projectId: "p1",
+      current: { ...project(), kind: "pipeline" },
+      tasks: [],
+    })
+    const api = {
+      post: vi.fn(async () => ({ ...task(), parentTaskId: "t0" })),
+      get: vi.fn().mockResolvedValue({ id: "thread-1", hiddenFromList: true }),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      getEnvelope: vi.fn(),
+    } as any
+    const { findByTestId, queryByTestId } = render(() => (
+      <ApiContext.Provider value={api}>
+        <TaskDetail entityId="t1" />
+      </ApiContext.Provider>
+    ))
+    await findByTestId("task-detail.description-section")
+    expect(queryByTestId("deal-panel")).toBeNull()
+    expect(queryByTestId("deal-panel.loading")).toBeNull()
+    expect(api.post).not.toHaveBeenCalledWith("/apps/run-tool", expect.anything())
   })
 })

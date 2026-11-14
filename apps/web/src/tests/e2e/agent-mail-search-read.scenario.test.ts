@@ -19,7 +19,12 @@
 // until `tool_search` loads it (`tool-bridge.ts`), so the discovery step is part
 // of the scripted turn rather than scaffolding.
 import { api } from "@liaison/test-helpers"
-import { loginAsAdmin, openAgentConversation, sendInConversation } from "./agent-bootstrap"
+import {
+  expandToolRollups,
+  loginAsAdmin,
+  openAgentConversation,
+  sendInConversation,
+} from "./agent-bootstrap"
 import { agentDmThreadId, scriptAgentTurn, turnToolCalls, waitForTurnEnd } from "./agent-turn"
 import { expect, test } from "./fixtures/test"
 import { seedModelPricingAndCredits } from "./helpers/agent-seed"
@@ -85,6 +90,7 @@ test("agent mail.search and mail.read return real backend results in the convers
     .filter({ hasText: "Q3 Budget Proposal conversation" })
     .last()
   await expect(turnRow).toBeVisible({ timeout: 30000 })
+  await expandToolRollups(turnRow)
   for (const toolName of ["mail__search", "mail__read"]) {
     await expect(turnRow.locator(`[data-tool-name="${toolName}"]`).first()).toBeVisible({
       timeout: 20000,

@@ -80,6 +80,8 @@ describe("DEFAULT_ROLES", () => {
       "kernel:threads:write": "seed",
       "kernel:contacts:read": "seed",
       "kernel:contacts:write": "seed",
+      "kernel:companies:read": "0314_companies",
+      "kernel:companies:write": "0314_companies",
       "kernel:products:read": "seed",
       "kernel:products:write": "seed",
       "kernel:approvals:read": "seed",

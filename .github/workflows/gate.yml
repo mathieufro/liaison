@@ -169,7 +169,7 @@ jobs:
         # which throws on a missing one). Playwright's global setup builds its own.
         if: matrix.suite != 'playwright'
         run: |
-          for app in shopify boxtal invoicing social pennylane monitoring; do
+          for app in shopify boxtal invoicing social pennylane monitoring stripe; do
             bash scripts/build-bundled-app.sh "$app" --skip-sign --skip-typecheck
           done
       - name: Install the bundled app's own dependencies

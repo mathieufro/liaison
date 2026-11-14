@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   appCapabilitiesRegistry,
   connectionConfigRegistry,
-  contributionRegistry,
   declaredEmits,
   entityRegistry,
   eventSubscriptionDisposers,
@@ -60,14 +59,6 @@ function populate(orgId: string, appName: string) {
   manifestAttentionRegistry.set([orgId, appName], [])
   appCapabilitiesRegistry.set([orgId, appName], [])
   setDeclaredEmits(orgId, appName, new Set(["order:created"]))
-  // Contribution registry is keyed by [orgId, slotTarget] and can mix apps.
-  contributionRegistry.set(
-    [orgId, "contact_detail"],
-    [
-      { app: appName, contribution: { id: "x" } },
-      { app: "other-app", contribution: { id: "y" } },
-    ],
-  )
 }
 
 describe("teardownAppRegistrations", () => {
@@ -102,13 +93,6 @@ describe("teardownAppRegistrations", () => {
     // External-search handler for this org is gone.
     const r = await fanoutExternal({ orgId: ORG_A, userId: "u", q: "x", filters: {} })
     expect(r.hits).toEqual([])
-  })
-
-  it("removes only this app's contributions from a shared slot, preserving others", async () => {
-    populate(ORG_A, APP)
-    await teardownAppRegistrations(ORG_A, APP)
-    const remaining = contributionRegistry.get([ORG_A, "contact_detail"])
-    expect(remaining).toEqual([{ app: "other-app", contribution: { id: "y" } }])
   })
 
   it("calls every event-subscription disposer registered for the app", async () => {

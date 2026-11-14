@@ -219,6 +219,14 @@ export function withPageWriteMethods(
     out.mail_writePage = async (paramsJson: string) =>
       emulateWritePage({ ...bridge, db_findMany: out.db_findMany }, paramsJson, accountHint)
   }
+  // The send check runs on the real bridge (send-guard.integration.test.ts). A
+  // fake database has nothing for it to read, so it does not apply here.
+  if (!bridge.mail_buildSendGuard) {
+    out.mail_buildSendGuard = async () => JSON.stringify({ applies: false })
+  }
+  if (!bridge.mail_checkSendGuard) {
+    out.mail_checkSendGuard = async () => JSON.stringify({ applies: false })
+  }
   if (!bridge.mail_completeIngest) {
     out.mail_completeIngest = async () => JSON.stringify({ count: 0 })
   }

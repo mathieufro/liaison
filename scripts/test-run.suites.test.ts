@@ -924,3 +924,69 @@ describe("test-run.ts suite coverage: the api scripts", () => {
     expect(tests.filter((f) => !block.includes(`"scripts/${f}"`))).toEqual([])
   })
 })
+
+describe("test-run.ts suite coverage: the seed engine", () => {
+  const API = path.join(ROOT, "apps/api")
+
+  function testFilesUnder(dir: string): string[] {
+    const found: string[] = []
+    for (const entry of readdirSync(path.join(API, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`
+      if (entry.isDirectory()) found.push(...testFilesUnder(rel))
+      else if (entry.name.endsWith(".test.ts")) found.push(rel)
+    }
+    return found.sort()
+  }
+
+  /** Test files no suite block names, by path or by a directory above them. */
+  function unlisted(files: string[], source: string = SOURCE): string[] {
+    const blocks = Object.values(suiteBlocks(source))
+    return files.filter((file) => {
+      const parts = file.split("/")
+      const names = parts.map((_, i) => parts.slice(0, i + 1).join("/"))
+      return !blocks.some((block) => names.some((n) => block.includes(`"${n}"`)))
+    })
+  }
+
+  /**
+   * Seed test files no suite lists, and why. A file needs the built app
+   * catalog (`app-catalog/`, gitignored, built by scripts/build-app-catalog.ts),
+   * which no suite builds, so a suite that listed it would fail in a gate. The
+   * `needs` literal must still appear in the file. The list may only shrink.
+   */
+  const KNOWN_UNROUTED_SEED_TESTS: Record<string, UnroutedReason> = {
+    "src/seed/tiers/demo/sales-quote-bundle.integration.test.ts": {
+      reason: "installs invoicing from the app catalog, which only a local catalog build provides",
+      needs: "build-app-catalog",
+    },
+  }
+
+  const files = [...testFilesUnder("src/seed"), ...testFilesUnder("test-support/seed")].filter(
+    (f) => !(f in KNOWN_UNROUTED_SEED_TESTS),
+  )
+
+  it("keeps each unrouted seed test's reason checkable", () => {
+    for (const [file, { reason, needs }] of Object.entries(KNOWN_UNROUTED_SEED_TESTS)) {
+      expect(reason.length, file).toBeGreaterThan(20)
+      expect(readFileSync(path.join(API, file), "utf8").includes(needs), file).toBe(true)
+    }
+    expect(Object.keys(KNOWN_UNROUTED_SEED_TESTS).length).toBe(1)
+  })
+
+  it("finds the seed engine's test files, so an empty read cannot pass", () => {
+    expect(files.length).toBeGreaterThan(30)
+    expect(files).toContain("src/seed/worlds/worlds.test.ts")
+  })
+
+  it("every test file under the seed engine is listed by a suite", () => {
+    expect(unlisted(files)).toEqual([])
+  })
+
+  it("notices a seed test file whose entry is dropped from its suite", () => {
+    const target = "src/seed/seed-determinism.test.ts"
+    const mutated = SOURCE.replaceAll(`"${target}"`, `"src/seed/other.test.ts"`)
+    // A mutated source reads without the suite extras, so the files they list are left aside.
+    const extra = new Set([...readSuiteExtras().values()].flat())
+    expect(unlisted(files, mutated).filter((f) => !extra.has(f))).toEqual([target])
+  })
+})

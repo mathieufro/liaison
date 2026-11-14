@@ -37,7 +37,7 @@ vi.mock("~/modules/shell/ApiContext", () => ({
   }),
 }))
 
-import { resetRegistry } from "~/framework/app-registry"
+import { registerManifestAppData, resetRegistry } from "~/framework/app-registry"
 import { I18nProvider, type I18nValue, useI18n } from "~/modules/i18n/i18n-context"
 import { attentionStore } from "~/modules/shell/attention-store"
 import { resetHomeCardLayout } from "~/modules/shell/home-card-layout"
@@ -72,6 +72,10 @@ function GrabI18n() {
 beforeEach(() => {
   attentionStore._setForTest({ items: [], errors: [], loading: false })
   resetRegistry()
+  // The tickets app declares its Home heading in its manifest.
+  registerManifestAppData("tickets", {
+    attention: { groupLabel: { label: "Support", labelKey: "kernel.homeGroupSupport" } },
+  })
   resetHomeCardLayout()
   resetThreadStore()
   apiGet.mockReset().mockResolvedValue([])

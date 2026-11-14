@@ -315,6 +315,11 @@ describe("writesToTable annotations on kernel tools", () => {
       memory_delete: "kernel.agent_memory",
       memory_rename: "kernel.agent_memory",
       capture_business_knowledge: "app_knowledge.documents",
+      companies_link_batch: "kernel.companies",
+      companies_link_contacts: "kernel.contacts",
+      companies_mark_not_same: "kernel.companies",
+      companies_merge: "kernel.companies",
+      companies_write: "kernel.companies",
       // The person's own computer sessions: a command lands in the session's own
       // queue, read back only by its owner and the session on their computer.
       computer_session_answer: "kernel.node_session_commands",
@@ -396,6 +401,7 @@ describe("writesToTable annotations on kernel tools", () => {
       // S17: the user's own notification settings. Self rows, none an enforcing
       // sink, so a tainted turn is refused these like any other kernel write.
       notifications_set: "kernel.user_preferences",
+      set_away: "kernel.away_ranges",
       notification_rules_set: "kernel.attention_subscriptions",
       thread_mute_set: "kernel.user_thread_state",
       // The caller's (or, with kernel:users:admin, a member's) hidden sidebar
@@ -505,12 +511,12 @@ describe("writesToTable annotations on kernel tools", () => {
     // tool counts as a write.
     expect(marked.sort()).toEqual(
       [
-        // Its OpenRouter search fetches the public model list (fixed host, no query) and
-        // filters it locally: nothing from the turn leaves.
-        "ai_models_get",
         // Its only write is the result cache on the file row, and that holds an unbriefed
         // analysis only (drawn from the file alone, none of the turn's data).
         "analyze_media",
+        // The org's model settings; its OpenRouter search filters the catalogue fetched whole
+        // from the fixed host, so no text of the turn goes out. Writes nothing.
+        "ai_models_get",
         "approval_policy_get",
         "approvals_list",
         "audit_search",
@@ -526,10 +532,19 @@ describe("writesToTable annotations on kernel tools", () => {
         // Config as code: the plan and the export read the org's configuration, never write it.
         "config_export",
         "config_plan",
+        // Company reads: search, one company, the duplicate scan and the proposals write nothing.
+        "companies_find_duplicates",
+        "companies_propose_from_contacts",
+        "companies_read",
+        "companies_search",
+        // A company's timeline reads each app as the caller and stores nothing.
+        "company_timeline",
         "contacts_addresses_list",
         "contacts_find_duplicates",
         "contacts_group_members",
         "contacts_groups_list",
+        // A contact's identifiers (id, email, company id) for an app's own check: one select.
+        "contacts_identity",
         "contacts_read",
         "contacts_search",
         // Dashboards and the app data store: reads of saved dashboards, the eligible sources,
@@ -622,6 +637,9 @@ describe("writesToTable annotations on kernel tools", () => {
         "skill_search",
         "subagent_get",
         "subagent_list",
+        // Chips under the reply, drawn on the requester's own screen; a chip only sends its
+        // label as the person's next message, so it writes nothing.
+        "suggest_next_steps",
         "threads_list",
         "threads_read",
         "threads_search",

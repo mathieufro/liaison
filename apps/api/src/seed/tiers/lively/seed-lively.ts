@@ -23,11 +23,8 @@ import type { UserContext } from "~/db/rls"
 import { users } from "~/db/schema/kernel"
 import { routines } from "~/db/schema/kernel/routines"
 import { schemaRef } from "~/db/schema-ref"
-import { isPublicDemoInstance } from "~/modules/demo/demo-mode"
-import { invalidateDemoMarker, loadDemoMarker } from "~/modules/demo/demo-org"
 import { DEMO_COMPANY_NAME } from "~/modules/demo/demo-seeder"
 import { runAsSeed } from "~/modules/notifications/seeded"
-import { purgeOrg } from "~/modules/org/purge/purge-org"
 import { HOUR_MS } from "~/seed/clock"
 import { type SeedContext, seedContext } from "~/seed/context"
 import { seedRoutineRuns } from "~/seed/factories/agent/routine-runs"
@@ -39,7 +36,7 @@ import {
   seedAttentionEvents,
   seedNotificationDeliveries,
 } from "~/seed/factories/attention/events"
-import { findOrgIdBySlug, orgSlugOf } from "~/seed/factories/org/org"
+import { orgSlugOf } from "~/seed/factories/org/org"
 import { actorFor } from "~/seed/factories/people/actors"
 import { contactIdByEmail } from "~/seed/factories/people/contacts"
 import { joinPendingApprovals } from "~/seed/factories/people/membership"
@@ -50,6 +47,7 @@ import { seedTickets, type TicketSpec } from "~/seed/factories/support/tickets"
 import { type HistoryMessageSpec, seedThreadHistory } from "~/seed/factories/threads/history"
 import { seedAgentDms, seedThreads } from "~/seed/factories/threads/threads"
 import { seedTimelineEntries, type TimelineEntrySeed } from "~/seed/factories/timeline/entries"
+import { replaceSeededDemoOrg } from "~/seed/tiers/demo/replace-demo-org"
 import type { DemoWorld } from "~/seed/world/fiction"
 import { LIVELY_WORLD } from "~/seed/world/lively"
 import { type SeedDemoWorldResult, seedDemoWorld } from "../demo/seed-demo"
@@ -123,41 +121,9 @@ export interface SeedLivelyResult {
 
 const ticketRef = (key: string) => `lively:${key}`
 
-/**
- * Delete the demo org under `slug`, when there is one. Refused for an org
- * without the demo marker (a real workspace never goes this way) and on a public
- * demo box, where demo orgs belong to visitors and the reaper (a private
- * demo-mode box, `isPublicDemoInstance`, has none).
- */
-export async function replaceLivelyOrg(slug: string, log: (msg: string) => void): Promise<boolean> {
-  const orgId = await findOrgIdBySlug(slug)
-  if (!orgId) return false
-  if (isPublicDemoInstance()) {
-    throw new Error(
-      `seedLivelyWorld: refusing to replace '${slug}' on a public demo box: its demo orgs belong to visitors.`,
-    )
-  }
-  const guard = async (id: string) => {
-    await invalidateDemoMarker(id)
-    if (!(await loadDemoMarker(id))) {
-      throw new Error(
-        `seedLivelyWorld: refusing to replace '${slug}': it is not a demo org, and replacing deletes it.`,
-      )
-    }
-  }
-  await guard(orgId)
-  const { deleted } = await purgeOrg(orgId, {
-    reason: "seed-lively-replace",
-    assertAllowed: guard,
-    settle: false,
-    // As the demo reaper does: the marker check above bumps a Redis key of the
-    // org that a residue scan would count, and a re-run is the retry.
-    verify: false,
-    regenerateTriggers: false,
-  })
-  const rows = Object.values(deleted).reduce((n, v) => n + v, 0)
-  log(`lively: replaced the earlier org '${slug}' (${rows} rows deleted)`)
-  return true
+/** Delete the demo org under `slug` before a fresh lively seed (`replaceSeededDemoOrg`). */
+export function replaceLivelyOrg(slug: string, log: (msg: string) => void): Promise<boolean> {
+  return replaceSeededDemoOrg(slug, log, { who: "seedLivelyWorld", tier: "lively" })
 }
 
 /**

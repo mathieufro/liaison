@@ -43,6 +43,7 @@ case "$step" in
   *schema-guard.ts*) step=guard ;;
   *reconcile-catalog-boot.ts*) step=reconcile ;;
   *index.ts*) step=server ;;
+  *embedder-main.ts*) step=embedder ;;
 esac
 echo "$step|MIG=\${MIGRATION_DATABASE_URL-unset}" >> "${log}"
 if [ "$step" = server ] && [ -n "\${PROBE:-}" ]; then exec "\${REAL_BUN}" "\${PROBE}"; fi
@@ -97,6 +98,13 @@ describe("image entrypoint", () => {
     const r = runEntrypoint({ ...env, LIAISON_MIGRATE_ON_START: "false", FAIL_GUARD: "1" })
     expect(r.status).not.toBe(0)
     expect(calls(log).map((l) => l.split("|")[0])).toEqual(["guard"])
+  })
+
+  it("`embedder` starts only the embedding process, without migrating and without the privileged URL", () => {
+    const { log, env } = sandbox()
+    const r = runEntrypoint(env, ["embedder"])
+    expect(r.status).toBe(0)
+    expect(calls(log)).toEqual(["embedder|MIG=unset"])
   })
 
   it("`migrate` migrates and reconciles, then exits without starting the server", () => {

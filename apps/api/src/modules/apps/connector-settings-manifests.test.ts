@@ -6,6 +6,7 @@
 import { describe, expect, it } from "bun:test"
 import apiConnector from "../../../../../bundled-apps/api-connector/app.manifest.json"
 import database from "../../../../../bundled-apps/database/app.manifest.json"
+import github from "../../../../../bundled-apps/github/app.manifest.json"
 import gitlab from "../../../../../bundled-apps/gitlab/app.manifest.json"
 import googleDrive from "../../../../../bundled-apps/google-drive/app.manifest.json"
 import { validateAppManifest } from "./contract"
@@ -30,6 +31,11 @@ const CONNECTORS: Array<{ manifest: Manifest; adminScope?: string; status?: stri
     manifest: gitlab as Manifest,
     adminScope: "gitlab:accounts:admin",
     status: "gitlab_list_projects",
+  },
+  {
+    manifest: github as Manifest,
+    adminScope: "github:accounts:admin",
+    status: "github_list_repos",
   },
   // No accounts scope of its own: the default org-section scope administers it.
   { manifest: database as Manifest, adminScope: undefined, status: "db_probe" },

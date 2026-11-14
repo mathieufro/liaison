@@ -149,6 +149,7 @@ An app that runs on the Workers or workerd executor never receives a secret: the
 | Approvals | `approval_recordStarted`, `approval_recordEffectLanded`, `approval_recordSucceeded`, `approval_recordFailedNoEffect`, `approval_recordAmbiguous` |
 | Agents | `agent_run`, `agent_spawn`, `agent_awaitRun` (`agent_spawn` and `agent_awaitRun` need the `agent.spawn` capability: declared in the manifest, listed on the install screen and granted by the admin who installs the app; no app gets it from who published it, and an organization's custom app may not declare it) |
 | Cross-app tools | `executeTool` — one app calling another app's declared tool |
+| Discussions | `threads_deleteEntityDiscussion({entityType, entityId})` — after deleting one of the app's own records that declares a discussion, removes that discussion (an empty shell stays where an approval was asked in it). Refused with `discussion_not_declared` for a type without one, and with `entity_still_exists` while the record still reads in the handler's transaction or still exists for people the caller cannot see it for. `threads_pruneEntityDiscussion({entityType, entityId})` — after a record's sharing narrows, takes everyone but the caller out of its discussion; whoever still sees the record is seated again when they open it |
 
 A tool reached through `executeTool` runs with the target app's own access plus the calling app's. So it can read a file the calling app stored on one of its own records (with `files_importAttachment`) and handed over by id, for example as `attachments` to `tickets:addNote`, and nothing the calling app cannot read. The target app copies such a file onto its own record under its own write access, not the caller's. A file copied by a webhook or job, which has no user, records no uploader.
 
@@ -239,6 +240,8 @@ Subdomain matching: `*.example.com` accepts `api.example.com` but not `example.c
 Every target must be public and use HTTPS: a hostname that resolves to a private, loopback, link-local or metadata address is refused, checked against the address actually connected to and again on every redirect.
 
 **Private services on the deployment's own network.** A self-hoster whose app talks to a service next to Liaison (a container on the same compose network, a host on the private LAN) lists it in `LIAISON_APP_PRIVATE_HOSTS`: comma-separated exact hosts, `host` or `host:port` (for example `kpi-service:8787`). Empty by default. A listed host may be reached over plain HTTP and may resolve to a private or loopback address; the app's manifest must still list it in `allowedDomains`, link-local and metadata addresses stay refused, and a redirect to a host not on the list gets the public-HTTPS rule again. List only services you run and trust: every installed app whose manifest names the host can reach it.
+
+**A fake Shopify on a test box.** `LIAISON_TEST_SHOPIFY_ADMIN_URL` sends the Shopify app's Admin API requests (`https://<store>.myshopify.com/admin/...`) to a fake at one address, with the store's token and the store in an `X-Liaison-Shop-Domain` header. Another app that works with Shopify through the Shopify app's tools, such as invoicing (an order import, a quote's draft order), reaches the fake the same way, since those tools run as the Shopify app. The host changes the destination after the app's own checks, so the app's `allowedDomains` stay as they are: an app that names the fake's address itself is refused. The request follows no redirect and reaches only that address, which must resolve to a private or loopback address. It works only on a box with `LIAISON_PRIVATE_DEMO_BOX=true` and a loopback `BASE_URL`, never on the managed edition; set anywhere else, the server refuses to start ([Docker](self-hosting/docker.md)).
 
 **An organization's custom app.** It is one tenant's code on a server shared with others, so on top of the rules above: `LIAISON_APP_PRIVATE_HOSTS` never applies to it, and it never reaches the server itself, neither by name (the host of `BASE_URL`, of each `ALLOWED_ORIGINS` entry, and every organization host of `LIAISON_ORG_HOST_TEMPLATE`) nor by address (`LIAISON_CELL_PUBLIC_ADDRESSES`: the server's own public IPv4 and IPv6 addresses, comma-separated; traffic from a host to its own public address skips the cloud firewall). The address check runs on the address actually connected to and on every redirect, so a name that resolves to the server is refused too. Keep services off `0.0.0.0` on the host all the same.
 
@@ -370,7 +373,7 @@ Set `LIAISON_APP_FRAME_ORIGIN_TEMPLATE` (`https://{app}--{org}.example-userconte
 
 ### Host calls a framed screen makes
 
-A framed screen reaches only its own `/api/apps/<app>/...` routes through `fetch`. For the rest it calls `@liaison/host` (host API 1.3), and the page answers each call for that app only:
+A framed screen reaches only its own `/api/apps/<app>/...` routes through `fetch`. For the rest it calls `@liaison/host` (host API 1.5), and the page answers each call for that app only:
 
 | Call | What the host does |
 |---|---|
@@ -379,8 +382,10 @@ A framed screen reaches only its own `/api/apps/<app>/...` routes through `fetch
 | `app.listDocumentTemplates(entity)`, `app.printDocuments({ entity, id, templateIds, merge })` | The organization's templates and prints for one of the app's own record types. |
 | `app.listMyApprovals()` | Pending approvals of the app's own tools that the person may decide. |
 | `app.decideApproval(id, decision, payloadHash)` | The host shows its own confirmation dialog, checks the approval belongs to one of the app's tools, and keeps the payload fingerprint the app showed. The app's button only asks. |
+| `app.editApproval(id, fields)` | Changes a pending approval of one of the app's own tools; the server accepts only the fields that tool declares editable and returns the new payload fingerprint, which a later `decideApproval` must use. |
 | `app.openExternal(url)` | Opens an `https` page in a new tab, with no opener and no referrer, only on a host the manifest declares (fetch domains, connection domains, `network.imageHosts`, `network.linkHosts`) and never the Liaison page's own origin. |
 | `app.openRecord(app, entity, id)`, `app.openApprovals()` | Opens another app's record in its own tab (what it shows is up to the person's access), or the approvals queue. |
+| `app.tabLabel(label)` | Names the page's tab after the record it shows, from a function the host re-reads when it changes; empty keeps the app's own label. A host before 1.5 ignores it. |
 
 In the page (a first-party app that is not framed) the same calls work; file opening, approval decisions and outside links then keep their direct path (`packages/host-sdk/src/index.ts`, `apps/web/src/framework/host-app-calls.ts`).
 
@@ -766,7 +771,6 @@ All registries are in-memory, keyed by `[orgId, appName, ...]`. Each process fil
 | `entityRegistry` | `[orgId, app, entity]` | Card display metadata |
 | `manifestRegistry` | `[orgId, app]` | Frontend manifest for panel/tab registration |
 | `declaredEmits` | `orgId:app` → Set | Allowed event keys |
-| `contributionRegistry` | `[orgId, slot]` | Cross-app slot contributions |
 
 ### Handler Dispatch
 

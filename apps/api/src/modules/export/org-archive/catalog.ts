@@ -106,7 +106,7 @@ export async function discoverExportTables(): Promise<ExportTable[]> {
         JOIN pg_attribute pa ON pa.attrelid = k.confrelid AND pa.attnum = k.confkey[1]
         WHERE k.contype = 'f' AND array_length(k.conkey, 1) = 1
           AND (n.nspname = ${kernel} OR n.nspname LIKE ${appLike})
-        ORDER BY n.nspname, c.relname, k.conname
+        ORDER BY n.nspname, c.relname, a.attnotnull DESC, k.conname
       `),
     )
 
@@ -141,6 +141,10 @@ export async function discoverExportTables(): Promise<ExportTable[]> {
         out.push(t)
       }
     }
+    // A table with several foreign keys reaches the org through its first, and a
+    // NOT NULL one sorts first: only it holds a parent for every row. A nullable
+    // reference to a person (user_preferences.next_in_line_id) would export the
+    // rows that name someone instead of the rows of each person.
     const seen = new Set<string>()
     for (const fk of fks) {
       const id = `${fk.schema}.${fk.table}`

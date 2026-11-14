@@ -44,7 +44,7 @@ describe("DecisionToasts", () => {
     const toast = await screen.findByTestId("decision-toast")
     expect(screen.getByTestId("decision-toast-title").textContent).toBe("ticket-10889: subject 9")
     expect(toast.textContent).toContain("Reply")
-    expect(screen.getByTestId("decision-toast-status").textContent).toBe("Approving in 5s")
+    expect(screen.getByTestId("decision-toast-status").textContent).toBe("Approving in 8s")
     // Fixed width: a long title truncates instead of stretching the toast across Home.
     expect(toast.className).toContain("w-[380px]")
     expect(toast.className).toContain("max-w-full")
@@ -64,12 +64,33 @@ describe("DecisionToasts", () => {
     const { api, post } = makeApi()
     render(() => <DecisionToasts />)
     const done = queueDecision(api, "approval", "a1", { decision: "deny" }, { label: label(1) })
-    expect((await screen.findByTestId("decision-toast-status")).textContent).toBe("Rejecting in 5s")
+    expect((await screen.findByTestId("decision-toast-status")).textContent).toBe("Rejecting in 8s")
     fireEvent.click(screen.getByTestId("decision-toast-undo"))
     await expect(done).rejects.toBeInstanceOf(DecisionUndoneError)
     expect(screen.queryByTestId("decision-toast")).toBeNull()
     await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS)
     expect(post).not.toHaveBeenCalled()
+  })
+
+  it("Dismiss on a stopped draft says Dismissing, then Dismissed, never Rejecting", async () => {
+    const { api, post, answer } = makeApi()
+    render(() => <DecisionToasts />)
+    const done = queueDecision(
+      api,
+      "approval",
+      "a1",
+      { decision: "deny", reason: "" },
+      { label: { ...label(5), verb: "dismiss" } },
+    )
+    expect((await screen.findByTestId("decision-toast-status")).textContent).toBe(
+      "Dismissing in 8s",
+    )
+    await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS)
+    expect(screen.getByTestId("decision-toast-status").textContent).toBe("Dismissing…")
+    expect(post).toHaveBeenCalledTimes(1)
+    answer({ status: "denied" })
+    await done
+    expect(screen.getByTestId("decision-toast-status").textContent).toBe("Dismissed")
   })
 
   it("a sequence is ONE toast, titled by its outcome and marked as N steps, whose Undo takes back every step", async () => {

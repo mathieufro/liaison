@@ -4,6 +4,7 @@ import { projectsRel } from "~/apps/projects/schema-refs"
 import { extractRows, type RlsClient, type RlsTx } from "~/db"
 import type { UserContext } from "~/db/rls"
 import { readProjectLevels, remapChecklistValidations } from "./checklist"
+import { dealTargetStatusForMove, refuseDealAsSubtask, syncDealOutcome } from "./deals"
 import { fieldsForProject, lockProjectFields, readProjectFields, sameFields } from "./fields"
 import { resolveStatusRef } from "./resolve"
 import { ProjectsServiceError } from "./statuses"
@@ -224,6 +225,8 @@ export interface MoveTaskArgs {
   statusId?: string
   beforeTaskId?: string | null
   afterTaskId?: string | null
+  /** Stored as the deal's lost reason when this move closes a deal as lost. */
+  lostReason?: string | null
   /** Who made the change, for the transitions (default: from the run, else the person). */
   via?: TransitionActor
 }
@@ -334,6 +337,9 @@ export async function moveTask(args: MoveTaskArgs): Promise<MoveTaskResult> {
           LEFT JOIN ${projectsRel("project_statuses")} s ON s.id = m.status_id
         `),
       )
+      // A deal only moves to another pipeline, and lands on the stage that
+      // matches its outcome (refused into a work project, nothing written).
+      const dealStatusId = await dealTargetStatusForMove(innerTx, orgId, taskId, targetProjectId)
       // Re-key the moved items' validations to the target project's levels by name.
       await remapChecklistValidations(
         innerTx,
@@ -372,7 +378,7 @@ export async function moveTask(args: MoveTaskArgs): Promise<MoveTaskResult> {
           orgId,
           targetProjectId,
           node.status_terminal,
-          node.id === taskId ? args.statusId : undefined,
+          node.id === taskId ? (args.statusId ?? dealStatusId) : undefined,
         )
         const newPosition = await computePosition(
           innerTx,
@@ -396,6 +402,15 @@ export async function moveTask(args: MoveTaskArgs): Promise<MoveTaskResult> {
           toStatusId: newStatusId,
         })
       }
+      // A deal moved between pipelines keeps its rows; a task moved into a
+      // pipeline becomes a deal. Its outcome follows the stage it landed on.
+      await syncDealOutcome(
+        innerTx,
+        orgId,
+        actor,
+        subtree.map((n) => n.id),
+        { lostReason: args.lostReason },
+      )
       const movedRow = (await fetchTask(innerTx, orgId, taskId))!
       // One event for the moved root, carrying its full row in the target
       // project plus where it came from (a client showing the source removes it).
@@ -455,6 +470,7 @@ export async function moveTask(args: MoveTaskArgs): Promise<MoveTaskResult> {
     }
 
     if (nextParentId !== null) {
+      if (task.parent_task_id === null) await refuseDealAsSubtask(innerTx, orgId, taskId)
       const parent = await fetchTask(innerTx, orgId, nextParentId)
       if (!parent) {
         throw new ProjectsServiceError(404, "parent_not_found", "parent task not found")
@@ -575,6 +591,13 @@ export async function moveTask(args: MoveTaskArgs): Promise<MoveTaskResult> {
         RETURNING id, org_id, project_id, parent_task_id, status_id, number, position, completed_at
       `),
     )
+
+    // The deal's outcome follows its new stage, in this transaction. A task
+    // promoted to the root of a pipeline becomes a deal here.
+    await syncDealOutcome(innerTx, orgId, actor, [taskId], {
+      fromStatusIds: { [taskId]: task.status_id },
+      lostReason: args.lostReason,
+    })
 
     // J2: if this move (de)completed the task, recompute the stored `blocked`
     // flag on every task that depends on it. A dependent is blocked iff it has

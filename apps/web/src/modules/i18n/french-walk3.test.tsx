@@ -70,6 +70,37 @@ describe("kernel attention rows", () => {
     expect(kernelAttentionTitle(row("approval_decision", "Approval request-7 rejected"), fr)).toBe(
       "Demande request-7 refusée",
     )
+    // Someone marked the person away: translated only on the row that says so.
+    const awayLine = "Nadia Lead marked you away on Mon 7 Dec 2026"
+    expect(
+      kernelAttentionTitle(
+        { ...row("agent_notification", awayLine), metadata: { awayNamed: { rangeId: "r" } } },
+        fr,
+      ),
+    ).toBe("Nadia Lead vous a indiqué absent on Mon 7 Dec 2026")
+    expect(kernelAttentionTitle(row("agent_notification", awayLine), fr)).toBe(awayLine)
+    // The person's own calendar asks about an event: its title comes live from the feed.
+    const asked = (title?: string) => ({
+      ...row("agent_notification", "Is this calendar event time off, on Mon 7 Dec 2026?"),
+      metadata: {
+        awayCalendar: { kind: "asked", said: "on Mon 7 Dec 2026", ...(title ? { title } : {}) },
+      },
+    })
+    expect(kernelAttentionTitle(asked("Congés"), fr)).toBe(
+      "« Congés » est-il une absence, on Mon 7 Dec 2026 ? Rien n’est compté tant que vous n’avez pas répondu Oui.",
+    )
+    expect(kernelAttentionTitle(asked(), fr)).toContain("Cet événement de l’agenda")
+    expect(
+      kernelAttentionTitle(
+        {
+          ...row("agent_notification", "x"),
+          metadata: {
+            awayCalendar: { kind: "set", said: "on Mon 7 Dec 2026", nextInLine: "Sara" },
+          },
+        },
+        fr,
+      ),
+    ).toBe("Votre agenda vous indique absent on Mon 7 Dec 2026. Suivant : Sara.")
     // An app's own row is its app's business.
     expect(kernelAttentionTitle({ app: "tickets", kind: "mention", summary: "x" }, fr)).toBe("x")
   })

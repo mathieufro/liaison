@@ -22,9 +22,24 @@ export const ProjectsHome = lazy(() =>
 export const ProjectWorkspace = lazy(() =>
   import("~/modules/projects/ProjectWorkspace").then((m) => ({ default: m.ProjectWorkspace })),
 )
+export const CapacityView = lazy(() =>
+  import("~/modules/projects/CapacityView").then((m) => ({ default: m.CapacityView })),
+)
+export const TimesheetView = lazy(() =>
+  import("~/modules/projects/TimesheetView").then((m) => ({ default: m.TimesheetView })),
+)
+// The note under the "Time and budgets" settings section (the section's id, then "SettingsNote").
+export const TimeSettingsNote = lazy(() =>
+  import("~/modules/projects/TimeSettingsNote").then((m) => ({ default: m.TimeSettingsNote })),
+)
 export const TaskDetail = lazy(() =>
   import("~/modules/projects/TaskDetail").then((m) => ({ default: m.TaskDetail })),
 )
+// The Work section of a company's page — registered via manifest `slots.company_detail`.
+export const CompanyWorkPanel = lazy(() =>
+  import("~/modules/projects/CompanyWorkPanel").then((m) => ({ default: m.CompanyWorkPanel })),
+)
+
 export const ProjectAutomations = lazy(() =>
   import("~/modules/projects/ProjectAutomations").then((m) => ({
     default: m.ProjectAutomations,

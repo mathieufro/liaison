@@ -3,14 +3,78 @@
  * Pieces the demo scenarios share: the copy-key helper and the scripts that
  * bring an agent into a conversation and approve what it proposes.
  */
+
+import type { DemoNeed } from "../../demo/needs"
+import { type DemoWorldId, demoScenarioTourId } from "../../demo/worlds"
 import { approveCreatedSteps, heldRequestCard } from "../agent-steps"
 import {
+  defineTour,
   RUN_CONVERSATION,
+  type Tour,
   type TourBeat,
   type TourEventBinding,
   type TourPathHop,
   type TourStep,
 } from "../schema"
+
+/** A beat as a tour definition takes it. */
+export type ScenarioBeatInput = Parameters<typeof defineTour>[0]["beats"][number]
+
+/** A beat a world adds to a scenario, after the base beat `after` (null: first). */
+export interface ScenarioExtraBeat {
+  after: string | null
+  beat: ScenarioBeatInput
+}
+
+/**
+ * What a scenario builder takes from the world it is built for: the world
+ * itself and the beats that world adds to the base scenario (named here, never
+ * a fork of the builder). A need's builder adds the values that differ between
+ * worlds (a seeded name its beats point at).
+ */
+export interface ScenarioCfg {
+  world: DemoWorldId
+  /** Played once: the tour offers no "Start again", only "Start over". */
+  singleRun?: true
+  extraBeats?: readonly ScenarioExtraBeat[]
+  /** The copy namespace under `tours.scenarios` (default: the need's own, `support`). */
+  copy?: string
+  /** The injector of the scenario's world beat (default: the products world's). */
+  injector?: string
+}
+
+/** The configuration every scenario shipped before there were several worlds is built from. */
+export const PRODUCTS_CFG: ScenarioCfg = { world: "products" }
+
+/**
+ * Build `need`'s scenario tour for `cfg`'s world: the world's tour id, its
+ * world and single-run marks, and its extra beats spliced into the base
+ * beats. Throws, naming the beat, when an extra beat follows a beat the base
+ * does not have.
+ */
+export function scenarioTour(
+  need: DemoNeed,
+  cfg: ScenarioCfg,
+  base: Omit<Parameters<typeof defineTour>[0], "id" | "world" | "singleRun">,
+): Tour {
+  const beats = [...base.beats]
+  for (const extra of cfg.extraBeats ?? []) {
+    const at = extra.after === null ? 0 : beats.findIndex((b) => b.id === extra.after) + 1
+    if (extra.after !== null && at === 0) {
+      throw new Error(
+        `scenario ${need}: extra beat ${extra.beat.id} follows unknown beat ${extra.after}`,
+      )
+    }
+    beats.splice(at, 0, extra.beat)
+  }
+  return defineTour({
+    ...base,
+    id: demoScenarioTourId(cfg.world, need),
+    world: cfg.world,
+    ...(cfg.singleRun ? { singleRun: true as const } : {}),
+    beats,
+  })
+}
 
 /** A `tours.scenarios.<need>.*` copy key. */
 export const scenarioKey =
@@ -123,6 +187,10 @@ type RailApp =
   | "Invoicing"
   | "Sessions"
   | "Knowledge"
+  | "Stripe"
+
+/** The payments app's entry on the left bar: its own label. */
+export const PAYMENTS_RAIL_APP = "Stripe" satisfies RailApp
 
 /** The first hop of a way into another app: its entry on the left bar (ringed from the beat's route). */
 export function railHop(app: RailApp): TourPathHop {

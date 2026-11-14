@@ -885,6 +885,33 @@ describe("skills-routes — /api/agent/skills + /api/agent/app-skills", () => {
     })
   })
 
+  describe("a skill of a feature the org has off", () => {
+    it("cannot be read or forked, as it is not listed", async () => {
+      skillRegistry.set([ORG_ID, "tickets", "feature-skill"], {
+        name: "feature-skill",
+        description: "Only with its feature",
+        body: "Feature body",
+        requiredScopes: [],
+        feature: "not_switched_on",
+      } as never)
+      const read = await app.request("/api/agent/app-skills/tickets/feature-skill", {
+        headers: { Authorization: `Bearer ${aliceToken}` },
+      })
+      expect(read.status).toBe(404)
+      expect(await read.text()).not.toContain("Feature body")
+      const fork = await app.request("/api/agent/skills/built-in%2Ftickets%2Ffeature-skill/fork", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${aliceToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      expect(fork.status).toBe(404)
+      const list = await app.request("/api/agent/app-skills", {
+        headers: { Authorization: `Bearer ${aliceToken}` },
+      })
+      expect(await list.text()).not.toContain("feature-skill")
+    })
+  })
+
   describe("POST /api/agent/app-skills/:app/:name/toggle", () => {
     it("returns 403 when caller holds only kernel:skills:read (B1)", async () => {
       skillRegistry.set([ORG_ID, "tickets", "draft-reply"], {

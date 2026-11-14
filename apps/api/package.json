@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "BUN_JSC_useOMGJIT=0 bun --watch src/index.ts",
     "start": "BUN_JSC_useOMGJIT=0 bun src/index.ts",
+    "embedder": "bun src/modules/agent/tools/embedder-main.ts",
     "test": "bun run ../../scripts/test-run.ts all",
     "test:unit": "bun run ../../scripts/test-run.ts unit",
     "test:unit:isolated": "bun test src/tests/auth-login-error.test.ts",
@@ -29,6 +30,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1144.0",
     "@google/genai": "^2.24.0",
     "@hono/zod-validator": "^0.9.1",
+    "@huggingface/transformers": "^4.3.2",
     "@liaison/api-connector-core": "workspace:*",
     "@liaison/app-loader": "workspace:*",
     "@liaison/control-plane-contract": "workspace:*",

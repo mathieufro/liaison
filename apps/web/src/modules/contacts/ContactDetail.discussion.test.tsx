@@ -25,8 +25,7 @@ const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(async (..._args: unknown[]) => {}),
   detailStore: {
     contacts: {} as Record<string, any>,
-    backlinks: {} as Record<string, any>,
-    ticketBacklinks: {} as Record<string, any[]>,
+    optOuts: {} as Record<string, any>,
     discussions: {} as Record<string, string>,
   },
 }))
@@ -44,8 +43,7 @@ vi.mock("~/modules/shell/SlotPanels", () => ({ SlotPanels: () => null }))
 vi.mock("~/modules/contacts/contact-detail-store", () => ({
   contactDetailStore: mocks.detailStore,
   loadContact: vi.fn(async () => undefined),
-  loadBacklinks: vi.fn(async () => undefined),
-  loadTicketBacklinks: vi.fn(),
+  loadOptOut: vi.fn(async () => undefined),
   openContactDiscussion: vi.fn(async () => THREAD),
   updateContact: vi.fn(),
   deleteContact: vi.fn(),

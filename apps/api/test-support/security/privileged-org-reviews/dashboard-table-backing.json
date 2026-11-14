@@ -1,0 +1,5 @@
+{
+  "reviewedOrigins": {
+    "apps/api/src/apps/projects/service/table-backing.ts#write": "a dashboard table backed by a project, writing a row through to its task: called only by the table service's writeBackedRows (modules/dashboards/tables/service.ts) on the RLS client it opened for the writer; the org is viewer.orgId, the writer's own session org, and the task is created or updated through createTask / updateTask as that writer, so the assignee's approval route is refreshed for that same org only"
+  }
+}

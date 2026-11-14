@@ -1218,7 +1218,10 @@ export async function runAppSourceSyncJob(
   })
 }
 
-/** The owner's current scopes, or null when they are not an active member of the org. */
+/**
+ * The owner's current scopes, or null when they are not an active member of the org.
+ * An external user (a client) is not a member: a source they somehow own stops syncing.
+ */
 export async function loadAppSourceOwnerScopes(
   orgId: string,
   userId: string,
@@ -1231,7 +1234,14 @@ export async function loadAppSourceOwnerScopes(
     const [row] = await db
       .select({ id: users.id })
       .from(users)
-      .where(and(eq(users.id, userId), eq(users.orgId, orgId), eq(users.status, "active")))
+      .where(
+        and(
+          eq(users.id, userId),
+          eq(users.orgId, orgId),
+          eq(users.status, "active"),
+          eq(users.userType, "member"),
+        ),
+      )
       .limit(1)
     if (!row) return null
     return (await loadEffectivePermissions(db, userId, orgId)).scopes

@@ -15,8 +15,15 @@ import { verifyGitlab } from "./provisioning"
 import { asCtx, fakeCtx, fileAnswer, json } from "./test-ctx"
 import {
   gitlabGetCommit,
+  gitlabGetMergeRequest,
+  gitlabListCommits,
   gitlabListIssues,
+  gitlabListLabels,
+  gitlabListMergeRequests,
+  gitlabListMilestones,
   gitlabListProjects,
+  gitlabListReleases,
+  gitlabListTags,
   gitlabReadFile,
   gitlabSearch,
 } from "./tools"
@@ -193,6 +200,91 @@ describe("tools", () => {
   })
 })
 
+describe("redaction", () => {
+  it("gitlab text bodies are redacted on every tool", async () => {
+    const key = `glpat-${"abcdefghij".repeat(3)}`
+    const secret = `token ${key}`
+    const person = { username: "dev" }
+    const commit = {
+      id: "c1",
+      short_id: "c1",
+      title: secret,
+      message: secret,
+      author_name: "Dev",
+      committed_date: "x",
+      web_url: "u",
+      parent_ids: [],
+    }
+    const mr = {
+      iid: 1,
+      title: secret,
+      description: secret,
+      state: "opened",
+      target_branch: "main",
+      source_branch: "f",
+      author: person,
+      assignees: [],
+      milestone: null,
+      labels: [],
+      created_at: "x",
+      updated_at: "x",
+      merged_at: null,
+      web_url: "u",
+    }
+    const issue = { ...mr, closed_at: null }
+    const diff = [{ old_path: "a", new_path: "a", diff: `-${secret}` }]
+    const ctx = asCtx(
+      fakeCtx({
+        routes: {
+          "/projects/9/repository/commits?per_page=100": json([commit]),
+          "/projects/9/repository/commits/c1": json(commit),
+          "/projects/9/repository/commits/c1/diff?per_page=100": json(diff),
+          "/projects/9/merge_requests?per_page=100": json([mr]),
+          "/projects/9/merge_requests/1": json(mr),
+          "/projects/9/merge_requests/1/diffs?per_page=100": json(diff),
+          "/projects/9/issues?per_page=100": json([issue]),
+          "/projects/9/milestones?per_page=100": json([
+            { id: 1, iid: 1, title: "M", description: secret, state: "active", web_url: "u" },
+          ]),
+          "/projects/9/labels?per_page=100&with_counts=true": json([
+            { name: "bug", color: "red", description: secret },
+          ]),
+          "/projects/9/releases?per_page=100": json([
+            { tag_name: "v1", name: "v1", description: secret, author: person, milestones: [] },
+          ]),
+          "/projects/9/repository/tags?per_page=100": json([
+            {
+              name: "v1",
+              message: secret,
+              commit: { id: "c1", title: "t", committed_date: "x" },
+              release: { tag_name: "v1", description: secret },
+            },
+          ]),
+          "/projects/9/search?scope=blobs&search=token&per_page=100": json([
+            { path: "a", filename: "a", ref: "main", data: secret, startline: 1, project_id: 9 },
+          ]),
+        },
+      }),
+    )
+    const outs = [
+      await gitlabListCommits({ project: "9" }, ctx),
+      await gitlabGetCommit({ project: "9", sha: "c1", withDiff: true }, ctx),
+      await gitlabListMergeRequests({ project: "9" }, ctx),
+      await gitlabGetMergeRequest({ project: "9", iid: 1, withChanges: true }, ctx),
+      await gitlabListIssues({ project: "9" }, ctx),
+      await gitlabListMilestones({ project: "9" }, ctx),
+      await gitlabListLabels({ project: "9" }, ctx),
+      await gitlabListReleases({ project: "9" }, ctx),
+      await gitlabListTags({ project: "9" }, ctx),
+      await gitlabSearch({ project: "9", scope: "blobs", query: "token" }, ctx),
+    ]
+    for (const out of outs) {
+      expect(JSON.stringify(out)).not.toContain(key)
+      expect(JSON.stringify(out)).toContain("[REDACTED]")
+    }
+  })
+})
+
 describe("text helpers", () => {
   it("decodes base64 UTF-8 without Buffer or atob", () => {
     const text = "Ça marche — 日本 🎉"
@@ -203,6 +295,60 @@ describe("text helpers", () => {
 
   it("redacts high-confidence secrets only", () => {
     expect(redactSecrets("AKIAABCDEFGHIJKLMNOP and plain text")).toBe("[REDACTED] and plain text")
+  })
+  // Every armoured private key header in use: PKCS#8 (no algorithm word), the
+  // algorithm-named PKCS#1 and SEC1 forms, OpenSSH, encrypted PKCS#8, PGP and SSH2.
+  // Built from the label so the source holds no literal key header.
+  const armour = (label: string, ssh2 = false): [string, string] => {
+    const d = ssh2 ? "----" : "-----"
+    const s = ssh2 ? " " : ""
+    return [`${d}${s}BEGIN ${label}${s}${d}`, `${d}${s}END ${label}${s}${d}`]
+  }
+  const PEM_LABELS: Array<[string, string]> = [
+    armour("PRIVATE KEY"),
+    armour("RSA PRIVATE KEY"),
+    armour("EC PRIVATE KEY"),
+    armour("DSA PRIVATE KEY"),
+    armour("OPENSSH PRIVATE KEY"),
+    armour("ENCRYPTED PRIVATE KEY"),
+    armour("PGP PRIVATE KEY BLOCK"),
+    armour("SSH2 ENCRYPTED PRIVATE KEY", true),
+  ]
+  const KEY_BODY = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC\nBKcwggSjAgEAAoIBAQC7"
+
+  it("redacts every form of armoured private key, keeping the text around it", () => {
+    for (const [begin, end] of PEM_LABELS) {
+      const out = redactSecrets(`before\n${begin}\n${KEY_BODY}\n${end}\nafter`)
+      expect(out).toBe("before\n[REDACTED]\nafter")
+    }
+  })
+
+  it("redacts a private key removed or added in a diff", () => {
+    for (const [begin, end] of PEM_LABELS) {
+      const diff = `@@ -1,4 +0,0 @@\n-${begin}\n-${KEY_BODY.replace("\n", "\n-")}\n-${end}\n ok`
+      const out = redactSecrets(diff)
+      expect(out).not.toContain("MIIEvQ")
+      expect(out).not.toContain("BKcwgg")
+      expect(out).toContain(" ok")
+    }
+  })
+
+  it("redacts a private key whose end is cut off through the end of its hunk", () => {
+    for (const [begin] of PEM_LABELS) {
+      const diff = `@@ -1,3 +1,3 @@\n+${begin}\n+${KEY_BODY}\n@@ -40,2 +40,2 @@\n kept line`
+      const out = redactSecrets(diff)
+      expect(out).not.toContain("MIIEvQ")
+      expect(out).not.toContain("BKcwgg")
+      expect(out).toContain("@@ -40,2 +40,2 @@\n kept line")
+      expect(redactSecrets(`${begin}\n${KEY_BODY}`)).toBe("[REDACTED]")
+    }
+  })
+
+  it("keeps public keys and certificates", () => {
+    const pub = "-----BEGIN PUBLIC KEY-----\nMFkwEwYH\n-----END PUBLIC KEY-----"
+    const cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+    expect(redactSecrets(pub)).toBe(pub)
+    expect(redactSecrets(cert)).toBe(cert)
   })
 })
 

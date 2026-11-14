@@ -55,7 +55,10 @@ export const einvoicingPaV1: ContractSpec = {
     /**
      * Deposit the legal original (Factur-X) with the PA without transmitting it yet. Upserts the
      * buyer, re-checks eligibility from the CII, pins the file to `legal_original_sha256`, adopts
-     * an existing deposit for the same invoice. `{provider_ref, state}`.
+     * an existing deposit for the same invoice. `{provider_ref, state}`. `stream_ref` (optional,
+     * `<issuer profile>:<stream>`) is set on a send under a stream's standing authorization so the
+     * dispatch grant can bind it, and `run_item_ref` (optional) on a send a person approved with a
+     * month-end run; a provider declares both and ignores them.
      */
     submit_einvoice: {
       required: true,
@@ -70,6 +73,8 @@ export const einvoicingPaV1: ContractSpec = {
         "cii_xml",
         "buyer",
         "idempotency_key",
+        "stream_ref",
+        "run_item_ref",
       ],
     },
     /**
@@ -85,6 +90,8 @@ export const einvoicingPaV1: ContractSpec = {
         "issue_date",
         "document_ref",
         "legal_original_sha256",
+        "stream_ref",
+        "run_item_ref",
       ],
     },
     /** Re-read the provider's status: `{raw, mapped, code, provider_ts, reason_text}` */
@@ -103,6 +110,15 @@ export const einvoicingPaV1: ContractSpec = {
       outbound: true,
       fileParams: ["pdf_file_id"],
       params: ["document_ref", "pdf_file_id", "legal_original_sha256", "data", "idempotency_key"],
+    },
+    /**
+     * A collection (payment received) where VAT falls due on receipt (optional in v1): the
+     * amounts by VAT rate (`[{rate_bp, net_minor, vat_minor}]`, negative for a refund) of the
+     * document at `provider_ref`. A fact, not an issuing act: no dispatch grant. `{state}`.
+     */
+    report_collection: {
+      required: false,
+      params: ["provider_ref", "date", "amounts_by_vat_rate", "idempotency_key"],
     },
     /**
      * Reception (optional in v1). Supplier e-invoices received through the PA, newest after

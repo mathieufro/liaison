@@ -81,6 +81,53 @@ function textStep(text: string) {
   }
 }
 
+/** A step that writes `text` and then calls `toolName`, in one step. */
+function textThenCallStep(text: string, toolName: string, id = "c2") {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "text-start" as const, id: "t0" },
+        { type: "text-delta" as const, id: "t0", delta: text },
+        { type: "text-end" as const, id: "t0" },
+        {
+          type: "tool-call" as const,
+          toolCallId: id,
+          toolName,
+          input: '{"steps":[{"label":"Hand over"}]}',
+        },
+        finish("tool-calls"),
+      ],
+    }),
+  }
+}
+
+function callStep(toolName: string, id: string) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        {
+          type: "tool-call" as const,
+          toolCallId: id,
+          toolName,
+          input: '{"steps":[{"label":"Hand over"}]}',
+        },
+        finish("tool-calls"),
+      ],
+    }),
+  }
+}
+
+const SUGGEST = "kernel__suggest_next_steps"
+
+/** Every text delta of every step, joined: what the agent loop stores as the reply. */
+async function allText(result: ReturnType<typeof runAgentStream>): Promise<string> {
+  let text = ""
+  for await (const part of result.fullStream) if (part.type === "text-delta") text += part.text
+  return text
+}
+
 function run(steps: Array<{ stream: ReadableStream<unknown> }>) {
   const model = new MockLanguageModelV4({ doStream: steps as never })
   const result = runAgentStream({
@@ -93,6 +140,11 @@ function run(steps: Array<{ stream: ReadableStream<unknown> }>) {
         description: "list metrics",
         inputSchema: z.object({}),
         execute: async () => ({ metrics: "x".repeat(38_000) }),
+      }),
+      [SUGGEST]: tool({
+        description: "chips under the reply",
+        inputSchema: z.object({ steps: z.array(z.object({ label: z.string() })) }),
+        execute: async () => ({ ok: true, shown: 1, message: "1 shown under your reply." }),
       }),
     },
     stopWhen: stepCountIs(8),
@@ -167,5 +219,41 @@ describe("a step after tool results that says nothing", () => {
     const { model } = run([toolCallStep(), emptyStep("length"), textStep("never")])
     await new Promise((r) => setTimeout(r, 50))
     expect(model.doStreamCalls.length).toBeLessThanOrEqual(2)
+  })
+})
+
+describe("a silent step after chips closed an answer already written", () => {
+  const ANSWER = "Noted: Tobias is off in week 51. Want me to do anything with it?"
+
+  it("is the end of the turn: the answer is not asked for again, so it is never written twice", async () => {
+    const { model, result } = run([
+      textThenCallStep(ANSWER, SUGGEST),
+      emptyStep(),
+      textStep("Tobias is off in week 51."),
+    ])
+    expect(await allText(result)).toBe(ANSWER)
+    expect(model.doStreamCalls.length).toBe(2)
+  })
+
+  it("holds across several chip calls after the answer", async () => {
+    const { model, result } = run([
+      textThenCallStep(ANSWER, SUGGEST),
+      callStep(SUGGEST, "c3"),
+      emptyStep(),
+      textStep("again"),
+    ])
+    expect(await allText(result)).toBe(ANSWER)
+    expect(model.doStreamCalls.length).toBe(3)
+  })
+
+  it("still asks when the only text was a note before a tool that gathered", async () => {
+    const { model, result } = run([
+      textThenCallStep("I'll list the metrics.", "kpi__kpi_list_metrics", "c1"),
+      callStep(SUGGEST, "c3"),
+      emptyStep(),
+      textStep("Il y a 12 métriques."),
+    ])
+    expect(await allText(result)).toBe("I'll list the metrics.Il y a 12 métriques.")
+    expect(model.doStreamCalls.length).toBe(4)
   })
 })

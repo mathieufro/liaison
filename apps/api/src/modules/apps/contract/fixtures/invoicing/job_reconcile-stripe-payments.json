@@ -1,0 +1,33 @@
+{
+  "entry": "job:reconcile-stripe-payments",
+  "params": {},
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": ["stripe_streams", "{\"limit\":100}"],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": [
+        "deferred_events",
+        "{\"where\":{\"reason\":\"invoice_not_issued\",\"status\":{\"in\":[\"awaiting_config\",\"awaiting_data\",\"awaiting_dependency\"]}},\"limit\":500}"
+      ],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": [
+        "deferred_events",
+        "{\"where\":{\"status\":{\"in\":[\"awaiting_config\",\"awaiting_data\",\"awaiting_dependency\"]}},\"limit\":2000}"
+      ],
+      "reply": "[]"
+    },
+    {
+      "method": "executeTool",
+      "args": ["stripe:reconcile_candidates", "{\"waiting\":[]}"],
+      "reply": "{\"status\": \"completed\", \"result\": {\"invoices\": [], \"refunds\": [], \"summary\": \"0 Stripe invoice(s) with no Liaison document, 0 paid invoice(s) to check, 0 succeeded refund(s) with no credit note recorded.\"}}"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

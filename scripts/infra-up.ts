@@ -33,6 +33,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { spawn } from "bun"
+import { assertDevComposeProject } from "../packages/test-helpers/src/ensure-infra"
 import { RESET_EXPECT_DB_VAR, resolveTestDb } from "../packages/test-helpers/src/test-db-target"
 
 const ROOT = new URL("..", import.meta.url).pathname
@@ -167,6 +168,7 @@ export function shouldResetTestDb(input: { migrated: boolean; force: boolean }):
 export async function bringUpInfra(): Promise<void> {
   log("── bringing up chaos/test infra ──")
   log("• docker compose up -d")
+  assertDevComposeProject()
   const up = await sh(["docker", "compose", "up", "-d"])
   if (!up.ok) {
     throw new Error(

@@ -32,6 +32,8 @@ interface UserRow {
 type UsersView = "people" | "imported"
 
 const PAGE_LIMIT = 100
+/** The deactivate question's answer "nobody": the companies stay without an account manager. */
+const NOBODY = "__nobody__"
 // A safety stop for the page walk; 50 pages of 100 is far beyond any org here.
 const MAX_PAGES = 50
 
@@ -54,6 +56,10 @@ const AdminUsers: Component = () => {
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set())
   const [confirmDeactivate, setConfirmDeactivate] = createSignal<UserRow | null>(null)
   const [confirmReactivate, setConfirmReactivate] = createSignal<UserRow | null>(null)
+  // The one question of a deactivation: who takes over the companies they manage. Asked only
+  // when the server says they manage any (count), and answered with a person or nobody.
+  const [accountsQuestion, setAccountsQuestion] = createSignal<{ count: number } | null>(null)
+  const [accountsTo, setAccountsTo] = createSignal<string>("")
   // The imported author being linked to a real person (Imported view).
   const [mergeSource, setMergeSource] = createSignal<UserRow | null>(null)
 
@@ -162,13 +168,38 @@ const AdminUsers: Component = () => {
     }
   }
 
-  async function handleDeactivate(userId: string) {
+  function closeDeactivate() {
+    setConfirmDeactivate(null)
+    setAccountsQuestion(null)
+    setAccountsTo("")
+  }
+
+  /**
+   * Deactivate through the admin route, which refuses with `accounts_to_required` when the
+   * person manages companies and nobody was named: the dialog then asks the one question.
+   * Returns whether the dialog can close.
+   */
+  async function handleDeactivate(userId: string): Promise<boolean> {
+    const question = accountsQuestion()
+    const choice = accountsTo()
+    if (question && choice === "") return false
+    const body: Record<string, unknown> = {}
+    if (question) body.accountsTo = choice === NOBODY ? null : choice
     try {
-      await api.post(`/admin/users/${userId}/deactivate`, {})
+      await api.post(`/admin/users/${userId}/deactivate`, body)
       addToast({ message: i18n.t("kernel.settingsUi.userDeactivated"), type: "success" })
       await refetchUsers()
-    } catch {
+      return true
+    } catch (err: any) {
+      const code = err?.code ?? err?.body?.error?.code
+      if (code === "accounts_to_required") {
+        const message = String(err?.message ?? err?.body?.error?.message ?? "")
+        const count = Number(/manages (\d+) compan/.exec(message)?.[1] ?? 1)
+        setAccountsQuestion({ count })
+        return false
+      }
       addToast({ message: i18n.t("kernel.settingsUi.failedToDeactivateUser"), type: "error" })
+      return true
     }
   }
 
@@ -442,7 +473,7 @@ const AdminUsers: Component = () => {
       <Dialog
         open={confirmDeactivate() !== null}
         onOpenChange={(v) => {
-          if (!v) setConfirmDeactivate(null)
+          if (!v) closeDeactivate()
         }}
       >
         <Dialog.Content>
@@ -452,17 +483,48 @@ const AdminUsers: Component = () => {
             <strong>{confirmDeactivate()?.name ?? i18n.t("kernel.settingsUi.thisUser")}</strong>
             {i18n.t("kernel.settingsUi.theyWillLoseAccessToThe")}
           </Dialog.Description>
+          <Show when={accountsQuestion()}>
+            {(q) => (
+              <div class="mt-4 flex flex-col gap-1" data-testid="admin-users-deactivate-accounts">
+                <label class="text-sm text-text" for="admin-users-accounts-to">
+                  {i18n.t("kernel.settingsUi.accountsToQuestion", {
+                    name: confirmDeactivate()?.name ?? i18n.t("kernel.settingsUi.thisUser"),
+                    count: q().count,
+                  })}
+                </label>
+                <select
+                  id="admin-users-accounts-to"
+                  aria-label={i18n.t("kernel.settingsUi.accountsToGiveTo")}
+                  value={accountsTo()}
+                  onChange={(e) => setAccountsTo(e.currentTarget.value)}
+                  class="rounded-sm border border-border bg-bg px-3 py-2 text-sm text-text outline-none focus:border-border-strong"
+                  data-testid="admin-users-deactivate-accounts-to"
+                >
+                  <option value="">{i18n.t("kernel.settingsUi.accountsToChoose")}</option>
+                  <For
+                    each={(users() ?? []).filter(
+                      (u) => u.status === "active" && u.id !== confirmDeactivate()?.id,
+                    )}
+                  >
+                    {(u) => <option value={u.id}>{u.name || u.email}</option>}
+                  </For>
+                  <option value={NOBODY}>{i18n.t("kernel.settingsUi.accountsToNobody")}</option>
+                </select>
+              </div>
+            )}
+          </Show>
           <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setConfirmDeactivate(null)}>
+            <Button variant="ghost" onClick={() => closeDeactivate()}>
               {i18n.t("kernel.common.cancel")}
             </Button>
             <Button
               variant="danger"
               data-testid="admin-users-deactivate-confirm"
+              disabled={accountsQuestion() !== null && accountsTo() === ""}
               onClick={async () => {
                 const u = confirmDeactivate()
-                if (u) await handleDeactivate(u.id)
-                setConfirmDeactivate(null)
+                if (!u) return
+                if (await handleDeactivate(u.id)) closeDeactivate()
               }}
             >
               {i18n.t("kernel.settingsUi.deactivate")}

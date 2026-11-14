@@ -18,8 +18,18 @@ import { CORE_APP_MODULES } from "~/modules/apps/core/registry"
 import { resolveSandboxMaxToolTimeoutMs } from "~/modules/apps/run-limits"
 import { createSessionRpcBridge } from "~/modules/apps/sandbox/rpc-bridge"
 import { type MailCategory, mailCategoryCondition } from "~/modules/mail/category"
+import {
+  type CommercialSend,
+  recordCommercialSendAfterSend,
+} from "~/modules/mail/commercial-send-record"
 import { enqueueGmailWriteBack } from "~/modules/mail/gmail-write-back"
 import { markConversationReadThrough } from "~/modules/mail/page-write"
+import {
+  COMMERCIAL_IDENTITY_MISSING_MESSAGE,
+  checkPersonCompose,
+  commercialFooterFor,
+  recipientsOf,
+} from "~/modules/mail/send-guard"
 import { resolveSenderContacts } from "~/modules/mail/sender-contacts"
 import {
   isMailAccountSuppressed,
@@ -1422,6 +1432,8 @@ export async function sendCompose(
     subject: string
     htmlBody: string
     textBody: string
+    /** Extra headers (a commercial mail's unsubscribe headers). */
+    headers?: Record<string, string>
     attachments?: OutboundMimeAttachment[]
     /** The draft being sent: the send happens at most once per draft. */
     draftSend?: DraftSendKey
@@ -1452,6 +1464,7 @@ export async function sendCompose(
     subject: params.subject,
     htmlBody: params.htmlBody,
     textBody: params.textBody,
+    ...(params.headers ? { headers: params.headers } : {}),
     attachments: params.attachments ?? [],
   })
 
@@ -1951,6 +1964,64 @@ export async function deleteDraft(
   `)
 }
 
+/**
+ * The bodies and headers a person's own new message leaves with. A recipient
+ * the data marks as a prospect makes it commercial: the footer and opt-out
+ * link are added (the composer showed them), and a refusal (opted out, more
+ * than one outside person, no legal identity) stops it with its reason.
+ */
+async function personComposeBodies(
+  orgId: string,
+  userId: string,
+  mail: {
+    to: Array<{ email: string }>
+    cc: Array<{ email: string }>
+    bcc: Array<{ email: string }>
+    htmlBody: string
+    textBody: string
+  },
+): Promise<{
+  htmlBody: string
+  textBody: string
+  headers?: Record<string, string>
+  /** The commercial send's record, written once the mail left. */
+  record?: CommercialSend
+}> {
+  const recipients = recipientsOf(
+    mail.to.map((a) => a.email),
+    mail.cc.map((a) => a.email),
+    mail.bcc.map((a) => a.email),
+  )
+  const own = await checkPersonCompose(orgId, recipients)
+  if (!own.commercial) return { htmlBody: mail.htmlBody, textBody: mail.textBody }
+  if ("refused" in own) throw new HTTPException(422, { message: own.refused.message })
+  const footer = await commercialFooterFor(orgId, own.recipient, mail.textBody, mail.htmlBody)
+  if (!footer) {
+    throw new HTTPException(422, {
+      message: `Nothing was sent. ${COMMERCIAL_IDENTITY_MISSING_MESSAGE}`,
+    })
+  }
+  const htmlBody = footer.htmlBody ?? mail.htmlBody
+  const textBody = footer.textBody ?? mail.textBody
+  return {
+    htmlBody,
+    textBody,
+    headers: footer.headers,
+    record: {
+      orgId,
+      actorId: userId,
+      actorType: "user",
+      toolName: "mail:compose",
+      recipient: own.recipient,
+      textBody,
+      htmlBody,
+      mode: null,
+      approvedBy: "person",
+      approverId: userId,
+    },
+  }
+}
+
 export async function sendDraft(
   db: RlsClient,
   params: {
@@ -2002,6 +2073,17 @@ export async function sendDraft(
     ...(params.confirmResend === true ? { confirmResend: true } : {}),
   }
 
+  // A new message's bodies as they leave: a prospect's mail gains its footer here.
+  const outgoing: Awaited<ReturnType<typeof personComposeBodies>> = draft.conversation_id
+    ? { htmlBody: params.htmlBody, textBody: params.textBody }
+    : await personComposeBodies(params.orgId, params.userId, {
+        to: toAddresses,
+        cc: ccAddresses,
+        bcc: bccAddresses,
+        htmlBody: params.htmlBody,
+        textBody: params.textBody,
+      })
+
   const result = draft.conversation_id
     ? {
         conversationId: draft.conversation_id,
@@ -2027,11 +2109,14 @@ export async function sendDraft(
         cc: ccAddresses.map((a: any) => a.email),
         bcc: bccAddresses.map((a: any) => a.email),
         subject,
-        htmlBody: params.htmlBody,
-        textBody: params.textBody,
+        htmlBody: outgoing.htmlBody,
+        textBody: outgoing.textBody,
+        headers: outgoing.headers,
         attachments,
         draftSend,
       })
+  // Only once it left: a send that failed writes no record and leaves the notice owed.
+  if (outgoing.record) await recordCommercialSendAfterSend(outgoing.record)
 
   // Reparent any draft-staged attachments onto the new mail message before
   // deleting the draft (otherwise the file rows would lose their parent).

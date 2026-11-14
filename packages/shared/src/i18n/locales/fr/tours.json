@@ -367,6 +367,7 @@
     "showMeHow": "Montrez-moi comment",
     "statusNew": "Nouvelle",
     "statusDone": "Terminée",
+    "statusPlayed": "Joué",
     "statusStopped": "Arrêtée",
     "statusInProgress": "Étape {{k}} sur {{n}}",
     "start": "Commencer",
@@ -385,6 +386,7 @@
     "scenarioStart": "Commencer",
     "scenarioResume": "Reprendre",
     "scenarioReplay": "Rejouer",
+    "scenarioPlayed": "Joué",
     "scenarioDone": "Terminé",
     "welcome": {
       "step": "Étape {{k}} sur {{n}}",
@@ -417,6 +419,7 @@
     "heldTitle": "Votre agent demande d'abord",
     "heldBody": "Votre agent demande avant d'utiliser {{tool}}. Lisez sa carte et appuyez sur Approuver pour continuer.",
     "workingRoutine": "La routine s'exécute. Cette étape avance quand elle a fini.",
+    "routineNotStarted": "La routine n'a pas démarré. Passez cette étape pour continuer.",
     "workingReplay": "La session enregistrée se déroule. Cette étape avance quand elle y arrive.",
     "routineRunning": "La routine « {{name}} » s'en occupe ({{elapsed}}). Cette étape avance quand elle a fini.",
     "routineRunningUnnamed": "La routine s'en occupe ({{elapsed}}). Cette étape avance quand elle a fini.",
@@ -457,7 +460,8 @@
         "undo": "Laissez-la partir ou appuyez sur Annuler pour voir l'action revenir en demande.",
         "way1": "Ouvrez Discussions en bas de l'écran",
         "way3": "Appuyez sur Approuver sur sa carte"
-      }
+      },
+      "railStripe": "Ouvrez Stripe dans la barre de gauche"
     },
     "support": {
       "title": "Support",
@@ -544,7 +548,7 @@
       "askAgent": {
         "title": "Confiez-la à votre agent",
         "body": "Écrivez à {{agent}} la demande ci-dessous, dans votre discussion avec lui, et appuyez sur Envoyer.",
-        "text": "Tobias a besoin d'aide sur PREAMP-11 « Prepare the trade-show demo ». Découpez-la en sous-tâches pour la semaine prochaine et créez-les maintenant comme ses sous-tâches, puis répondez à Tobias dans la discussion de la tâche. Inutile de me demander confirmation.",
+        "text": "Découpez la tâche PREAMP-11 « Prepare the trade-show demo » de Tobias en trois sous-tâches et créez-les, puis répondez à Tobias dans sa discussion. Inutile de me demander confirmation.",
         "role": "Vous n'avez pas le temps de planifier vous-même les unités de démo. Vous le demandez à {{agent}}, comme à un assistant : il découpe la tâche et répond à Tobias pour vous.",
         "way1": "Ouvrez Discussions en bas de l'écran, à côté de la tâche",
         "say": "Écrivez à {{agent}} :"
@@ -603,7 +607,7 @@
       "askAgent": {
         "title": "Demandez à votre agent de chercher",
         "body": "Écrivez à {{agent}} la question ci-dessous sur le passeport batterie, dans votre discussion avec lui, et appuyez sur Envoyer. Il cherche sur le web en direct et cite ses sources.",
-        "text": "Tobias demande quelles règles européennes sur le passeport batterie s'appliquent à nous dès 2027 et ce qu'il faut changer. Pouvez-vous chercher sur le web et me donner la réponse avec les liens vers vos sources ?",
+        "text": "Quelles règles européennes sur le passeport batterie s'appliquent à nous dès 2027 ? Cherchez sur le web et répondez en quelques lignes, avec les liens vers vos sources.",
         "role": "Vous ne connaissez pas la réponse, mais {{agent}} peut chercher sur le web et citer ses sources.",
         "say": "Demandez à {{agent}} :",
         "way1": "Ouvrez Discussions en bas de l'écran, à côté du canal"
@@ -902,6 +906,459 @@
         "title": "Une seule mémoire, cloisonnée par rôle",
         "body": "Vous, Henrik à la finance et tout agent que l'un de vous sollicite pouvez lire le compte de résultat du T3. Lucas au support, et tout agent qu'il sollicite, ne le peuvent pas.",
         "role": "Un agent lit avec les droits de la personne qui le sollicite. C'est pourquoi vous pouvez confier aux agents toutes les connaissances de l'entreprise : personne n'obtient par un agent plus que ce qu'il pourrait ouvrir lui-même."
+      }
+    },
+    "saasMoney": {
+      "title": "Abonnements et paiements",
+      "summary": "Une carte est refusée : votre agent lit Stripe, les factures et les tickets, puis rédige le message. Vous l'approuvez.",
+      "cardFailed": {
+        "title": "La carte de Maison Arlon a été refusée",
+        "role": "Vous dirigez Tideform. Leur Visa a expiré, donc 1 740,00 € ne sont pas passés. Votre agent l'a vu et a rédigé un message à Claire.",
+        "body": "Lisez la ligne mise en avant, puis appuyez sur Suivant. Rien n'est parti."
+      },
+      "askStanding": {
+        "title": "Demandez où vous en êtes",
+        "role": "Avant d'approuver, vous voulez tout voir : ce qu'ils paient, ce qu'ils attendent, ce qui est sur la table.",
+        "body": "Demandez à votre agent depuis Discussions. Il lit Stripe, les factures, les tickets et les affaires, et répond sur une seule carte.",
+        "say": "Demandez à votre agent :",
+        "text": "Où en sommes-nous avec Maison Arlon ?",
+        "way1": "Ouvrez Discussions en bas de l'écran"
+      },
+      "openCompany": {
+        "title": "Une carte, toutes les apps",
+        "role": "Leur offre, la facture impayée, le ticket ouvert et l'affaire pour 4 hôtels de plus, lus dans les apps qui les tiennent.",
+        "body": "Lisez la réponse de votre agent. Appuyez sur Ouvrir sur sa carte pour voir la page de Maison Arlon, puis sur Suivant.",
+        "way3": "Lisez la réponse, puis appuyez sur Ouvrir sur sa carte"
+      },
+      "approveNote": {
+        "title": "Approuvez le message à Claire",
+        "role": "Élodie s'occupe de Maison Arlon et elle est absente : vous êtes la personne suivante, le message attend donc votre décision.",
+        "body": "Ouvrez la ligne mise en avant sur l'Accueil et appuyez sur Approuver sur sa carte. Le message part à Claire avec un lien pour ajouter une nouvelle carte.",
+        "way2": "Ouvrez la ligne mise en avant",
+        "undo": "Laissez-le partir ou appuyez sur Annuler pour reprendre le message avant son envoi."
+      },
+      "cardUpdated": {
+        "title": "Claire a ajouté une nouvelle carte",
+        "role": "Claire a lu votre message et ajouté une carte. Stripe le dit à Liaison, comme pour un vrai compte.",
+        "body": "Rien à faire : le paiement passe sur la nouvelle carte et la page Stripe se met à jour. Appuyez sur Suivant une fois que c'est fait."
+      },
+      "figuresMoved": {
+        "title": "Les chiffres ont bougé",
+        "role": "La facture est payée, et Maison Arlon n'est plus en retard de paiement.",
+        "body": "Les impayés sont maintenant de {{pastDue}}. Le MRR reste à {{mrr}} : un abonnement impayé y était compté depuis le début. Les deux sont lus dans le miroir Stripe, comme cette page les lit."
+      }
+    },
+    "saasSupport": {
+      "title": "Support",
+      "summary": "Un client écrit ; la routine du support poste une note et un brouillon de réponse ; vous relisez et approuvez.",
+      "inbox": {
+        "title": "Votre boîte de support",
+        "body": "Regardons-en arriver un : appuyez sur Suivant.",
+        "role": "Vous dirigez Tideform. Chaque demande client arrive ici sous forme de ticket, et une routine lit chacun à son arrivée."
+      },
+      "liveTicket": {
+        "title": "Une cliente vous écrit",
+        "body": "Rien à faire pour l'instant : son ticket arrive en haut de la liste dans un instant. Appuyez sur Suivant une fois qu'il est là.",
+        "role": "Julie Ferran gère la salle des Tables Vauban, et les notifications d'échange de poste n'arrivent plus à son équipe depuis la mise à jour. Elle écrit au support en ce moment."
+      },
+      "open": {
+        "title": "Son ticket est là",
+        "body": "Ouvrez son ticket, puis appuyez sur Suivant.",
+        "role": "Avant que quiconque réponde à Julie, vous voulez voir ce qu'elle a écrit.",
+        "way2": "Cliquez sur le ticket de Julie Ferran, en haut de la liste"
+      },
+      "routineNote": {
+        "title": "La note interne de la routine",
+        "body": "Elle lit le ticket, l'historique du client et le centre d'aide, puis laisse une note à l'équipe : son verdict, ses sources et ce qu'une personne doit vérifier. Julie ne la voit jamais. Appuyez sur Suivant une fois la note arrivée ; vous approuverez sa réponse deux étapes plus loin.",
+        "role": "Votre routine de support traite d'abord le ticket : vous partez de ses constats, pas de zéro."
+      },
+      "routineDraft": {
+        "title": "Un brouillon de réponse vous attend",
+        "body": "La routine rédige la réponse à Julie. Appuyez sur Suivant quand le brouillon s'affiche ; vous le lirez et l'approuverez à l'étape suivante.",
+        "role": "Rien n'arrive à Julie tant qu'une personne n'a pas dit oui, et cette personne, c'est vous."
+      },
+      "approve": {
+        "title": "Approuvez la réponse",
+        "body": "Modifiez une phrase si vous le souhaitez, puis appuyez sur Approuver. Elle part chez Julie (une cliente fictive ici).",
+        "role": "Vous décidez de ce qui part : lisez le brouillon comme Julie le lira.",
+        "undo": "Laissez partir ou appuyez sur Annuler pour que la réponse redevienne un brouillon."
+      },
+      "sent": {
+        "title": "Envoyée",
+        "body": "La réponse apparaît dans la conversation, à côté de la note de la routine. Appuyez sur Suivant.",
+        "role": "Julie a sa réponse, et l'équipe voit exactement ce qui a été dit."
+      },
+      "askAgent": {
+        "title": "Vérifiez depuis quand elle est cliente",
+        "body": "Demandez à {{agent}} depuis Discussions, à côté du ticket, puis appuyez sur Envoyer. Il répond à partir de ses tickets, du forfait de son entreprise et de ses factures.",
+        "text": "Quel forfait a Les Tables Vauban, et qu'ont signalé Julie Ferran ou ses collègues auparavant ?",
+        "role": "Avant de promettre une date de correction à Julie, vous voulez connaître son forfait et ce que son équipe a déjà signalé.",
+        "way1": "Ouvrez Discussions, à côté du ticket",
+        "way2": "Choisissez {{agent}}, premier de la liste",
+        "say": "Demandez à {{agent}} :"
+      },
+      "answer": {
+        "title": "Sa réponse",
+        "body": "{{agent}} répond à côté de son ticket, à partir des tickets et de la fiche client. Appuyez sur Suivant une fois qu'il a répondu.",
+        "role": "Vous fixez la date de correction avec son historique sous les yeux.",
+        "way3": "Lisez sa réponse sous votre question"
+      },
+      "done": {
+        "title": "Voilà pour le support",
+        "body": "Une routine lit chaque ticket, rédige la note et le brouillon ; vous relisez et décidez. Rien ne part sans votre approbation.",
+        "role": "Vous êtes resté maître de chaque mot reçu par Julie."
+      }
+    },
+    "saasProjects": {
+      "title": "Projets",
+      "summary": "Un développeur demande de l'aide sur votre tâche ; vous la confiez à votre agent, qui découpe le travail et lui répond ; vous relisez.",
+      "home": {
+        "title": "Vos projets",
+        "body": "Les projets et leurs tâches se trouvent ici. Appuyez sur Suivant.",
+        "role": "Vous pilotez le projet Produit, où l'équipe prévoit ce que fera ensuite le logiciel de planning."
+      },
+      "myTask": {
+        "title": "Baptiste a besoin de votre aide sur une tâche",
+        "body": "Ouvrez la tâche et lisez son commentaire, puis appuyez sur Suivant.",
+        "role": "Vous portez l'import de plannings CSV dans le projet Produit. Baptiste vient de le commenter et vous demande de l'aide.",
+        "way2": "Ouvrez « Product »",
+        "way3": "Ouvrez la tâche « Import rotas from a CSV file »",
+        "way4": "Lisez le commentaire de Baptiste dans sa discussion"
+      },
+      "teammate": {
+        "title": "Un collègue commente",
+        "body": "Rien à faire pour l'instant : Baptiste est sur le point de commenter votre tâche « Import rotas from a CSV file ». Appuyez sur Suivant une fois son commentaire arrivé.",
+        "role": "Baptiste Noël construit le moteur de planification avec vous, et il a besoin de votre aide sur cette tâche."
+      },
+      "askAgent": {
+        "title": "Confiez-la à votre agent",
+        "body": "Ouvrez Discussions en bas de l'écran, à côté de la tâche, choisissez votre conversation avec {{agent}}, écrivez la demande ci-dessous et appuyez sur Envoyer.",
+        "text": "Découpez la tâche « Import rotas from a CSV file » de Baptiste en trois sous-tâches et créez-les, puis répondez à Baptiste dans sa discussion. Inutile de me demander confirmation.",
+        "role": "Vous n'avez pas le temps de planifier l'import vous-même. Vous demandez à {{agent}}, comme à un assistant : il découpe la tâche et répond à Baptiste à votre place.",
+        "way1": "Ouvrez Discussions en bas de l'écran, à côté de la tâche",
+        "say": "Écrivez à {{agent}} :"
+      },
+      "subtasks": {
+        "title": "Votre agent fait le découpage",
+        "body": "Il lit la tâche et crée ses sous-tâches. Appuyez sur Suivant dès que la première s'affiche.",
+        "role": "Pendant que {{agent}} travaille, vous regardez le plan prendre forme.",
+        "way3": "Suivez ses étapes dans votre conversation avec lui"
+      },
+      "reply": {
+        "title": "Il répond à Baptiste là où il a demandé",
+        "body": "Votre agent poste sa réponse dans la discussion de la tâche. Appuyez sur Suivant une fois qu'elle est là.",
+        "role": "Baptiste reçoit sa réponse dans la discussion de la tâche, de la part de votre agent, signée comme telle.",
+        "way3": "Lisez la réponse de votre agent dans la discussion de la tâche"
+      },
+      "board": {
+        "title": "Voyez tout le plan d'un coup d'œil",
+        "body": "Les lignes entourées sont les sous-tâches que {{agent}} vient de créer, imbriquées sous votre tâche. Appuyez sur Suivant.",
+        "role": "Les sous-tâches de {{agent}} figurent maintenant dans le plan produit avec le reste. Vérifiez que rien n'est en retard.",
+        "way1": "Cliquez sur « Product » en haut de la tâche",
+        "way2": "Vous êtes sur le projet : les nouvelles sous-tâches sont dans sa liste"
+      },
+      "review": {
+        "title": "Relisez ce qu'il a fait",
+        "body": "La tâche affiche maintenant ses sous-tâches et la réponse de votre agent à Baptiste. Vérifiez, déplacez ou modifiez-les, puis appuyez sur Suivant.",
+        "role": "Avant que Baptiste n'agisse sur le plan, vous vérifiez que c'est bien celui que vous voulez.",
+        "way3": "Vérifiez ses sous-tâches et la réponse de votre agent"
+      },
+      "done": {
+        "title": "Voilà pour les projets",
+        "body": "Les agents prennent une part du travail sur les tâches ; vous restez à la relecture.",
+        "role": "Baptiste a son plan, et cela vous a pris une minute, pas un après-midi."
+      }
+    },
+    "saasChat": {
+      "title": "Discussion d'équipe",
+      "summary": "Une question qui demande le web ; votre agent la recherche dans sa conversation et cite sa source.",
+      "channels": {
+        "title": "Vos conversations",
+        "body": "Les canaux, les messages directs et vos agents se trouvent dans Discussions. Appuyez sur Suivant.",
+        "role": "Vous travaillez avec Lucie et le reste de l'équipe dans des canaux et des messages directs."
+      },
+      "question": {
+        "title": "Une collègue a une question",
+        "body": "Rien à faire pour l'instant : Lucie est sur le point de demander dans #seasonal-staffing comment les hôtels organisent leur personnel pour la haute saison. Appuyez sur Suivant une fois son message arrivé.",
+        "role": "Lucie prépare la feuille de route des fonctions de planning saisonnier, et elle vous interroge."
+      },
+      "readQuestion": {
+        "title": "Lisez la question de Lucie",
+        "body": "Ouvrez #seasonal-staffing dans Discussions et lisez le message de Lucie, puis appuyez sur Suivant.",
+        "role": "Lucie a besoin d'une réponse que vous n'avez pas encore.",
+        "way2": "Ouvrez #seasonal-staffing",
+        "way3": "Lisez son message"
+      },
+      "askAgent": {
+        "title": "Demandez à votre agent de chercher",
+        "body": "Ouvrez Discussions en bas de l'écran, à côté du canal, choisissez votre conversation avec {{agent}} et envoyez la question ci-dessous avec Envoyer. Il lit la page que Lucie indique et la cite. La source est une page fictive de cette démo.",
+        "text": "Lisez la page que Lucie a partagée dans le canal Seasonal staffing et dites-moi en quelques lignes comment les hôtels organisent leur personnel saisonnier, avec le lien.",
+        "role": "Vous ne connaissez pas la réponse, mais {{agent}} peut lire la page et la citer.",
+        "say": "Demandez à {{agent}} :",
+        "way1": "Ouvrez Discussions en bas de l'écran, à côté du canal"
+      },
+      "searching": {
+        "title": "Il lit la page",
+        "body": "{{agent}} lit la page indiquée par Lucie ; chaque outil qu'il utilise s'affiche ici à mesure. Appuyez sur Suivant quand vous l'avez vu.",
+        "role": "{{agent}} fait le travail de recherche que vous feriez dans dix onglets.",
+        "way3": "Suivez ses étapes dans votre conversation avec lui"
+      },
+      "sources": {
+        "title": "Sa source : la page citée",
+        "body": "Sa source est la page qu'il cite sur le personnel saisonnier, affichée en lien sous sa réponse. La page est fictive, faite pour cette démo. Suivant s'active une fois la réponse arrivée.",
+        "role": "Vous pouvez vous fier à la réponse parce que vous vérifiez la source vous-même.",
+        "way3": "Lisez le lien sous sa réponse"
+      },
+      "followUp": {
+        "title": "Transformez-la en tâche",
+        "body": "Dans la même conversation, envoyez la demande ci-dessous : tapez-la et appuyez sur Envoyer ou appuyez sur le micro à côté d'Envoyer et dites-la. Elle transforme la réponse en tâche dans le projet Produit.",
+        "text": "Faites de cette réponse une tâche pour Lucie dans le projet « Product », avec le lien dans sa description.",
+        "role": "Lucie va agir sur la réponse : elle doit devenir une tâche du projet Produit.",
+        "say": "Demandez à {{agent}} :"
+      },
+      "task": {
+        "title": "Votre agent la crée",
+        "body": "Il crée la tâche ou vous demande d'abord. Appuyez sur Suivant une fois qu'elle est là ; vous l'approuverez s'il a demandé.",
+        "role": "{{agent}} transforme sa propre réponse en travail pour Lucie."
+      },
+      "posting": {
+        "title": "Il poste dans le canal",
+        "body": "{{agent}} écrit sa réponse à Lucie dans #seasonal-staffing ; chaque étape s'affiche ici. Appuyez sur Suivant une fois son message dans le canal.",
+        "role": "{{agent}} poste pour vous, sous son propre nom, sans que vous ayez rien à recopier."
+      },
+      "replyInChannel": {
+        "title": "Sa réponse dans le canal",
+        "body": "La réponse de {{agent}} est dans #seasonal-staffing, sous la question de Lucie, signée de votre agent. Appuyez sur Suivant.",
+        "role": "Lucie a la réponse, sa source et sa tâche en un seul message.",
+        "way3": "Lisez son message"
+      },
+      "done": {
+        "title": "Voilà pour la discussion avec votre agent",
+        "body": "Votre agent travaille dans toutes les applications depuis une conversation avec vous : il lit le web, cite sa source et crée ce que vous demandez. Comme une personne, il garde sa propre mémoire de tout ce que vous lui dites, sans compaction, et ses outils en font un expert.",
+        "role": "Lucie a sa réponse avec sa source, et une tâche pour agir, dans son canal."
+      },
+      "replyTobias": {
+        "title": "Répondez à Lucie dans le canal",
+        "body": "Dans la même conversation, envoyez la demande ci-dessous avec Envoyer. {{agent}} poste la réponse dans #seasonal-staffing pour Lucie, signée de votre agent, avec sa source et la tâche.",
+        "text": "Répondez à Lucie dans #seasonal-staffing avec ce que vous avez trouvé et le lien, et indiquez-lui sa nouvelle tâche.",
+        "role": "Lucie a demandé dans le canal : la réponse a sa place là, où l'équipe la voit.",
+        "say": "Demandez à {{agent}} :"
+      }
+    },
+    "saasSales": {
+      "title": "Ventes",
+      "summary": "Un groupe d'hôtels écrit ; une routine consulte vos fiches, se renseigne sur lui, puis vous demande d'approuver l'entreprise, le contact, un devis et la réponse en une seule demande, exécutée dans l'ordre.",
+      "crm": {
+        "title": "À qui vous parlez",
+        "body": "À côté d'une conversation, la fiche client montre ce que Liaison sait de l'expéditeur. Appuyez sur Suivant.",
+        "role": "Vous vendez un logiciel de planning aux hôtels et aux restaurants. Avant de répondre à quelqu'un, vous voulez savoir qui il est.",
+        "way2": "Ouvrez la première conversation de la boîte de réception"
+      },
+      "routine": {
+        "title": "Une routine pour les demandes de groupes",
+        "body": "« Prepare quotes for group requests » se déclenche à chaque e-mail d'un groupe d'hôtels qui demande un devis. Elle se renseigne, puis prépare les fiches entreprise et contact, un devis et votre réponse, et vous les remet à approuver. Elle n'envoie rien toute seule. Appuyez sur Suivant.",
+        "role": "Se renseigner à la main sur chaque demande vous prend une heure par jour ; une routine peut le faire.",
+        "way2": "Ouvrez {{agent}} dans la liste",
+        "way3": "Ouvrez son onglet Routines"
+      },
+      "enable": {
+        "title": "Activez-la",
+        "body": "Appuyez sur l'interrupteur de la routine pour l'activer. Désormais elle se déclenche à chaque demande de groupe.",
+        "role": "Vous voulez que chaque groupe soit étudié avant que vous répondiez, sans le faire vous-même."
+      },
+      "liveEmail": {
+        "title": "Un groupe écrit",
+        "body": "Rien à faire pour l'instant : Résidence Olympe va demander un devis pour 11 sites. Appuyez sur Suivant une fois l'e-mail arrivé.",
+        "role": "Résidence Olympe, un petit groupe d'hôtels, vous écrit en ce moment."
+      },
+      "researching": {
+        "title": "La routine travaille",
+        "body": "Attendez ici, rien à faire : la routine lit l'e-mail, consulte vos fiches et, le groupe étant nouveau, lit son site. Puis elle prépare tout : l'entreprise, le contact, un devis et la réponse. Cette étape avance toute seule une fois que tout est prêt.",
+        "role": "Pendant que la routine se renseigne sur le groupe, vous faites autre chose."
+      },
+      "bundle": {
+        "title": "Rien ne part sans vous",
+        "body": "La routine a fait sa part : elle s'est renseignée sur le groupe et a tout rédigé, mais n'a rien envoyé. Elle livre une seule demande dans Accueil, nommée d'après sa première action, qui contient ce qu'elle veut faire : créer l'entreprise, créer le contact, émettre le devis, envoyer la réponse. Appuyez sur Suivant.",
+        "role": "Au lieu de plusieurs choses à vérifier une à une, vous décidez une seule fois."
+      },
+      "bundleSteps": {
+        "title": "Quatre étapes, dans l'ordre",
+        "body": "La demande contient ses étapes, exécutées dans cet ordre, chacune montrée en entier : 1. L'entreprise, avec chaque champ qu'elle écrit. 2. Le contact, rattaché à cette entreprise. 3. Un devis pour le groupe : ses lignes, son total et l'entreprise à laquelle il appartient. 4. La réponse au groupe : à qui elle part, le message entier et le PDF du devis en pièce jointe. Ce qu'une étape reprend de la précédente se lit comme cette étape. Appuyez sur Suivant une fois sa carte ouverte.",
+        "role": "Vous voyez toute l'affaire avant que quoi que ce soit n'arrive.",
+        "way2": "Cliquez sur la ligne de la demande pour l'ouvrir"
+      },
+      "approve": {
+        "title": "Approuvez une fois",
+        "body": "Appuyez sur Approuver : l'entreprise et le contact sont écrits, puis le devis est émis, puis la réponse part avec le devis en pièce jointe (ici vers un prospect fictif), dans cet ordre. Si une étape échoue, aucune suivante ne s'exécute et la routine prépare une demande corrigée.",
+        "role": "Une seule décision, et l'affaire avance dans le bon ordre.",
+        "undo": "Laissez partir ou appuyez sur Annuler pour garder la demande en attente.",
+        "way2": "Ouvrez la demande, puis appuyez sur Approuver"
+      },
+      "brief": {
+        "title": "Votre synthèse",
+        "body": "Une fois terminée, la routine poste son résumé dans votre discussion avec {{agent}} : qui est le groupe, d'après son site, le numéro du devis et ce qui est parti. Appuyez sur Suivant une fois qu'il est là.",
+        "role": "Vous abordez la conversation avec le groupe en sachant qui il est.",
+        "way3": "Lisez le résumé, en bas de la discussion",
+        "way1": "Ouvrez Discussions en bas de l'écran, à côté de la routine"
+      },
+      "card": {
+        "title": "Ce que Liaison sait",
+        "body": "La fiche client montre maintenant les fiches que vous avez approuvées : le contact et l'entreprise, avec ce que la routine a appris. Appuyez sur Suivant.",
+        "role": "La prochaine fois qu'ils écrivent, vous voyez tout de suite qui ils sont.",
+        "way2": "Ouvrez l'e-mail du groupe, en haut de la boîte de réception"
+      },
+      "done": {
+        "title": "Voilà pour les ventes",
+        "body": "Les routines font la recherche et tiennent vos fiches à jour ; vous gardez le dernier mot sur chaque fiche et chaque e-mail.",
+        "role": "Chaque demande de groupe est étudiée avant votre réponse, et rien ne part sans vous."
+      }
+    },
+    "saasDev": {
+      "title": "Développeurs",
+      "summary": "Le bug d'un client devient un correctif sur un ordinateur et une pull request ; votre agent rédige ensuite la réponse qui prévient le client.",
+      "intro": {
+        "title": "Comment Liaison code pour vous",
+        "body": "L'application de bureau Liaison relie Claude Code (ou Codex) sur votre ordinateur à Liaison. Vos agents peuvent alors lui confier des tâches, comme corriger un bug et ouvrir une pull request. Chaque session s'exécute dans le mode choisi dans son menu Modes. En Auto, le mode par défaut, les commandes courantes s'exécutent et les risquées attendent votre accord, d'où que vous soyez. Appuyez sur Suivant.",
+        "role": "Vous construisez un produit de planning, et vous voulez que les bugs des clients soient corrigés pendant que vous faites autre chose."
+      },
+      "computers": {
+        "title": "Vos ordinateurs connectés",
+        "body": "Vos ordinateurs connectés s'affichent ici. « Demo laptop (recorded) » est déjà connecté dans cet espace de travail. Il rejoue une session Claude Code enregistrée : vous n'installez rien. Appuyez sur Suivant.",
+        "role": "Un ordinateur connecté à Liaison est un ordinateur auquel vos agents peuvent confier du travail."
+      },
+      "askBugs": {
+        "title": "Demandez les bugs récents à votre agent",
+        "body": "Ouvrez Discussions en bas de l'écran, choisissez votre conversation avec {{agent}} et envoyez la question ci-dessous avec Envoyer. Il lit le canal Rota bugs de l'équipe.",
+        "text": "Lisez les canaux Rota bugs et Support handover et listez les bugs qui y sont signalés, du plus récent au plus ancien, une ligne chacun.",
+        "role": "Le support signale les bugs aux développeurs dans des canaux d'équipe. {{agent}} peut les lire pour vous.",
+        "say": "Demandez à {{agent}} :",
+        "way1": "Ouvrez Discussions en bas de l'écran"
+      },
+      "bugs": {
+        "title": "Les bugs récents",
+        "body": "{{agent}} liste les bugs des canaux. Celui qu'un client attend : l'export de paie s'arrête après le quatrième établissement. Appuyez sur Suivant une fois lu.",
+        "role": "Vous voyez ce qui est cassé, et qui attend, sans lire les canaux.",
+        "way3": "Lisez sa réponse dans votre conversation avec lui"
+      },
+      "askDispatch": {
+        "title": "Demandez-lui d'envoyer le correctif à l'ordinateur",
+        "body": "Envoyez la demande ci-dessous avec Envoyer. {{agent}} confie le bug de l'export à Claude Code sur l'ordinateur de démonstration.",
+        "text": "Lancez la correction de l'export de paie qui s'arrête après le quatrième établissement sur mon ordinateur, le Demo laptop (recorded). Elle doit ajouter un test et ouvrir une pull request une fois terminée.",
+        "role": "Vous choisissez le bug. Claude Code sur votre ordinateur fait la correction.",
+        "say": "Demandez à {{agent}} :"
+      },
+      "dispatch": {
+        "title": "La tâche est envoyée",
+        "body": "{{agent}} envoie la tâche à Demo laptop (recorded). Une carte de session apparaît dans votre conversation. Attendez-la, puis appuyez sur Suivant.",
+        "role": "Votre agent lance le travail sur votre ordinateur à votre place. Rien ne s'exécute ailleurs.",
+        "way3": "Cherchez la carte de session dans votre conversation avec lui"
+      },
+      "stream": {
+        "title": "Regardez-le travailler",
+        "body": "La session diffuse ce que fait Claude Code, étape par étape. C'est une session enregistrée, rejouée pour la démo. Appuyez sur Suivant dès qu'il demande votre permission ; vous l'accorderez à l'étape suivante.",
+        "role": "Vous suivez le travail de Claude Code en direct, d'où que vous soyez."
+      },
+      "permission": {
+        "title": "Il demande d'abord",
+        "body": "Pousser le correctif est une commande risquée : Claude Code vous demande donc d'abord. C'est le mode de la session, Auto : les commandes courantes s'exécutent, les risquées attendent votre accord. Strict, à côté du modèle, est son bac à sable : seulement son dossier et les sites approuvés. Appuyez une fois sur Autoriser.",
+        "role": "Le mode décide de ce que Claude Code peut lancer sans demander, le niveau de ce qu'il peut atteindre. Vous choisissez les deux sous la zone de message.",
+        "way1": "Ouvrez la session de l'ordinateur de démonstration dans la liste"
+      },
+      "result": {
+        "title": "Le résultat",
+        "body": "Terminé : le correctif est dans une pull request, enregistrée pour cette démo. Son lien est sur la carte de résultat. Appuyez sur Suivant.",
+        "role": "L'export est corrigé, et la modification attend votre relecture comme n'importe quelle autre."
+      },
+      "report": {
+        "title": "Le compte rendu dans votre conversation",
+        "body": "La session terminée rend compte dans votre conversation avec {{agent}} : ce qu'elle a fait et le lien de la pull request. Appuyez sur Suivant.",
+        "role": "Vous êtes informé là où vous avez demandé, sans ouvrir la session.",
+        "way3": "Lisez le compte rendu dans votre conversation avec lui"
+      },
+      "askTell": {
+        "title": "Prévenez la cliente",
+        "body": "Envoyez la demande ci-dessous avec Envoyer. {{agent}} rédige la réponse à la cliente dont c'était le ticket ; elle attend votre approbation.",
+        "text": "Rédigez une réponse à Claire sur son ticket d'export de paie qui dit où en est le correctif, avec le lien de la pull request s'il y en a une. Ne l'envoyez pas, je veux d'abord la relire.",
+        "role": "Le ticket, le correctif et la cliente forment un seul fil. Votre agent peut le boucler.",
+        "say": "Demandez à {{agent}} :",
+        "way1": "Ouvrez Discussions en bas de l'écran, à côté de la session"
+      },
+      "replyDraft": {
+        "title": "Un brouillon de réponse attend",
+        "body": "{{agent}} rédige la réponse sur son ticket. Appuyez sur Suivant quand sa carte s'affiche ; vous la lirez et l'approuverez à l'étape suivante.",
+        "role": "Rien n'arrive à Claire tant qu'une personne n'a pas dit oui.",
+        "way3": "Cherchez la carte de la réponse dans votre conversation avec lui"
+      },
+      "approveReply": {
+        "title": "Approuvez la réponse",
+        "body": "Lisez le brouillon comme Claire le lira, puis appuyez sur Approuver. Elle part chez Claire (une cliente fictive ici).",
+        "role": "La cliente est prévenue une fois le correctif fait, pas avant.",
+        "undo": "Laissez partir ou appuyez sur Annuler pour que la réponse redevienne un brouillon."
+      },
+      "pair": {
+        "title": "Connectez votre propre ordinateur",
+        "body": "Trois étapes : récupérez l'application de bureau avec le bouton ici, connectez-vous à Liaison dedans, puis choisissez Claude Code. Votre ordinateur apparaît alors dans cette liste, et vos agents peuvent lui confier des tâches. Appuyez sur Suivant.",
+        "role": "Votre propre ordinateur peut recevoir des tâches de la même façon."
+      },
+      "done": {
+        "title": "Voilà pour le développement",
+        "body": "Vos agents envoient des tâches de code à vos ordinateurs, et chaque session vous demande selon le mode choisi. Le ticket, le correctif et la cliente prévenue forment un seul fil.",
+        "role": "L'export est corrigé, la cliente est prévenue, et le push a attendu votre accord."
+      }
+    },
+    "saasKnowledge": {
+      "title": "Connaissances de l'entreprise",
+      "summary": "Articles d'aide, politiques et guides dans une seule base de connaissances ; chaque agent ne lit que ce que la personne qui l'interroge peut ouvrir.",
+      "sources": {
+        "title": "Tout ce que sait votre entreprise, au même endroit",
+        "body": "La barre latérale liste les collections : le centre d'aide, les politiques financières et les documents produit écrits dans Liaison. Appuyez sur Suivant.",
+        "role": "Vous dirigez Tideform. Vos articles d'aide, vos tarifs et vos politiques financières sont ici, et qui peut lire quoi se règle document par document.",
+        "way2": "Regardez les collections dans la barre latérale"
+      },
+      "openPl": {
+        "title": "Ouvrez la politique de remboursement",
+        "body": "Ouvrez la Refund policy, lisez-la, puis appuyez sur Suivant.",
+        "role": "Cette politique appartient à la finance : elle dit quand une charge est remboursée et qui l'approuve.",
+        "way1": "Cliquez sur « Refund policy » dans la liste",
+        "way2": "Lisez le haut du document"
+      },
+      "share": {
+        "title": "Voyez qui peut l'ouvrir",
+        "body": "Appuyez sur Partager et lisez qui y a accès, puis appuyez sur Suivant.",
+        "role": "Restreint signifie seulement les personnes avec qui il est partagé. Clémence est arrivée au support le mois dernier. Elle n'est pas dans cette liste : aucun agent qu'elle interroge ne peut donc l'ouvrir non plus.",
+        "way1": "Appuyez sur Partager en haut à droite du document",
+        "way2": "Lisez « Personnes ayant accès » et « Rôles ayant accès »"
+      },
+      "askAgent": {
+        "title": "Interrogez votre agent sur les sources",
+        "body": "Ouvrez Discussions en bas de l'écran, à côté de la politique, choisissez votre conversation avec {{agent}} et envoyez la question ci-dessous avec Envoyer. Il répond à partir de la politique de remboursement et de l'article sur les paiements échoués, et les cite.",
+        "role": "Votre agent voit ce que vous voyez : il peut combiner deux politiques en une réponse.",
+        "text": "Quand remboursons-nous une charge, qui l'approuve, et que se passe-t-il pour une carte refusée ? Citez les documents utilisés.",
+        "say": "Demandez à {{agent}} :",
+        "way1": "Ouvrez Discussions en bas de l'écran, à côté de la politique"
+      },
+      "answer": {
+        "title": "Sa réponse, avec ses sources",
+        "body": "{{agent}} répond à côté de la politique, en citant les deux documents. Appuyez sur Suivant une fois qu'il a répondu.",
+        "role": "Vous obtenez une réponse tirée de deux endroits, et vous pouvez ouvrir chaque source.",
+        "way3": "Lisez sa réponse sous votre question"
+      },
+      "lucasAsks": {
+        "title": "Clémence pose la même question",
+        "body": "Rien à faire pour l'instant : Clémence interroge Support Desk sur les remboursements dans #support. Appuyez sur Suivant une fois son message arrivé.",
+        "role": "Clémence est arrivée au support le mois dernier. Elle demande à Support Desk ce que vous avez demandé à votre agent."
+      },
+      "lucasAnswer": {
+        "title": "Support Desk répond avec ses accès",
+        "body": "Rien à faire que lire : Support Desk répond à Clémence dans #support, en cherchant dans les Connaissances comme elle, et la politique de remboursement n'est pas à elle d'ouvrir. Appuyez sur Suivant une fois sa réponse lue.",
+        "role": "L'agent travaille avec les accès de Clémence, pas les vôtres : il ne trouve rien sur les remboursements.",
+        "way2": "Ouvrez #support sous Canaux",
+        "way3": "Lisez la réponse de Support Desk à Clémence"
+      },
+      "done": {
+        "title": "Un seul cerveau, cloisonné par rôle",
+        "body": "Vous, Sara à la finance et tout agent que l'un de vous interroge peuvent lire la politique de remboursement. Clémence au support, et tout agent qu'elle interroge, ne le peuvent pas.",
+        "role": "Un agent lit avec les accès de la personne qui l'interroge. C'est pourquoi vous pouvez donner aux agents toutes les connaissances de l'entreprise : personne n'obtient par un agent plus que ce qu'il pourrait ouvrir lui-même."
       }
     }
   }

@@ -91,6 +91,30 @@ describe("demo-only tours", () => {
     }
   })
 
+  it("a software world tour is unavailable, 404s and its injector refuses in any other world", async () => {
+    const FIXTURE = "kernel.world-fixture"
+    // A demo org of the default world: not listed, not found, no row written.
+    await markOrgAsDemo(orgId, visitorMarker(24))
+    const list = ((await (await call("GET", "")).json()) as { data: ListToursResponse }).data
+    expect(list.tours.some((t) => t.tourId === FIXTURE)).toBe(false)
+    expect((await call("POST", `/${FIXTURE}/start`, { source: "demo" })).status).toBe(404)
+    expect((await call("GET", `/${FIXTURE}/progress`)).status).toBe(404)
+    const rowsOf = () =>
+      sql`SELECT 1 FROM kernel.tour_progress WHERE org_id = ${orgId} AND tour_id = ${FIXTURE}`
+    expect(await rowsOf()).toHaveLength(0)
+    // The same org holding the software world is offered it and starts it.
+    await markOrgAsDemo(orgId, visitorMarker(24, new Date(), undefined, { worldId: "saas" }))
+    const inWorld = ((await (await call("GET", "")).json()) as { data: ListToursResponse }).data
+    expect(inWorld.tours.some((t) => t.tourId === FIXTURE)).toBe(true)
+    expect((await call("POST", `/${FIXTURE}/start`, { source: "demo" })).status).toBe(200)
+    expect(await rowsOf()).toHaveLength(1)
+    // And the scenarios of the default world are no longer offered there.
+    expect(inWorld.tours.some((t) => t.tourId === SCENARIO)).toBe(false)
+    expect((await call("POST", `/${SCENARIO}/start`, { source: "demo" })).status).toBe(404)
+    await sql`DELETE FROM kernel.tour_progress WHERE org_id = ${orgId}`
+    await markOrgAsDemo(orgId, visitorMarker(24))
+  })
+
   it("on a demo org: listed and startable", async () => {
     await markOrgAsDemo(orgId, visitorMarker(24))
     const list = ((await (await call("GET", "")).json()) as { data: ListToursResponse }).data

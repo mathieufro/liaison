@@ -99,6 +99,26 @@ describe("openExternal", () => {
   })
 })
 
+describe("editApproval", () => {
+  it("edits only this app's pending approval, through the approvals route", async () => {
+    const d = deps({
+      "/api/approvals/a1": { id: "a1", status: "pending", toolName: "invoicing:issue" },
+      "/api/approvals/a2": { id: "a2", status: "pending", toolName: "boxtal:create_shipment" },
+      "/api/approvals/a2/payload": { payloadHash: "h2", currentPayload: { amountMinor: "500" } },
+    })
+    await expect(
+      buildAppHostCalls(d).editApproval("boxtal", "a1", { amountMinor: "500" }),
+    ).rejects.toThrow(/not an approval of this app/)
+    expect(d.calls).not.toHaveBeenCalledWith("/api/approvals/a1/payload", expect.anything())
+    const edited = await buildAppHostCalls(d).editApproval("boxtal", "a2", { amountMinor: "500" })
+    expect(edited).toEqual({ payloadHash: "h2", currentPayload: { amountMinor: "500" } })
+    expect(d.calls).toHaveBeenCalledWith("/api/approvals/a2/payload", {
+      method: "POST",
+      body: JSON.stringify({ fields: { amountMinor: "500" } }),
+    })
+  })
+})
+
 describe("decideApproval", () => {
   it("refuses another app's approval, before any dialog", async () => {
     const d = deps({

@@ -320,6 +320,18 @@ describe("provider teardown of a removed connection", () => {
     ).toHaveLength(0)
   })
 
+  it("an org purge with no live connection does not start the org's runtime", async () => {
+    const id = await insertConnection({ identifier: `purge-gone-${orgId}@example.com` })
+    await sql`UPDATE kernel.connected_accounts SET status = 'disconnected' WHERE id = ${id}`
+    initializedOrgRuntimes.delete(orgId)
+    try {
+      expect(await teardownOrgConnections(orgId)).toEqual([])
+      expect(initializedOrgRuntimes.has(orgId)).toBe(false)
+    } finally {
+      initializedOrgRuntimes.add(orgId)
+    }
+  })
+
   it("a teardown row outlives its org's rows while an outage lasts", async () => {
     declare("mail", "gmail")
     const id = await insertConnection({ identifier: `purge-outage-${orgId}@example.com` })

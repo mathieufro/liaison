@@ -133,6 +133,34 @@ export interface SeedDemoAgentNativeOptions {
    * company's routines only, exactly as before.
    */
   scenarioParts?: ReadonlySet<DemoSeedPart>
+  /** The world pack's agent native specs. Defaults to the `products` world's. */
+  specs?: DemoAgentNativeSpecs
+}
+
+/**
+ * What a world's agent native layer writes: its playbooks, routines, delegate
+ * roles, desk memory, remembered conversations, knowledge pointers, activity
+ * timeline and the owner's assistant. Pure data, one per world pack
+ * (`seed/worlds`); the `products` world's is `PRODUCTS_AGENT_NATIVE_SPECS`.
+ */
+export interface DemoAgentNativeSpecs {
+  skills: readonly SkillSpec[]
+  routines: readonly RoutineSpec[]
+  subAgents: readonly SubAgentSpec[]
+  memory: readonly MemorySpec[]
+  episodes: readonly EpisodeSpec[]
+  knowledgePointers: readonly KnowledgePointerSpec[]
+  activity: readonly ActivitySpec[]
+  ownerAgentPurpose: string
+  /** The rooms the owner's assistant sits in, by thread title. */
+  ownerAgentChannelTitles: readonly string[]
+  /** The `products` world's scenario routines (support, prospect) join a tailored seed. */
+  scenarioRoutines: boolean
+  /**
+   * Routines the world's own layer writes (from product templates), which this
+   * layer's retirement pass must keep: they are current, not retired.
+   */
+  layerRoutineNames?: readonly string[]
 }
 
 export interface SeedDemoAgentNativeResult {
@@ -155,7 +183,7 @@ export interface SeedDemoAgentNativeResult {
 
 // ── 1. SKILLS ──────────────────────────────────────────────────────────────
 
-interface SkillSpec {
+export interface SkillSpec {
   /** Kebab case, unique per owning agent. This is what `skill_read` is called with. */
   name: string
   /** At most 100 characters (DB check constraint) and half the auto surface label vocabulary. */
@@ -650,7 +678,7 @@ export const SKILL_SPECS: SkillSpec[] = [
 
 // ── 2. ROUTINES ────────────────────────────────────────────────────────────
 
-interface RoutineSpec {
+export interface RoutineSpec {
   name: string
   /** At most 200 characters (DB check constraint). */
   description: string
@@ -847,7 +875,7 @@ const ROUTINE_SPECS: RoutineSpec[] = [
 
 // ── 3. SUB AGENT ROLES ─────────────────────────────────────────────────────
 
-interface SubAgentSpec {
+export interface SubAgentSpec {
   agentType: string
   whenToUse: string
   systemPrompt: string
@@ -919,7 +947,7 @@ const SUB_AGENT_SPECS: SubAgentSpec[] = [
 
 // ── 4. AGENT MEMORY ────────────────────────────────────────────────────────
 
-interface MemorySpec {
+export interface MemorySpec {
   /** Handle of the agent whose tree this lives in. */
   ownerHandle: string
   /** One of the four settable types. */
@@ -1048,7 +1076,7 @@ const OWNER_AGENT_KEY = "owner"
 // belong to the support layer, so a title that is not in this org is logged and
 // skipped rather than thrown.
 
-interface EpisodeSpec {
+export interface EpisodeSpec {
   /** Agent handle, or `owner` for the org owner's own personal agent. */
   agentKey: string
   /** The conversation this agent remembers, by the support layer's own title. */
@@ -1251,7 +1279,7 @@ const EPISODE_SPECS: EpisodeSpec[] = [
 // Every row converges on an id derived from (agent, collection), so a re-seed
 // updates the row it already made and writes no second one.
 
-interface KnowledgePointerSpec {
+export interface KnowledgePointerSpec {
   /** An agent handle, or `owner` for the org owner's personal agent. */
   agentKey: string
   /** The collection's name, exactly as the support layer wrote it. */
@@ -1317,7 +1345,7 @@ const KNOWLEDGE_POINTER_SPECS: KnowledgePointerSpec[] = [
 // an id derived from (agent, key), so a re-seed rewrites its own and nothing
 // else.
 
-interface ActivitySpec {
+export interface ActivitySpec {
   /** An agent handle, or `owner` for the org owner's personal agent. */
   agentKey: string
   /** Unique per agent: the row's deterministic id is derived from it. */
@@ -1642,11 +1670,12 @@ function ownerUserIdOf(org: SeedDemoOrgResult): string {
 async function seedSkills(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   log: (msg: string) => void,
 ): Promise<Record<string, string>> {
   const byName = await seedOrgSkills(ctx, {
     createdByUserId: org.adminUserId,
-    skills: SKILL_SPECS.map((spec) => ({
+    skills: specs.skills.map((spec) => ({
       name: spec.name,
       description: spec.description,
       domain: spec.domain,
@@ -1669,11 +1698,12 @@ async function seedSkills(
 async function seedRoutines(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   log: (msg: string) => void,
 ): Promise<Record<string, string>> {
   const byName: Record<string, string> = {}
   const scopesOf = scopeReader(ctx)
-  for (const spec of ROUTINE_SPECS) {
+  for (const spec of specs.routines) {
     // `owner` is the account the org belongs to. A seed with no owner at all
     // (the nightly reset's probe org) falls back to the founder, who exists in
     // every seeded world.
@@ -1701,10 +1731,10 @@ async function seedRoutines(
       },
     })
   }
-  const events = ROUTINE_SPECS.filter((r) => r.kind === "event").length
+  const events = specs.routines.filter((r) => r.kind === "event").length
   log(
     `routines: ${Object.keys(byName).length} seeded OFF ` +
-      `(${events} event driven, ${ROUTINE_SPECS.length - events} scheduled)`,
+      `(${events} event driven, ${specs.routines.length - events} scheduled)`,
   )
   return byName
 }
@@ -1914,11 +1944,12 @@ export async function enableScenarioRoutine(
 async function seedSubAgents(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   log: (msg: string) => void,
 ): Promise<string[]> {
   const seeded = await seedSubAgentRoles(ctx, {
     creatorUserId: org.adminUserId,
-    roles: SUB_AGENT_SPECS,
+    roles: specs.subAgents,
   })
   log(`sub agents: ${seeded.length} delegate roles ready`)
   return seeded
@@ -1931,11 +1962,12 @@ async function seedSubAgents(
 async function seedMemory(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   log: (msg: string) => void,
 ): Promise<string[]> {
   await seedMemoryEntries(ctx, {
     writerUserId: org.adminUserId,
-    entries: MEMORY_SPECS.map((spec) => ({
+    entries: specs.memory.map((spec) => ({
       ownerAgentId: agentIdFor(org, spec.ownerHandle, `memory '${spec.name}'`),
       type: spec.type,
       name: spec.name,
@@ -1943,9 +1975,9 @@ async function seedMemory(
       content: spec.content,
     })),
   })
-  const keys = MEMORY_SPECS.map((spec) => `${spec.ownerHandle}:${spec.type}/${spec.name}`)
+  const keys = specs.memory.map((spec) => `${spec.ownerHandle}:${spec.type}/${spec.name}`)
   log(
-    `agent memory: ${keys.length} entries across ${new Set(MEMORY_SPECS.map((m) => m.ownerHandle)).size} desks`,
+    `agent memory: ${keys.length} entries across ${new Set(specs.memory.map((m) => m.ownerHandle)).size} desks`,
   )
   return keys
 }
@@ -1959,6 +1991,7 @@ async function seedMemory(
 async function seedEpisodes(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   log: (msg: string) => void,
 ): Promise<string[]> {
   const ownerUserId = ownerUserIdOf(org)
@@ -1967,7 +2000,7 @@ async function seedEpisodes(
   const seeds: EpisodeSeed[] = []
   const keys: string[] = []
   const skipped: string[] = []
-  for (const spec of EPISODE_SPECS) {
+  for (const spec of specs.episodes) {
     const owner = spec.agentKey === OWNER_AGENT_KEY
     const agentId = owner
       ? ownerAgentId
@@ -1992,7 +2025,7 @@ async function seedEpisodes(
   const episodeKeys = paths.map((path, i) => `${keys[i]}:${path}`)
   log(
     `remembered conversations: ${episodeKeys.length} episodes across ` +
-      `${new Set(EPISODE_SPECS.map((e) => e.agentKey)).size} agents` +
+      `${new Set(specs.episodes.map((e) => e.agentKey)).size} agents` +
       (skipped.length > 0 ? ` (skipped ${skipped.length}: ${skipped.join(", ")})` : ""),
   )
   return episodeKeys
@@ -2019,9 +2052,24 @@ const OWNER_AGENT_CHANNEL_TITLES = [
   "Preamp hiss: are we replacing units we should not be?",
 ] as const
 
+/** The `products` world's agent native layer: today's Resonant Audio Labs. */
+export const PRODUCTS_AGENT_NATIVE_SPECS: DemoAgentNativeSpecs = {
+  skills: SKILL_SPECS,
+  routines: ROUTINE_SPECS,
+  subAgents: SUB_AGENT_SPECS,
+  memory: MEMORY_SPECS,
+  episodes: EPISODE_SPECS,
+  knowledgePointers: KNOWLEDGE_POINTER_SPECS,
+  activity: ACTIVITY_SPECS,
+  ownerAgentPurpose: OWNER_AGENT_PURPOSE,
+  ownerAgentChannelTitles: OWNER_AGENT_CHANNEL_TITLES,
+  scenarioRoutines: true,
+}
+
 async function seedOwnerAgentPresence(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   log: (msg: string) => void,
 ): Promise<{ purpose: boolean; channels: number }> {
   const agentId = await personalAgentOf(ctx, ownerUserIdOf(org))
@@ -2029,9 +2077,9 @@ async function seedOwnerAgentPresence(
     log("owner agent: this org has no owner personal agent, so there is nothing to describe")
     return { purpose: false, channels: 0 }
   }
-  await describeAgent(ctx, agentId, OWNER_AGENT_PURPOSE)
-  const seated = await seatAgentInThreads(ctx, agentId, OWNER_AGENT_CHANNEL_TITLES)
-  const missing = OWNER_AGENT_CHANNEL_TITLES.length - seated
+  await describeAgent(ctx, agentId, specs.ownerAgentPurpose)
+  const seated = await seatAgentInThreads(ctx, agentId, specs.ownerAgentChannelTitles)
+  const missing = specs.ownerAgentChannelTitles.length - seated
   log(
     `owner agent: purpose set, seated in ${seated} channels` +
       (missing > 0 ? ` (${missing} named room absent from this org)` : ""),
@@ -2048,13 +2096,14 @@ async function seedOwnerAgentPresence(
 async function seedKnowledgePointers(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   log: (msg: string) => void,
 ): Promise<string[]> {
   const ownerAgentId = await personalAgentOf(ctx, ownerUserIdOf(org))
   const collectionIdByName = await knowledgeCollectionsByName(ctx)
   const ids: string[] = []
   const skipped: string[] = []
-  for (const spec of KNOWLEDGE_POINTER_SPECS) {
+  for (const spec of specs.knowledgePointers) {
     const collectionId = collectionIdByName.get(spec.collectionName)
     const agentId = !collectionId
       ? null
@@ -2069,7 +2118,7 @@ async function seedKnowledgePointers(
   }
   log(
     `agent knowledge: ${ids.length} pointers across ` +
-      `${new Set(KNOWLEDGE_POINTER_SPECS.map((s) => s.agentKey)).size} agents` +
+      `${new Set(specs.knowledgePointers.map((s) => s.agentKey)).size} agents` +
       (skipped.length > 0 ? ` (skipped ${skipped.length}: ${skipped.join(", ")})` : ""),
   )
   return ids
@@ -2083,6 +2132,7 @@ async function seedKnowledgePointers(
 async function seedActivity(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   routineIdsByName: Record<string, string>,
   log: (msg: string) => void,
 ): Promise<string[]> {
@@ -2091,7 +2141,7 @@ async function seedActivity(
   const rooms = await threadsByTitle(ctx)
   const ids: string[] = []
   const skipped: string[] = []
-  for (const spec of ACTIVITY_SPECS) {
+  for (const spec of specs.activity) {
     const agentId =
       spec.agentKey === OWNER_AGENT_KEY
         ? ownerAgentId
@@ -2125,7 +2175,7 @@ async function seedActivity(
   }
   log(
     `agent activity: ${ids.length} timeline rows across ` +
-      `${new Set(ACTIVITY_SPECS.map((s) => s.agentKey)).size} agents` +
+      `${new Set(specs.activity.map((s) => s.agentKey)).size} agents` +
       (skipped.length > 0 ? ` (skipped ${skipped.length}: ${skipped.join(", ")})` : ""),
   )
   return ids
@@ -2146,12 +2196,13 @@ async function seedActivity(
 async function pruneRetiredRows(
   ctx: SeedContext,
   org: SeedDemoOrgResult,
+  specs: DemoAgentNativeSpecs,
   log: (msg: string) => void,
 ): Promise<void> {
   const removed = await pruneRetiredSkillsAndRoutines(ctx, {
     createdByUserId: org.adminUserId,
-    skillNames: SKILL_SPECS.map((s) => s.name),
-    routineNames: ROUTINE_SPECS.map((r) => r.name),
+    skillNames: specs.skills.map((s) => s.name),
+    routineNames: [...specs.routines.map((r) => r.name), ...(specs.layerRoutineNames ?? [])],
   })
   if (removed.length > 0)
     log(`agent native: retired ${removed.length} row(s): ${removed.join(", ")}`)
@@ -2172,23 +2223,24 @@ export async function seedDemoAgentNative(
   // Every dated row below (a knowledge pointer's date, a timeline row's
   // instant) is a fixed offset from it, so two runs are identical.
   const ctx = seedContext({ orgId: org.orgId, now: opts.baseTime, log })
+  const specs = opts.specs ?? PRODUCTS_AGENT_NATIVE_SPECS
 
-  await pruneRetiredRows(ctx, org, log)
-  const skillIdsByName = await seedSkills(ctx, org, log)
-  const routineIdsByName = await seedRoutines(ctx, org, log)
-  if (opts.scenarioParts) {
+  await pruneRetiredRows(ctx, org, specs, log)
+  const skillIdsByName = await seedSkills(ctx, org, specs, log)
+  const routineIdsByName = await seedRoutines(ctx, org, specs, log)
+  if (opts.scenarioParts && specs.scenarioRoutines) {
     Object.assign(routineIdsByName, await seedScenarioRoutines(ctx, org, opts.scenarioParts, log))
   }
-  const subAgentTypes = await seedSubAgents(ctx, org, log)
-  const memoryKeys = await seedMemory(ctx, org, log)
-  const ownerPresence = await seedOwnerAgentPresence(ctx, org, log)
+  const subAgentTypes = await seedSubAgents(ctx, org, specs, log)
+  const memoryKeys = await seedMemory(ctx, org, specs, log)
+  const ownerPresence = await seedOwnerAgentPresence(ctx, org, specs, log)
   // After the owner's seats: an episode is keyed on the owner's personal agent,
   // which `seedOwnerAgentPresence` is what makes worth opening at all.
-  const episodeKeys = await seedEpisodes(ctx, org, log)
-  const knowledgePointerIds = await seedKnowledgePointers(ctx, org, log)
+  const episodeKeys = await seedEpisodes(ctx, org, specs, log)
+  const knowledgePointerIds = await seedKnowledgePointers(ctx, org, specs, log)
   // After the routines: a tick row names the routine it ran, and section 2 is
   // where that id comes from.
-  const activityRowIds = await seedActivity(ctx, org, routineIdsByName, log)
+  const activityRowIds = await seedActivity(ctx, org, specs, routineIdsByName, log)
 
   // Read back what actually landed rather than counting what was asked for: a
   // count taken from the spec list cannot see a row that failed to converge.

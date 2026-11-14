@@ -1,7 +1,7 @@
 {
   "name": "contacts",
   "agentInstructions": "Contacts is the people-and-companies directory. Reach for it to resolve who someone is, or to look up a customer or dealer before acting. Key handles: contact id, handle, email, company, external ids. Resolve is idempotent — the same email always maps to the same contact, so resolve rather than create duplicates. Silent-failure gotcha: an unknown contact returns empty, not an error — say you could not find them rather than inventing details.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Contact registry: kernel-owned, manifest-registered UI surface",
   "license": "FSL-1.1-ALv2",
   "listing": {
@@ -62,6 +62,20 @@
                 "null"
               ]
             },
+            "companyName": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The company the person works for: found by domain, else by name, else created."
+            },
+            "companyDomain": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The company's website or domain (acme.example). A personal mail domain is ignored."
+            },
             "notes": {
               "type": [
                 "string",
@@ -73,13 +87,65 @@
         "handler": "importContacts",
         "dedupKey": "externalId",
         "tables": [
-          "kernel.contacts"
+          "kernel.contacts",
+          "kernel.companies"
         ],
         "writeScopes": [
           "kernel:contacts:write"
         ],
         "people": [
           "email"
+        ]
+      },
+      "company": {
+        "label": "Companies",
+        "schema": {
+          "type": "object",
+          "required": [
+            "externalId",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "externalId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "domain": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The company's website or domain (acme.example). A personal mail domain is not saved."
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tags": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "handler": "importCompanies",
+        "dedupKey": "externalId",
+        "tables": [
+          "kernel.companies"
+        ],
+        "writeScopes": [
+          "kernel:companies:write"
         ]
       }
     }
@@ -105,6 +171,26 @@
         "icon": "ContactsIcon",
         "urlPattern": "/contacts/:entityId",
         "referenceable": true
+      },
+      "company-list": {
+        "component": "CompanyList",
+        "label": "Companies",
+        "labelKey": "contacts.companies.title",
+        "icon": "ContactsIcon",
+        "singleton": true,
+        "sidebar": "ContactListSidebar",
+        "urlPattern": "/contacts/companies",
+        "referenceable": false
+      },
+      "company-detail": {
+        "component": "CompanyDetail",
+        "entity": "kernel:company",
+        "label": "Company",
+        "resolveLabel": "resolveCompanyTabLabel",
+        "sidebar": "CompaniesSidebar",
+        "icon": "ContactsIcon",
+        "urlPattern": "/contacts/companies/:entityId",
+        "referenceable": true
       }
     },
     "activityBar": {
@@ -115,7 +201,11 @@
       "tabAction": { "type": "contact-list", "entityId": "list", "label": "Contacts" }
     },
     "wsHandlers": {
-      "contact": { "key": "kernel:contact", "handler": "handleContactEvent" }
+      "contact": { "key": "kernel:contact", "handler": "handleContactEvent" },
+      "company": { "key": "kernel:company", "handler": "handleCompanyEvent" }
     }
+  },
+  "slots": {
+    "company_detail": { "position": "sections" }
   }
 }

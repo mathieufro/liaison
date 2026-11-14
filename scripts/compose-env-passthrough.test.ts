@@ -25,6 +25,9 @@ const OPERATOR_DOCS = [
   // Legal archive on org delete (LEGAL_ARCHIVE_*): documented here only, and
   // once silently not passed through.
   "docs/admin/backups.md",
+  // A demo box's own variables (demo worlds, pool split): once silently not
+  // passed through, so the box opened only the default world.
+  "docs/getting-started/demo.md",
 ]
 
 /** Named in the docs but composed by compose itself from other variables. */
@@ -32,6 +35,11 @@ const COMPOSED: Record<string, string> = {
   DATABASE_URL: "built from POSTGRES_PASSWORD / LIAISON_APP_PASSWORD",
   DATABASE_REQUEST_PASSWORD: "built from LIAISON_REQUEST_PASSWORD",
   MIGRATION_DATABASE_URL: "built from POSTGRES_PASSWORD",
+}
+
+/** Named in the docs but set inside the image by its build, never by deploy/.env. */
+const FROM_IMAGE: Record<string, string> = {
+  LIAISON_VERSION: "ENV in apps/api/Dockerfile, from the build's version argument",
 }
 
 function serverEnvNames(): Set<string> {
@@ -62,7 +70,7 @@ describe("compose passes every documented variable to the app", () => {
 
   it("each documented deploy/.env variable appears as ${NAME} in deploy/docker-compose.yml", () => {
     const missing = [...documentedNames()]
-      .filter(([name]) => !passed.has(name) && !(name in COMPOSED))
+      .filter(([name]) => !passed.has(name) && !(name in COMPOSED) && !(name in FROM_IMAGE))
       .map(([name, doc]) => `${name} (named in ${doc})`)
     expect(missing).toEqual([])
   })

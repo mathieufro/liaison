@@ -1,0 +1,8 @@
+Deactivation deletes the person's away ranges -> apps/api/src/modules/users/away.ts (deleteAwayRangesOf)
+Deactivation deletes calendar-derived away ranges too (one table, every source) -> apps/api/src/modules/users/away.ts (deleteAwayRangesOf)
+Deactivate asks who takes over a manager's companies -> apps/web/src/modules/settings/AdminUsers.tsx (AdminUsers) ; packages/shared/src/i18n/locales/en/kernel.json (settingsUi.accountsToQuestion)
+Without accountsTo the tool and the admin route refuse with the count and change nothing -> apps/api/src/modules/apps/kernel-bulk.ts (deactivateWithCompanies) ; apps/api/src/modules/users/routes.ts (adminUserRoutes)
+A company the new manager cannot see stays without one -> apps/api/src/modules/contacts/company-unowned.ts (handOverCompanies)
+One unowned row per person left, for kernel:users:admin and kernel:companies:write holders -> apps/api/src/modules/contacts/company-unowned.ts (UNOWNED_AUDIENCE_SCOPES) ; apps/api/src/modules/contacts/company-unowned.ts (unownedSummary)
+The row goes at zero or on reactivation -> apps/api/src/modules/contacts/company-unowned.ts (stillUnowned)
+Ask agent to reassign on the unowned row asks the Personal agent, with the row's companies; giving them is the gated companies_write -> apps/web/src/modules/shell/AttentionRowExtras.tsx (AskReassignButton) ; packages/shared/src/i18n/locales/en/kernel.json (homeDecisions.askReassign) ; packages/shared/src/i18n/locales/en/kernel.json (homeDecisions.askReassignMessage) ; apps/api/src/modules/agent/tools/company-tools.ts (registerCompanyTools)

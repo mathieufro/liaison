@@ -29,6 +29,7 @@ const IN_TREE_DIR = join(REPO, "apps", "api", "src", "apps")
 const READ_ONLY: Record<string, string[]> = {
   // In-tree first-party apps.
   tickets: [
+    "activity_read", // a timeline read the kernel makes, in a read-only savepoint
     "search",
     "get",
     "inboxCounts",
@@ -38,6 +39,7 @@ const READ_ONLY: Record<string, string[]> = {
     "teams.list",
     "categories.list",
     "categories.tree", // the settings page's tree read (rows + version)
+    "approval_route_read", // the ticket's assignee, through get, for who an approval is for
     "templates.list",
     "csat.summary",
     "csat.list",
@@ -45,12 +47,29 @@ const READ_ONLY: Record<string, string[]> = {
     "apiKeys.list",
     "idSegment.get",
     "approveFromHome.get",
+    "company_tickets", // the company page's Support read: the company's people, then one findMany
   ],
   projects: [
+    "activity_read", // a timeline read the kernel makes, in a read-only savepoint
+    "approval_route_read", // the task's assignee, through get, for who an approval is for
     "search",
     // Enrols the caller on the task's discussion thread, exactly as opening the task does.
     "get",
     "comments",
+    "task_time_get",
+    "budget_get",
+    // Margin and the cost rates behind it: finance's reads, nothing stored.
+    "margin_get",
+    "cost_rates_list",
+    "capacity_get",
+    // The dated sheet, and its file staged for the caller only (no record is written).
+    "timesheet_get",
+    "timesheet_export",
+    "days_off_list",
+    "time_settings_get",
+    // A reconcile's facts: the period's tasks under the asker's own rows, nothing stored.
+    "reconcile_facts",
+    "reconcile_get",
     "tasks_byAssignee",
     "attentionItems",
     "tasks_byProject",
@@ -64,11 +83,50 @@ const READ_ONLY: Record<string, string[]> = {
     "checklist_get",
     "labels.list", // taxonomy read, no write
     "labels.tree", // the settings page's tree read (rows + version), no write
+    // The deal tools that only read: each answers from the deal rows the caller's own grants reach.
+    "deals_search",
+    "deals_rollup",
+    "deals_followup_candidates",
+    "deal_send_state",
+    // The company page: the open deals for the agent's context, and the Work section's read.
+    "company_context",
+    "company_work",
   ],
   knowledge: ["search", "review_queue", "get", "find_by_title", "synced_sources.list"],
-  mail: ["listAccounts", "getAccount", "getSyncStatus", "search", "read", "providers.get"],
-  calendar: ["list_calendars", "list_events", "search_events", "list_accounts"],
+  mail: [
+    "activity_read", // a timeline read the kernel makes, in a read-only savepoint
+    "listAccounts",
+    "getAccount",
+    "getSyncStatus",
+    "search",
+    "read",
+    "providers.get",
+    "suppression_check", // two privileged reads of kernel.suppressions, by fingerprint
+  ],
+  calendar: [
+    "list_calendars",
+    "list_events",
+    "search_events",
+    "list_accounts",
+    "activity_read", // a timeline read the kernel makes, in a read-only savepoint
+  ],
   "mcp-manager": ["list_connections"],
+  github: [
+    "github_list_repos",
+    "github_list_commits",
+    "github_get_commit",
+    "github_list_pull_requests",
+    "github_get_pull_request",
+    "github_list",
+    "github_list_issues",
+    "github_list_milestones",
+    "github_list_labels",
+    "github_list_releases",
+    "github_list_tags",
+    "github_read_file",
+    "github_list_tree",
+    "github_search",
+  ],
   gitlab: [
     "gitlab_list_projects",
     "gitlab_list_commits",
@@ -195,6 +253,7 @@ const READ_ONLY: Record<string, string[]> = {
   ],
   calls: ["calls_segments_since", "calls_list", "webhook_info"],
   invoicing: [
+    "activity_read", // a timeline read the kernel makes, in a read-only savepoint
     "documents_search",
     "documents_get",
     "documents_for_orders",
@@ -227,6 +286,8 @@ const READ_ONLY: Record<string, string[]> = {
     "einvoicing_readiness",
     "legal_originals_verify",
     "einvoice_transmission_get",
+    // The payment reminder guard: reads one document's paid, credited or voided state.
+    "document_send_state",
     "einvoicing_settings_get",
     // The settings page's own reads of the same settings and of the installed platforms.
     "einvoicing_settings_values",
@@ -236,8 +297,40 @@ const READ_ONLY: Record<string, string[]> = {
     "received_einvoices_get",
     // A customer's earlier sales, lines and Shopify orders (cross-calls only reads).
     "customer_history",
+    // A project's invoiced amount, for the projects app's margin; writes nothing.
+    "project_invoiced_get",
+    // Recurring schedules and a month-end run with its rows, read as stored.
+    "recurring_list",
+    "recurring_run_get",
+    // Who a month-end run's card is for (approvalRoute), asked by the kernel.
+    "approval_route_read",
+    // Who issues what per issuer profile, and the card stream's issuer the payment connector's refunds read.
+    "issuer_stream_get",
+    "card_stream_issuer",
   ],
   monitoring: ["incidents_list", "incidents_get", "incidents_summary", "webhook_info"],
+  stripe: [
+    "connection_precheck", // the key check run on a key before it is stored: records nothing
+    "settings_load",
+    "home_load",
+    // The mirror readers: app-database reads, plus the kernel's own company search for a suggestion.
+    "customers_search",
+    "customers_get",
+    "subscriptions_search",
+    "invoices_search",
+    "mrr_query",
+    "payments_search",
+    "disputes_list",
+    "customer_context", // also the tickets app's own get, for the ticket's contact
+    "activity_read",
+    "approval_route_read",
+    "billing_status_for_counterparty",
+    "invoice_send_state", // a live read of one invoice upstream, at the moment a reminder would leave
+    "card_update_link", // a hosted page's link, read from config, the mirror or one invoice; never stored
+    "subscription_cancel_effect", // the cancel card's MRR and invoice lines, plus the projects app's own deal search
+    "refunds_for_charge", // a charge's refunds listed live upstream, by id; nothing stored
+    "reconcile_candidates", // mirror rows an event may have missed, missing invoices re-read upstream; nothing stored
+  ],
   pennylane: [
     "supplier_invoices_list",
     "supplier_invoice_get",

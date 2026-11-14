@@ -291,6 +291,25 @@ describe("guard: one door for the issue date", () => {
     expect(offenders(/\bissued_at\s*[:=].*toISOString\(\)\.slice\(0,\s*10\)/)).toEqual([])
   })
 
+  // Mutation caught: dropping `recurring` from the scanned folders, or the pattern that refuses a UTC year.
+  test("the guard scans the recurring folder and the Stripe handlers, and refuses a UTC year or date there", () => {
+    expect(SCANNED).toContain("recurring")
+    expect(files.some((p) => p.endsWith("recurring/schedule.ts"))).toBe(true)
+    // Stripe handlers live in `handlers/`, which is scanned whole: a file named for them is covered.
+    expect(SCANNED).toContain("handlers")
+    const refused = [
+      "const year = new Date(x).getUTCFullYear()",
+      "issued_at: new Date().toISOString().slice(0, 10),",
+      "const y = yearInTimezone(now, zone)",
+    ]
+    const patterns = [
+      /getUTCFullYear/,
+      /\bissued_at\s*[:=].*toISOString\(\)\.slice\(0,\s*10\)/,
+      /yearInTimezone/,
+    ]
+    for (const [i, line] of refused.entries()) expect(patterns[i]?.test(line)).toBe(true)
+  })
+
   test("no UTC date and no bare slice of an instant assigned to a paid date", () => {
     expect(offenders(/paid_?at\b.*(toISOString\(\)|dateOnly\()/i)).toEqual([])
   })

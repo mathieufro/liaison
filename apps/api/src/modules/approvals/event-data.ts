@@ -16,6 +16,7 @@ import { withPrivilegedDb } from "~/db/privileged"
 import type { UserContext } from "~/db/rls"
 import { users } from "~/db/schema/kernel"
 import { schemaRef } from "~/db/schema-ref"
+import { TICKET_MERGED_REASON } from "~/modules/approvals/cancel"
 import { approvalPayloadHash } from "~/modules/approvals/payload-hash"
 import { readApprovalRequester } from "~/modules/approvals/requester"
 import { humanizeToolName, splitToolName } from "~/modules/approvals/tool-name"
@@ -92,6 +93,14 @@ export interface BuildApprovalSummaryRaw {
   metadata?: Record<string, unknown> | null
 }
 
+/**
+ * The reason a row shows. Rows a ticket merge cancelled before the reason became a sentence carry
+ * the code `ticket_merged`: they read as the sentence a merge stores today.
+ */
+function readableReason(reason: string): string {
+  return reason === "ticket_merged" ? TICKET_MERGED_REASON : reason
+}
+
 /** Canonical mapper from a raw approval-request row to the public `ApprovalRequestSummary`.
  *  Used by create event, update events (decide / revert / expiry / reaper / edit), and the
  *  GET list/detail responses. */
@@ -130,7 +139,9 @@ export function buildApprovalSummary(input: {
     ...(r.decided_by ? { decidedBy: r.decided_by } : {}),
     ...(r.decided_by && input.decidedByName ? { decidedByName: input.decidedByName } : {}),
     ...(r.decided_at ? { decidedAt: new Date(r.decided_at).toISOString() } : {}),
-    ...(r.status === "denied" && r.reason ? { reason: r.reason } : {}),
+    ...((r.status === "denied" || r.status === "cancelled") && r.reason
+      ? { reason: readableReason(r.reason) }
+      : {}),
     ...(r.reason === "taint_escalation" ? { heldForOutsideText: true as const } : {}),
     bundleId: r.bundle_id ?? null,
     bundlePosition: r.bundle_position ?? null,

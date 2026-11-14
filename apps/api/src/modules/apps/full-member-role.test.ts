@@ -5,11 +5,13 @@
 // installed app's standard non-admin scopes, so full members reach newly
 // installed apps without a manual role edit (the 2026-07-03 calendar gap).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test"
+import mailManifest from "~/apps/mail/app.manifest.json"
 import { sql } from "~/db/connection"
 import { withSystemDb } from "~/db/privileged"
 import { WebSocketManager } from "~/infra/websocket"
 import { resetAppRegistries } from "~/modules/apps/app-registries"
 import { extendFullMemberRole, registerApps, seedManifestRoles } from "~/modules/apps/runtime"
+import { KERNEL_MEMBER_SCOPES } from "~/modules/permissions/default-roles"
 
 const TEST_ORG = "00000000-0000-0000-0000-0000000f0001"
 const FULL_MEMBER = "Full Member"
@@ -590,5 +592,81 @@ describe("extendFullMemberRole and seedManifestRoles carry their own permission 
     })
     expect(midTx).toHaveLength(0)
     expect(await queuedRoleScopeEvents(fullMemberRoleId)).toHaveLength(1)
+  })
+})
+
+// Who has opted out of mail is needed by anyone who writes to people, so mail's
+// base member tier reads the opt-out list and the Full Member role inherits it,
+// as registration runs it (seedManifestRoles, then extendFullMemberRole) for a
+// new org and again for an existing org when the upgraded app registers. Adding
+// or removing an opt-out by hand stays with mail admins.
+describe("mail's member tier and the opt-out list", () => {
+  const NEW_ORG = "00000000-0000-0000-0000-0000000f0070"
+  const UPGRADED_ORG = "00000000-0000-0000-0000-0000000f0071"
+  const mailRoles = (
+    mailManifest as unknown as {
+      roles: Record<string, { description?: string; extends?: string; scopes: string[] }>
+    }
+  ).roles
+
+  async function registerMailRoles(orgId: string): Promise<void> {
+    await withSystemDb("mail-member-tier-test", async (tx) => {
+      await seedManifestRoles(tx, orgId, "mail", mailRoles)
+      await extendFullMemberRole(tx, orgId, mailRoles)
+    })
+  }
+
+  async function grantsOf(orgId: string, roleName: string): Promise<string[]> {
+    const rows = await sql<{ scope: string }[]>`
+      SELECT g.scope FROM kernel.role_scope_grants g
+      JOIN kernel.roles r ON r.id = g.role_id
+      WHERE r.org_id = ${orgId} AND r.name = ${roleName}
+      ORDER BY g.scope`
+    return rows.map((r) => r.scope)
+  }
+
+  beforeAll(async () => {
+    for (const [id, slug] of [
+      [NEW_ORG, "fm-mail-new"],
+      [UPGRADED_ORG, "fm-mail-upgraded"],
+    ]) {
+      await sql`INSERT INTO kernel.organizations (id, name, slug)
+        VALUES (${id}, ${slug}, ${slug}) ON CONFLICT (id) DO NOTHING`
+    }
+  })
+
+  afterAll(async () => {
+    for (const id of [NEW_ORG, UPGRADED_ORG]) {
+      await sql`DELETE FROM kernel.pending_events WHERE org_id = ${id}`
+      await sql`DELETE FROM kernel.roles WHERE org_id = ${id}`
+      await sql`DELETE FROM kernel.organizations WHERE id = ${id}`
+    }
+  })
+
+  it("a full member of a new org reads who opted out of mail and cannot change the list", async () => {
+    await registerMailRoles(NEW_ORG)
+    const fullMember = await grantsOf(NEW_ORG, FULL_MEMBER)
+    expect(fullMember).toContain("mail:suppressions:read")
+    expect(fullMember).not.toContain("mail:suppressions:write")
+    const mailMember = await grantsOf(NEW_ORG, "mail.member")
+    expect(mailMember).toEqual(["mail:suppressions:read"])
+  })
+
+  it("an org whose Full Member predates the upgrade gains the opt-out read when mail registers again, keeping its other scopes", async () => {
+    await sql`
+      INSERT INTO kernel.roles (id, org_id, name, description, system_managed)
+      VALUES (gen_random_uuid(), ${UPGRADED_ORG}, ${FULL_MEMBER}, 'before the upgrade', true)`
+    const [{ id: roleId }] = await sql<{ id: string }[]>`
+      SELECT id FROM kernel.roles WHERE org_id = ${UPGRADED_ORG} AND name = ${FULL_MEMBER}`
+    await sql`INSERT INTO kernel.role_scope_grants (id, role_id, scope)
+      VALUES (gen_random_uuid(), ${roleId}, 'projects:tasks:write')`
+
+    await registerMailRoles(UPGRADED_ORG)
+
+    const fullMember = await grantsOf(UPGRADED_ORG, FULL_MEMBER)
+    // The kernel's member tier joins at the same registration.
+    expect([...fullMember].sort()).toEqual(
+      ["mail:suppressions:read", "projects:tasks:write", ...KERNEL_MEMBER_SCOPES].sort(),
+    )
   })
 })

@@ -1,0 +1,17 @@
+{
+  "entry": "job:einvoicing-standing-daily",
+  "params": {},
+  "calls": [
+    {
+      "method": "db_findMany",
+      "args": ["einvoice_standing", "{\"where\":{\"ended_at\":null},\"limit\":200}"],
+      "reply": "[]"
+    },
+    {
+      "method": "db_findMany",
+      "args": ["einvoicing_settings", "{\"orderBy\":{\"createdAt\":\"asc\"},\"limit\":1}"],
+      "reply": "[]"
+    }
+  ],
+  "recordedFrom": "an install with no rows yet: every read answers empty (contract replay, no provider call)"
+}

@@ -9,6 +9,8 @@ import { hasScope } from "~/modules/permissions/permissions"
 export const KERNEL_ADMIN_SCOPES = [
   "kernel:org:admin",
   "kernel:users:admin",
+  "kernel:portal:admin",
+  "kernel:dashboards:admin",
   "kernel:roles:admin",
   "kernel:apps:admin",
   "kernel:agents:admin",

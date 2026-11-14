@@ -20,8 +20,28 @@ describe("contacts manifest", () => {
     )
   })
 
-  it("is version 0.1.1 (the list page carries the groups sidebar)", () => {
-    expect(contactsManifest.version).toBe("0.1.1")
+  it("is version 0.1.3 (the companies list and the company page)", () => {
+    expect(contactsManifest.version).toBe("0.2.0")
+  })
+
+  it("declares the companies list and the company page, labelled by the company's name", () => {
+    const tabs = contactsAppManifest.views.tabTypes as Record<string, Record<string, unknown>>
+    expect(tabs["company-list"]).toMatchObject({
+      component: "CompanyList",
+      singleton: true,
+      urlPattern: "/contacts/companies",
+    })
+    expect(tabs["company-detail"]).toMatchObject({
+      component: "CompanyDetail",
+      entity: "kernel:company",
+      referenceable: true,
+      resolveLabel: "resolveCompanyTabLabel",
+      urlPattern: "/contacts/companies/:entityId",
+    })
+  })
+
+  it("hosts the company page's slot, where other apps' panels sit as sections", () => {
+    expect(contactsManifest.slots).toEqual({ company_detail: { position: "sections" } })
   })
 
   it("gives the contact-list page the groups sidebar, the contact page its picker", () => {
@@ -34,9 +54,10 @@ describe("contacts manifest", () => {
     expect(contactsAppManifest.views.activityBar.order).toBe(20)
   })
 
-  it("declares wsHandlers for kernel:contact entity", () => {
+  it("declares wsHandlers for the contact and company entities", () => {
     expect(contactsAppManifest.views.wsHandlers).toMatchObject({
       contact: { key: "kernel:contact", handler: "handleContactEvent" },
+      company: { key: "kernel:company", handler: "handleCompanyEvent" },
     })
   })
 

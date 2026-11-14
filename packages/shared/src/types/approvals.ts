@@ -191,6 +191,48 @@ export interface ApprovalLastFailure {
   at: string
 }
 
+/**
+ * What the send check says about an agent's mail draft, read fresh at each card read (never
+ * stored). `quote` is the start of the message that stopped or held it, read with the viewer's
+ * own access: a message in a mailbox the viewer cannot read gives no quote and no `record`.
+ */
+export interface ApprovalSendGuard {
+  state: "clear" | "replied" | "bounced" | "held" | "opted_out" | "ref_stop" | "unavailable"
+  /** Who wrote the message that stopped or held it. */
+  who?: string | null
+  /** When that message came in (ISO). */
+  at?: string
+  /** A hold's end (ISO): until then the draft waits, after it the hold clears by itself. */
+  holdUntil?: string
+  quote?: string
+  /** The stop's code (`send_guard_replied`, a provider's own), or why the check could not run. */
+  code?: string
+  /** A provider's or a check's own words for a stop. */
+  label?: string
+  optedOut?: string[]
+  /** Where the message sits, when the viewer can open it. */
+  record?: { kind: "conversation" | "ticket"; id: string }
+  /** Where the message came in, without naming it: set when the viewer cannot open it. */
+  source?: "conversation" | "ticket"
+  /**
+   * What is recorded about each recipient who is a contact, read as the composer
+   * reads it, whatever the mail is classified: the approver's send is theirs.
+   */
+  recipients?: RecipientFact[]
+}
+
+/** What the organization records about one mail recipient who is a contact. */
+export interface RecipientFact {
+  email: string
+  name: string | null
+  /** The recorded lawful basis for commercial mail, null when none (or two disagree). */
+  basis: "consent" | "customer" | "professional_interest" | "generic_address" | null
+  /** True a consumer, false a business, null not recorded (which counts as a consumer). */
+  isConsumer: boolean | null
+  /** When they opted out of commercial mail (ISO), null when they have not. */
+  optedOutAt: string | null
+}
+
 /** Who asked for an approval (see `ApprovalRequestSummary.requester`). */
 export interface ApprovalRequester {
   kind: "agent" | "user"
@@ -268,6 +310,8 @@ export interface ApprovalRequestSummary {
    */
   resourceOwnerId?: string | null
   lastEdit: ApprovalLastEdit | null
+  /** A gated mail send's guard state (`mail:compose`, `mail:reply` drafted by an agent). */
+  sendGuard?: ApprovalSendGuard
   /** The most recent post-approval execution failure, when the request reverted
    *  to pending; null if it never failed. The card renders this inline so a
    *  no-effect failure is never a silent drop-back to pending. */

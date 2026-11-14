@@ -34,6 +34,7 @@ import { type Component, createEffect, createMemo, createSignal, For, on, Show }
 import { spaNavigate } from "~/framework/spa-navigate"
 import { sessionOrgId } from "~/modules/auth/auth-store"
 import { DemoByokPrompt } from "~/modules/demo/DemoByokPrompt"
+import { DemoExampleLine } from "~/modules/demo/DemoExampleLine"
 import {
   type DemoScenarioItem,
   demoScenarioQueue,
@@ -138,6 +139,10 @@ const actionKey = (item: DemoScenarioItem) =>
     : item.status === "active" || item.status === "paused"
       ? "tours.engine.scenarioResume"
       : "tours.engine.scenarioStart"
+
+/** A single-run scenario already played: it cannot be started again, only the whole demo started over. */
+const isPlayedSingleRun = (item: DemoScenarioItem) =>
+  item.singleRun === true && item.status === "completed"
 
 /** The popup itself, and when it opens by itself. Mounted once, in DemoHost. */
 export const DemoWelcome: Component<{ quiet?: boolean }> = (props) => {
@@ -369,14 +374,21 @@ export const DemoWelcome: Component<{ quiet?: boolean }> = (props) => {
                           {i18n.t("tours.engine.welcome.nextUp")}
                         </p>
                       </div>
-                      <Button
-                        size="sm"
-                        class="shrink-0"
-                        data-testid="demo-welcome-featured-start"
-                        onClick={() => start(item())}
+                      <Show
+                        when={isPlayedSingleRun(item())}
+                        fallback={
+                          <Button
+                            size="sm"
+                            class="shrink-0"
+                            data-testid="demo-welcome-featured-start"
+                            onClick={() => start(item())}
+                          >
+                            {i18n.t(actionKey(item()))}
+                          </Button>
+                        }
                       >
-                        {i18n.t(actionKey(item()))}
-                      </Button>
+                        <PlayedAction need={item().need} prefix="demo-welcome-featured" />
+                      </Show>
                     </div>
                   )}
                 </Show>
@@ -406,15 +418,25 @@ export const DemoWelcome: Component<{ quiet?: boolean }> = (props) => {
                               </p>
                             </Show>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            class="shrink-0"
-                            data-testid={`demo-welcome-row-${item.need}-start`}
-                            onClick={() => start(item)}
+                          <Show
+                            when={isPlayedSingleRun(item)}
+                            fallback={
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                class="shrink-0"
+                                data-testid={`demo-welcome-row-${item.need}-start`}
+                                onClick={() => start(item)}
+                              >
+                                {i18n.t(actionKey(item))}
+                              </Button>
+                            }
                           >
-                            {i18n.t(actionKey(item))}
-                          </Button>
+                            <PlayedAction
+                              need={item.need}
+                              prefix={`demo-welcome-row-${item.need}`}
+                            />
+                          </Show>
                         </li>
                       )}
                     </For>
@@ -432,12 +454,7 @@ export const DemoWelcome: Component<{ quiet?: boolean }> = (props) => {
             </Show>
             {/* The first view inside the world: what it is, in one quiet line. */}
             <Show when={step() !== "startOver"}>
-              <p
-                data-testid="demo-welcome-example"
-                class="mx-1 mt-3 text-[12px] text-text-secondary"
-              >
-                {i18n.t("kernel.demo.companyExample")}
-              </p>
+              <DemoExampleLine class="mx-1 mt-3 text-[12px] text-text-secondary" />
             </Show>
           </div>
           <Show when={step() !== "startOver"}>
@@ -468,6 +485,27 @@ export const DemoWelcome: Component<{ quiet?: boolean }> = (props) => {
         </div>
       </Dialog.Content>
     </Dialog>
+  )
+}
+
+/** What a played single-run scenario shows in place of Start: that it was played, and Start over. */
+const PlayedAction: Component<{ need: DemoNeed; prefix: string }> = (props) => {
+  const i18n = useI18n()
+  return (
+    <span class="flex shrink-0 items-center gap-2">
+      <span data-testid={`${props.prefix}-played`} class="text-[12px] text-text-tertiary">
+        {i18n.t("tours.engine.scenarioPlayed")}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        data-testid={`${props.prefix}-start-over`}
+        data-need={props.need}
+        onClick={() => setStep("startOver")}
+      >
+        {i18n.t("tours.engine.welcome.startOver")}
+      </Button>
+    </span>
   )
 }
 

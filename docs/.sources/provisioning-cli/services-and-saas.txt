@@ -1,0 +1,1 @@
+config apply runs the connection's check before storing a key; a refused key keeps the stored one -> apps/api/src/cli/provisioners/connector.ts (provisionConnection)

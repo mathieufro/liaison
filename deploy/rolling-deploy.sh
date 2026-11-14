@@ -63,6 +63,8 @@
 #   COMPOSE_FILE           compose file(s), `:`-separated (default: the
 #                          docker-compose.yml beside this script).
 #   COMPOSE_PROJECT_NAME   compose project (default liaison).
+#   COMPOSE_PROFILES       profiles added to `rolling` (default: deploy/.env's);
+#                          `meaning` also starts the `embedder` service.
 #   LIAISON_ROLLING_STATE_DIR  lock (owner pid, host, boot id), the pending
 #                          record of a deploy in progress, the draining list,
 #                          the drain's pid and log (default deploy/.rolling
@@ -114,7 +116,20 @@ die() {
   exit 1
 }
 
-compose() { "$DOCKER" compose --profile rolling "$@"; }
+# The compose profiles: `rolling`, plus every profile COMPOSE_PROFILES names
+# (environment, else deploy/.env), since a --profile flag makes compose ignore
+# COMPOSE_PROFILES. With `meaning` among them the deploy also starts the
+# `embedder` service when it is not running (never recreating it).
+COMPOSE_PROFILES="${COMPOSE_PROFILES:-$(env_file_value COMPOSE_PROFILES)}"
+PROFILE_FLAGS="--profile rolling"
+MEANING=""
+for p in $(printf '%s' "$COMPOSE_PROFILES" | tr ',' ' '); do
+  case " $PROFILE_FLAGS " in *" --profile $p "*) continue ;; esac
+  PROFILE_FLAGS="$PROFILE_FLAGS --profile $p"
+  if [ "$p" = meaning ]; then MEANING=1; fi
+done
+# shellcheck disable=SC2086 # word splitting is the flag list
+compose() { "$DOCKER" compose $PROFILE_FLAGS "$@"; }
 
 # Words of $1 as one space-separated line, and their count (ids never glob).
 # shellcheck disable=SC2086
@@ -389,6 +404,14 @@ PHASE=migrate
 log "running migrations and the app catalog (migrate one-shot)"
 compose run --rm --no-deps migrate ||
   die "the migrate step failed (a migration, or a catalog app that did not install: see its output). No process was started or stopped; the old processes keep serving"
+
+# The host's one embedding process (meaning profile): started if it is not
+# running, never recreated. Tool search ranks by words while it is down, so a
+# failure here does not stop the deploy.
+if [ -n "$MEANING" ]; then
+  compose up -d --no-recreate --no-deps embedder ||
+    log "WARNING: the embedder service did not start; tool search ranks by words until it does"
+fi
 
 # --- 3. new processes beside the old ones -------------------------------------
 # Recorded first: a deploy killed from here on is rolled back by the next run.

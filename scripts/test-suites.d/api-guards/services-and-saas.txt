@@ -1,0 +1,11 @@
+# Test files the services and software-company work adds to this suite.
+# Outside text is declared by data (outsideTextFields and taint sources on every
+# manifest), and the static half of the rule for tools called over MCP.
+src/modules/apps/outside-fields.guard.test.ts
+src/modules/mcp/mcp-tool-rule.guard.test.ts
+# Privileged code that reads kernel.users says what it does about a client's
+# row (a source scan), and the manifest declarations that feed the context
+# ladder and the result cards are valid (pure schema checks).
+src/modules/users/external-boundary.guard.test.ts
+src/modules/apps/context-provider-manifest.test.ts
+src/modules/apps/result-card-schema.test.ts

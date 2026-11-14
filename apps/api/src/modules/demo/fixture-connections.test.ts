@@ -15,8 +15,13 @@ import { SandboxBridgeTestAccess } from "~/modules/apps/sandbox/bridge/shared"
 import { DEMO_BOXTAL_SENTINEL_KEY } from "~/modules/demo/boxtal/sentinel"
 import { DemoModeTestAccess } from "~/modules/demo/demo-mode"
 import { invalidateDemoMarker, markOrgAsDemo, visitorMarker } from "~/modules/demo/demo-org"
-import { DEMO_BOXTAL_TOKEN_PREFIX, fixtureConnectionOf } from "~/modules/demo/fixture-credential"
+import {
+  DEMO_BOXTAL_TOKEN_PREFIX,
+  fixtureConnectionOf,
+  fixtureRefusal,
+} from "~/modules/demo/fixture-credential"
 import { DEMO_SHOP_DOMAIN, DEMO_SHOPIFY_SENTINEL_TOKEN } from "~/modules/demo/shopify/sentinel"
+import { DEMO_PAYMENTS_SENTINEL_KEY } from "~/modules/demo/worlds/saas/payments/sentinel"
 import { ensureOrg } from "~/modules/provisioning/ensure-org"
 import { acquireTestLock, releaseTestLock } from "~/tests/route-test-setup"
 
@@ -150,6 +155,23 @@ describe("fixtureConnectionOf", () => {
     expect(
       fixtureConnectionOf(BOXTAL_QUOTE, { Authorization: `Bearer ${DEMO_BOXTAL_TOKEN_PREFIX}abc` }),
     ).toBe("boxtal")
+  })
+
+  it("recognises the card-payments stand-in by its sentinel key, on any host", () => {
+    const auth = { Authorization: `Bearer ${DEMO_PAYMENTS_SENTINEL_KEY}` }
+    expect(fixtureConnectionOf("https://payments.example/v1/customers", auth)).toBe("stripe")
+    expect(
+      fixtureConnectionOf("https://payments.example/v1/customers", {
+        Authorization: "Bearer rk_test_abc",
+      }),
+    ).toBeNull()
+  })
+
+  it("refuses a payments sentinel request in the processor's own error shape", async () => {
+    const res = fixtureRefusal("stripe")
+    expect(res.status).toBe(403)
+    const body = (await res.json()) as { error: { message: string } }
+    expect(body.error.message).toContain("demo fixture")
   })
 
   it("is null for every other request", () => {

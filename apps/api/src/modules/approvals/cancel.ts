@@ -72,6 +72,9 @@ export async function cancelApprovalsForSourceTicket(
   return { cancelledCount: cancelled.length }
 }
 
+/** What a request shows once the ticket it would act on was merged into another. */
+export const TICKET_MERGED_REASON = "Cancelled: the ticket was merged into another"
+
 /** What an approval list shows for an approval its requester's deletion cancelled. */
 export const REQUESTER_DELETED_REASON = "Cancelled: the requester deleted their account"
 /** And for one whose only approver deleted their account. */
@@ -244,6 +247,10 @@ export async function reopenApprovalsForRestoredTasks(
  * tools are gone from the catalog, so the request could never run, and Home stops listing it. The
  * rows stay (the audit of who asked for what), each reading cancelled with why. Switching the app
  * back on does not reopen them: the person asks again if it still matters. Returns the ids.
+ *
+ * A waiting mail draft whose pinned send check names a record of that app (a follow-up about a
+ * deal, `projects:deal`) goes too, with the same line: nothing could any longer say whether it
+ * may leave. Done here, in the switch-off call itself, so no lost event leaves one behind.
  */
 export async function cancelApprovalsForSwitchedOffApp(
   orgId: string,
@@ -257,7 +264,20 @@ export async function cancelApprovalsForSwitchedOffApp(
         UPDATE ${kernelSchema}.approval_requests
            SET status = 'cancelled', decided_at = now(), reason = ${appSwitchedOffReason(app)}
          WHERE org_id = ${orgId} AND status = 'pending'
-           AND starts_with(tool_name, ${`${app}:`})
+           AND (
+             starts_with(tool_name, ${`${app}:`})
+             OR (
+               tool_name IN ('mail:compose', 'mail:reply')
+               AND EXISTS (
+                 SELECT 1
+                   FROM jsonb_array_elements(
+                     CASE WHEN jsonb_typeof(current_payload->'sendGuard'->'refs') = 'array'
+                          THEN current_payload->'sendGuard'->'refs' ELSE '[]'::jsonb END
+                   ) AS ref
+                  WHERE starts_with(ref->>'kind', ${`${app}:`})
+               )
+             )
+           )
         RETURNING id::text AS id`),
     ).map((r) => r.id)
     await queueApprovalUpdates(tx, orgId, rows, actor)

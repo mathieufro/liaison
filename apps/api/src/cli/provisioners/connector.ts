@@ -44,7 +44,9 @@ import { withPrivilegedDb } from "~/db/privileged"
 import { isRecord } from "~/lib/guards"
 import { connectionConfigRegistry } from "~/modules/apps/app-registries"
 import { upsertConnectionOAuthClient } from "~/modules/apps/connections/oauth-client-provisioning"
+import { precheckCredentials } from "~/modules/apps/connections/precheck"
 import {
+  CredentialRefusedError,
   createCredentialConnection,
   disconnectConnection,
   getCredentialsForConnection,
@@ -499,6 +501,31 @@ export async function provisionConnection(
   // Every write below (the reconnect's disconnect, the insert) records the
   // acting person; an unchanged connection above needs none.
   const creator = connectingPersonOrFail(ctx, `apps: the '${connName}' connection of '${appName}'`)
+
+  // The connection's own check of the key before it is kept, as the credentials
+  // route runs it (precheck.ts): a refused key replaces nothing, so the stored
+  // one stays the key every sync uses. Before the disconnect below.
+  try {
+    await precheckCredentials({
+      actor: {
+        actorType: "user",
+        userId: creator,
+        orgId: ctx.orgId,
+        scopes: ctx.actor.scopes,
+        dimensionGrants: ctx.actor.dimensionGrants,
+      },
+      appName,
+      connectionName: connName,
+      credentials,
+    })
+  } catch (err) {
+    if (err instanceof CredentialRefusedError) {
+      throw new ConfigError(
+        `apps: connection '${appName}/${connName}': the key was refused by the connection's check (${err.code}: ${err.message}). Nothing was stored; the stored key was kept.`,
+      )
+    }
+    throw err
+  }
 
   if (existing && fieldChanges) {
     // Drift → disconnect the existing row (by its ROW id, #8) then reinsert.

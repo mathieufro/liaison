@@ -49,3 +49,4 @@ Limits from SANDBOX_SERVICE_MEM_LIMIT / SANDBOX_SERVICE_CPUS, else cgroup v2/v1,
 Compose passes LIAISON_SANDBOX_MEM_LIMIT / LIAISON_SANDBOX_CPUS, pool settings empty by default -> deploy/docker-compose.yml (sandbox environment)
 Explicit pool settings win each on its own -> packages/sandbox-supervisor/src/config.ts (readSupervisorConfig, fromEnv)
 Sizes logged at start, /stats sizes -> packages/sandbox-supervisor/src/main.ts ; packages/sandbox-supervisor/src/supervisor.ts (/stats)
+On a QuickJS-only host (no sandbox service, app on LIAISON_APP_RUNTIME=quickjs) install applies the rules and check passes with nothing to check -> deploy/sandbox-firewall.sh:291 ; deploy/sandbox-firewall.sh install_unit ; deploy/sandbox-firewall.test.ts

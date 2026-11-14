@@ -4,8 +4,8 @@
 // never a person's click: gates, outside-text taint and host rules apply as they
 // do for an MCP client. A normal session's call stays a person's click.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
-import { readdirSync, readFileSync, statSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import { eq } from "drizzle-orm"
 import { app } from "~/app"
 import { withSystemDb } from "~/db/privileged"
@@ -298,11 +298,65 @@ describe("the one place a REST request becomes a person's click", () => {
           if (entry !== "tests" && entry !== "__fixtures__") walk(path)
         } else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) {
           if (path.endsWith(join("apps", "rest-tool-call.ts"))) continue
+          // The one reviewed exemption: the seed engine (`src/seed/**`, its tests are skipped
+          // above anyway). It acts out seeded people entering their own time through the
+          // product's own writer, so their rows are recorded exactly as a person's entry is.
+          // Its arguments are fixed world data, never a request's, and it runs from the CLI,
+          // the tests and the demo-mode signup only (the test below proves no other route
+          // reaches it).
+          if (path.startsWith(join(root, "seed") + sep)) continue
           if (/\borigin: "human-ui"/.test(readFileSync(path, "utf8"))) offenders.push(path)
         }
       }
     }
     walk(root)
+    expect(offenders).toEqual([])
+  })
+
+  it("the seed engine is entered only through the demo module and the CLI, never by a route", () => {
+    const root = join(import.meta.dir, "..", "..")
+    const seedDir = join(root, "seed") + sep
+    // The demo module runs only in demo mode (app.ts mounts its routes, and its jobs and
+    // boot hooks start, behind that flag); the CLI is not a server path.
+    const allowed = [seedDir, join(root, "modules", "demo") + sep, join(root, "cli") + sep]
+    const ts = new Bun.Transpiler({ loader: "ts" })
+    const tsx = new Bun.Transpiler({ loader: "tsx" })
+    const resolveImport = (from: string, spec: string): string | null => {
+      let base: string
+      if (spec.startsWith("~/")) base = join(root, spec.slice(2))
+      else if (spec.startsWith(".")) base = resolve(dirname(from), spec)
+      else return null
+      for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")]) {
+        if (/\.tsx?$/.test(candidate) && existsSync(candidate) && statSync(candidate).isFile()) {
+          return candidate
+        }
+      }
+      return null
+    }
+    const offenders: string[] = []
+    let scanned = 0
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir)) {
+        const path = join(dir, entry)
+        if (statSync(path).isDirectory()) {
+          if (entry !== "tests" && entry !== "__fixtures__") walk(path)
+          continue
+        }
+        if (!/\.tsx?$/.test(entry) || entry.endsWith(".test.ts") || entry.endsWith(".test.tsx"))
+          continue
+        if (allowed.some((prefix) => path.startsWith(prefix))) continue
+        scanned++
+        // A script's shebang line is not TypeScript.
+        const source = readFileSync(path, "utf8").replace(/^#!.*\n/, "\n")
+        for (const imported of (entry.endsWith(".tsx") ? tsx : ts).scanImports(source)) {
+          const target = resolveImport(path, imported.path)
+          if (target?.startsWith(seedDir))
+            offenders.push(`${relative(root, path)} -> ${relative(root, target)}`)
+        }
+      }
+    }
+    walk(root)
+    expect(scanned).toBeGreaterThan(500)
     expect(offenders).toEqual([])
   })
 })

@@ -299,13 +299,18 @@ export async function readFile(
 }
 
 // ---------------------------------------------------------------------------
-// Secret redaction of file text (high-confidence patterns only)
+// Secret redaction of every text body (high-confidence patterns only)
 // ---------------------------------------------------------------------------
 
 const SECRET_PATTERNS: RegExp[] = [
+  /\bgh[pousr]_[A-Za-z0-9]{36,}/g, // GitHub classic, OAuth, user, server and refresh tokens
+  /\bgithub_pat_[A-Za-z0-9_]{22,}/g, // GitHub fine-grained token
   /glpat-[A-Za-z0-9_-]{20,}/g, // GitLab PAT
   /AKIA[0-9A-Z]{16}/g, // AWS access key id
-  /-----BEGIN [\w ]+ PRIVATE KEY-----[\s\S]*?-----END [\w ]+ PRIVATE KEY-----/g, // PEM key
+  // An armoured private key of any label (PKCS#8 has no algorithm word; PGP ends in BLOCK; SSH2
+  // uses four dashes and spaces), through its END line, or, when the END line is cut off (a diff's
+  // context), through the end of its hunk or of the text.
+  /-{4,5} ?BEGIN (?:\w+ )*PRIVATE KEY(?: BLOCK)? ?-{4,5}[\s\S]*?(?:-{4,5} ?END (?:\w+ )*PRIVATE KEY(?: BLOCK)? ?-{4,5}|(?=\n@@ |\ndiff --git )|$)/g,
   /PRIVATE-TOKEN:\s*\S+/g, // a raw header value
   /Authorization:\s*Bearer\s+\S+/gi, // a bearer token
 ]

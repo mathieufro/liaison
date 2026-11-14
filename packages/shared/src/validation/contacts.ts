@@ -31,6 +31,10 @@ export const updateContactSchema = z.object({
   company: z.string().optional(),
   externalIds: z.record(z.string(), z.string()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** What commercial mail to them rests on; recording it stamps when. */
+  lawfulBasis: z
+    .enum(["consent", "customer", "professional_interest", "generic_address"])
+    .optional(),
 })
 
 export const mergeContactsSchema = z.object({

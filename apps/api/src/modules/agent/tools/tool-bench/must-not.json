@@ -1,0 +1,53 @@
+[
+  {
+    "query": "signature",
+    "loadsOnlyApps": ["agreements"],
+    "allow": [
+      {
+        "tool": "tickets__inboxes_update",
+        "reason": "An inbox's email signature: the tool's own keyword, another meaning of the word."
+      }
+    ]
+  },
+  {
+    "query": "month end billing",
+    "notFirst": "kernel__portal_end_access"
+  },
+  {
+    "query": "account manager",
+    "notFirst": "calendar__list_accounts"
+  },
+  {
+    "query": "planned vs done",
+    "notFirst": "shopify__abandoned_checkouts_list"
+  },
+  {
+    "query": "la",
+    "loadsOnlyApps": []
+  },
+  {
+    "query": "de",
+    "loadsOnlyApps": []
+  },
+  {
+    "query": "du",
+    "loadsOnlyApps": []
+  },
+  {
+    "query": "set the day rate for the project to 600",
+    "notFirst": "projects__cost_rate_set"
+  },
+  {
+    "query": "monthly report for the client",
+    "notFirst": "kernel__contacts_export",
+    "notInTop": ["kernel__contacts_export", "kernel__data_subject_export"]
+  },
+  {
+    "query": "project report for the client",
+    "notFirst": "kernel__contacts_export"
+  },
+  {
+    "query": "export the report",
+    "notFirst": "kernel__contacts_export"
+  }
+]

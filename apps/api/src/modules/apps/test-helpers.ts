@@ -370,6 +370,24 @@ export function mockAppContext(opts: MockAppContextOpts): MockAppContext {
         }
       }),
     },
+    // A person's own turn with no agent, unless a test says otherwise.
+    turn: {
+      get: mock(async () => ({ agentId: null, hasPerson: true })),
+    },
+    approvals: {
+      restagePayload: mock(
+        async (
+          approvalId: string,
+          _fields: Record<string, unknown>,
+          _note?: string,
+        ): ReturnType<AppContext["approvals"]["restagePayload"]> => ({
+          ok: true,
+          approval_id: approvalId,
+          payload_hash: "",
+          changed: true,
+        }),
+      ),
+    },
     // An in-memory effect ledger: claimed, then done or released.
     effects: {
       claim: mock(async (key: string) => {

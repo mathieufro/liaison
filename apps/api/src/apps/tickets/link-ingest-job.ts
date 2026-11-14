@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 import { randomUUID } from "node:crypto"
+import { maskWithNote } from "@liaison/shared"
 import { sql } from "drizzle-orm"
 import {
   type DownloadResult,
@@ -71,10 +72,12 @@ async function appendSystemNote(
       log.warn({ messageId: ticketIdMessageRef.messageId }, "link-ingest: note skipped, no ticket")
       return
     }
+    // The note quotes a link from a customer's mail: masked like the mail was.
+    const masked = maskWithNote(text).text
     await tx.execute(
       sql`INSERT INTO ${TICKETS}.messages
             (id, org_id, ticket_id, kind, text_body, snippet, sent_at, created_at, updated_at)
-          VALUES (gen_random_uuid(), ${orgId}, ${ticketId}, 'note', ${text}, ${text.slice(0, 200)}, now(), now(), now())`,
+          VALUES (gen_random_uuid(), ${orgId}, ${ticketId}, 'note', ${masked}, ${masked.slice(0, 200)}, now(), now(), now())`,
     )
   })
 }

@@ -32,14 +32,19 @@ const DB_URL = process.env.DATABASE_URL ?? ""
 const QA_PASSWORD = "qa-persona-password-1"
 
 /**
- * A two person world. The layer seeders are not run here, so the only thing
- * that matters is that one person owns the org (`founder_admin`) and one does
- * not: the passwordless rule applies to both, and the flag has to lift it for
- * both.
+ * A small world: elodie (who owns the org as `founder_admin`), amina, and one
+ * person for every other role, because the org's domain access names each role
+ * and the seeder refuses a role no one holds. The layer seeders are not run
+ * here, so the only thing that matters is that one person owns the org and the
+ * others do not: the passwordless rule applies to all, and the flag has to lift
+ * it for all.
  */
 const SMALL_WORLD: DemoWorld = {
   ...DEMO_WORLD,
-  team: DEMO_WORLD.team.filter((p) => p.key === "elodie" || p.key === "amina"),
+  team: DEMO_WORLD.team.filter(
+    (p, i, all) =>
+      p.key === "elodie" || p.key === "amina" || all.findIndex((q) => q.role === p.role) === i,
+  ),
 }
 
 beforeAll(() => {

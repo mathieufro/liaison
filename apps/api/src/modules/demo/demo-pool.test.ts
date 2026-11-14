@@ -31,12 +31,15 @@ import { countVisitorOrgs, listExpiredDemoOrgs } from "~/modules/demo/demo-expir
 import { DemoModeTestAccess } from "~/modules/demo/demo-mode"
 import { invalidateDemoMarker, markOrgAsDemo } from "~/modules/demo/demo-org"
 import {
+  claimPooledOrg,
   DEMO_POOL_OWNER_NAME,
   DemoPoolTestAccess,
   demoPoolBuildId,
   demoPoolDepth,
+  demoPoolTargets,
   demoPoolWorld,
   pooledMarker,
+  readDemoPoolStatus,
   refillDemoPool,
 } from "~/modules/demo/demo-pool"
 import { purgeDemoOrg } from "~/modules/demo/demo-reset"
@@ -46,6 +49,7 @@ import {
   tryAcquireRefillSeedSlot,
 } from "~/modules/demo/demo-seed-gate"
 import { DemoSeederTestAccess, setDemoSeeder } from "~/modules/demo/demo-seeder"
+import { DemoWorldsTestAccess } from "~/modules/demo/demo-worlds"
 import {
   DEMO_INTERNAL_LOGIN_DOMAIN,
   mountDemoRoutes,
@@ -106,6 +110,10 @@ const poolSeedOwners = new Map<string, string>()
 let poolSeedsInFlight = 0
 let maxPoolSeedsInFlight = 0
 let poolSeedCalls = 0
+/** The world each pooled seed was asked for, in order. */
+const poolSeedWorlds: string[] = []
+/** While set, pooled seeds of that world fail. */
+let failWorld: string | null = null
 let failPoolSeeds = false
 let seedsInFlight = 0
 /** While set, every seed waits on it: a burst that cannot drain on its own. */
@@ -121,11 +129,12 @@ async function orgIdForSlug(slug: string): Promise<string> {
 }
 
 function installStubSeeder(): void {
-  setDemoSeeder(async ({ orgSlug, owner, needs }) => {
+  setDemoSeeder(async ({ orgSlug, owner, needs, worldId }) => {
     const orgId = await orgIdForSlug(orgSlug)
     const pooled = owner?.name === DEMO_POOL_OWNER_NAME
     if (pooled) {
       poolSeedCalls++
+      poolSeedWorlds.push(worldId ?? "products")
       poolSeedsInFlight++
       maxPoolSeedsInFlight = Math.max(maxPoolSeedsInFlight, poolSeedsInFlight)
       // Every need: the pool seeds the Everything world.
@@ -137,6 +146,9 @@ function installStubSeeder(): void {
       await new Promise((r) => setTimeout(r, 40))
       if (seedHold) await seedHold
       if (pooled && failPoolSeeds) return { ok: false, orgId, detail: "stub failure" }
+      if (pooled && failWorld !== null && (worldId ?? "products") === failWorld) {
+        return { ok: false, orgId, detail: "stub world failure" }
+      }
       if (pooled && owner) {
         // What the real seed does to the owner's agent: rows that name it.
         await sql`
@@ -155,7 +167,7 @@ function installStubSeeder(): void {
   })
 }
 
-const fitCalls: Array<{ orgId: string; needs: readonly DemoNeed[] }> = []
+const fitCalls: Array<{ orgId: string; needs: readonly DemoNeed[]; ownerUserId?: string }> = []
 let kicks = 0
 
 /** Take every pooled org out of the pool, so each test starts from an empty one. */
@@ -174,6 +186,9 @@ async function markerOf(orgId: string): Promise<Record<string, unknown>> {
 }
 
 const savedPoolSize = env.LIAISON_DEMO_POOL_SIZE
+const savedWorlds = env.LIAISON_DEMO_WORLDS
+const savedPoolSizes = env.LIAISON_DEMO_POOL_SIZES
+const savedMaxAge = env.LIAISON_DEMO_POOL_MAX_AGE_HOURS
 const savedSeedConcurrency = env.LIAISON_DEMO_SEED_CONCURRENCY
 const savedVersion = env.LIAISON_VERSION
 
@@ -187,11 +202,15 @@ async function pooledBuilds(): Promise<Array<{ id: string; build: string | null;
   ]
 }
 
-/** Make pooled orgs look seeded long ago (before this process started). */
+/**
+ * Make pooled orgs look seeded before this process started (an hour ago),
+ * still well inside the pool's maximum age.
+ */
 async function backdatePool(): Promise<void> {
+  const before = JSON.stringify(new Date(Date.now() - 3600_000).toISOString())
   await sql`
     UPDATE kernel.organizations
-    SET settings = jsonb_set(settings, '{demo,createdAt}', '"2020-01-01T00:00:00.000Z"')
+    SET settings = jsonb_set(settings, '{demo,createdAt}', ${before}::jsonb)
     WHERE settings->'demo'->>'pool' IS NOT NULL`
   invalidateDemoMarker()
 }
@@ -229,6 +248,10 @@ describe("demo warm pool", () => {
   afterAll(async () => {
     await drainPool()
     env.LIAISON_DEMO_POOL_SIZE = savedPoolSize
+    env.LIAISON_DEMO_WORLDS = savedWorlds
+    env.LIAISON_DEMO_POOL_SIZES = savedPoolSizes
+    env.LIAISON_DEMO_POOL_MAX_AGE_HOURS = savedMaxAge
+    DemoWorldsTestAccess.setSeedable(null)
     env.LIAISON_DEMO_SEED_CONCURRENCY = savedSeedConcurrency
     env.LIAISON_VERSION = savedVersion
     DemoPoolTestAccess.setWorld(null)
@@ -244,6 +267,10 @@ describe("demo warm pool", () => {
     await drainPool()
     await clearRedisPatterns(["ratelimit:*", "bruteforce:*", "demo:*"])
     env.LIAISON_DEMO_POOL_SIZE = 3
+    env.LIAISON_DEMO_WORLDS = "products"
+    env.LIAISON_DEMO_POOL_SIZES = ""
+    env.LIAISON_DEMO_POOL_MAX_AGE_HOURS = 12
+    DemoWorldsTestAccess.setSeedable(null)
     env.LIAISON_VERSION = "dev"
     DemoPoolTestAccess.setWorld(null)
     failPoolSeeds = false
@@ -251,14 +278,16 @@ describe("demo warm pool", () => {
     seedHold = null
     maxSeedsInFlight = 0
     poolSeedCalls = 0
+    poolSeedWorlds.length = 0
+    failWorld = null
     maxPoolSeedsInFlight = 0
     fitCalls.length = 0
     kicks = 0
     DemoPoolTestAccess.setKick(async () => {
       kicks++
     })
-    DemoSeederTestAccess.setFitPooledWorld(async (orgId, needs) => {
-      fitCalls.push({ orgId, needs })
+    DemoSeederTestAccess.setFitPooledWorld(async (orgId, needs, _worldId, ownerUserId) => {
+      fitCalls.push({ orgId, needs, ownerUserId })
       return { appsOff: [], supportRoutineOff: false }
     })
   })
@@ -276,7 +305,7 @@ describe("demo warm pool", () => {
     expect(ran[0]?.seeded).toBe(3)
     expect(poolSeedCalls).toBe(3)
     expect(maxPoolSeedsInFlight).toBe(1)
-    expect(await demoPoolDepth()).toEqual({ ready: 3, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 3, seeding: 0 })
 
     // A full pool seeds nothing more.
     const again = await refillDemoPool()
@@ -306,7 +335,7 @@ describe("demo warm pool", () => {
     expect(poolSeedCalls).toBe(5)
     // Three at once: the fourth slot stays free for a visitor on an empty pool.
     expect(maxPoolSeedsInFlight).toBe(3)
-    expect(await demoPoolDepth()).toEqual({ ready: 5, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 5, seeding: 0 })
     // Every slot of the gate is back.
     const leases = []
     for (let i = 0; i < 4; i++) leases.push(await tryAcquireRefillSeedSlot())
@@ -338,7 +367,7 @@ describe("demo warm pool", () => {
       })
       expect(outcome.seeded).toBe(3)
       expect(poolSeedCalls).toBe(3)
-      expect(await demoPoolDepth()).toEqual({ ready: 3, seeding: 0 })
+      expect(await demoPoolDepth()).toMatchObject({ ready: 3, seeding: 0 })
       expect(await redis.get(DemoPoolTestAccess.keys.REFILL_LOCK_KEY)).toBeNull()
     } finally {
       DemoPoolTestAccess.setShuttingDown(null)
@@ -354,8 +383,10 @@ describe("demo warm pool", () => {
     expect(poolSeedCalls).toBe(3)
     expect(outcome.failed).toBe(3)
     expect(outcome.seeded).toBe(0)
-    expect(await demoPoolDepth()).toEqual({ ready: 0, seeding: 0 })
-    const backoff = JSON.parse((await redis.get(DemoPoolTestAccess.keys.BACKOFF_KEY)) ?? "{}")
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 0 })
+    const backoff = JSON.parse(
+      (await redis.get(DemoPoolTestAccess.keys.backoffKey("products"))) ?? "{}",
+    )
     expect(backoff.failures).toBe(1)
     expect((await refillDemoPool()).skipped).toBe("backoff")
   })
@@ -410,11 +441,13 @@ describe("demo warm pool", () => {
       SELECT count(*) AS n FROM kernel.agents WHERE org_id = ${data.orgId} AND handle LIKE '@unclaimed%'`
     expect(Number(placeholders[0]?.n)).toBe(0)
 
-    // The visitor's language, and the world fitted to their picks.
+    // The visitor's language, and the world fitted to their picks, the owner's attention with it.
     const [org] = await sql<{ locale: string }[]>`
       SELECT default_locale AS locale FROM kernel.organizations WHERE id = ${data.orgId}`
     expect(org?.locale).toBe("fr")
-    expect(fitCalls).toEqual([{ orgId: data.orgId, needs: ["support", "sales"] }])
+    expect(fitCalls).toEqual([
+      { orgId: data.orgId, needs: ["support", "sales"], ownerUserId: data.userId },
+    ])
 
     // The lead, as typed.
     const leads = await sql<{ email: string; name: string }[]>`
@@ -429,7 +462,7 @@ describe("demo warm pool", () => {
     expect(((await me.json()) as { data: { id: string } }).data.id).toBe(data.userId)
 
     // One fewer in the pool, and a refill was asked for.
-    expect(await demoPoolDepth()).toEqual({ ready: 2, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 2, seeding: 0 })
     expect(kicks).toBe(1)
   })
 
@@ -468,7 +501,7 @@ describe("demo warm pool", () => {
       const data = await readSignup(response)
       expect(data.state).toBe("ready")
       expect(seededOrgIds.has(data.orgId)).toBe(true)
-      expect(await demoPoolDepth()).toEqual({ ready: 2, seeding: 0 })
+      expect(await demoPoolDepth()).toMatchObject({ ready: 2, seeding: 0 })
       // The flag is on the row (not only in this process's cache), with the marker.
       const [row] = await sql<
         { settings: { loadHarness?: unknown; demo?: { synthetic?: unknown } } }[]
@@ -503,7 +536,7 @@ describe("demo warm pool", () => {
     const fresh = bodies.filter((b) => b.state === "provisioning")
     expect(claimed).toHaveLength(3)
     expect(fresh).toHaveLength(7)
-    expect(await demoPoolDepth()).toEqual({ ready: 0, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 0 })
 
     // Each claimed org went to exactly one visitor, who owns it.
     for (const b of claimed) {
@@ -528,13 +561,13 @@ describe("demo warm pool", () => {
     const response = await signup({ name: "Grace Hopper", email: "grace@example.com" }, nextPeer())
     expect((await readSignup(response)).state).toBe("ready")
     expect(kicks).toBe(1)
-    expect(await demoPoolDepth()).toEqual({ ready: 2, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 2, seeding: 0 })
 
     // What the kick runs on the job worker.
     const outcome = await refillDemoPool()
     expect(outcome.seeded).toBe(1)
     expect(poolSeedCalls).toBe(4)
-    expect(await demoPoolDepth()).toEqual({ ready: 3, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 3, seeding: 0 })
   })
 
   it("the reaper and the signup cap never count or take a pooled workspace", async () => {
@@ -573,7 +606,7 @@ describe("demo warm pool", () => {
     expect(outcome.failed).toBe(1)
     expect(outcome.seeded).toBe(0)
     expect(poolSeedCalls).toBe(1)
-    expect(await demoPoolDepth()).toEqual({ ready: 0, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 0 })
 
     const status = JSON.parse((await redis.get(DemoPoolTestAccess.keys.STATUS_KEY)) ?? "{}")
     expect(status.lastError).toBe("stub failure")
@@ -743,8 +776,9 @@ describe("demo warm pool", () => {
           "seeding",
           new Date(Date.now() - 60_000),
           demoPoolBuildId(),
-          demoPoolWorld(),
+          demoPoolWorld("products"),
           run,
+          "products",
         ),
       )
       return orgId
@@ -752,13 +786,13 @@ describe("demo warm pool", () => {
     const dead = [await shell("killed-run"), await shell("killed-run")]
     const legacy = await shell(null)
     invalidateDemoMarker()
-    expect(await demoPoolDepth()).toEqual({ ready: 0, seeding: 3 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 3 })
 
     const outcome = await refillDemoPool()
     // The dead run's shells went to the reaper and the pool refilled around
     // them; the legacy one still counts until its deadline.
     expect(outcome.seeded).toBe(2)
-    expect(await demoPoolDepth()).toEqual({ ready: 2, seeding: 1 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 2, seeding: 1 })
     for (const orgId of dead) {
       const marker = await markerOf(orgId)
       expect(marker.pool).toBeUndefined()
@@ -839,7 +873,7 @@ describe("demo warm pool", () => {
   it("the running build's world fingerprint is computed from inputs that all exist", () => {
     // A missing input (a renamed fixture folder) would silently drop the
     // fingerprint and with it every deploy's kept pool.
-    expect(demoPoolWorld()).toMatch(/^[0-9a-f]{32}$/)
+    expect(demoPoolWorld("products")).toMatch(/^[0-9a-f]{32}$/)
   })
 
   it("a deploy that leaves the seeded world unchanged keeps the older build's ready workspaces claimable", async () => {
@@ -852,7 +886,7 @@ describe("demo warm pool", () => {
     // A deploy whose schema and seed fixtures are the old build's: the old
     // worlds are exactly what this build would seed, so they stay its pool.
     env.LIAISON_VERSION = "build-new"
-    expect(await demoPoolDepth()).toEqual({ ready: 3, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 3, seeding: 0 })
     const outcome = await refillDemoPool()
     expect(outcome.seeded).toBe(0)
     expect((await pooledBuilds()).map((r) => r.id)).toEqual(old.map((r) => r.id))
@@ -878,7 +912,7 @@ describe("demo warm pool", () => {
     await backdatePool()
 
     env.LIAISON_VERSION = "build-new"
-    expect(await demoPoolDepth()).toEqual({ ready: 0, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 0 })
     expect((await refillDemoPool()).seeded).toBe(1)
     expect((await markerOf(row?.id ?? "")).pool).toBeUndefined()
   })
@@ -894,7 +928,7 @@ describe("demo warm pool", () => {
     // A deploy that changes the seeded world: the old worlds are not its pool.
     DemoPoolTestAccess.setWorld("world-new")
     env.LIAISON_VERSION = "build-new"
-    expect(await demoPoolDepth()).toEqual({ ready: 0, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 0 })
     const miss = await signup({ name: "Early Bird", email: "early@example.com" }, nextPeer())
     expect(miss.status).toBe(201)
     const missed = await readSignup(miss)
@@ -927,7 +961,7 @@ describe("demo warm pool", () => {
     await refillDemoPool()
     DemoPoolTestAccess.setWorld("world-current")
     env.LIAISON_VERSION = "build-current"
-    expect(await demoPoolDepth()).toEqual({ ready: 0, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 0 })
     env.LIAISON_DEMO_POOL_SIZE = 1
     await refillDemoPool()
     const rows = await pooledBuilds()
@@ -947,7 +981,7 @@ describe("demo warm pool", () => {
       WHERE id = ${first?.id ?? ""}`
     invalidateDemoMarker()
     await backdatePool()
-    expect(await demoPoolDepth()).toEqual({ ready: 3, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 3, seeding: 0 })
     expect((await refillDemoPool()).seeded).toBe(0)
     const response = await signup({ name: "Alan Turing", email: "alan@example.com" }, nextPeer())
     const data = await readSignup(response)
@@ -958,7 +992,7 @@ describe("demo warm pool", () => {
   it("size 0 is the signup exactly as before: a new org seeded behind the response", async () => {
     env.LIAISON_DEMO_POOL_SIZE = 0
     expect((await refillDemoPool()).skipped).toBe("disabled")
-    expect(await demoPoolDepth()).toEqual({ ready: 0, seeding: 0 })
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 0 })
 
     const response = await signup({ name: "Acme Supplies", email: "acme@example.com" }, nextPeer())
     expect(response.status).toBe(201)
@@ -975,5 +1009,201 @@ describe("demo warm pool", () => {
       await new Promise((r) => setTimeout(r, 50))
     }
     expect(seededOrgIds.has(data.orgId)).toBe(true)
+  })
+  // ── Worlds ───────────────────────────────────────────────────────────────
+
+  /** Run three worlds, as a box with every pack would. */
+  function runAllWorlds(sizes: string): void {
+    DemoWorldsTestAccess.setSeedable(["products", "saas", "studio"])
+    env.LIAISON_DEMO_WORLDS = "products,saas,studio"
+    env.LIAISON_DEMO_POOL_SIZES = sizes
+  }
+
+  /** Pooled orgs with their world, oldest first. */
+  async function pooledWorlds(): Promise<Array<{ id: string; world: string; pool: string }>> {
+    return [
+      ...(await sql<{ id: string; world: string; pool: string }[]>`
+        SELECT id, COALESCE(settings->'demo'->>'worldId', 'products') AS world,
+          settings->'demo'->>'pool' AS pool
+        FROM kernel.organizations WHERE settings->'demo'->>'pool' IS NOT NULL
+        ORDER BY created_at ASC`),
+    ]
+  }
+
+  it("pool sizes split 5 as 2, 2, 1 over three enabled worlds and give 0 to a disabled one", () => {
+    env.LIAISON_DEMO_POOL_SIZE = 5
+    runAllWorlds("")
+    expect(demoPoolTargets()).toEqual({ products: 2, saas: 2, studio: 1 })
+    // An explicit split wins, and a world it leaves out keeps none.
+    env.LIAISON_DEMO_POOL_SIZES = "products=1,saas=3"
+    expect(demoPoolTargets()).toEqual({ products: 1, saas: 3, studio: 0 })
+    // A world the box does not run keeps none, whatever the split says.
+    env.LIAISON_DEMO_WORLDS = "products,saas"
+    env.LIAISON_DEMO_POOL_SIZES = "products=2,saas=2,studio=1"
+    expect(demoPoolTargets()).toEqual({ products: 2, saas: 2, studio: 0 })
+    env.LIAISON_DEMO_POOL_SIZES = ""
+    expect(demoPoolTargets()).toEqual({ products: 3, saas: 2, studio: 0 })
+    // Without the packs, only the default world runs and takes the whole size.
+    DemoWorldsTestAccess.setSeedable(null)
+    env.LIAISON_DEMO_WORLDS = "products,studio"
+    expect(demoPoolTargets()).toEqual({ products: 5, saas: 0, studio: 0 })
+  })
+
+  it("refill seeds the world missing the most first", async () => {
+    // products already full: two of two ready.
+    runAllWorlds("products=2")
+    expect((await refillDemoPool()).seeded).toBe(2)
+    runAllWorlds("products=2,saas=2,studio=1")
+    poolSeedWorlds.length = 0
+    // One seed at a time, so the order is the refill's choice alone.
+    env.LIAISON_DEMO_SEED_CONCURRENCY = 2
+    const outcome = await refillDemoPool()
+    expect(outcome.order).toEqual(["saas", "studio", "saas"])
+    expect(poolSeedWorlds).toEqual(["saas", "studio", "saas"])
+    const rows = await pooledWorlds()
+    expect(rows.map((r) => r.world)).toEqual(["products", "products", "saas", "studio", "saas"])
+    // Each pooled org's marker names its world, and its month for a world that follows it.
+    for (const row of rows) {
+      const marker = await markerOf(row.id)
+      expect(marker.worldId).toBe(row.world)
+      if (row.world === "products") expect(marker.worldMonth).toBeUndefined()
+      else expect(marker.worldMonth).toMatch(/^\d{4}-\d{2}$/)
+    }
+  })
+
+  it("the pool's depth and status are reported per world and in total", async () => {
+    runAllWorlds("products=1,saas=2,studio=1")
+    await refillDemoPool()
+    expect(await demoPoolDepth()).toEqual({
+      ready: 4,
+      seeding: 0,
+      worlds: {
+        products: { ready: 1, seeding: 0 },
+        saas: { ready: 2, seeding: 0 },
+        studio: { ready: 1, seeding: 0 },
+      },
+    })
+    const status = await readDemoPoolStatus()
+    expect(status?.after.ready).toBe(4)
+    expect(status?.after.worlds.saas).toEqual({ ready: 2, seeding: 0 })
+    expect(["products", "saas", "studio"]).toContain(status?.worldId ?? "")
+  })
+
+  it("one world failing to seed backs off alone while the others refill", async () => {
+    runAllWorlds("products=2,saas=2")
+    failWorld = "saas"
+    const outcome = await refillDemoPool()
+    expect(outcome.failed).toBe(1)
+    expect(outcome.seeded).toBe(2)
+    const backoff = JSON.parse(
+      (await redis.get(DemoPoolTestAccess.keys.backoffKey("saas"))) ?? "{}",
+    )
+    expect(backoff).toMatchObject({ worldId: "saas", failures: 1 })
+    expect(await redis.get(DemoPoolTestAccess.keys.backoffKey("products"))).toBeNull()
+    expect(await demoPoolDepth()).toMatchObject({
+      worlds: { products: { ready: 2 }, saas: { ready: 0 } },
+    })
+    // Every world short is backing off: the run says so and seeds nothing.
+    await sql`
+      UPDATE kernel.organizations
+      SET settings = jsonb_set(settings, '{demo,expiresAt}', '"2000-01-01T01:00:00.000Z"') #- '{demo,pool}'
+      WHERE settings->'demo'->>'pool' IS NOT NULL AND settings->'demo'->>'worldId' = 'saas'`
+    invalidateDemoMarker()
+    poolSeedCalls = 0
+    expect((await refillDemoPool()).skipped).toBe("backoff")
+    expect(poolSeedCalls).toBe(0)
+  })
+
+  it("a pooled software org from last month is refused and retired", async () => {
+    runAllWorlds("products=1,saas=2")
+    await refillDemoPool()
+    const saas = (await pooledWorlds()).filter((r) => r.world === "saas")
+    expect(saas).toHaveLength(2)
+    // Both seeded at 23:50 on 30 November, Paris time (UTC+1).
+    const seededAt = Date.parse("2026-11-30T22:50:00.000Z")
+    await sql`
+      UPDATE kernel.organizations
+      SET settings = jsonb_set(jsonb_set(settings, '{demo,createdAt}', '"2026-11-30T22:50:00.000Z"'),
+        '{demo,worldMonth}', '"2026-11"')
+      WHERE id IN ${sql(saas.map((r) => r.id))}`
+    invalidateDemoMarker()
+    const ask = (at: number) =>
+      claimPooledOrg({
+        worldId: "saas",
+        name: "Night Owl",
+        locale: "en",
+        needs: ["support"],
+        now: new Date(at),
+      })
+
+    // 23:55 Paris, still November: claimed, and the visitor's marker keeps the month.
+    const before = await ask(seededAt + 5 * 60_000)
+    expect(saas.map((r) => r.id)).toContain(before?.orgId ?? "none")
+    expect(before?.marker.worldId).toBe("saas")
+    expect(before?.marker.worldMonth).toBe("2026-11")
+
+    // 00:10 Paris on 1 December: last month's org is refused...
+    const after = seededAt + 20 * 60_000
+    expect(await ask(after)).toBeNull()
+    expect(await demoPoolDepth(after)).toMatchObject({ worlds: { saas: { ready: 0 } } })
+    // ...and the next refill retires it to the reaper.
+    const left = saas.find((r) => r.id !== before?.orgId)?.id ?? "missing"
+    await refillDemoPool(() => after)
+    const marker = await markerOf(left)
+    expect(marker.pool).toBeUndefined()
+    expect(Date.parse(String(marker.expiresAt))).toBeLessThan(Date.now())
+  })
+
+  it("a pooled org older than the maximum age is refused and retired, in every world", async () => {
+    env.LIAISON_DEMO_POOL_SIZE = 1
+    await refillDemoPool()
+    const [row] = await pooledWorlds()
+    const thirteenHoursAgo = JSON.stringify(new Date(Date.now() - 13 * 3600_000).toISOString())
+    await sql`
+      UPDATE kernel.organizations
+      SET settings = jsonb_set(settings, '{demo,createdAt}', ${thirteenHoursAgo}::jsonb)
+      WHERE id = ${row?.id ?? ""}`
+    invalidateDemoMarker()
+    expect(
+      await claimPooledOrg({ worldId: "products", name: "Late", locale: "en", needs: ["support"] }),
+    ).toBeNull()
+    expect(await demoPoolDepth()).toMatchObject({ ready: 0, seeding: 0 })
+    expect((await refillDemoPool()).seeded).toBe(1)
+    expect((await markerOf(row?.id ?? "")).pool).toBeUndefined()
+  })
+
+  it("an edit to one world's pack retires that world's ready orgs and keeps the others claimable", async () => {
+    runAllWorlds("products=1,saas=1")
+    env.LIAISON_VERSION = "build-old"
+    DemoPoolTestAccess.setWorld("products-world")
+    DemoPoolTestAccess.setWorld("saas-world-old", "saas")
+    await refillDemoPool()
+    const old = await pooledWorlds()
+    await backdatePool()
+    // The new build changed the saas pack only.
+    env.LIAISON_VERSION = "build-new"
+    DemoPoolTestAccess.setWorld("saas-world-new", "saas")
+    expect(await demoPoolDepth()).toMatchObject({
+      worlds: { products: { ready: 1 }, saas: { ready: 0 } },
+    })
+    const outcome = await refillDemoPool()
+    expect(outcome.order).toEqual(["saas"])
+    const kept = old.find((r) => r.world === "products")?.id ?? "missing"
+    const gone = old.find((r) => r.world === "saas")?.id ?? "missing"
+    expect((await markerOf(kept)).pool).toBe("ready")
+    expect((await markerOf(gone)).pool).toBeUndefined()
+  })
+
+  it("a world the box stops running retires its pooled orgs", async () => {
+    runAllWorlds("products=1,saas=1")
+    await refillDemoPool()
+    const saasOrg = (await pooledWorlds()).find((r) => r.world === "saas")?.id ?? "missing"
+    await backdatePool()
+    env.LIAISON_DEMO_WORLDS = "products"
+    expect(
+      await claimPooledOrg({ worldId: "saas", name: "Off", locale: "en", needs: ["support"] }),
+    ).toBeNull()
+    await refillDemoPool()
+    expect((await markerOf(saasOrg)).pool).toBeUndefined()
   })
 })

@@ -4,7 +4,8 @@
 // (`executeTool` → scope check → handler → kernel file). Two members, Alice and
 // Bob, each hold messages, a conversation, a file, approvals, a routine-free
 // profile, an audit entry, a connected account, an outside AI client, a
-// dashboard and an agent store document. Alice's
+// dashboard, an agent store document, an app draft and the log lines of a
+// preview run of it. Alice's
 // bundle holds her rows and none of Bob's, never a token or a hash, she can
 // export herself without the data-subject authority, and she cannot export Bob:
 // that answers 404 exactly like a person who does not exist, and parks no
@@ -17,6 +18,8 @@ import { withSystemDb } from "~/db/privileged"
 import { type UserContext, withRlsContext } from "~/db/rls"
 import { agents, approvalRequests, files, users } from "~/db/schema/kernel"
 import { getObjectBuffer } from "~/infra/storage/object-storage"
+import { createDraft } from "~/modules/app-builder/drafts"
+import { createRunLogSink } from "~/modules/app-builder/logs"
 import { executeTool } from "~/modules/apps/execute-tool"
 import { ensureAppsForOrg } from "~/modules/apps/init"
 import { createDashboard } from "~/modules/dashboards/service"
@@ -30,6 +33,7 @@ import { seedAuditEntry, setUserPreferences } from "~/seed/factories/org/rows"
 import { actorFor } from "~/seed/factories/people/actors"
 import { seedThreadHistory } from "~/seed/factories/threads/history"
 import * as minimal from "~/seed/tiers/minimal"
+import { restoreFilesSelectPolicy } from "~/tests/helpers/files-select-policy"
 import { createTestOrg } from "~/tests/helpers/org"
 import { acquireTestLock, releaseTestLock } from "~/tests/route-test-setup"
 
@@ -44,6 +48,10 @@ const SECRETS = {
   aliceSettingsToken: `alice-settings-token-${tag}`,
 }
 const ALICE_MARK = `alice-mark-${tag}`
+/** A read scope no one holds: a log line tagged with it is out of every member's reach. */
+const UNHELD_SCOPE = "kernel:never:held"
+/** Each member's preview runs: the one they can read, and the one tagged with `UNHELD_SCOPE`. */
+const runs: Record<string, { seen: string; unseen: string; draftId: string }> = {}
 const BOB_MARK = `bob-mark-${tag}`
 
 let orgId: string
@@ -81,6 +89,7 @@ async function personalAgentOf(userId: string): Promise<string> {
 
 async function seedMember(person: minimal.Person, mark: string, secrets?: typeof SECRETS) {
   const ctx = seedContext({ orgId, now: new Date() })
+  await minimal.grantScope(person.id, "kernel:apps:build")
   const actor = await actorFor(ctx, person.id)
   const threadId = await minimal.thread(orgId, person.id, { title: `${mark} conversation` })
   await seedThreadHistory(ctx, [
@@ -169,12 +178,47 @@ async function seedMember(person: minimal.Person, mark: string, secrets?: typeof
       title: `${mark} note contents`,
     }),
   )
+  const baseName = `${mark.split("-")[0]}${tag}`.replace(/[^a-z0-9]/g, "x")
+  const made = await withRlsContext(actor, (tx) =>
+    createDraft(
+      tx,
+      { orgId, userId: person.id },
+      {
+        baseName,
+        title: `${mark} tracker`,
+        files: {
+          "app.manifest.json": JSON.stringify({ name: baseName, version: "0.1.0" }),
+          "handlers.ts": `export const ping = () => '${mark} handler code'\n`,
+        },
+      },
+    ),
+  )
+  const preview = (scopeTags: string[]) => {
+    const sink = createRunLogSink({
+      orgId,
+      app: baseName,
+      draftId: made.draft.id,
+      actorUserId: person.id,
+      scopeTags,
+    })
+    sink.append("info", `${mark} log text`, { customer: `${mark}-log-field` })
+    sink.append("error", `${mark} log text again`, {})
+    return sink.flush().then(() => sink.runId)
+  }
+  runs[mark] = {
+    draftId: made.draft.id,
+    seen: await preview([]),
+    unseen: await preview([UNHELD_SCOPE]),
+  }
 }
 
 beforeAll(async () => {
   await acquireTestLock()
   orgId = (await createTestOrg()).id
   await ensureAppsForOrg(orgId)
+  // The files SELECT policy production builds at boot: a database fresh from the template
+  // holds the deny-all placeholder, and the files section would read nothing.
+  await restoreFilesSelectPolicy()
   const ctx = seedContext({ orgId, now: new Date() })
   const a = await minimal.person(orgId, { name: `Alice ${tag}` })
   const b = await minimal.person(orgId, { name: `Bob ${tag}` })
@@ -219,8 +263,10 @@ describe("data subject export of a member", () => {
       "connectedApps",
       "dashboards",
       "storeDocuments",
+      "appDrafts",
+      "appLogs",
     ]) {
-      expect(bundle.records[key].rows.length).toBeGreaterThan(0)
+      expect({ key, rows: bundle.records[key].rows.length }).not.toEqual({ key, rows: 0 })
       expect(saved.counts[key]).toBe(bundle.records[key].rows.length)
     }
     expect(text).toContain(`${ALICE_MARK} message body`)
@@ -237,6 +283,58 @@ describe("data subject export of a member", () => {
     // Nothing of Bob's, not even the payload of Alice's own approval request.
     expect(text).not.toContain(BOB_MARK)
     expect(text).not.toContain(`${ALICE_MARK}-payload@example.com`)
+  })
+
+  it("a member's app drafts and the runs their actions started are in their bundle, without code or log text", async () => {
+    const saved = await exportAs(alice, { userId: "me" })
+    const text = await bundleText(saved.fileId)
+    const records = JSON.parse(text).records as Record<
+      string,
+      { note: string; rows: Array<Record<string, unknown>> }
+    >
+    const mine = runs[ALICE_MARK]
+    if (!mine) throw new Error("Alice's runs were not seeded")
+    expect(records.appDrafts?.rows).toEqual([
+      expect.objectContaining({
+        id: mine.draftId,
+        title: `${ALICE_MARK} tracker`,
+        made: true,
+        last_changed: true,
+        versions_made: [1],
+      }),
+    ])
+    // Both runs are hers, the one tagged with a scope she lacks too: listed by counts and times only.
+    expect(records.appLogs?.rows).toEqual([
+      expect.objectContaining({ run_id: mine.seen, draft_id: mine.draftId, lines: 2, errors: 1 }),
+      expect.objectContaining({ run_id: mine.unseen, draft_id: mine.draftId, lines: 2, errors: 1 }),
+    ])
+    expect(saved.counts.appDrafts).toBe(1)
+    expect(saved.counts.appLogs).toBe(2)
+    // Listed, never copied: the draft's code and what the app wrote stay out.
+    expect(text).not.toContain(`${ALICE_MARK} handler code`)
+    expect(text).not.toContain(`${ALICE_MARK} log text`)
+    expect(text).not.toContain(`${ALICE_MARK}-log-field`)
+    expect(text).not.toContain(BOB_MARK)
+  })
+
+  it("a member who lost the app permissions still finds the drafts they made and the runs they started in their export", async () => {
+    // Mutation caught: the two sections read under the member's current access (a member
+    // without kernel:apps:build reads no draft, and no run tagged with a scope they lack).
+    const theirs = runs[BOB_MARK]
+    if (!theirs) throw new Error("Bob's runs were not seeded")
+    await minimal.revokeScope(bob.userId, "kernel:apps:build")
+    const saved = await exportAs(officer, { userId: bob.userId })
+    const text = await bundleText(saved.fileId)
+    const records = JSON.parse(text).records as Record<
+      string,
+      { rows: Array<Record<string, unknown>> }
+    >
+    expect(officer.scopes).not.toContain("kernel:apps:build")
+    expect(records.appDrafts?.rows.map((r) => r.id)).toEqual([theirs.draftId])
+    expect(records.appLogs?.rows.map((r) => r.run_id)).toEqual([theirs.seen, theirs.unseen])
+    expect(text).not.toContain(`${BOB_MARK} handler code`)
+    expect(text).not.toContain(`${BOB_MARK} log text`)
+    expect(text).not.toContain(ALICE_MARK)
   })
 
   it("never writes a token, a credential, a password hash or a secret-named setting", async () => {

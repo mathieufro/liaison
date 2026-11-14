@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   setStep: vi.fn(),
   confirmMerge: vi.fn().mockResolvedValue({ contact: { id: "target-1" } }),
   closeMerge: vi.fn(),
+  loadSourceConversations: vi.fn(),
   mergeStore: {
     open: true,
     step: "search",
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     targetId: null as string | null,
     targetCandidates: [] as any[],
     resolvedFields: {} as Record<string, string>,
+    sourceConversations: 0,
     loading: false,
   },
 }))
@@ -30,6 +32,7 @@ vi.mock("~/modules/contacts/contact-merge-store", () => ({
   setStep: mocks.setStep,
   confirmMerge: mocks.confirmMerge,
   closeMerge: mocks.closeMerge,
+  loadSourceConversations: mocks.loadSourceConversations,
 }))
 vi.mock("~/modules/contacts/contact-detail-store", () => ({
   contactDetailStore: {
@@ -37,7 +40,6 @@ vi.mock("~/modules/contacts/contact-detail-store", () => ({
       "source-1": { id: "source-1", name: "Source Name", email: "source@example.com" },
       "target-1": { id: "target-1", name: "Target Name", email: "target@example.com" },
     },
-    backlinks: {},
   },
 }))
 
@@ -49,6 +51,14 @@ describe("ContactMergeDialog", () => {
     mocks.mergeStore.targetId = null
     mocks.mergeStore.targetCandidates = []
     mocks.mergeStore.resolvedFields = {}
+  })
+
+  it("counts the source contact's conversations when it opens", async () => {
+    const { ContactMergeDialog } = await import("./ContactMergeDialog")
+
+    render(() => <ContactMergeDialog />)
+
+    expect(mocks.loadSourceConversations).toHaveBeenCalledWith(mocks.api)
   })
 
   it("searches target candidates from the search step", async () => {

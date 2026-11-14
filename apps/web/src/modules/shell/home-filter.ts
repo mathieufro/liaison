@@ -8,7 +8,7 @@
 import { createMemo, createRoot, createSignal } from "solid-js"
 import { onSessionTeardown } from "~/lib/session-lifecycle"
 import { attentionStore } from "~/modules/shell/attention-store"
-import { currentHomeViewer, showPeerRequests } from "~/modules/shell/home-action-count"
+import { currentHomeViewer } from "~/modules/shell/home-action-count"
 import { buildHomeSections, type HomeFilter, OVERVIEW } from "~/modules/shell/home-sections"
 
 const [homeFilter, setHomeFilterSignal] = createSignal<HomeFilter>(OVERVIEW)
@@ -23,7 +23,6 @@ export function setHomeFilter(next: HomeFilter): void {
 export const homeSections = createRoot(() =>
   createMemo(() =>
     buildHomeSections(attentionStore.items, {
-      peersShown: showPeerRequests(),
       viewer: currentHomeViewer(),
     }),
   ),

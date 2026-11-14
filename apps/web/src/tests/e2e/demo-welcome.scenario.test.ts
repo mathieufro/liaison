@@ -24,7 +24,9 @@ test.describe("the demo welcome popup", () => {
     await expect(page.getByTestId("demo-verify")).toContainText("j•••@example.com")
     await expect(page.getByTestId("demo-welcome-own-key")).toBeVisible()
     await expect(page.getByTestId("demo-welcome-browse")).toBeVisible()
-    await expect(page.getByTestId("demo-welcome-example")).toContainText("example company")
+    await expect(page.getByTestId("demo-welcome").getByTestId("demo-example-line")).toContainText(
+      "example company",
+    )
     await page.screenshot({ path: test.info().outputPath("welcome-step1-1280.png") })
 
     // The key form opens in place, and the code comes back.

@@ -217,6 +217,33 @@ describe("the requester of an approval is the agent that asked, or the person", 
     expect(hidden?.requester).toEqual(AVERYS_AGENT)
   })
 
+  it("a draft an MCP client staged with no agent row is the person's agent, never the person", () => {
+    const person = { id: USER, name: "Giulia Ferrari" }
+    const agentNamed: ApprovalRequester = {
+      kind: "agent",
+      id: USER,
+      name: "Giulia Ferrari's agent",
+    }
+    expect(pickApprovalRequester(person, null, USER, null, "mcp")).toEqual(agentNamed)
+    // The person's own action, in the app, names the person.
+    expect(pickApprovalRequester(person, null, USER, null, "human-ui")).toEqual({
+      kind: "user",
+      id: USER,
+      name: "Giulia Ferrari",
+    })
+  })
+
+  it("a request an app's scheduled job raised names the job, never the member it is filed under", () => {
+    const person = { id: USER, name: "Giulia Ferrari" }
+    expect(
+      pickApprovalRequester(person, null, USER, null, "system", "invoicing:recurring_run_issue"),
+    ).toEqual({
+      kind: "agent",
+      id: USER,
+      name: "Scheduled job (Invoicing)",
+    })
+  })
+
   it("a routine that ran without an agent, hidden from the reader, is still a routine, never the person", () => {
     const person = { id: USER, name: "Avery Shaw" }
     const hiddenRoutine = { id: PERSONAL_ROUTINE, name: null }

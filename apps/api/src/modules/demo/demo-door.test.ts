@@ -14,7 +14,7 @@ import {
   setDemoSystemMailProvider,
 } from "~/infra/email"
 import { sinkDetail, sinkLog } from "~/lib/effect-sink"
-import { env } from "~/lib/env"
+import { env, envSchema } from "~/lib/env"
 import {
   HARNESS_HEADER_NONCE,
   HARNESS_HEADER_SIGNATURE,
@@ -51,6 +51,7 @@ import {
   demoBudgetEmailKey,
   demoVerifiedIdentity,
 } from "~/modules/demo/demo-verification"
+import { DemoWorldsTestAccess } from "~/modules/demo/demo-worlds"
 import { mountDemoRoutes, useDemoRateLimit } from "~/modules/demo/routes"
 import { ensureOrg } from "~/modules/provisioning/ensure-org"
 import * as minimal from "~/seed/tiers/minimal"
@@ -122,6 +123,19 @@ function authed(token: string, ip = nextIp()) {
 
 const savedOrgCap = env.LIAISON_DEMO_MAX_VISITOR_ORGS
 
+/** Every request the live seed was handed, with the org it seeded. */
+const seedRequests: Array<{ orgId: string; req: Record<string, unknown> }> = []
+
+/** The live seed's request for `orgId`, once the seed behind the response has run. */
+async function seedRequestOf(orgId: string): Promise<Record<string, unknown>> {
+  for (let i = 0; i < 100; i++) {
+    const found = seedRequests.find((r) => r.orgId === orgId)
+    if (found) return found.req
+    await Bun.sleep(50)
+  }
+  throw new Error(`no seed ran for ${orgId}`)
+}
+
 beforeAll(async () => {
   await acquireTestLock()
   // The namespace database outlives a run; its visitor orgs must not trip the
@@ -129,8 +143,9 @@ beforeAll(async () => {
   env.LIAISON_DEMO_MAX_VISITOR_ORGS = 100000
   DemoModeTestAccess.set(true)
   enableDemoDoorForTest()
-  setDemoSeeder(async ({ orgSlug, orgName, locale }) => {
-    const { orgId } = await ensureOrg({ slug: orgSlug, name: orgName, locale })
+  setDemoSeeder(async (req) => {
+    const { orgId } = await ensureOrg({ slug: req.orgSlug, name: req.orgName, locale: req.locale })
+    seedRequests.push({ orgId, req: JSON.parse(JSON.stringify(req)) })
     return { ok: true, orgId }
   })
 })
@@ -756,6 +771,20 @@ describe("the visitor's scenarios", () => {
     expect(body.data.every((i) => i.status === "new" && i.beatCount > 0)).toBe(true)
   })
 
+  it("lists the scenarios of the workspace's own world, never another world's", async () => {
+    const s = await startOk({ needs: ["sales", "support"] })
+    const marker = await loadDemoMarker(s.orgId)
+    expect(marker).not.toBeNull()
+    if (!marker) return
+    await markOrgAsDemo(s.orgId, { ...marker, worldId: "saas" })
+    invalidateDemoMarker(s.orgId)
+    const res = await demoApp.request("/api/demo/scenarios", { headers: authed(s.accessToken) })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { data: Array<{ tourId: string }> }
+    expect(body.data.map((i) => i.tourId)).not.toContain("kernel.scenario-sales")
+    expect(body.data.map((i) => i.tourId)).not.toContain("kernel.scenario-support")
+  })
+
   it("answers 404 for a regular org and for the reserved review org", async () => {
     const regular = await minimal.session((await createTestOrg()).id)
     const h = authed(regular.bearer)
@@ -1235,5 +1264,178 @@ describe("A9 the load harness's signed start", () => {
     expect(siteverifyCalls.length).toBeGreaterThan(calls)
     expect(await isLoadOrg(s.orgId)).toBe(false)
     expect((await loadDemoMarker(s.orgId))?.synthetic).toBeUndefined()
+  })
+})
+
+describe("the demo world", () => {
+  const savedWorlds = env.LIAISON_DEMO_WORLDS
+
+  /** What the worlds variable reads as when the box does not set it. */
+  const unsetWorlds = () => envSchema.shape.LIAISON_DEMO_WORLDS.parse(undefined)
+
+  /** Run these worlds, as if each had its seed pack. */
+  function runWorlds(worlds: string): void {
+    DemoWorldsTestAccess.setSeedable(["products", "saas", "studio"])
+    env.LIAISON_DEMO_WORLDS = worlds
+  }
+
+  afterEach(() => {
+    env.LIAISON_DEMO_WORLDS = savedWorlds
+    DemoWorldsTestAccess.setSeedable(null)
+    DemoModeTestAccess.set(true)
+  })
+
+  const markerOf = async (orgId: string) => {
+    invalidateDemoMarker(orgId)
+    return (await loadDemoMarker(orgId)) as Record<string, unknown> | null
+  }
+
+  it("a signup body naming a world is ignored and the marker holds the world derived from the entry", async () => {
+    runWorlds("products,saas")
+    const s = await startOk({
+      entry: { id: "software" },
+      worldId: "studio",
+      world: "studio",
+      needs: ["money", "support"],
+    })
+    const marker = await markerOf(s.orgId)
+    expect(marker?.worldId).toBe("saas")
+    expect(marker?.worldMonth).toMatch(/^\d{4}-\d{2}$/)
+    expect(marker?.needs).toEqual(["money", "support"])
+    const seeded = await seedRequestOf(s.orgId)
+    expect(seeded.worldId).toBe("saas")
+
+    // A body naming a world with no entry still opens the default world.
+    const plain = await startOk({ worldId: "saas", needs: ["support"] })
+    expect((await markerOf(plain.orgId))?.worldId).toBe("products")
+    expect((await seedRequestOf(plain.orgId)).worldId).toBe("products")
+  })
+
+  it("an entry whose world this box does not run opens the products world", async () => {
+    runWorlds("products")
+    const s = await startOk({ entry: { id: "software" }, needs: ["support", "dev"] })
+    const marker = await markerOf(s.orgId)
+    expect(marker?.worldId).toBe("products")
+    expect("worldMonth" in (marker ?? {})).toBe(false)
+    expect(s.needs).toEqual(["support", "dev"])
+  })
+
+  it("with the worlds variable unset every entry opens the products world", async () => {
+    env.LIAISON_DEMO_WORLDS = unsetWorlds()
+    for (const id of ["products", "software", "expertise", "other"]) {
+      const s = await startOk({ entry: { id }, needs: ["support"] })
+      expect((await markerOf(s.orgId))?.worldId).toBe("products")
+    }
+  })
+
+  it("a software signup asking only for commerce answers 422 and creates nothing", async () => {
+    runWorlds("products,saas")
+    const email = addr(`stale-tab-${Date.now()}-`)
+    const before = seedRequests.length
+    const r = await start({ email, entry: { id: "software" }, needs: ["commerce"] })
+    expect(r.status).toBe(422)
+    expect(r.body.error?.code).toBe("needs_not_in_world")
+    expect((r.body.error as { message?: string }).message).toBeTruthy()
+    const leads = await sql`SELECT 1 FROM kernel.demo_leads WHERE email = ${email}`
+    expect(leads.length).toBe(0)
+    await Bun.sleep(100)
+    expect(seedRequests.length).toBe(before)
+
+    // A need of another world beside one of its own is dropped, not refused.
+    const mixed = await startOk({ entry: { id: "software" }, needs: ["commerce", "support"] })
+    expect(mixed.needs).toEqual(["support"])
+    expect((await markerOf(mixed.orgId))?.needs).toEqual(["support"])
+    // The products world refuses the software world's need the same way.
+    const other = await start({ entry: { id: "products" }, needs: ["money"] })
+    expect(other.status).toBe(422)
+  })
+
+  it("the door route answers only the enabled worlds, needs no session and is absent off demo", async () => {
+    const door = async () => {
+      const res = await demoApp.request("/api/demo/door", {
+        headers: { "x-bun-socket-ip": nextIp() },
+      })
+      return { status: res.status, body: (await res.json().catch(() => null)) as unknown }
+    }
+    env.LIAISON_DEMO_WORLDS = unsetWorlds()
+    expect(await door()).toEqual({ status: 200, body: { data: { worlds: ["products"] } } })
+    runWorlds("saas,products")
+    expect(await door()).toEqual({ status: 200, body: { data: { worlds: ["products", "saas"] } } })
+    // A world named in the env with no seed pack is not offered.
+    DemoWorldsTestAccess.setSeedable(["products", "saas"])
+    env.LIAISON_DEMO_WORLDS = "products,saas,studio"
+    expect((await door()).body).toEqual({ data: { worlds: ["products", "saas"] } })
+    DemoModeTestAccess.set(false)
+    expect((await door()).status).toBe(404)
+  })
+
+  it("a member of a visitor org reads its world, a non-demo org gets 404", async () => {
+    runWorlds("products,saas")
+    const world = (token?: string) =>
+      demoApp.request("/api/demo/world", {
+        headers: token ? authed(token) : { "x-bun-socket-ip": nextIp() },
+      })
+    const saas = await startOk({ entry: { id: "software" }, needs: ["money"] })
+    const res = await world(saas.accessToken)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ data: { worldId: "saas" } })
+    const products = await startOk({ needs: ["support"] })
+    expect(await (await world(products.accessToken)).json()).toEqual({
+      data: { worldId: "products" },
+    })
+
+    const regular = await minimal.session((await createTestOrg()).id)
+    expect((await world(regular.bearer)).status).toBe(404)
+    const reserved = await minimal.adminSession((await createTestOrg()).id)
+    await markOrgAsDemo(reserved.orgId, reservedMarker())
+    expect((await world(reserved.bearer)).status).toBe(404)
+    expect((await world()).status).toBe(401)
+  })
+
+  it("the free text of an other answer reaches no log line, no prompt and no seed dump", async () => {
+    const { rootLogger } = await import("~/lib/logger")
+    const proto = Object.getPrototypeOf(rootLogger.child({ module: "demo-signup" }))
+    const lines: unknown[][] = []
+    const spies = (["trace", "debug", "info", "warn", "error", "fatal"] as const).map((level) => {
+      const spy = spyOn(proto, level)
+      spy.mockImplementation(function (this: unknown, ...args: unknown[]) {
+        lines.push(args)
+      })
+      return spy
+    })
+    const email = addr(`free-text-${Date.now()}-`)
+    let orgId = ""
+    try {
+      const s = await startOk({
+        email,
+        entry: { id: "other", text: "ZZFREE bakery chain" },
+        needs: ["support"],
+      })
+      orgId = s.orgId
+      await seedRequestOf(orgId)
+    } finally {
+      for (const spy of spies) spy.mockRestore()
+    }
+    for (const line of lines) expect(JSON.stringify(line)).not.toContain("ZZFREE")
+    const entryLines = lines.filter((l) => l[1] === "demo door entry")
+    expect(entryLines).toEqual([[{ demoEntry: "other" }, "demo door entry"]])
+    // The seed is handed nothing of the answer, so nothing it writes can hold it.
+    expect(JSON.stringify(await seedRequestOf(orgId))).not.toContain("ZZFREE")
+    // No table but the marker: the lead row holds none of it.
+    const leads = await sql<{ row: unknown }[]>`
+      SELECT to_jsonb(l) AS row FROM kernel.demo_leads l WHERE email = ${email}`
+    expect(leads.length).toBe(1)
+    expect(JSON.stringify(leads[0]?.row)).not.toContain("ZZFREE")
+    expect(JSON.stringify((await markerOf(orgId))?.entry)).toContain("ZZFREE")
+    // No prompt: the answer is read back only by the door's own routes, never
+    // by the agent's context or any other server code.
+    const readers: string[] = []
+    const root = new URL("../..", import.meta.url).pathname
+    for await (const rel of new Bun.Glob("**/*.ts").scan({ cwd: root })) {
+      if (rel.includes(".test.")) continue
+      const text = await Bun.file(`${root}${rel}`).text()
+      if (/demoEntryOf\(|marker\??\.entry\b/.test(text)) readers.push(rel)
+    }
+    expect(readers.sort()).toEqual(["modules/demo/demo-org.ts", "modules/demo/routes.ts"])
   })
 })

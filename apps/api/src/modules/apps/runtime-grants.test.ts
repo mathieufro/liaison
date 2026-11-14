@@ -22,6 +22,7 @@ const probeApp = {
   name: APP,
   version: "1.0.0",
   description: "Grant probe",
+  scopes: [`${APP}:notes:read`],
   schema: {
     notes: { fields: { title: "string", aclUserIds: "json", aclRoleIds: "json" } },
   },

@@ -54,6 +54,7 @@ export const CAPABILITY_LABELS: Record<string, string> = {
   calendar: "calendars",
   calls: "call recordings",
   database: "business records",
+  github: "the code repository",
   gitlab: "the code repository",
   "google-drive": "shared drive files",
   invoicing: "invoices and quotes",
@@ -67,6 +68,7 @@ export const CAPABILITY_LABELS: Record<string, string> = {
   projects: "projects and tasks",
   shopify: "the online store",
   social: "social accounts",
+  stripe: "payment data",
   tickets: "support tickets",
 }
 
@@ -82,5 +84,5 @@ export function capabilityLabel(
   if (scope === "*") return WILDCARD_CAPABILITY_CATEGORY
   const colon = scope.indexOf(":")
   const app = colon === -1 ? scope : scope.slice(0, colon)
-  return Object.hasOwn(labels, app) ? labels[app] : GENERIC_CAPABILITY_LABEL
+  return (Object.hasOwn(labels, app) ? labels[app] : undefined) ?? GENERIC_CAPABILITY_LABEL
 }

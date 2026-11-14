@@ -7,17 +7,25 @@
 // one-line description shows from lg up only, so a phone sees a calm two-column
 // grid. Several may be picked; the ORDER of the picks is the order the guided
 // scenarios run in, so each picked tile shows its rank (1, 2, 3...).
-// "Everything" picks every need in the canonical order (`DEMO_NEEDS`), and
+// The tiles are the world's seven (`DEMO_WORLD_NEEDS[world]`, the products
+// world until the door says otherwise). "Everything" picks them in that order, and
 // pressing it again clears them. It is the same size as the other tiles but
 // inverted (a dark fill, its icon square inverted too, and a "Select all" pill
 // in its top-right corner), so it reads as a control over the other tiles
 // rather than as an eighth scenario. Once picked it takes the accent fill and
 // the pill reads "All selected" with a check.
-import { DEMO_NEEDS, type DemoNeed } from "@liaison/shared"
+import {
+  DEMO_DEFAULT_WORLD,
+  DEMO_WORLD_NEEDS,
+  type DemoNeed,
+  type DemoWorldId,
+} from "@liaison/shared"
 import {
   BookOpen,
   Check,
   Code,
+  CreditCard,
+  FileText,
   FolderKanban,
   Layers,
   Mail,
@@ -30,6 +38,8 @@ import { useI18n } from "~/modules/i18n/i18n-context"
 import { appPillVars, appSquareColor } from "~/modules/shell/app-color"
 
 export interface NeedsPickerProps {
+  /** The world whose seven needs are listed; `products` when absent. */
+  world?: DemoWorldId
   value: DemoNeed[]
   onChange: (next: DemoNeed[]) => void
 }
@@ -39,9 +49,13 @@ export function toggleNeed(current: readonly DemoNeed[], need: DemoNeed): DemoNe
   return current.includes(need) ? current.filter((n) => n !== need) : [...current, need]
 }
 
-/** "Everything": every need in canonical order, or none when all are picked. */
-export function toggleEverything(current: readonly DemoNeed[]): DemoNeed[] {
-  return current.length === DEMO_NEEDS.length ? [] : [...DEMO_NEEDS]
+/** "Everything": the world's needs in tile order, or none when all are picked. */
+export function toggleEverything(
+  current: readonly DemoNeed[],
+  world: DemoWorldId = DEMO_DEFAULT_WORLD,
+): DemoNeed[] {
+  const all = DEMO_WORLD_NEEDS[world]
+  return current.length === all.length ? [] : [...all]
 }
 
 /** About how long each guided scenario takes, in minutes. */
@@ -51,11 +65,17 @@ export const NEED_MINUTES: Readonly<Record<DemoNeed, number>> = {
   chat: 3,
   sales: 4,
   commerce: 3,
+  money: 3,
+  client: 4,
   dev: 3,
   knowledge: 3,
 }
 
-/** The minutes a set of picks takes, end to end. */
+/**
+ * The minutes a set of picks takes, end to end. A world's own scenario can run
+ * longer than the products one it replaces; today only the two world-specific
+ * needs differ from the rest, and they carry their own figure above.
+ */
 export function needsMinutes(needs: readonly DemoNeed[]): number {
   return needs.reduce((total, need) => total + NEED_MINUTES[need], 0)
 }
@@ -69,6 +89,8 @@ export const NEED_LOOK: Readonly<
   chat: { app: "chat", icon: MessageSquare },
   sales: { app: "crm", icon: Mail },
   commerce: { app: "shopify", icon: ShoppingBag },
+  money: { app: "stripe", icon: CreditCard },
+  client: { app: "agreements", icon: FileText },
   dev: { app: "dev-sessions", icon: Code },
   knowledge: { app: "knowledge", icon: BookOpen },
 }
@@ -128,7 +150,9 @@ const Tile: Component<{
 export const NeedsPicker: Component<NeedsPickerProps> = (props) => {
   const i18n = useI18n()
   const rank = (need: DemoNeed) => props.value.indexOf(need) + 1
-  const everything = () => props.value.length === DEMO_NEEDS.length
+  const world = () => props.world ?? DEMO_DEFAULT_WORLD
+  const needs = () => DEMO_WORLD_NEEDS[world()]
+  const everything = () => props.value.length === needs().length
 
   return (
     <ul
@@ -136,7 +160,7 @@ export const NeedsPicker: Component<NeedsPickerProps> = (props) => {
       aria-label={i18n.t("kernel.demo.entryTitle")}
       class="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-2.5"
     >
-      <For each={DEMO_NEEDS}>
+      <For each={needs()}>
         {(need) => {
           const look = NEED_LOOK[need]
           const Icon = look.icon
@@ -180,19 +204,22 @@ export const NeedsPicker: Component<NeedsPickerProps> = (props) => {
         testid="demo-needs-all"
         key="all"
         pressed={everything()}
-        onPress={() => props.onChange(toggleEverything(props.value))}
+        onPress={() => props.onChange(toggleEverything(props.value, world()))}
         name={i18n.t("kernel.demo.needEverything")}
         desc={i18n.t("kernel.demo.needDesc.everything")}
-        minutes={i18n.t("kernel.demo.pickMinutes", { minutes: needsMinutes(DEMO_NEEDS) })}
+        minutes={i18n.t("kernel.demo.pickMinutes", {
+          minutes: needsMinutes(needs()),
+        })}
         class={
           everything()
             ? "border-accent bg-accent text-accent-foreground"
-            : "border-text bg-text text-bg hover:opacity-90"
+            : // Not selected, it reads as every other tile off: never the inverted, selected look.
+              `${tileOff} text-text`
         }
         icon={
           <span
             aria-hidden="true"
-            class={`${iconBase} ${everything() ? "bg-accent-foreground text-accent" : "bg-bg text-text"}`}
+            class={`${iconBase} ${everything() ? "bg-accent-foreground text-accent" : "bg-surface-sunken text-text"}`}
           >
             <Layers size={16} />
           </span>

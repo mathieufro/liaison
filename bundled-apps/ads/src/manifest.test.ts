@@ -85,7 +85,8 @@ describe("ads app.manifest.json", () => {
     // (the shared package depends on it by workspace protocol); no change to what it does.
     // 0.1.55: above 0.1.54, so an instance on either line of work upgrades; no change of its own.
     // 0.1.56: above both lines of work, which each changed it under the number before; no change of its own.
-    // 0.1.58: the package carries the app SDK's manifest `secrets` field; no change of its own.
+    // 0.1.57: the shared settings types it builds against changed; no change of its own.
+    // 0.1.58: tool_search no longer offers the approvals read; the agent uses the kernel's one.
     // 0.1.59: graph_get and google_search_terms read text people outside the org wrote (page
     // comments, the queries searchers typed), so a turn that read them is marked.
     // 0.1.60: its bundle carries host SDK 1.3.

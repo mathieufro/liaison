@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: FSL-1.1-ALv2
 
-import { APPROVING_WEDGE_GRACE_MS, type ApprovalSummary } from "@liaison/shared"
+import {
+  APPROVING_WEDGE_GRACE_MS,
+  type ApprovalSendGuard,
+  type ApprovalSummary,
+} from "@liaison/shared"
 import { sql as drizzleSql } from "drizzle-orm"
 import type { RlsClient } from "~/db"
 import { extractRows } from "~/db"
@@ -22,6 +26,17 @@ import {
 } from "~/modules/approvals/requester"
 import { withServedSummaries } from "~/modules/approvals/served-summary"
 import { approvalEditableFieldsRegistry } from "~/modules/apps/app-registries"
+import {
+  evaluateSendGuard,
+  evaluateSendGuardsAtCard,
+  isPinnedSendGuard,
+  type PinnedSendGuard,
+  personZones,
+  recipientFacts,
+  recipientsOf,
+  type SendGuardVerdict,
+  withoutThirdParty,
+} from "~/modules/mail/send-guard"
 import { revealManagedApprovalSummaries } from "~/modules/mailbox-crypto/managed-approval"
 
 const K = drizzleSql.raw(schemaRef("kernel"))
@@ -154,6 +169,8 @@ export async function listApprovals(
      *  the last {@link RECENTLY_DECIDED_WINDOW_HOURS} hours, newest decision
      *  first, so "was it done?" after a denial has a grounded answer. */
     recentlyDecided?: boolean
+    /** The cards' surface: each agent mail draft carries what the send check says now. */
+    sendGuards?: boolean
   },
 ): Promise<ApprovalRequestSummary[]> {
   // Bundle mode: return every step of one bundle in position order.
@@ -338,11 +355,15 @@ export async function listApprovals(
     (tx) => readApprovalLastFailures(tx, args.orgId, requestIds),
   )
 
+  const guards = args.sendGuards
+    ? await readSendGuards(db, args.orgId, filtered, "card")
+    : new Map<string, ApprovalSendGuard>()
+
   const summaries = filtered.map((r) => {
     const { appName, toolShortName } = splitToolName(r.tool_name)
     const editableFields =
       approvalEditableFieldsRegistry.get([args.orgId, appName, toolShortName]) ?? []
-    return buildApprovalSummary({
+    const summary = buildApprovalSummary({
       raw: r,
       requester: requesters.get(r.id) ?? pickApprovalRequester(null, null, r.requested_by),
       decidedByName: r.decided_by ? (userMap.get(r.decided_by) ?? null) : null,
@@ -350,9 +371,261 @@ export async function listApprovals(
       lastEdit: lastEditByRequestId.get(r.id) ?? null,
       lastFailure: lastFailureByRequestId.get(r.id) ?? null,
     })
+    const guard = guards.get(r.id)
+    return guard ? { ...summary, sendGuard: guard } : summary
   })
   // A draft sealed under a transparent mailbox's key: opened for its owner.
   return revealManagedApprovalSummaries(summaries, args.orgId, args.userId)
+}
+
+// ── The send check, as a card shows it ──────────────────────────────────────
+
+const GUARDED_SENDS = new Set(["mail:compose", "mail:reply"])
+const QUOTE_CHARS = 200
+const GUARD_STATES = new Set<ApprovalSendGuard["state"]>([
+  "clear",
+  "replied",
+  "bounced",
+  "held",
+  "opted_out",
+  "ref_stop",
+  "unavailable",
+])
+
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v)
+
+/**
+ * The start of the message that stopped or held a draft, read with the VIEWER's access, so a
+ * reply in a mailbox they cannot read gives neither quote nor record. A sealed message has no
+ * cleartext snippet and gives no quote. In a savepoint: a failed read costs the quote only.
+ */
+async function readableQuote(
+  db: RlsClient,
+  verdict: SendGuardVerdict,
+): Promise<{ readable: boolean; quote: string | null }> {
+  const record = verdict.record
+  if (!record || !verdict.at) return { readable: false, quote: null }
+  const at = verdict.at
+  try {
+    const rows = await db.transaction(async (sp) =>
+      extractRows<{ quote: string | null }>(
+        await sp.execute(
+          record.kind === "ticket"
+            ? drizzleSql`
+                SELECT left(m.text_body, ${QUOTE_CHARS}) AS quote
+                  FROM ${drizzleSql.raw(schemaRef("app_tickets"))}.messages m
+                 WHERE m.ticket_id = ${record.id}::uuid AND m.kind = 'inbound'
+                   AND COALESCE(m.sent_at, m.received_at) >= ${at}::timestamptz
+                   AND COALESCE(m.sent_at, m.received_at) < ${at}::timestamptz + interval '1 millisecond'
+                 LIMIT 1`
+            : drizzleSql`
+                SELECT left(m.snippet, ${QUOTE_CHARS}) AS quote
+                  FROM ${drizzleSql.raw(schemaRef("app_mail"))}.messages m
+                 WHERE m.conversation_id = ${record.id}::uuid AND m.direction = 'inbound'
+                   AND COALESCE(m.sent_at, m.synced_at) >= ${at}::timestamptz
+                   AND COALESCE(m.sent_at, m.synced_at) < ${at}::timestamptz + interval '1 millisecond'
+                 LIMIT 1`,
+        ),
+      ),
+    )
+    const row = rows[0]
+    if (!row) return { readable: false, quote: null }
+    const quote = row.quote?.trim() ?? ""
+    return { readable: true, quote: quote === "" ? null : quote }
+  } catch (err) {
+    log.warn({ err, record }, "send guard quote read failed; the card shows none")
+    return { readable: false, quote: null }
+  }
+}
+
+async function cardGuard(db: RlsClient, found: SendGuardVerdict): Promise<ApprovalSendGuard> {
+  const { readable, quote } = await readableQuote(db, found)
+  // A viewer who cannot open the message reads a third person only as "someone at <company>".
+  const verdict = readable ? found : withoutThirdParty(found)
+  return {
+    state: verdict.state,
+    ...(verdict.who !== undefined ? { who: verdict.who } : {}),
+    ...(verdict.at ? { at: verdict.at } : {}),
+    ...(verdict.holdUntil ? { holdUntil: verdict.holdUntil } : {}),
+    ...(verdict.code ? { code: verdict.code } : {}),
+    ...(verdict.label ? { label: verdict.label } : {}),
+    ...(verdict.optedOut ? { optedOut: verdict.optedOut } : {}),
+    ...(quote ? { quote } : {}),
+    ...(readable && verdict.record ? { record: verdict.record } : {}),
+    // Unnamed, the kind still says where it came in: "a reply came in on a ticket".
+    ...(!readable && (verdict.record?.kind ?? verdict.source)
+      ? { source: verdict.record?.kind ?? verdict.source }
+      : {}),
+  }
+}
+
+/** A stopped request's guard, as its send recorded it (the execution's error). */
+async function readStoppedGuards(
+  orgId: string,
+  requestIds: string[],
+): Promise<Map<string, SendGuardVerdict>> {
+  const out = new Map<string, SendGuardVerdict>()
+  if (requestIds.length === 0) return out
+  const rows = await withPrivilegedDb(orgId, "approvals-list-send-guard", async (tx) =>
+    extractRows<{ approval_request_id: string; verdict: unknown }>(
+      await tx.execute(drizzleSql`
+        SELECT DISTINCT ON (approval_request_id) approval_request_id, error->'guard' AS verdict
+          FROM ${K}.approved_handler_executions
+         WHERE org_id = ${orgId}::uuid
+           AND approval_request_id IN (${drizzleSql.join(
+             requestIds.map((id) => drizzleSql`${id}::uuid`),
+             drizzleSql`, `,
+           )})
+           AND status = 'failed_no_effect'
+         ORDER BY approval_request_id, finished_at DESC NULLS LAST`),
+    ),
+  )
+  for (const row of rows) {
+    const recorded = row.verdict
+    if (!isObj(recorded) || typeof recorded.state !== "string") continue
+    if (!GUARD_STATES.has(recorded.state as ApprovalSendGuard["state"])) continue
+    out.set(row.approval_request_id, recorded as unknown as SendGuardVerdict)
+  }
+  return out
+}
+
+/**
+ * The send check on each agent mail draft, computed now and never stored, so a hold that ended
+ * reads as clear with no write. A pending draft is checked against the mail as it stands (no
+ * providers at a list read; the single read asks them too); a closed one shows what its send
+ * recorded. The check at send stays the authority.
+ */
+export type GuardRow = Pick<
+  RawApprovalRow,
+  "id" | "status" | "tool_name" | "current_payload" | "requested_by"
+>
+
+async function readSendGuards(
+  db: RlsClient,
+  orgId: string,
+  rows: GuardRow[],
+  at: "card" | "send",
+): Promise<Map<string, ApprovalSendGuard>> {
+  const out = new Map<string, ApprovalSendGuard>()
+  for (const [id, verdict] of await readSendGuardVerdicts(orgId, rows, at)) {
+    out.set(id, await cardGuard(db, verdict))
+  }
+  // A pending draft's recipients who are contacts, with what the composer would show
+  // about them: the approver's send is theirs, whatever the mail is classified.
+  // One read for every draft's recipients, however many drafts.
+  const pending = rows.flatMap((row) => {
+    const guard = out.get(row.id)
+    if (!guard || row.status !== "pending") return []
+    const payload = row.current_payload
+    const addresses = recipientsOf(payload.to, payload.cc, payload.bcc).map((a) =>
+      a.trim().toLowerCase(),
+    )
+    return [{ guard, addresses }]
+  })
+  if (pending.length === 0) return out
+  const facts = new Map(
+    (await recipientFacts(orgId, [...new Set(pending.flatMap((p) => p.addresses))])).map((f) => [
+      f.email,
+      f,
+    ]),
+  )
+  for (const { guard, addresses } of pending) {
+    const recipients = [...new Set(addresses)].flatMap((a) => {
+      const fact = facts.get(a)
+      return fact ? [fact] : []
+    })
+    if (recipients.length > 0) guard.recipients = recipients
+  }
+  return out
+}
+
+/**
+ * When a pending mail draft's hold ends, if the send check reads it held now (an out-of-office
+ * until a date); null for any other row. The expiry reads it so a held draft never lapses
+ * before its hold is over.
+ */
+export async function readHeldUntil(orgId: string, row: GuardRow): Promise<Date | null> {
+  const verdict = (await readSendGuardVerdicts(orgId, [row], "card")).get(row.id)
+  if (verdict?.state !== "held" || !verdict.holdUntil) return null
+  const until = new Date(verdict.holdUntil)
+  return Number.isNaN(until.getTime()) ? null : until
+}
+
+async function readSendGuardVerdicts(
+  orgId: string,
+  rows: GuardRow[],
+  at: "card" | "send",
+): Promise<Map<string, SendGuardVerdict>> {
+  const out = new Map<string, SendGuardVerdict>()
+  const guarded = rows.filter(
+    (r) => GUARDED_SENDS.has(r.tool_name) && isPinnedSendGuard(r.current_payload?.sendGuard),
+  )
+  if (guarded.length === 0) return out
+  const closed = guarded.filter((r) => r.status !== "pending")
+  const pending = guarded.filter((r) => r.status === "pending")
+  for (const [id, verdict] of await readStoppedGuards(
+    orgId,
+    closed.map((r) => r.id),
+  )) {
+    out.set(id, verdict)
+  }
+  if (pending.length === 0) return out
+  const zones = await personZones(
+    orgId,
+    pending.map((r) => r.requested_by),
+  )
+  const checks = pending.map((r) => {
+    const payload = r.current_payload
+    return {
+      ...(zones.get(r.requested_by) ?? { locale: null, timeZone: null }),
+      guard: payload.sendGuard as PinnedSendGuard,
+      recipients: recipientsOf(payload.to, payload.cc, payload.bcc),
+      toolName: r.tool_name,
+    }
+  })
+  // One draft at a send asks the providers too; a list of drafts reads in shared queries.
+  const verdicts =
+    at === "send"
+      ? await Promise.all(checks.map((c) => evaluateSendGuard({ ...c, orgId, at })))
+      : await evaluateSendGuardsAtCard(orgId, checks)
+  for (const [i, r] of pending.entries()) {
+    const verdict = verdicts[i]
+    if (verdict) out.set(r.id, verdict)
+  }
+  return out
+}
+
+/**
+ * The send check on the agent mail drafts of Home's feed, as a card reads it: a held
+ * draft is not on Home, one with a final state shows its reason uncounted.
+ */
+export function readFeedSendGuards(
+  db: RlsClient,
+  orgId: string,
+  rows: GuardRow[],
+): Promise<Map<string, ApprovalSendGuard>> {
+  return readSendGuards(db, orgId, rows, "card")
+}
+
+/**
+ * The send check's state alone on each draft, for the badge every push counts: no quote and no
+ * record read, and a number of queries that does not grow with the drafts.
+ */
+export async function readFeedSendGuardStates(
+  orgId: string,
+  rows: GuardRow[],
+): Promise<Map<string, ApprovalSendGuard["state"]>> {
+  const out = new Map<string, ApprovalSendGuard["state"]>()
+  for (const [id, verdict] of await readSendGuardVerdicts(orgId, rows, "card")) {
+    out.set(id, verdict.state)
+  }
+  return out
+}
+
+/** A guard state that ends a draft: nothing it says can still go out as written. */
+export function isFinalSendGuardState(state: ApprovalSendGuard["state"]): boolean {
+  return state === "replied" || state === "bounced" || state === "opted_out" || state === "ref_stop"
 }
 
 /** Compact pending-approval descriptor for agent-context injection. */
@@ -453,7 +726,13 @@ export async function listPendingApprovalsForEntities(
 
 export async function getApproval(
   db: RlsClient,
-  args: { orgId: string; userId: string; requestId: string },
+  args: {
+    orgId: string
+    userId: string
+    requestId: string
+    /** The card's surface: an agent mail draft carries the send check, providers asked too. */
+    sendGuards?: boolean
+  },
 ): Promise<ApprovalRequestSummary | null> {
   const rows = extractRows<RawApprovalRow>(
     await db.execute(drizzleSql`
@@ -479,7 +758,7 @@ export async function getApproval(
   const lastFailure = await withPrivilegedDb(args.orgId, "approval-get-last-failure", (tx) =>
     readApprovalLastFailure(tx, args.orgId, r.id),
   )
-  const summary = buildApprovalSummary({
+  const built = buildApprovalSummary({
     raw: r,
     requester: await readApprovalRequester(db, args.orgId, r.id, r.requested_by),
     decidedByName: decider?.name ?? null,
@@ -487,6 +766,10 @@ export async function getApproval(
     lastEdit,
     lastFailure,
   })
+  const guard = args.sendGuards
+    ? (await readSendGuards(db, args.orgId, [r], "send")).get(r.id)
+    : undefined
+  const summary = guard ? { ...built, sendGuard: guard } : built
   const [shown] = await revealManagedApprovalSummaries([summary], args.orgId, args.userId)
   return shown ?? summary
 }

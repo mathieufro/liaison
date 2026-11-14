@@ -69,16 +69,21 @@
 // the notice the form shows.
 import crypto from "node:crypto"
 import {
+  DEMO_DEFAULT_WORLD,
+  DEMO_WORLD_NEEDS,
   type DemoEntry,
   type DemoNeed,
+  type DemoWorldId,
   demoEntrySchema,
   demoNeedsSchema,
+  demoWorldOfEntry,
   orgKernelSettingsSchema,
   resolveLocale,
   type ShippedLocale,
 } from "@liaison/shared"
 import type { Context } from "hono"
 import { Hono } from "hono"
+import { every } from "hono/combine"
 import { createMiddleware } from "hono/factory"
 import { HTTPException } from "hono/http-exception"
 import type Redis from "ioredis"
@@ -109,7 +114,11 @@ import {
   maskDemoEmail,
   normalizeDemoEmail,
 } from "~/modules/demo/demo-email"
-import { assertDemoOrgActive, countVisitorOrgs } from "~/modules/demo/demo-expiry"
+import {
+  assertDemoOrgActive,
+  countVisitorOrgs,
+  demoExpiryMiddleware,
+} from "~/modules/demo/demo-expiry"
 import {
   countDemoVerifiedSince,
   DEMO_LEAD_NOTICE_VERSION,
@@ -125,6 +134,7 @@ import { isDemoModeEnabled } from "~/modules/demo/demo-mode"
 import {
   demoEntryOf,
   demoNextStepsShownOf,
+  demoWorldOf,
   endVisitorOrg,
   loadDemoMarker,
   loadDemoOrg,
@@ -139,6 +149,7 @@ import {
   DEMO_INTERNAL_LOGIN_DOMAIN,
   demoInternalLogin,
   demoOrgSlug,
+  demoWorldMonth,
   kickDemoPoolRefill,
   recordDemoPoolMiss,
 } from "~/modules/demo/demo-pool"
@@ -150,7 +161,7 @@ import {
 } from "~/modules/demo/demo-provisioning"
 import { demoRecapForOrg } from "~/modules/demo/demo-recap"
 import { withVisitorSeedSlot } from "~/modules/demo/demo-seed-gate"
-import { DEMO_COMPANY_NAME, fitPooledDemoWorld, seedDemoOrgData } from "~/modules/demo/demo-seeder"
+import { fitPooledDemoWorld, seedDemoOrgData } from "~/modules/demo/demo-seeder"
 import { zeroDemoOrgCredits } from "~/modules/demo/demo-spend"
 import { type DemoTurnstileAction, verifyTurnstile } from "~/modules/demo/demo-turnstile"
 import {
@@ -161,6 +172,7 @@ import {
   verifyDemoCode,
   verifyDemoLink,
 } from "~/modules/demo/demo-verification"
+import { demoWorldOrgName, enabledDemoWorlds } from "~/modules/demo/demo-worlds"
 import { harnessRoutes } from "~/modules/demo/harness-routes"
 import { demoScenariosRoutes } from "~/modules/demo/scenarios-routes"
 import { serverT } from "~/modules/i18n/server-i18n"
@@ -181,7 +193,7 @@ const DEMO_POLLS_PER_PEER_PER_HOUR = 600
 const createDemoOrgSchema = z.object({
   /**
    * THE CALLER'S OWN NAME, not a name for the workspace. There is nothing for
-   * them to name: the workspace IS the fictional company (`DEMO_COMPANY_NAME`)
+   * them to name: the workspace IS the fictional company (its world's pack)
    * and they are being made its CEO, so this is what their account is called
    * and what the org's slug is derived from.
    */
@@ -195,7 +207,12 @@ const createDemoOrgSchema = z.object({
   needs: demoNeedsSchema,
   /** The unticked-by-default "send me news" checkbox. Absent means no. */
   newsOptIn: z.boolean().optional(),
-  /** The door's company question. Optional: the visitor can skip it. */
+  /**
+   * The door's company question. Optional: the visitor can skip it. The answer
+   * is what chooses the demo world, on the server (`visitorWorld`): the body
+   * never names a world, and a `worldId` or `world` sent anyway is stripped by
+   * this schema like any other unknown key.
+   */
   entry: demoEntrySchema.optional(),
   /** A fresh invisible Turnstile token for `demo_start`. */
   turnstileToken: z.string().min(1).max(2048),
@@ -516,6 +533,28 @@ async function releaseSignupKey(redisKey: string): Promise<void> {
   }
 }
 
+/**
+ * THE WORLD. The demo world a start opens is derived here, on the server, from
+ * the door's answer and the worlds this box runs (`enabledDemoWorlds`): an
+ * answer whose world is off opens the default world. The picks are kept only
+ * where the world shows them, in pick order; a start left with none (a stale
+ * tab posting another world's need) is refused before anything is spent or
+ * created.
+ */
+function visitorWorld(
+  c: Context,
+  entry: DemoEntry | undefined,
+  needs: readonly DemoNeed[],
+): { worldId: DemoWorldId; needs: DemoNeed[] } {
+  const worldId = demoWorldOfEntry(entry?.id, enabledDemoWorlds())
+  const shown = DEMO_WORLD_NEEDS[worldId]
+  const kept = needs.filter((need) => shown.includes(need))
+  if (kept.length === 0) {
+    throw demoError(c, 422, "needs_not_in_world", "kernel.demo.needsNotInWorld")
+  }
+  return { worldId, needs: kept }
+}
+
 export const demoRoutes = new Hono<AppEnv>()
 
 demoRoutes.post("/orgs", zValidator("json", createDemoOrgSchema), async (c) => {
@@ -556,6 +595,9 @@ demoRoutes.post("/orgs", zValidator("json", createDemoOrgSchema), async (c) => {
   // carries its own fresh token and is checked like any other request.
   if (!synthetic) await requireTurnstile(c, turnstileToken, "demo_start", clientIp)
 
+  // The world and the picks it shows, before any key, budget or org (WORLD).
+  const world = visitorWorld(c, entry, needs)
+
   // A retry of a start this caller already made: hand back that workspace, or
   // say it is still being made, before anything is spent. See SIGNUP_KEY.
   const signupRedisKey = signupKey ? signupKeyRedisKey(signupKey, signupNetwork) : null
@@ -567,7 +609,8 @@ demoRoutes.post("/orgs", zValidator("json", createDemoOrgSchema), async (c) => {
     return await startVisitorSignup(c, {
       name,
       email,
-      needs,
+      needs: world.needs,
+      worldId: world.worldId,
       newsOptIn,
       entry,
       peer,
@@ -590,6 +633,7 @@ async function startVisitorSignup(
     name: string
     email: string
     needs: DemoNeed[]
+    worldId: DemoWorldId
     newsOptIn?: boolean
     entry?: DemoEntry
     peer: string
@@ -599,7 +643,7 @@ async function startVisitorSignup(
     synthetic: boolean
   },
 ) {
-  const { name, email, needs, newsOptIn, entry, peer, locale, synthetic } = input
+  const { name, email, needs, worldId, newsOptIn, entry, peer, locale, synthetic } = input
   if (synthetic) {
     // A signed harness start: the address is the harness's own, so the address
     // rules and the per-network counters do not apply; the load lane's own
@@ -611,6 +655,7 @@ async function startVisitorSignup(
       emailNormalized: normalizeDemoEmail(email),
       emailCapKey: null,
       needs,
+      worldId,
       newsOptIn,
       entry,
       signupNetwork: input.signupNetwork,
@@ -672,6 +717,7 @@ async function startVisitorSignup(
       emailNormalized,
       emailCapKey,
       needs,
+      worldId,
       newsOptIn,
       entry,
       signupNetwork: input.signupNetwork,
@@ -894,6 +940,8 @@ interface VisitorOrgInput {
   emailNormalized: string
   emailCapKey: string | null
   needs: DemoNeed[]
+  /** The world `visitorWorld` derived; `needs` holds only what it shows. */
+  worldId: DemoWorldId
   newsOptIn?: boolean
   entry?: DemoEntry
   signupNetwork: string
@@ -963,11 +1011,13 @@ interface AcquiredWorkspace {
 async function acquireVisitorWorkspace(input: {
   name: string
   needs: DemoNeed[]
+  /** The world to hand out: already checked against the worlds this box runs. */
+  worldId: DemoWorldId
   locale: ShippedLocale
   synthetic: boolean
   expiresAt?: string
 }): Promise<AcquiredWorkspace> {
-  const { name, needs, locale } = input
+  const { name, needs, locale, worldId } = input
 
   // THE WARM POOL FIRST (demo-pool.ts): a workspace seeded ahead of demand,
   // made the visitor's in one transaction. It is already complete, so nothing
@@ -975,6 +1025,7 @@ async function acquireVisitorWorkspace(input: {
   // A synthetic visitor takes the pool exactly like a person (spec A29), so a
   // stress run measures its hit rate; the claim flags it a load org at once.
   const pooled = await claimPooledOrg({
+    worldId,
     name,
     locale,
     needs,
@@ -984,7 +1035,7 @@ async function acquireVisitorWorkspace(input: {
   if (pooled) {
     // The pool seeds every need; the visitor sees the apps their picks need,
     // turned On, before their session exists.
-    await fitPooledDemoWorld(pooled.orgId, needs)
+    await fitPooledDemoWorld(pooled.orgId, needs, pooled.worldId, pooled.userId)
     const finishedAt = new Date().toISOString()
     await writeProvisioning({
       orgId: pooled.orgId,
@@ -995,7 +1046,7 @@ async function acquireVisitorWorkspace(input: {
     // One org left the pool: the refill job seeds its replacement, alone.
     void kickDemoPoolRefill()
     log.info(
-      { orgId: pooled.orgId, userId: pooled.userId },
+      { orgId: pooled.orgId, userId: pooled.userId, worldId: pooled.worldId },
       "demo signup claimed a pooled workspace",
     )
     return {
@@ -1007,7 +1058,7 @@ async function acquireVisitorWorkspace(input: {
     }
   }
   if (env.LIAISON_DEMO_POOL_SIZE > 0) {
-    await recordDemoPoolMiss()
+    await recordDemoPoolMiss(worldId)
     void kickDemoPoolRefill()
   }
 
@@ -1036,7 +1087,11 @@ async function acquireVisitorWorkspace(input: {
   // seeder as the org's `owner` so the world is attached to THIS user rather
   // than to a persona. `ensureUser` gave the visitor their personal agent and
   // `@base` is ensured for an org the seeder created first.
-  const freshMarker = visitorMarker(env.LIAISON_DEMO_VISITOR_TTL_HOURS, new Date(), needs)
+  const now = new Date()
+  const freshMarker = visitorMarker(env.LIAISON_DEMO_VISITOR_TTL_HOURS, now, needs, {
+    worldId,
+    worldMonth: demoWorldMonth(worldId, now),
+  })
   const baseMarker = input.expiresAt ? { ...freshMarker, expiresAt: input.expiresAt } : freshMarker
   const marker = input.synthetic ? { ...baseMarker, synthetic: true } : baseMarker
   // A synthetic start's org is flagged a load org in the statement that writes
@@ -1046,6 +1101,7 @@ async function acquireVisitorWorkspace(input: {
     locale,
     marker,
     ownerName: name,
+    orgName: demoWorldOrgName(worldId),
     loadHarness: input.synthetic,
   })
   const { orgId, userId } = shell
@@ -1061,9 +1117,10 @@ async function acquireVisitorWorkspace(input: {
     locale,
     owner: { email: shell.login, name, password: shell.password },
     needs,
+    worldId,
   })
 
-  log.info({ orgId, userId, slug }, "demo org created; seeding behind the response")
+  log.info({ orgId, userId, slug, worldId }, "demo org created; seeding behind the response")
   return {
     orgId,
     userId,
@@ -1162,12 +1219,14 @@ async function runSeedBehindResponse({
   locale,
   owner,
   needs,
+  worldId,
 }: {
   orgId: string
   slug: string
   locale: ShippedLocale
   owner: { email: string; name: string; password: string }
   needs: DemoNeed[]
+  worldId: DemoWorldId
 }): Promise<void> {
   // THROUGH THE SEEDING GATE (demo-seed-gate.ts): at most
   // LIAISON_DEMO_SEED_CONCURRENCY seeds run at once on this box, so a burst
@@ -1185,7 +1244,8 @@ async function runSeedBehindResponse({
         await writeProvisioning({ orgId, state: "provisioning", startedAt })
         return seedDemoOrgData({
           orgSlug: slug,
-          orgName: DEMO_COMPANY_NAME,
+          orgName: demoWorldOrgName(worldId),
+          worldId,
           variant: "visitor",
           locale,
           owner,
@@ -1453,10 +1513,20 @@ demoRoutes.post("/start-over", authMiddleware(env.JWT_SECRET), async (c) => {
   try {
     await spendBoxSignupBudget(c)
 
-    const needs = demoNeedsSchema.safeParse(marker.needs ?? lead.needs)
+    // The same world again, read off the old marker. The visitor administers
+    // that org and could have rewritten its marker, so the world is honoured
+    // only while this box runs it (else the default world), and the picks
+    // only where that world shows them.
+    const marked = demoWorldOf(marker)
+    const worldId = enabledDemoWorlds().includes(marked) ? marked : DEMO_DEFAULT_WORLD
+    const picked = demoNeedsSchema.safeParse(marker.needs ?? lead.needs)
+    const needs = (picked.success ? picked.data : []).filter((need) =>
+      DEMO_WORLD_NEEDS[worldId].includes(need),
+    )
     const fresh = await acquireVisitorWorkspace({
       name: lead.name,
-      needs: needs.success ? needs.data : [],
+      needs,
+      worldId,
       locale,
       synthetic: false,
       expiresAt: marker.expiresAt ?? undefined,
@@ -1473,9 +1543,12 @@ demoRoutes.post("/start-over", authMiddleware(env.JWT_SECRET), async (c) => {
         "start-over left the old workspace live",
       )
     }
-    log.info({ from: orgId, to: fresh.orgId, state: fresh.state }, "demo visitor started over")
+    log.info(
+      { from: orgId, to: fresh.orgId, state: fresh.state, worldId },
+      "demo visitor started over",
+    )
     return visitorSession(c, fresh, fresh.expiresAt, fresh.state, 201, {
-      needs: needs.success ? needs.data : [],
+      needs,
       verification: { sent: false, emailMasked: maskDemoEmail(lead.email) },
     })
   } finally {
@@ -1484,6 +1557,35 @@ demoRoutes.post("/start-over", authMiddleware(env.JWT_SECRET), async (c) => {
     })
   }
 })
+
+// THE DOOR'S WORLDS. Public, before any account exists: the door asks which
+// worlds this box runs so its tiles and company step match what a start will
+// open. It answers the world ids only, in the door's entry order, and nothing
+// about any org. Whatever goes wrong reading them, the door is told the
+// default world alone, which is what a start would open anyway.
+demoRoutes.get("/door", (c) => {
+  if (!isDemoModeEnabled()) throw new HTTPException(404, { message: "Not found" })
+  let worlds: DemoWorldId[]
+  try {
+    worlds = enabledDemoWorlds()
+  } catch (err) {
+    log.error({ err }, "demo door: reading the enabled worlds failed; offering the default world")
+    worlds = [DEMO_DEFAULT_WORLD]
+  }
+  return success(c, { worlds })
+})
+
+// THE WORKSPACE'S WORLD, for the visitor's own session: the example line, the
+// limits panel and the welcome read it. 404 outside a visitor org.
+demoRoutes.get(
+  "/world",
+  every(authMiddleware(env.JWT_SECRET), demoExpiryMiddleware()),
+  async (c) => {
+    const orgId = await requireVisitorOrg(c)
+    const marker = await loadDemoMarker(orgId)
+    return success(c, { worldId: demoWorldOf(marker) })
+  },
+)
 
 // The visitor's guided scenarios (modules/demo/scenarios-routes.ts).
 demoRoutes.route("/scenarios", demoScenariosRoutes)

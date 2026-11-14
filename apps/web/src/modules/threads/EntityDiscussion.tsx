@@ -83,6 +83,12 @@ export interface EntityDiscussionProps {
   placeholder: string
   /** The send button's label. */
   sendLabel: string
+  /**
+   * Text the page puts in the box (a suggested question), with a counter so
+   * the same text can be put again. It is typed at the end and the box takes
+   * the focus; nothing is sent until the person sends it.
+   */
+  prefill?: { text: string; n: number } | null
 }
 
 export const EntityDiscussion: Component<EntityDiscussionProps> = (props) => {
@@ -113,6 +119,17 @@ export const EntityDiscussion: Component<EntityDiscussionProps> = (props) => {
       streamSeeded.add(id)
       void seedAgentStreamState(api, id)
     }
+  })
+
+  // A suggestion from the page lands in the box, once per request.
+  let prefilled = 0
+  const [editorReady, setEditorReady] = createSignal(false)
+  createEffect(() => {
+    const p = props.prefill
+    if (!p || p.n === prefilled || !editorReady() || !editor) return
+    prefilled = p.n
+    editor.insertText(p.text)
+    editor.focus()
   })
 
   const { messages, items } = createMessageItems(props)
@@ -311,6 +328,7 @@ export const EntityDiscussion: Component<EntityDiscussionProps> = (props) => {
             toolbar="focus"
             ref={(handle) => {
               editor = handle
+              setEditorReady(true)
             }}
             value={draft()}
             onChange={(markdown) => {

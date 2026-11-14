@@ -19,6 +19,7 @@ import { contactsLogger as log } from "~/lib/logger"
 import { quoteIdent } from "~/lib/sql-utils"
 import { UUID_RE } from "~/lib/uuid"
 import { deleteContactDiscussions, mergeContactDiscussion } from "~/modules/contacts/discussion"
+import { clearContactSoftReferences } from "~/modules/contacts/erasure"
 import { memberOfGroupCondition } from "~/modules/contacts/groups"
 import { runAfterContactMergeFailpoint } from "~/modules/contacts/merge-failpoint"
 import { buildStorageKey, loadOrgSettings, wouldExceedOrgQuota } from "~/modules/files/service"
@@ -293,9 +294,14 @@ async function mergeAndReturn(
 ) {
   const updates: Record<string, unknown> = {}
 
+  // A union equal to what is stored writes nothing, so resolving a known contact
+  // again (a re-seed, a repeated import) leaves its row and its events alone.
+  const changes = (current: Record<string, unknown>, next: Record<string, unknown>) =>
+    Object.keys(next).some((k) => JSON.stringify(current[k]) !== JSON.stringify(next[k]))
   if (params.externalId) {
     const currentIds = (existing.externalIds as Record<string, string>) ?? {}
-    updates.externalIds = { ...currentIds, ...params.externalId }
+    if (changes(currentIds, params.externalId))
+      updates.externalIds = { ...currentIds, ...params.externalId }
   }
   if (params.name && !existing.name) updates.name = params.name
   if (params.phone && !existing.phone) updates.phone = params.phone
@@ -305,7 +311,7 @@ async function mergeAndReturn(
     // union above — so resolving an existing contact with a new postal address accretes it rather than
     // dropping it. The CREATE path used to discard metadata entirely on a resolved-existing hit too.
     const current = (existing.metadata as Record<string, unknown> | null) ?? {}
-    updates.metadata = { ...current, ...params.metadata }
+    if (changes(current, params.metadata)) updates.metadata = { ...current, ...params.metadata }
   }
   if (params.tags && params.tags.length > 0) {
     const current = (existing.tags as string[] | null) ?? []
@@ -579,6 +585,7 @@ export async function listContacts(
       name: contacts.name,
       phone: contacts.phone,
       company: contacts.company,
+      companyId: contacts.companyId,
       externalIds: contacts.externalIds,
       metadata: contacts.metadata,
       tags: contacts.tags,
@@ -1040,10 +1047,95 @@ interface MergeContactsParams {
     company?: string
     externalIds?: Record<string, string>
     metadata?: Record<string, unknown>
+    /** Which of the two companies the survivor keeps, when both have one. */
+    companyId?: string
+    /** Which of the two recorded lawful bases the survivor keeps, when they differ. */
+    lawfulBasis?: string
   }
   mergedConversationCount?: number
   /** The source's discussion messages moved into the target's (mergeContactDiscussion). */
   discussionMoved?: boolean
+}
+
+type LegalRecord = Pick<
+  typeof contacts.$inferSelect,
+  | "companyId"
+  | "company"
+  | "lawfulBasis"
+  | "lawfulBasisSource"
+  | "lawfulBasisAt"
+  | "isConsumer"
+  | "dataSource"
+  | "art14NoticeAt"
+>
+
+const DATA_SOURCE_RANK: Record<string, number> = { third_party: 2, enrichment: 2, direct: 1 }
+
+/**
+ * The company and legal record the survivor of a contact merge keeps. The
+ * merge never picks a legal record by itself: the stricter value wins where
+ * there is an order (a consumer over unknown over a business; the earliest
+ * Art. 14 notice; a third-party or enrichment source over a direct one over
+ * unknown; a recorded basis over none), and two different recorded bases, or
+ * two different companies, need the person's choice in `resolvedFields`.
+ */
+export function mergeLegalRecord(
+  source: LegalRecord,
+  target: LegalRecord,
+  resolved: { companyId?: string; lawfulBasis?: string } = {},
+): Partial<LegalRecord> {
+  const out: Partial<LegalRecord> = {}
+  // Company: one side's, or the chosen one when both differ.
+  if (source.companyId && target.companyId && source.companyId !== target.companyId) {
+    const pick = resolved.companyId
+    if (pick !== source.companyId && pick !== target.companyId) {
+      throw new HTTPException(422, {
+        message:
+          "The two contacts belong to different companies: pass resolvedFields.companyId with the one to keep.",
+      })
+    }
+    if (pick === source.companyId) {
+      out.companyId = source.companyId
+      out.company = source.company
+    }
+  } else if (!target.companyId && source.companyId) {
+    out.companyId = source.companyId
+    out.company = source.company
+  }
+  // Lawful basis: kept whole (basis, its source, its date) from one side.
+  if (source.lawfulBasis && target.lawfulBasis && source.lawfulBasis !== target.lawfulBasis) {
+    const pick = resolved.lawfulBasis
+    if (pick !== source.lawfulBasis && pick !== target.lawfulBasis) {
+      throw new HTTPException(422, {
+        message: `The two contacts record different lawful bases (${target.lawfulBasis} and ${source.lawfulBasis}): pass resolvedFields.lawfulBasis with the one to keep.`,
+      })
+    }
+    if (pick === source.lawfulBasis) {
+      out.lawfulBasis = source.lawfulBasis
+      out.lawfulBasisSource = source.lawfulBasisSource
+      out.lawfulBasisAt = source.lawfulBasisAt
+    }
+  } else if (!target.lawfulBasis && source.lawfulBasis) {
+    out.lawfulBasis = source.lawfulBasis
+    out.lawfulBasisSource = source.lawfulBasisSource
+    out.lawfulBasisAt = source.lawfulBasisAt
+  }
+  // Consumer: true over unknown over false.
+  const consumerRank = (v: boolean | null) => (v === true ? 2 : v === null ? 1 : 0)
+  if (consumerRank(source.isConsumer) > consumerRank(target.isConsumer)) {
+    out.isConsumer = source.isConsumer
+  }
+  // Data source: an outside source over a direct one over unknown.
+  const rank = (v: string | null) => (v ? (DATA_SOURCE_RANK[v] ?? 0) : 0)
+  if (rank(source.dataSource) > rank(target.dataSource)) out.dataSource = source.dataSource
+  // Art. 14 notice: the earliest one sent.
+  if (
+    source.art14NoticeAt &&
+    (!target.art14NoticeAt || source.art14NoticeAt.getTime() < target.art14NoticeAt.getTime())
+  ) {
+    out.art14NoticeAt = source.art14NoticeAt
+  }
+  return out
 }
 
 async function mergeContactsInTx(db: RlsClient | RlsTx, params: MergeContactsParams) {
@@ -1088,6 +1180,10 @@ async function mergeContactsInTx(db: RlsClient | RlsTx, params: MergeContactsPar
   const updateValues: Record<string, unknown> = {
     externalIds: mergedExternalIds,
     metadata: mergedMetadata,
+    ...mergeLegalRecord(source, target, {
+      companyId: resolvedFields?.companyId,
+      lawfulBasis: resolvedFields?.lawfulBasis,
+    }),
     updatedAt: new Date(),
   }
   if (resolvedFields?.name !== undefined) updateValues.name = resolvedFields.name
@@ -1267,6 +1363,12 @@ export async function mergeContacts(db: RlsClient, params: MergeContactsParams) 
  * caller cannot edit (another person's mailbox, an invoice without invoicing
  * write) is refused rather than done on their behalf.
  */
+/** `{ schema, table }` of a schema-qualified app table name. */
+function appTable(qualified: string): { schema: string; table: string } {
+  const [schema = "", table = ""] = qualified.split(".")
+  return { schema, table }
+}
+
 const MERGE_REFERENCES = [
   { schema: "app_mail", table: "conversations", column: "contact_id", kind: "conversations" },
   {
@@ -1275,6 +1377,14 @@ const MERGE_REFERENCES = [
     column: "counterparty_contact_id",
     kind: "invoicing documents",
   },
+  {
+    schema: "app_invoicing",
+    table: "recurring_schedules",
+    column: "contact_id",
+    kind: "recurring invoice schedules",
+  },
+  // A billing customer mirrored from the payment connector, linked to this contact.
+  { ...appTable("app_stripe.stripe_customers"), column: "contact_id", kind: "billing customers" },
 ] as const
 
 /**
@@ -1437,6 +1547,31 @@ export async function mergeContactsAsKernel(
   return applyContactMerge(tx as never, params, locked)
 }
 
+/**
+ * A deal's contact and a company's main contact name a contact softly (no
+ * foreign key): in the merge's transaction, elevated, the ones naming the
+ * source name the survivor. The deal half is skipped where the projects app
+ * has no tables.
+ */
+async function repointContactSoftReferences(
+  tx: RlsClient,
+  params: MergeContactsParams,
+): Promise<void> {
+  const { orgId, sourceId, targetId } = params
+  await tx.execute(drizzleSql`
+    UPDATE ${drizzleSql.raw(quoteIdent(schemaRef("kernel")))}.companies
+       SET main_contact_id = ${targetId}::uuid, updated_at = now()
+     WHERE org_id = ${orgId}::uuid AND main_contact_id = ${sourceId}::uuid`)
+  const deals = `${quoteIdent(schemaRef("app_projects"))}.deals`
+  const [present] = extractRows<{ t: string | null }>(
+    await tx.execute(drizzleSql`SELECT to_regclass(${deals})::text AS t`),
+  )
+  if (!present?.t) return
+  await tx.execute(drizzleSql`
+    UPDATE ${drizzleSql.raw(deals)} SET contact_id = ${targetId}::uuid, updated_at = now()
+     WHERE org_id = ${orgId}::uuid AND contact_id = ${sourceId}::uuid`)
+}
+
 async function applyContactMerge(
   tx: RlsClient,
   params: MergeContactsParams,
@@ -1477,6 +1612,7 @@ async function applyContactMerge(
     }
   }
 
+  await repointContactSoftReferences(tx, params)
   // The source's discussion joins the survivor's before the source row goes.
   const discussionMoved = await mergeContactDiscussion(tx, {
     orgId: params.orgId,
@@ -1510,7 +1646,43 @@ interface DeleteContactParams {
   contactId: string
 }
 
+/** A contact delete refused while the person is still in use (409, with its code). */
+export class ContactDeleteRefusedError extends Error {
+  readonly status = 409
+  constructor(
+    readonly code: "contact_has_schedules",
+    message: string,
+  ) {
+    super(message)
+    this.name = "ContactDeleteRefusedError"
+  }
+}
+
+/** Recurring invoice schedules not ended that bill this person; 0 without the invoicing tables. */
+async function liveSchedulesBillingContact(
+  tx: Pick<PrivilegedDb, "execute">,
+  params: { orgId: string; contactId: string },
+): Promise<number> {
+  const qualified = `${quoteIdent(schemaRef("app_invoicing"))}.${quoteIdent("recurring_schedules")}`
+  const [reg] = extractRows<{ t: string | null }>(
+    await tx.execute(drizzleSql`SELECT to_regclass(${qualified})::text AS t`),
+  )
+  if (!reg?.t) return 0
+  const [row] = extractRows<{ n: number }>(
+    await tx.execute(drizzleSql`
+      SELECT count(*)::int AS n FROM ${drizzleSql.raw(qualified)}
+       WHERE org_id = ${params.orgId}::uuid AND contact_id = ${params.contactId}::uuid
+         AND status <> 'ended'`),
+  )
+  return row?.n ?? 0
+}
+
 /**
+ * Deletes a person the caller can see. Refused (409 `contact_has_schedules`) while a recurring
+ * invoice schedule not ended bills them; billing customers mirrored from the payment connector
+ * and ended schedules let go of them (the column is cleared), like a company's main contact and a
+ * deal's contact.
+ *
  * `privileged`: the privileged transaction the caller already holds (a kernel
  * job deleting as part of a larger write), so the contact's discussion goes in
  * that same transaction instead of a second privileged slot.
@@ -1522,14 +1694,33 @@ export async function deleteContact(
 ) {
   const { orgId, userId, contactId } = params
 
+  const visible = await getContact(db, { orgId, contactId })
+  if (!visible) return null
+  // A live schedule bills this person: deleting them would leave it billing nobody. Counted past
+  // the caller's row security, so the refusal does not depend on whether they can read invoicing.
+  const billing = await privilegedFrom(privileged ?? db, orgId, "contact-delete-schedules", (ptx) =>
+    liveSchedulesBillingContact(ptx, { orgId, contactId }),
+  )
+  if (billing > 0) {
+    throw new ContactDeleteRefusedError(
+      "contact_has_schedules",
+      `${visible.name ?? visible.email ?? "This person"} is billed by ${billing} recurring invoice schedule${billing === 1 ? "" : "s"}, so they cannot be deleted. End those schedules or bill another person first.`,
+    )
+  }
+
   const [deleted] = await db
     .delete(contacts)
     .where(and(eq(contacts.id, contactId), eq(contacts.orgId, orgId)))
     .returning({ id: contacts.id })
 
   if (!deleted) return null
-  // Its discussion goes with it: a contact has no bin to restore it from.
-  await deleteContactDiscussions({ orgId, contactIds: [contactId] }, privileged)
+  // Its discussion goes with it: a contact has no bin to restore it from. On the privileged
+  // transaction the caller holds, else on the caller's own one when it may elevate, so a caller
+  // already holding a privileged slot never takes a second one.
+  await privilegedFrom(privileged ?? db, orgId, "contact-discussion-delete", async (ptx) => {
+    await deleteContactDiscussions({ orgId, contactIds: [contactId] }, ptx)
+    await clearContactSoftReferences(ptx, orgId, [contactId])
+  })
 
   await db.queueEvent({
     app: "kernel",
@@ -1554,6 +1745,14 @@ interface UpdateContactParams {
   externalIds?: Record<string, string>
   metadata?: Record<string, unknown>
   tags?: string[]
+  /** Written with `company` (the company's name) by the caller, which resolved it. */
+  companyId?: string | null
+  /** Setting a basis records when (`lawful_basis_at`). */
+  lawfulBasis?: "consent" | "customer" | "professional_interest" | "generic_address"
+  lawfulBasisSource?: string
+  isConsumer?: boolean
+  recipientCountry?: string
+  dataSource?: "direct" | "third_party" | "enrichment"
 }
 
 export async function updateContact(
@@ -1572,6 +1771,17 @@ export async function updateContact(
   if (params.updates.externalIds !== undefined) setValues.externalIds = params.updates.externalIds
   if (params.updates.metadata !== undefined) setValues.metadata = params.updates.metadata
   if (params.updates.tags !== undefined) setValues.tags = params.updates.tags
+  const u = params.updates
+  if (u.companyId !== undefined) setValues.companyId = u.companyId
+  if (u.lawfulBasis !== undefined) {
+    setValues.lawfulBasis = u.lawfulBasis
+    setValues.lawfulBasisAt = new Date()
+  }
+  if (u.lawfulBasisSource !== undefined) setValues.lawfulBasisSource = u.lawfulBasisSource
+  if (u.isConsumer !== undefined) setValues.isConsumer = u.isConsumer
+  if (u.recipientCountry !== undefined)
+    setValues.recipientCountry = u.recipientCountry.toUpperCase()
+  if (u.dataSource !== undefined) setValues.dataSource = u.dataSource
 
   const [updated] = await db
     .update(contacts)

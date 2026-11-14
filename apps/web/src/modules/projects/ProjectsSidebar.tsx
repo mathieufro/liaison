@@ -26,7 +26,8 @@
 
 import { Archive, ChevronDown, ChevronRight, Search } from "lucide-solid"
 import { type Component, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
-import { userFromToken } from "~/modules/auth/auth-store"
+import { isFeatureOff } from "~/framework/org-features"
+import { hasScope, userFromToken } from "~/modules/auth/auth-store"
 import { useI18n } from "~/modules/i18n/i18n-context"
 import { crossProjectTasksStore } from "~/modules/projects/cross-project-tasks-store"
 import { dueBucket } from "~/modules/projects/due-status"
@@ -307,6 +308,29 @@ export const ProjectsSidebar: Component = () => {
           class="flex min-h-0 flex-col overflow-y-auto overscroll-contain"
           style={{ "max-height": controlsMaxHeight() }}
         >
+          {/* Capacity: only once a project uses time and budgets, and only for those who may read it. */}
+          <Show
+            when={!isFeatureOff("projects", "time_budgets") && hasScope("projects:capacity:read")}
+          >
+            <section class="flex flex-col gap-1 px-3 pt-3">
+              <FilterRow
+                testid="side-capacity"
+                label={i18n.t("projects.capacity.sidebar")}
+                active={
+                  tabStore.tabs.find((t) => t.id === tabStore.activeTabId)?.type ===
+                  "projects:capacity"
+                }
+                onClick={() =>
+                  openTab({
+                    type: "projects:capacity",
+                    entityId: "capacity",
+                    label: i18n.t("projects.capacity.tab"),
+                    preview: false,
+                  })
+                }
+              />
+            </section>
+          </Show>
           {/* Filters */}
           <section class="flex flex-col gap-1 px-3 py-3">
             <FilterRow

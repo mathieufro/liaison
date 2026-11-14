@@ -40,6 +40,23 @@ const CONFERENCE_PUSH_BACKUP_DELAY_MS = 60_000
 export function createCalendarMethods(ctx: BridgeContext): Record<string, any> {
   const { callerScopes, orgId, requireApp, txDb, userId } = ctx
   return {
+    /** Rows for a company's or a contact's timeline, read under the caller's row security. */
+    calendar_activityRead: async (paramsJson: string): Promise<string> => {
+      if (ctx.appName !== "calendar")
+        throw new Error("calendar_activityRead is only available to the calendar app")
+      const { hasScope } = await import("~/modules/permissions/permissions")
+      if (!hasScope("calendar:events:read", ctx.callerScopes ?? [])) {
+        throw new Error("forbidden: missing scope calendar:events:read")
+      }
+      const { calendarActivityRows } = await import("~/apps/calendar/activity-source")
+      const { withReadOnlySource } = await import("~/modules/contacts/activity")
+      const params = JSON.parse(paramsJson)
+      return JSON.stringify(
+        await withReadOnlySource(ctx.txDb as never, (tx) =>
+          calendarActivityRows(tx, ctx.orgId, params),
+        ),
+      )
+    },
     // --- Calendar-specific bridge methods (gated; only meaningful when appName === "calendar") ---
     // Host-side sync logic lives in ~/apps/calendar/*.ts (plain host modules, not sandboxed);
     // these methods are the only seam the calendar app's sandboxed handlers.ts can reach it

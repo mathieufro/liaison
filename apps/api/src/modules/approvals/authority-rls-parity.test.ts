@@ -30,11 +30,14 @@
 // branch's row/viewer to this matrix.
 
 import { beforeAll, describe, expect, it } from "bun:test"
+import { readdirSync, readFileSync } from "node:fs"
 import {
   type ApprovalAuthorityFacts,
+  type ApprovalRoute,
   canSeeInFeed,
   canSeeInList,
   decidingScope,
+  homePlacement,
   isNotified,
   isOwnerRouted,
   isRequester,
@@ -405,5 +408,75 @@ describe("authority <-> RLS parity matrix", () => {
       if (!v) throw new Error("fixture missing")
       expect(await rlsVisible(row, v)).toBe(true)
     }
+  })
+})
+
+describe("routing sorts the feed's audience and never widens it", () => {
+  /** Every route a world of routed rows and away people could give a row of this matrix. */
+  function everyRoute(): ApprovalRoute[] {
+    const routes: ApprovalRoute[] = [{ to: "usual" }]
+    for (const u of viewers) {
+      routes.push({ to: "owner", userId: u.id })
+      for (const why of ["asked", "on_item", "manager"] as const) {
+        routes.push({
+          to: "person",
+          userId: u.id,
+          why,
+          awayUntil: null,
+          standIn: null,
+          blockedStandIn: null,
+        })
+        for (const s of viewers) {
+          if (s.id === u.id) continue
+          routes.push({
+            to: "person",
+            userId: u.id,
+            why,
+            awayUntil: "2026-12-20",
+            standIn: s.id,
+            blockedStandIn: null,
+          })
+          routes.push({
+            to: "person",
+            userId: u.id,
+            why,
+            awayUntil: "2026-12-20",
+            standIn: null,
+            blockedStandIn: s.id,
+          })
+        }
+      }
+    }
+    return routes
+  }
+
+  it("for every row, viewer and route, a placement other than hidden implies the feed rule, which implies row security returns it", async () => {
+    const unsound: string[] = []
+    const routes = everyRoute()
+    for (const row of rows) {
+      for (const v of viewers) {
+        const viewer = apiViewer(v.id, v.scopes)
+        const placed = routes.some((route) => homePlacement(row.facts, route, viewer) !== "hidden")
+        if (!placed) continue
+        if (!canSeeInFeed(row.facts, viewer)) unsound.push(`feed: ${row.name} x ${v.name}`)
+        else if (!(await rlsVisible(row, v))) unsound.push(`rls: ${row.name} x ${v.name}`)
+      }
+    }
+    expect(unsound).toEqual([])
+  }, 60_000)
+
+  it("the approval_requests_select policy is the one its last migration wrote, naming no routing input", async () => {
+    const dir = new URL("../../db/migrations/", import.meta.url).pathname
+    const touching = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .filter((f) => readFileSync(`${dir}${f}`, "utf8").includes("approval_requests_select"))
+    expect(touching.at(-1)).toBe("0261_every_member_scope_approvers.sql")
+    const [policy] = (await sql`
+      SELECT qual FROM pg_policies
+      WHERE schemaname = 'kernel' AND tablename = 'approval_requests'
+        AND policyname = 'approval_requests_select'`) as Array<{ qual: string }>
+    expect(policy?.qual).toBeTruthy()
+    expect(policy?.qual).not.toMatch(/route_|away_ranges|next_in_line/)
   })
 })

@@ -13,12 +13,27 @@ vi.mock("~/modules/files/file-service", async (orig) =>
 )
 
 // A presign that never answers keeps a picked file in flight.
+// The composer's recipient check answers what `composeCheck` holds.
+const composeCheck = vi.hoisted(() => ({
+  answer: null as unknown,
+  asked: 0,
+  patches: [] as Array<{ path: string; body: unknown }>,
+}))
 vi.mock("~/modules/shell/ApiContext", () => ({
   useApi: () => ({
     get: vi.fn(async (path: string) =>
       path === "/assist/capabilities" ? { dictation: true, autoClean: true } : undefined,
     ),
-    post: vi.fn(() => new Promise(() => {})),
+    post: vi.fn((path: string) => {
+      if (path === "/mail/compose-check") composeCheck.asked++
+      return path === "/mail/compose-check" && composeCheck.answer
+        ? Promise.resolve(composeCheck.answer)
+        : new Promise(() => {})
+    }),
+    patch: vi.fn(async (path: string, body: unknown) => {
+      composeCheck.patches.push({ path, body })
+      return { data: { id: path.split("/").at(-1), ...(body as object) } }
+    }),
   }),
 }))
 vi.mock("~/modules/mail/mail-account-store", () => ({
@@ -214,5 +229,127 @@ describe("MailCompose — dictation", () => {
     } finally {
       removeMic()
     }
+  })
+})
+
+describe("MailCompose — a prospect's mail", () => {
+  test("shows what is recorded about a recipient who is a contact, even on a plain mail", async () => {
+    composeCheck.answer = {
+      commercial: false,
+      footerLines: null,
+      refusal: null,
+      line: null,
+      missingBasis: null,
+      recipients: [
+        {
+          email: "lea@dealer.example",
+          name: "Lea Martin",
+          basis: "professional_interest",
+          isConsumer: true,
+          optedOutAt: null,
+        },
+      ],
+    }
+    render(() => <MailCompose entityId="compose-facts" />)
+    fireEvent.input(screen.getByTestId("mail-compose-to"), {
+      target: { value: "lea@dealer.example" },
+    })
+    const facts = await waitFor(() => screen.getByTestId("mail-compose-recipient-facts"), {
+      timeout: 2000,
+    })
+    expect(facts.textContent).toBe(
+      "Lea Martin · Basis: Professional interest · Consumer · Not opted out",
+    )
+    composeCheck.answer = null
+  })
+
+  test("shows the footer a prospect's mail carries as fixed text, with no way to remove it", async () => {
+    composeCheck.answer = {
+      commercial: true,
+      footerLines: [
+        "Org Test SAS, 1 rue de Test, 75001 Paris",
+        "Pour ne plus recevoir de messages commerciaux de Org Test SAS : (lien de désinscription) ou répondez stop.",
+      ],
+      refusal: null,
+      line: null,
+    }
+    render(() => <MailCompose entityId="compose-prospect" />)
+    fireEvent.input(screen.getByTestId("mail-compose-to"), {
+      target: { value: "buyer@prospect.example" },
+    })
+    const footer = await waitFor(() => screen.getByTestId("mail-compose-commercial-footer"), {
+      timeout: 2000,
+    })
+    expect(footer.textContent).toContain("Org Test SAS, 1 rue de Test, 75001 Paris")
+    expect(footer.textContent).toContain("(lien de désinscription) ou répondez stop.")
+    expect(footer.querySelector("button, input, textarea, [contenteditable]")).toBeNull()
+    expect(footer.closest("[data-testid=mail-compose-editor]")).toBeNull()
+    composeCheck.answer = null
+  })
+
+  test("says calmly when no basis is recorded for a prospect, records one in one choice, and still lets the person send", async () => {
+    const lines = [
+      "Org Test SAS, 1 rue de Test, 75001 Paris",
+      "To stop commercial messages from Org Test SAS: (opt-out link) or reply stop.",
+    ]
+    composeCheck.answer = {
+      commercial: true,
+      footerLines: lines,
+      refusal: null,
+      line: null,
+      missingBasis: { contactId: "contact-9", name: "Ines Moreau" },
+    }
+    composeCheck.patches = []
+    render(() => <MailCompose entityId="compose-no-basis" />)
+    fireEvent.input(screen.getByTestId("mail-compose-to"), {
+      target: { value: "ines@prospect.example" },
+    })
+    const line = await waitFor(() => screen.getByTestId("mail-compose-no-basis"), {
+      timeout: 2000,
+    })
+    expect(line.textContent).toContain("No recorded basis for writing to Ines Moreau commercially")
+    expect(line.className).not.toContain("red")
+    expect((screen.getByTestId("mail-compose-send") as HTMLButtonElement).disabled).toBe(false)
+
+    const asked = composeCheck.asked
+    composeCheck.answer = {
+      commercial: true,
+      footerLines: lines,
+      refusal: null,
+      line: null,
+      missingBasis: null,
+    }
+    fireEvent.change(screen.getByTestId("mail-compose-record-basis"), {
+      target: { value: "professional_interest" },
+    })
+    await waitFor(() =>
+      expect(composeCheck.patches).toEqual([
+        { path: "/contacts/contact-9", body: { lawfulBasis: "professional_interest" } },
+      ]),
+    )
+    await waitFor(() => expect(screen.queryByTestId("mail-compose-no-basis")).toBeNull(), {
+      timeout: 2000,
+    })
+    expect(composeCheck.asked).toBeGreaterThan(asked)
+    composeCheck.answer = null
+  })
+
+  test("says why a prospect who opted out cannot be written to", async () => {
+    composeCheck.answer = {
+      commercial: true,
+      footerLines: null,
+      refusal:
+        "Nothing was sent. buyer@prospect.example opted out on 2026-03-02, and this is a commercial mail.",
+      line: null,
+    }
+    render(() => <MailCompose entityId="compose-refused" />)
+    fireEvent.input(screen.getByTestId("mail-compose-to"), {
+      target: { value: "buyer@prospect.example" },
+    })
+    const refusal = await waitFor(() => screen.getByTestId("mail-compose-commercial-refusal"), {
+      timeout: 2000,
+    })
+    expect(refusal.textContent).toContain("opted out on 2026-03-02")
+    composeCheck.answer = null
   })
 })

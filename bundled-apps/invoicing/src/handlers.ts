@@ -36,6 +36,7 @@ import {
   creditNoteCreateAndIssuePreflight,
   creditNoteIssue,
   creditNoteIssuePreflight,
+  documentsConvertLocal,
   documentsConvertToInvoice,
   documentsConvertToInvoicePreflight,
   documentsMarkPaid,
@@ -100,6 +101,37 @@ import {
   vatValidate,
   viewerAccess,
 } from "./reads"
+import { recurringDraftJob, recurringDraftWrite } from "./recurring/draft-job"
+import { recurringIssueJob, recurringItemIssue } from "./recurring/issue-job"
+import { recurringLegalDateJob } from "./recurring/legal-date-job"
+import {
+  approvalRouteRead,
+  type RunCtx,
+  recurringRunIssue,
+  recurringRunIssuePreflight,
+  recurringRunUnapprove,
+  recurringRunUnapprovePreflight,
+} from "./recurring/run-card"
+import { recurringRunGet } from "./recurring/run-get"
+import {
+  checkScheduleCreate,
+  checkScheduleInput,
+  checkScheduleUpdate,
+  recurringList,
+  recurringScheduleCreate,
+  recurringSchedulePause,
+  recurringScheduleUpdate,
+} from "./recurring/tools"
+import {
+  cardStreamIssuer,
+  issuerEmailsConfirm,
+  issuerEmailsConfirmPreflight,
+  issuerStreamGet,
+  issuerStreamSet,
+  issuerStreamSetPreflight,
+  onStripeConnectionChanged,
+} from "./streams"
+import { projectInvoicedGet } from "./tools/project-invoiced-get"
 import { vatLookup } from "./vat-lookup"
 
 /** Wire params of an issuing call: a SIREN's registry confirmation is never taken from the
@@ -188,11 +220,19 @@ export const documentsExportHandler = (
   ctx: Parameters<typeof exportDocuments>[0],
 ) => exportDocuments(ctx, params)
 
+// --- Timeline source (kernel activitySources; not agent-visible) ---
+export const activityReadHandler = (params: unknown, ctx: Parameters<typeof activityRead>[0]) =>
+  activityRead(ctx, params)
+
 // --- Read tools (agent-visible, ungated) ---
 export const documentsSearchHandler = (
   params: Parameters<typeof documentsSearchTool>[1],
   ctx: Parameters<typeof documentsSearchTool>[0],
 ) => documentsSearchTool(ctx, params)
+export const projectInvoicedGetHandler = (
+  params: Parameters<typeof projectInvoicedGet>[1],
+  ctx: Parameters<typeof projectInvoicedGet>[0],
+) => projectInvoicedGet(ctx, params)
 export const customerHistoryHandler = (
   params: Parameters<typeof customerHistory>[1],
   ctx: Parameters<typeof customerHistory>[0],
@@ -292,6 +332,10 @@ export const documentsConvertToInvoiceHandler = (
   params: Parameters<typeof documentsConvertToInvoice>[1],
   ctx: Parameters<typeof documentsConvertToInvoice>[0],
 ) => documentsConvertToInvoice(ctx, params)
+export const documentsConvertLocalHandler = (
+  params: Parameters<typeof documentsConvertLocal>[1],
+  ctx: Parameters<typeof documentsConvertLocal>[0],
+) => documentsConvertLocal(ctx, params)
 export const documentsMarkPaidHandler = (
   params: Parameters<typeof documentsMarkPaid>[1],
   ctx: Parameters<typeof documentsMarkPaid>[0],
@@ -557,6 +601,7 @@ export const einvoicingBackfillLegacyOriginalsHandler = (
 // SIRENs against the business registry, which re-drives the parks waiting on them.
 export { identityConfirmJobHandler } from "./einvoicing/backfill"
 
+import { activityRead } from "./activity"
 // — E-invoicing through the bound PA provider (contract einvoicing-pa@1) —
 import {
   bookDailyJob,
@@ -565,6 +610,8 @@ import {
   stepBook,
   summariseBatches,
 } from "./einvoicing/booking"
+import { einvoiceSendBatch, einvoiceSendDailyJob } from "./einvoicing/send-batch"
+import { einvoiceStandingDailyJob, einvoiceStandingOff } from "./einvoicing/standing"
 import {
   einvoiceTransmissionGet,
   einvoicingProviderOptions,
@@ -589,6 +636,7 @@ import {
   receivedSetStatus,
   receivedSetStatusPreflight,
 } from "./received/tools"
+import { type DocumentSendStateCtx, documentSendState } from "./send-state"
 
 export const einvoiceSendRequestHandler = (params: { document_id?: string }, ctx: EinvCtx) =>
   einvoiceSendRequest(ctx, params)
@@ -596,6 +644,20 @@ export const einvoiceSendHandler = (params: Parameters<typeof einvoiceSend>[1], 
   einvoiceSend(ctx, params)
 export const einvoiceBookBatchHandler = (params: { batch_id?: string }, ctx: EinvCtx) =>
   einvoiceBookBatch(ctx, params)
+export const documentSendStateHandler = (
+  params: Record<string, unknown>,
+  ctx: DocumentSendStateCtx,
+) => documentSendState(params, ctx)
+export const einvoiceStandingOffHandler = (
+  params: { issuerProfileId?: string; stream?: string },
+  ctx: EinvCtx,
+) => einvoiceStandingOff(ctx, params)
+export const einvoicingStandingDailyJobHandler = (_payload: unknown, ctx: EinvCtx) =>
+  einvoiceStandingDailyJob(ctx)
+export const einvoiceSendBatchHandler = (params: { batch_id?: string }, ctx: EinvCtx) =>
+  einvoiceSendBatch(ctx, params)
+export const einvoicingSendDailyJobHandler = (_payload: unknown, ctx: EinvCtx) =>
+  einvoiceSendDailyJob(ctx)
 export const einvoiceStatusRefreshHandler = (params: { document_id?: string }, ctx: EinvCtx) =>
   einvoiceStatusRefresh(ctx, params)
 export const einvoiceTransmissionGetHandler = (params: { document_id?: string }, ctx: EinvCtx) =>
@@ -655,3 +717,172 @@ export const einvoicingReceivedCatchUpJobHandler = (_payload: unknown, ctx: Rece
 
 // — import kinds (manifest `import.kinds`) —
 export { checkDocuments, importDocuments } from "./import-kind"
+export { checkSchedules, importSchedules } from "./recurring/import-kind"
+
+// --- Recurring schedules (the kernel gates the writes; see recurring/tools.ts) ---
+export const recurringScheduleCreateHandler = (
+  params: Parameters<typeof recurringScheduleCreate>[1],
+  ctx: Parameters<typeof recurringScheduleCreate>[0],
+) => recurringScheduleCreate(ctx, params)
+export const recurringScheduleCreatePreflightHandler = async (
+  params: Parameters<typeof checkScheduleCreate>[1],
+  ctx: Parameters<typeof checkScheduleCreate>[0],
+) => {
+  const refused = await checkScheduleCreate(ctx, params)
+  return refused ? { error: refused.error } : { ok: true }
+}
+export const recurringScheduleUpdateHandler = (
+  params: Parameters<typeof recurringScheduleUpdate>[1],
+  ctx: Parameters<typeof recurringScheduleUpdate>[0],
+) => recurringScheduleUpdate(ctx, params)
+export const recurringScheduleUpdatePreflightHandler = async (
+  params: Parameters<typeof checkScheduleUpdate>[1],
+  ctx: Parameters<typeof checkScheduleUpdate>[0],
+) => {
+  const refused = await checkScheduleUpdate(ctx, params, "preflight")
+  return refused ? { error: refused.error } : { ok: true }
+}
+export const recurringSchedulePauseHandler = (
+  params: Parameters<typeof recurringSchedulePause>[1],
+  ctx: Parameters<typeof recurringSchedulePause>[0],
+) => recurringSchedulePause(ctx, params)
+export const recurringSchedulePausePreflightHandler = async (
+  params: Parameters<typeof recurringSchedulePause>[1],
+  ctx: Parameters<typeof recurringSchedulePause>[0],
+) => {
+  const checked = await recurringSchedulePause(ctx, params, true)
+  return checked.status === "error" ? { error: checked.error } : { ok: true }
+}
+export const recurringListHandler = (
+  params: Parameters<typeof recurringList>[1],
+  ctx: Parameters<typeof recurringList>[0],
+) => recurringList(ctx, params)
+
+// --- The month-end run (draft, card, approve, issue, legal date; see recurring/*-job.ts) ---
+export const recurringDraftJobHandler = (_payload: unknown, ctx: RunCtx) => recurringDraftJob(ctx)
+export const recurringDraftWriteHandler = (
+  params: Parameters<typeof recurringDraftWrite>[1],
+  ctx: RunCtx,
+) => recurringDraftWrite(ctx, params)
+export const recurringIssueJobHandler = (_payload: unknown, ctx: RunCtx) => recurringIssueJob(ctx)
+export const recurringLegalDateJobHandler = (_payload: unknown, ctx: RunCtx) =>
+  recurringLegalDateJob(ctx)
+export const recurringRunIssueHandler = (
+  params: Parameters<typeof recurringRunIssue>[1],
+  ctx: RunCtx,
+) => recurringRunIssue(ctx, params)
+export const recurringRunUnapproveHandler = (
+  params: Parameters<typeof recurringRunUnapprove>[1],
+  ctx: RunCtx,
+) => recurringRunUnapprove(ctx, params)
+export const recurringItemIssueHandler = (
+  params: Parameters<typeof recurringItemIssue>[1],
+  ctx: RunCtx,
+) => recurringItemIssue(ctx, params)
+export const recurringRunGetHandler = (
+  params: Parameters<typeof recurringRunGet>[1],
+  ctx: RunCtx,
+) => recurringRunGet(ctx, params)
+export const recurringRunIssuePreflightHandler = (params: { run_id: string }, ctx: RunCtx) =>
+  recurringRunIssuePreflight(ctx, params)
+export const recurringRunUnapprovePreflightHandler = (params: { run_id: string }, ctx: RunCtx) =>
+  recurringRunUnapprovePreflight(ctx, params)
+export const approvalRouteReadHandler = (
+  params: { entityType: string; entityId: string },
+  ctx: RunCtx,
+) => approvalRouteRead(ctx, params)
+
+// --- Who issues what: the card stream's issuer and Stripe's own emails (see streams.ts) ---
+export const issuerStreamGetHandler = (
+  params: Parameters<typeof issuerStreamGet>[1],
+  ctx: Parameters<typeof issuerStreamGet>[0],
+) => issuerStreamGet(ctx, params ?? {})
+export const issuerStreamSetHandler = (
+  params: Parameters<typeof issuerStreamSet>[1],
+  ctx: Parameters<typeof issuerStreamSet>[0],
+) => issuerStreamSet(ctx, params)
+export const issuerStreamSetPreflightHandler = async (
+  params: Parameters<typeof issuerStreamSetPreflight>[1],
+  ctx: Parameters<typeof issuerStreamSetPreflight>[0],
+) => {
+  const r = await issuerStreamSetPreflight(ctx, params)
+  return "status" in r ? { error: r.error } : r
+}
+export const issuerEmailsConfirmPreflightHandler = async (
+  params: Parameters<typeof issuerEmailsConfirmPreflight>[1],
+  ctx: Parameters<typeof issuerEmailsConfirmPreflight>[0],
+) => {
+  const r = await issuerEmailsConfirmPreflight(ctx, params)
+  return "status" in r ? { error: r.error } : r
+}
+export const issuerEmailsConfirmHandler = (
+  params: Parameters<typeof issuerEmailsConfirm>[1],
+  ctx: Parameters<typeof issuerEmailsConfirm>[0],
+) => issuerEmailsConfirm(ctx, params)
+export const cardStreamIssuerHandler = (
+  _params: unknown,
+  ctx: Parameters<typeof cardStreamIssuer>[0],
+) => cardStreamIssuer(ctx)
+export const onStripeConnectionStateChanged = (
+  event: Parameters<typeof onStripeConnectionChanged>[1],
+  ctx: Parameters<typeof onStripeConnectionChanged>[0],
+) => onStripeConnectionChanged(ctx, event)
+
+// --- Card payments on Stripe, mode A: invoices, payments, refunds, unmatched payments ---
+// Event subscribers keep the kernel's `(event, ctx)` shape; tools are flipped like the others.
+import {
+  type StripeCtx,
+  onStripeInvoiceFinalized as stripeInvoiceFinalized,
+} from "./handlers/stripe-invoice-finalized"
+import {
+  onStripeInvoiceClosed,
+  onStripeInvoicePaymentFailed,
+  onStripeInvoicePaid as stripeInvoicePaid,
+} from "./handlers/stripe-invoice-paid"
+import {
+  invoiceFromStripePayment,
+  invoiceFromStripePaymentPreflight,
+  paymentLinkToInvoice,
+  paymentLinkToInvoicePreflight,
+  onStripePaymentUnmatched as stripePaymentUnmatched,
+} from "./handlers/stripe-payment-unmatched"
+import { onStripeRefundCreated as stripeRefundCreated } from "./handlers/stripe-refund-created"
+
+export { reconcileStripePaymentsJobHandler } from "./handlers/reconcile-stripe-payments"
+
+export const onStripeInvoiceFinalizedEvent = (event: unknown, ctx: StripeCtx) =>
+  stripeInvoiceFinalized(event, ctx)
+export const onStripeInvoicePaidEvent = (event: unknown, ctx: StripeCtx) =>
+  stripeInvoicePaid(event, ctx)
+export const onStripeInvoicePaymentFailedEvent = (event: unknown, ctx: StripeCtx) =>
+  onStripeInvoicePaymentFailed(event, ctx)
+export const onStripeInvoiceVoidedEvent = (event: unknown, ctx: StripeCtx) =>
+  onStripeInvoiceClosed(event, ctx, "voided")
+export const onStripeInvoiceUncollectibleEvent = (event: unknown, ctx: StripeCtx) =>
+  onStripeInvoiceClosed(event, ctx, "uncollectible")
+export const onStripeRefundCreatedEvent = (event: unknown, ctx: StripeCtx) =>
+  stripeRefundCreated(event, ctx)
+export const onStripePaymentUnmatchedEvent = (event: unknown, ctx: StripeCtx) =>
+  stripePaymentUnmatched(event, ctx)
+export const invoiceFromStripePaymentHandler = (
+  params: Parameters<typeof invoiceFromStripePayment>[1],
+  ctx: StripeCtx,
+) => invoiceFromStripePayment(ctx, params ?? {})
+export const invoiceFromStripePaymentPreflightHandler = async (
+  params: Parameters<typeof invoiceFromStripePayment>[1],
+  ctx: StripeCtx,
+) => {
+  const r = await invoiceFromStripePaymentPreflight(ctx, params ?? {})
+  return "status" in r ? { error: r.error } : r
+}
+export const paymentLinkToInvoiceHandler = (
+  params: Parameters<typeof paymentLinkToInvoice>[1],
+  ctx: StripeCtx,
+) => paymentLinkToInvoice(ctx, params)
+export const paymentLinkToInvoicePreflightHandler = async (
+  params: Parameters<typeof paymentLinkToInvoice>[1],
+  ctx: StripeCtx,
+) => {
+  const r = await paymentLinkToInvoicePreflight(ctx, params)
+  return "status" in r ? { error: r.error } : r
+}

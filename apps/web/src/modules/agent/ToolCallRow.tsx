@@ -6,6 +6,7 @@ import { env } from "~/lib/env"
 import ScopeRequestToolCard from "~/modules/admin-scope-requests/ScopeRequestToolCard"
 import { formatToolName } from "~/modules/agent/format-tool-name"
 import { SetupChecklistCard, setupStateResult } from "~/modules/agent/SetupChecklistCard"
+import { appAndTool, hasToolCard, ToolCard, toolCallFailed } from "~/modules/agent/ToolCard"
 import { pageHandleOf } from "~/modules/app-pages/open-page"
 import { PageHandleCard } from "~/modules/app-pages/PageHandleCard"
 import ApprovalCard from "~/modules/approvals/ApprovalCard"
@@ -13,7 +14,7 @@ import { ensureLoaded, getById } from "~/modules/approvals/approvals-store"
 import { BugReportDraftCard } from "~/modules/bug-report/BugReportDraftCard"
 import { isDesktop } from "~/modules/desktop/desktop-store"
 import LocalPermissionCard, { currentLocalPrompt } from "~/modules/desktop/LocalPermissionCard"
-import { useI18n } from "~/modules/i18n/i18n-context"
+import { catalogHasKey, useI18n } from "~/modules/i18n/i18n-context"
 import ImportRunCard from "~/modules/imports/ImportRunCard"
 import { MailboxSetupCard, mailboxSetupCardRef } from "~/modules/mailbox/MailboxSetupCard"
 import SecretRequestToolCard from "~/modules/secret-request/SecretRequestToolCard"
@@ -167,6 +168,23 @@ export interface ToolCallGroup {
   calls: ToolCallState[]
 }
 
+/** A read of an app that draws nothing of its own: consecutive ones roll up to one line. */
+export function isRolledUpRead(toolCall: ToolCallState): boolean {
+  return (
+    toolCall.readOnly === true &&
+    !drawsCard(toolCall) &&
+    rowApprovalId(toolCall) === null &&
+    dispatchApprovalId(toolCall) === null
+  )
+}
+
+/** The app a call reads, as its row names it: the registry's label, else the app id in words. */
+export function callAppLabel(toolCall: ToolCallState): string {
+  if (toolCall.appLabel) return toolCall.appLabel
+  const app = appAndTool(toolCall.toolName)?.app
+  return app ? formatToolName(app) : formatToolName(toolCall.toolName)
+}
+
 /** A call whose row draws a card the person acts on: never folded into a group. */
 export function drawsCard(toolCall: ToolCallState): boolean {
   return (
@@ -175,15 +193,50 @@ export function drawsCard(toolCall: ToolCallState): boolean {
     reportBugDraftId(toolCall) !== null ||
     importRunRef(toolCall) !== null ||
     mailboxSetupCardRef(toolCall) !== null ||
+    hasToolCard(toolCall) ||
     pageHandleOf(toolCall) !== null
   )
 }
 
+/**
+ * A turn's calls for a layout that folds them under one "Used N tools" line: the calls that
+ * drew a result card stand under the message, as they do live, and only the rest fold.
+ */
+export function splitCardCalls(toolCalls: ToolCallState[]): {
+  cards: ToolCallState[]
+  folded: ToolCallState[]
+} {
+  const cards: ToolCallState[] = []
+  const folded: ToolCallState[] = []
+  for (const tc of toolCalls) (hasToolCard(tc) ? cards : folded).push(tc)
+  return { cards, folded }
+}
+
+/**
+ * Stack a turn's calls: at least 2 consecutive reads of apps with no card become one roll-up
+ * group ("Read 3 apps"); otherwise consecutive calls of one tool stack as before.
+ */
 export function groupToolCalls(toolCalls: ToolCallState[]): ToolCallGroup[] {
   const groups: ToolCallGroup[] = []
-  for (const tc of toolCalls) {
+  let i = 0
+  while (i < toolCalls.length) {
+    let end = i
+    while (end < toolCalls.length && isRolledUpRead(toolCalls[end])) end++
+    if (end - i >= 2) {
+      groups.push({ toolName: toolCalls[i].toolName, calls: toolCalls.slice(i, end) })
+      i = end
+      continue
+    }
+    const tc = toolCalls[i]
+    i++
     const last = groups[groups.length - 1]
-    if (last && last.toolName === tc.toolName && !drawsCard(tc) && !last.calls.some(drawsCard)) {
+    if (
+      last &&
+      last.toolName === tc.toolName &&
+      !drawsCard(tc) &&
+      !last.calls.some(drawsCard) &&
+      !(last.calls.length >= 2 && last.calls.every(isRolledUpRead))
+    ) {
       last.calls.push(tc)
     } else {
       groups.push({ toolName: tc.toolName, calls: [tc] })
@@ -209,47 +262,53 @@ function SingleToolCallRow(props: ToolCallRowProps) {
       data-request-id={requestId()}
       data-turn-id={props.askId ?? props.turnId ?? undefined}
     >
-      <button
-        type="button"
-        class={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left ${canExpand ? "hover:bg-surface-hover" : "cursor-default"}`}
-        onClick={() => canExpand && setExpanded((prev) => !prev)}
-      >
-        <span
-          data-status={props.toolCall.status}
-          class={`h-1.5 w-1.5 shrink-0 rounded-full ${statusStyle(props.toolCall.status)}`}
-        />
-        <span class="shrink-0 font-medium text-text-secondary">
-          {formatToolName(props.toolCall.toolName)}
-        </span>
-        <Show when={props.toolCall.summary}>
-          {(summary) => (
-            <span data-testid="tool-call-summary" class="min-w-0 truncate text-text-tertiary">
-              {summary()}
-            </span>
-          )}
+      <Show when={!hasToolCard(props.toolCall)}>
+        <button
+          type="button"
+          class={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left ${canExpand ? "hover:bg-surface-hover" : "cursor-default"}`}
+          onClick={() => canExpand && setExpanded((prev) => !prev)}
+        >
+          <span
+            data-status={props.toolCall.status}
+            class={`h-1.5 w-1.5 shrink-0 rounded-full ${statusStyle(props.toolCall.status)}`}
+          />
+          <span class="shrink-0 font-medium text-text-secondary">
+            {formatToolName(props.toolCall.toolName)}
+          </span>
+          <Show when={props.toolCall.summary}>
+            {(summary) => (
+              <span data-testid="tool-call-summary" class="min-w-0 truncate text-text-tertiary">
+                {summary()}
+              </span>
+            )}
+          </Show>
+        </button>
+        <Show when={canExpand && expanded()}>
+          <div class="ml-4 mt-1 space-y-1 text-[11px] text-text-tertiary">
+            <Show when={props.toolCall.args}>
+              <div>
+                <span class="font-medium text-text-secondary">{i18n.t("kernel.args")}</span>
+                <pre class="mt-0.5 max-h-32 overflow-auto rounded bg-surface-hover p-1.5 text-[10.5px]">
+                  {JSON.stringify(props.toolCall.args, null, 2)}
+                </pre>
+              </div>
+            </Show>
+            <Show when={props.toolCall.result}>
+              <div>
+                <span class="font-medium text-text-secondary">{i18n.t("kernel.result")}</span>
+                <pre class="mt-0.5 max-h-32 overflow-auto rounded bg-surface-hover p-1.5 text-[10.5px]">
+                  {typeof props.toolCall.result === "string"
+                    ? props.toolCall.result
+                    : JSON.stringify(props.toolCall.result, null, 2)}
+                </pre>
+              </div>
+            </Show>
+          </div>
         </Show>
-      </button>
-      <Show when={canExpand && expanded()}>
-        <div class="ml-4 mt-1 space-y-1 text-[11px] text-text-tertiary">
-          <Show when={props.toolCall.args}>
-            <div>
-              <span class="font-medium text-text-secondary">{i18n.t("kernel.args")}</span>
-              <pre class="mt-0.5 max-h-32 overflow-auto rounded bg-surface-hover p-1.5 text-[10.5px]">
-                {JSON.stringify(props.toolCall.args, null, 2)}
-              </pre>
-            </div>
-          </Show>
-          <Show when={props.toolCall.result}>
-            <div>
-              <span class="font-medium text-text-secondary">{i18n.t("kernel.result")}</span>
-              <pre class="mt-0.5 max-h-32 overflow-auto rounded bg-surface-hover p-1.5 text-[10.5px]">
-                {typeof props.toolCall.result === "string"
-                  ? props.toolCall.result
-                  : JSON.stringify(props.toolCall.result, null, 2)}
-              </pre>
-            </div>
-          </Show>
-        </div>
+      </Show>
+      {/* The tool's own result card: drawn instead of the row's line, never folded. */}
+      <Show when={hasToolCard(props.toolCall)}>
+        <ToolCard toolCall={props.toolCall} />
       </Show>
       {/*
         P6d-T12: a local session's permission prompt is answered HERE, inside
@@ -374,8 +433,128 @@ export function rowApprovalId(toolCall: ToolCallState): string | null {
   return editedApprovalId(toolCall)
 }
 
+/** The codes a connector answers with when it has no connection to read. */
+const NOT_CONNECTED_CODES = new Set(["not_connected", "no_connection", "connection_missing"])
+
+/** A call its app answered with "not connected": nothing was read, and nothing failed. */
+export function answeredNotConnected(tc: ToolCallState): boolean {
+  const r = tc.result
+  if (r === null || typeof r !== "object") return false
+  const code = (r as { error?: { code?: unknown } | null }).error?.code
+  return typeof code === "string" && NOT_CONNECTED_CODES.has(code)
+}
+
+/**
+ * Consecutive reads of apps, as one row: "Read 3 apps" with their names, or "Read 2 of 3 apps"
+ * and which did not answer. While they run, one line per call, in order. Built from the calls'
+ * own stored fields, so it reads the same live and after a reload.
+ */
+function ReadRollup(props: ToolCallGroupProps) {
+  const i18n = useI18n()
+  const [expanded, setExpanded] = createSignal(false)
+  const running = () =>
+    props.toolCalls.some((tc) => tc.status === "running" || tc.status === "pending")
+  const apps = () => {
+    // An app "did not answer" only when none of its calls got an answer. A call refused for its
+    // own arguments and then made again (the model's retry) was answered: the app is up.
+    const seen: { label: string; answered: boolean }[] = []
+    for (const tc of props.toolCalls) {
+      // An app with no connection was not read and did not fail: it is left out of the line.
+      if (answeredNotConnected(tc)) continue
+      const label = callAppLabel(tc)
+      const known = seen.find((a) => a.label === label)
+      if (known) known.answered ||= !toolCallFailed(tc)
+      else seen.push({ label, answered: !toolCallFailed(tc) })
+    }
+    return seen.map((a) => ({ label: a.label, failed: !a.answered }))
+  }
+  const failed = () => apps().filter((a) => a.failed)
+  const title = () => {
+    const n = apps().length
+    if (failed().length > 0) {
+      return i18n.t("kernel.toolCard.readSomeApps", { count: n - failed().length, total: n })
+    }
+    return n === 1
+      ? i18n.t("kernel.toolCard.readOneApp")
+      : i18n.t("kernel.toolCard.readApps", { count: n })
+  }
+  const summary = () =>
+    failed().length > 0
+      ? failed()
+          .map((a) => i18n.t("kernel.toolCard.didNotAnswer", { app: a.label }))
+          .join(". ")
+      : apps()
+          .map((a) => a.label)
+          .join(", ")
+  const runningLine = (tc: ToolCallState) => {
+    if (tc.runningLabelKey && catalogHasKey(tc.runningLabelKey)) return i18n.t(tc.runningLabelKey)
+    return tc.runningLabel ?? i18n.t("kernel.toolCard.reading", { app: callAppLabel(tc) })
+  }
+  return (
+    <Show
+      when={!running()}
+      fallback={
+        <div class="text-[12px]" data-testid="tool-rollup-running">
+          <For each={props.toolCalls}>
+            {(tc) => (
+              <div class="flex items-center gap-2 px-1 py-0.5" data-testid="tool-rollup-line">
+                <span class={`h-1.5 w-1.5 shrink-0 rounded-full ${statusStyle(tc.status)}`} />
+                <span class="font-medium text-text-secondary">{callAppLabel(tc)}</span>
+                <span class="min-w-0 truncate text-text-tertiary">
+                  {tc.status === "running" || tc.status === "pending" ? runningLine(tc) : ""}
+                </span>
+              </div>
+            )}
+          </For>
+        </div>
+      }
+    >
+      <Show when={apps().length > 0}>
+        <div class="text-[12px]" data-testid="tool-rollup">
+          <button
+            type="button"
+            data-testid="tool-rollup-toggle"
+            class="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-surface-hover"
+            onClick={() => setExpanded((prev) => !prev)}
+          >
+            <span
+              class={`h-1.5 w-1.5 shrink-0 rounded-full ${statusStyle(failed().length > 0 ? "error" : "completed")}`}
+            />
+            <span class="shrink-0 font-medium text-text-secondary" data-testid="tool-rollup-title">
+              {title()}
+            </span>
+            <span class="min-w-0 truncate text-text-tertiary" data-testid="tool-rollup-summary">
+              {summary()}
+            </span>
+          </button>
+          <Show when={expanded()}>
+            <div class="ml-3 mt-0.5 border-l border-border-subtle pl-2">
+              <For each={props.toolCalls}>
+                {(tc) => (
+                  <SingleToolCallRow toolCall={tc} turnId={props.turnId} askId={props.askId} />
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </Show>
+    </Show>
+  )
+}
+
 /** Stacked group: "Thread Read ×8" with expand to see individual calls. */
 function StackedToolCallGroup(props: ToolCallGroupProps) {
+  return (
+    <Show
+      when={props.toolCalls.length >= 2 && props.toolCalls.every(isRolledUpRead)}
+      fallback={<NamedToolCallGroup {...props} />}
+    >
+      <ReadRollup {...props} />
+    </Show>
+  )
+}
+
+function NamedToolCallGroup(props: ToolCallGroupProps) {
   const [expanded, setExpanded] = createSignal(false)
   // A GROUP HOLDING A PENDING APPROVAL OPENS. The card renders inside its own
   // row, and a collapsed "Enable App ×2" hid the cards the person had to

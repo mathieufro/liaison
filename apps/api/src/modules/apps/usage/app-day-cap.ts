@@ -176,6 +176,61 @@ export async function holdAppJobIfCapped(gate: AppRunGate): Promise<void> {
   )
 }
 
+/**
+ * Say, once per hold, that a scheduled job of an app is held by the org's day cap: the job's
+ * manifest `heldEvent` (one of the app's own declared events) is queued with `{job, until,
+ * resolved: false}`, so the app's attention translation tells the people who act on it, instead
+ * of the tick being skipped silently. The app emits the same event with `resolved: true` when
+ * the job runs again. Never throws: a notice that cannot be queued is logged, the hold stays.
+ */
+export async function noticeHeldJob(args: {
+  orgId: string
+  app: string
+  job: string
+  heldEvent: string
+  holdMs: number
+  now?: number
+}): Promise<boolean> {
+  const colon = args.heldEvent.indexOf(":")
+  if (colon <= 0) return false
+  const now = args.now ?? Date.now()
+  const until = new Date(now + args.holdMs).toISOString()
+  try {
+    // One notice per job and hold: every tick held after it adds nothing.
+    const first = await redis.set(
+      `app-day-cap:held:${args.orgId}:${args.app}:${args.job}:${utcDay(now)}`,
+      "1",
+      "PX",
+      Math.max(args.holdMs, 60_000),
+      "NX",
+    )
+    if (first !== "OK") return false
+    const { withRlsContext } = await import("~/db/rls")
+    await withRlsContext(
+      { actorType: "system", orgId: args.orgId, purpose: "job", scopes: [`${args.app}:*`] },
+      (tx) =>
+        tx.queueEvent({
+          app: args.app,
+          entity: args.heldEvent.slice(0, colon),
+          action: args.heldEvent.slice(colon + 1),
+          entityId: args.job,
+          data: { job: args.job, until, resolved: false },
+          actorId: null,
+          actorType: "system",
+          orgId: args.orgId,
+          timestamp: new Date(now).toISOString(),
+        }),
+    )
+    return true
+  } catch (err) {
+    log.warn(
+      { err, orgId: args.orgId, app: args.app, job: args.job },
+      "app day cap: held-job notice not queued",
+    )
+    return false
+  }
+}
+
 /** Test seams of the app day caps. */
 export const AppDayCapTestAccess = {
   /** Read caps from here instead of the database (null restores). */

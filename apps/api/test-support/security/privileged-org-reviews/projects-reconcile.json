@@ -1,0 +1,10 @@
+{
+  "reviewedOutsideRoutes": {
+    "apps/api/src/seed/factories/projects/reconcile.ts#seedBareProject": "the reconcile seed factory (tests only, no product caller): one privileged insert of a project row under a fresh random id, with org_id the org a test just created (createTestOrg), in that org's own projects table",
+    "apps/api/src/seed/factories/projects/reconcile.ts#seedReconciliation": "the reconcile seed factory (tests only, no product caller): one privileged insert of a reconciliation row under a fresh random id, with org_id the org a test just created (createTestOrg), naming that test's own project, person and thread",
+    "apps/api/src/seed/factories/projects/reconcile.ts#seedBillingClaim": "the reconcile seed factory (tests only, no product caller): one privileged insert of a billing claim under a fresh random id, with org_id the org a test just created (createTestOrg), on that test's own project"
+  },
+  "reviewedOrigins": {
+    "apps/api/src/seed/tiers/minimal.ts#agentDm": "the minimal seed tier's per-test entry point: no product code calls it; its only callers are test files, each on the org the test itself just created (createTestOrg) and a person of that org; it seeds that person's personal agent in that org and opens their direct messages through the product's own find-or-create (createOrGetAgentDm), under that person's own RLS context in that org"
+  }
+}

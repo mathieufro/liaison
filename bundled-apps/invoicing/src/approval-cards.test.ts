@@ -439,6 +439,7 @@ describe("invoicing approval cards: e-invoicing and customer settings", () => {
     expectHuman(await cardFor("einvoicing_backfill_identities", { dry_run: false, limit: 50 }))
     expectHuman(await cardFor("einvoicing_backfill_legacy_originals", { dry_run: true }))
     expectHuman(await cardFor("einvoice_book_batch", { batch_id: DOC_ID }))
+    expectHuman(await cardFor("einvoice_send_batch", { batch_id: DOC_ID }))
   })
 })
 

@@ -2,16 +2,20 @@
 
 import { isApprovingWedged } from "@liaison/shared"
 import { sql as drizzleSql } from "drizzle-orm"
-import { extractRows } from "~/db"
+import { extractRows, type PrivilegedDb } from "~/db"
 import { withPrivilegedDb } from "~/db/privileged"
 import type { UserContext } from "~/db/rls"
 import { withRlsContext } from "~/db/rls"
 import { schemaRef } from "~/db/schema-ref"
 import { appsLogger as log } from "~/lib/logger"
 import { enqueueRoutineDecisionTurn } from "~/modules/approvals/approval-result-turn"
-import { authorityFacts, decidingScope } from "~/modules/approvals/authority"
-import { cascadeDeferredDependents, executeApprovedStep } from "~/modules/approvals/cascade"
+import {
+  cascadeDeferredDependents,
+  executeApprovedStep,
+  type SendGuardOverride,
+} from "~/modules/approvals/cascade"
 import { failBundle, stampExecutionFailure } from "~/modules/approvals/cascade-fail"
+import { mayDecideApproval } from "~/modules/approvals/decider"
 import {
   cancelDeferredBundleSiblings,
   cancelDeferredDependents,
@@ -36,18 +40,18 @@ import {
 import { approvalPayloadHash } from "~/modules/approvals/payload-hash"
 import { enqueuePoll } from "~/modules/approvals/poll-output"
 import { approvalFailureRequiredScopes } from "~/modules/approvals/result-notice"
-import { rowTaintMustHold } from "~/modules/approvals/taint-narrow"
+import {
+  type AwayWorld,
+  readAwayWorld,
+  readLockedApprovalRoute,
+} from "~/modules/approvals/route-world"
 import type { ToolOrigin } from "~/modules/apps/execute-tool"
 import {
   HandlerToolMissingError,
   RequesterLostScopeError,
 } from "~/modules/apps/run-approved-handler"
 import { isManagedApprovalPayload } from "~/modules/mailbox-crypto/managed-approval"
-import {
-  bypassesDimensionConstraint,
-  dimensionGrantCovers,
-} from "~/modules/permissions/eligible-approvers"
-import { hasScope, loadEffectivePermissions } from "~/modules/permissions/permissions"
+import { loadEffectivePermissions } from "~/modules/permissions/permissions"
 
 const K = drizzleSql.raw(schemaRef("kernel"))
 
@@ -103,7 +107,9 @@ export class ApprovalDecisionError extends Error {
        */
       | "payload_changed"
       /** N-eyes: this person's sign-off is already counted; another approver must decide. */
-      | "already_signed_off",
+      | "already_signed_off"
+      /** "Send now" on a mail that is not held (any more): a reply came in, or the hold ended. */
+      | "send_guard_not_held",
     message: string,
     public details?: unknown,
   ) {
@@ -143,6 +149,12 @@ export interface DecideArgs {
    * was added, after the card loaded refuses the approve (409). Required when `payloadHash` is.
    */
   stepPayloadHashes?: Record<string, string>
+  /**
+   * "Send now" on a held mail draft: send although the other side's automatic reply says they
+   * are away. Judged under the claim's row lock; refused with 422 `send_guard_not_held` when the
+   * draft is not held at that moment.
+   */
+  sendGuardOverride?: SendGuardOverride
 }
 
 export interface DecideResult {
@@ -212,9 +224,6 @@ export async function decideApproval(args: DecideArgs): Promise<DecideResult> {
   // `<app>:approve`, and an optional dimension constraint must be covered by
   // the decider's own dimension grants (unless a super-admin bypass applies).
   // The scope derivation is the shared authority answer — never recomputed here.
-  const approveScope = decidingScope(authorityFacts(row))
-  const constraint = row.dimension_constraint
-
   // Eligibility: an approver is in the request's audience AND currently holds the
   // app's `:approve` scope (re-loaded from the DB so a revoked scope can't decide).
   // Shared-surface drafts (ticket/mail replies) widen "audience" to anyone who
@@ -227,35 +236,21 @@ export async function decideApproval(args: DecideArgs): Promise<DecideResult> {
   // the OWNER decides them, with or without the app's `:approve` scope — it is
   // their own mailbox/resource. The shared-surface widening never applies to
   // them (isSharedSurfaceApproval is ownership-aware).
+  // The one decider answer, shared with the edit path (`decider.ts`): fresh grants, the row's own
+  // deciding scope, every taint scope of a tainted proposal (rule 8c) and dimension coverage.
   const isResourceOwner = row.resource_owner_id === args.actor.userId
-  const inAudience =
-    isSharedSurfaceApproval(row) ||
-    row.notify_user_ids.includes(args.actor.userId) ||
-    isResourceOwner
-  let isEligibleApprover = isResourceOwner
-  if (!isEligibleApprover && inAudience) {
-    const deciderPerms = await withPrivilegedDb(args.orgId, "approval-load-decider-perms", (pdb) =>
-      loadEffectivePermissions(pdb, args.actor.userId, args.orgId),
-    )
-    // A tainted proposal (scope-taint.ts, rule 8c) is decided only by a holder of every scope
-    // its turn read: `approve_scope` is one column, and a disclosure decision (rule 8h) persists
-    // only the first of them there. Re-checked on fresh grants, as the deciding scope is.
-    isEligibleApprover =
-      hasScope(approveScope, deciderPerms.scopes) &&
-      rowTaintMustHold(row.metadata).every((scope) => hasScope(scope, deciderPerms.scopes))
-    // Enforce the dimension constraint: the decider's own dimension grants on
-    // constraint.key must cover its values (or "*"), unless they bypass as a
-    // super-admin ('*' / kernel / kernel:approvals:admin scope). The
-    // resource-owner path is unaffected (that branch never reaches here).
-    if (
-      isEligibleApprover &&
-      constraint &&
-      !bypassesDimensionConstraint(deciderPerms.scopes) &&
-      !dimensionGrantCovers(deciderPerms.dimensionGrants, constraint.key, constraint.values)
-    ) {
-      isEligibleApprover = false
-    }
-  }
+  const isEligibleApprover = await withPrivilegedDb(
+    args.orgId,
+    "approval-load-decider-perms",
+    (tx) =>
+      mayDecideApproval({
+        orgId: args.orgId,
+        userId: args.actor.userId,
+        row,
+        sharedSurface: isSharedSurfaceApproval(row),
+        tx,
+      }),
+  )
   const isRequester = row.requested_by === args.actor.userId
 
   if (args.decision === "approve") {
@@ -518,7 +513,19 @@ async function denyFlow(args: DecideArgs, row: ApprovalRow): Promise<DecideResul
     throw new ApprovalDecisionError(400, "invalid_reason", "invalid_reason")
   }
   const fromWedged = wedgedPastGrace(row)
+  const readFor = fromWedged ? undefined : await decidedForReader(args, row)
   const result = await withPrivilegedDb(args.orgId, "approval-deny", async (tx) => {
+    // Whose the row is, read on the row as this decision locks it, and written by the same update.
+    let forSql = drizzleSql``
+    if (readFor) {
+      await tx.execute(
+        drizzleSql`SELECT 1 FROM ${K}.approval_requests WHERE id = ${row.id} FOR UPDATE`,
+      )
+      const decidedFor = await readFor(tx)
+      if (decidedFor) {
+        forSql = drizzleSql`, metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{decidedFor}', ${JSON.stringify(decidedFor)}::jsonb, true)`
+      }
+    }
     const updated = await lockedUpdateApproval<{
       id: string
       status: string
@@ -538,7 +545,7 @@ async function denyFlow(args: DecideArgs, row: ApprovalRow): Promise<DecideResul
         ? drizzleSql`status = 'denied', decided_by = ${args.actor.userId}, decided_at = now(), reason = ${reason},
                      approving_started_at = NULL,
                      metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{deniedWhileWedged}', to_jsonb(now()))`
-        : drizzleSql`status = 'denied', decided_by = ${args.actor.userId}, decided_at = now(), reason = ${reason}`,
+        : drizzleSql`status = 'denied', decided_by = ${args.actor.userId}, decided_at = now(), reason = ${reason}${forSql}`,
       returning: drizzleSql`id, status, decided_by, decided_at, reason, originating_thread_id, tool_name`,
     })
     if (!updated) {
@@ -587,6 +594,60 @@ async function denyFlow(args: DecideArgs, row: ApprovalRow): Promise<DecideResul
     decidedBy: result.decided_by,
     decidedAt: new Date(result.decided_at).toISOString(),
     reason: result.reason,
+  }
+}
+
+/** Who a decision was taken for, when the decider is not the person the row is for. */
+type DecidedFor =
+  | { userId: string; as: "next_in_line"; awayUntil: string | null }
+  | { userId: string; as: "also_could" }
+
+/** Runs on a decision's own transaction once it holds the row's lock. */
+type DecidedForReader = (tx: PrivilegedDb) => Promise<DecidedFor | null>
+
+/** A test's hook between the decider's away read and the claim: nothing else sets it. */
+export const DecidedForTestAccess: { beforeClaim: (() => Promise<void>) | null } = {
+  beforeClaim: null,
+}
+
+/**
+ * The audit of a decision taken for someone else: the stand-in of a person away decides as
+ * their next in line, any other decider as someone who could also approve it. The person the
+ * row is for, an owner-routed row and a row for the usual deciders record nothing. Who is away
+ * is read here as the decider; the person on the item is read by the claim on its locked row,
+ * so the record names whose the row was when this decision won. A route that cannot be read
+ * records nothing: the decision itself never waits on it.
+ */
+async function decidedForReader(
+  args: DecideArgs,
+  row: ApprovalRow,
+): Promise<DecidedForReader | undefined> {
+  let world: AwayWorld
+  try {
+    world = await withRlsContext(args.actor, (tx) => readAwayWorld(tx, args.orgId))
+  } catch (err) {
+    log.warn({ err, requestId: row.id }, "could not read who is away; no decided-for audit")
+    return undefined
+  }
+  if (DecidedForTestAccess.beforeClaim) await DecidedForTestAccess.beforeClaim()
+  return async (tx) => {
+    try {
+      // A savepoint: a read that fails here must not abort the decision's own transaction.
+      const route = await tx.transaction((sp) =>
+        readLockedApprovalRoute(sp, args.orgId, row, world),
+      )
+      if (route.to !== "person" || route.userId === args.actor.userId) return null
+      if (route.standIn === args.actor.userId) {
+        return { userId: route.userId, as: "next_in_line", awayUntil: route.awayUntil }
+      }
+      return { userId: route.userId, as: "also_could" }
+    } catch (err) {
+      log.warn(
+        { err, requestId: row.id },
+        "could not read whose the request was; no decided-for audit",
+      )
+      return null
+    }
   }
 }
 
@@ -682,6 +743,9 @@ async function approveFlow(args: DecideArgs, row: ApprovalRow): Promise<DecideRe
     }
   }
 
+  // Whose this row was when the decider chose: read by the claim, under its row lock.
+  const decidedFor = await decidedForReader(args, row)
+
   // A bundle's later steps run on this same decision: bind each to the version the decider saw.
   await bindDeferredSteps(args, row)
 
@@ -704,6 +768,8 @@ async function approveFlow(args: DecideArgs, row: ApprovalRow): Promise<DecideRe
     // tool call the approver never decrypted anything for.
     ...(args.mailboxFulfilment ? { mailboxFulfilment: args.mailboxFulfilment } : {}),
     ...(args.payloadHash !== undefined ? { expectedPayloadHash: args.payloadHash } : {}),
+    ...(args.sendGuardOverride !== undefined ? { sendGuardOverride: args.sendGuardOverride } : {}),
+    decidedFor,
   })
 
   if (outcome.kind === "payload_changed") {
@@ -711,6 +777,17 @@ async function approveFlow(args: DecideArgs, row: ApprovalRow): Promise<DecideRe
       409,
       "payload_changed",
       "this request was edited after you opened it: review the current version and decide again",
+    )
+  }
+
+  if (outcome.kind === "send_guard_not_held") {
+    throw new ApprovalDecisionError(
+      422,
+      "send_guard_not_held",
+      outcome.state === "not_guarded"
+        ? "Send now applies only to a mail draft held by an automatic reply. Nothing was sent; the request is still pending."
+        : `Nothing was sent: this draft is no longer held (it now reads ${outcome.state.replace(/_/g, " ")}). The request is still pending: reload it and decide on what it shows now.`,
+      { state: outcome.state },
     )
   }
 
@@ -906,6 +983,69 @@ async function bindDeferredSteps(args: DecideArgs, row: ApprovalRow): Promise<vo
   })
 }
 
+/** What a stopped mail's Home line says, in short facts. Never a word of the message. */
+function sendGuardStopLine(guard: Record<string, unknown>, to: string): string {
+  const who = typeof guard.who === "string" && guard.who !== "" ? guard.who : "The other side"
+  switch (guard.state) {
+    case "replied":
+      return `Not sent to ${to}: ${who} replied after it was drafted.`
+    case "bounced":
+      return `Not sent to ${to}: a delivery failure came back for this address.`
+    case "opted_out":
+      return `Not sent to ${to}: they opted out of commercial mail.`
+    case "ref_stop":
+      return `Not sent to ${to}: ${typeof guard.label === "string" ? guard.label : "the record it was about says not to send it."}`
+    default:
+      return `Not sent to ${to}: the check before sending stopped it.`
+  }
+}
+
+/**
+ * A mail a person approved and the send check then stopped for good: one Home line for the
+ * person who decided and for the owner of the routine that drafted it (one row each, since the
+ * translation names them as participants). Dismiss marks it read; nothing resolves it.
+ */
+async function queueSendGuardStopped(
+  tx: PrivilegedDb,
+  args: DecideArgs,
+  row: ApprovalRow,
+  details: Record<string, unknown> | null,
+): Promise<void> {
+  if (row.tool_name !== "mail:compose" && row.tool_name !== "mail:reply") return
+  const guard = details && isRec(details.guard) ? details.guard : null
+  if (!guard) return
+  const routineId = (row.metadata as { originRoutineId?: unknown } | null)?.originRoutineId
+  const owners =
+    typeof routineId === "string"
+      ? extractRows<{ owner_user_id: string | null }>(
+          await tx.execute(drizzleSql`
+            SELECT owner_user_id FROM ${K}.routines WHERE id = ${routineId}::uuid AND org_id = ${args.orgId}::uuid`),
+        ).flatMap((r) => (r.owner_user_id ? [r.owner_user_id] : []))
+      : [row.requested_by]
+  const targetUserIds = [...new Set([args.actor.userId, ...owners])]
+  const payload = isRec(row.current_payload) ? row.current_payload : {}
+  const to = Array.isArray(payload.to)
+    ? payload.to.filter((v): v is string => typeof v === "string").join(", ")
+    : ""
+  await tx.queueEvent({
+    app: "mail",
+    entity: "send_guard",
+    action: "stopped",
+    entityId: row.id,
+    data: {
+      requestId: row.id,
+      state: guard.state ?? null,
+      summary: sendGuardStopLine(guard, to || "the recipient"),
+      targetUserIds,
+      link: { tabType: "thread", entityId: row.thread_id },
+    },
+    actorId: args.actor.userId,
+    actorType: "user",
+    orgId: args.orgId,
+    timestamp: new Date().toISOString(),
+  })
+}
+
 async function revertToPending(
   args: DecideArgs,
   row: ApprovalRow,
@@ -923,7 +1063,9 @@ async function revertToPending(
       from: "approving",
       set: final
         ? drizzleSql`status = 'cancelled', approving_started_at = NULL`
-        : drizzleSql`status = 'pending', decided_by = NULL, decided_at = NULL, approving_started_at = NULL`,
+        : // Back to pending, undecided: no decision was taken for anyone.
+          drizzleSql`status = 'pending', decided_by = NULL, decided_at = NULL, approving_started_at = NULL,
+                     metadata = COALESCE(metadata, '{}'::jsonb) - 'decidedFor'`,
       returning: drizzleSql`id, bundle_id`,
     })
     if (!reverted) return null
@@ -995,6 +1137,7 @@ async function revertToPending(
         at: new Date().toISOString(),
       },
     })
+    if (final) await queueSendGuardStopped(tx, args, row, details)
     if (!final) return null
     if (!reverted.bundle_id) {
       await stampExecutionFailure(tx, args.orgId, {

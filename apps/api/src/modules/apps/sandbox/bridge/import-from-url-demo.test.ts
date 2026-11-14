@@ -21,6 +21,8 @@ const DEMO_ORG = randomUUID()
 const NORMAL_ORG = randomUUID()
 const HOST = "api.boxtal.build"
 const LABEL = `https://${HOST}/shipping/v3.1/shipping-order/DEMO-AB12CD34/demo-label.pdf`
+const PAYMENTS_HOST = "api.stripe.com"
+const PAYMENTS_PDF = `https://${PAYMENTS_HOST}/v1/invoices/in_demo01/pdf`
 
 const PARENT = {
   tableName: "organizations",
@@ -36,7 +38,7 @@ function files(orgId: string, txDb: unknown) {
     userId: "system",
     appName: "boxtal",
     egress: async () => ({
-      allowedDomains: [HOST],
+      allowedDomains: [HOST, PAYMENTS_HOST],
       manifest: { name: "boxtal", network: { allowPrivateHostsInTest: false } },
     }),
     manifest: { name: "boxtal", network: { allowPrivateHostsInTest: false } },
@@ -49,7 +51,7 @@ function files(orgId: string, txDb: unknown) {
 
 // A first-party app's privileged bridge (its system events and jobs) runs on the
 // background jobs pool, never on an interactive privileged slot: so does this one.
-const importLabel = (orgId: string) =>
+const importLabel = (orgId: string, url = LABEL) =>
   withPrivilegedDb(
     orgId,
     "test:import-demo-label",
@@ -59,7 +61,7 @@ const importLabel = (orgId: string) =>
           targetApp: "boxtal",
           targetEntityType: "shipment",
           targetEntityId: orgId,
-          url: LABEL,
+          url,
           filename: "label-DEMO-AB12CD34.pdf",
           mimeType: "application/pdf",
           pdfStripRotation: true,
@@ -120,5 +122,21 @@ describe("files_importFromUrl on the demo instance", () => {
     seen = network()
     await expect(importLabel(DEMO_ORG)).rejects.toThrow(/upstream returned 404/)
     expect(seen).toEqual([LABEL])
+  })
+
+  it("a demo org's download from the payments host is refused off the demo box too, never sent", async () => {
+    DemoModeTestAccess.set(false)
+    const seen = network()
+    await expect(importLabel(DEMO_ORG, PAYMENTS_PDF)).rejects.toThrow(
+      /cannot store real connector credentials/,
+    )
+    expect(seen).toEqual([])
+  })
+
+  it("a normal org's download from the payments host goes out as before", async () => {
+    DemoModeTestAccess.set(false)
+    const seen = network()
+    await expect(importLabel(NORMAL_ORG, PAYMENTS_PDF)).rejects.toThrow(/upstream returned 404/)
+    expect(seen).toEqual([PAYMENTS_PDF])
   })
 })

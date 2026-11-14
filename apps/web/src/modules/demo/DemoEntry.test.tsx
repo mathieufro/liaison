@@ -2,16 +2,20 @@
 //
 // The entry screen is the whole demo, so the one door and every refusal the
 // server can hand back are exercised here.
-import { DEMO_ENTRY_TEXT_MAX, DEMO_NEEDS, type DemoNeed } from "@liaison/shared"
+
+import { DEMO_ENTRY_TEXT_MAX, DEMO_WORLD_NEEDS, type DemoNeed } from "@liaison/shared"
 import { Route, Router } from "@solidjs/router"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { clearAuth, isAuthenticated } from "~/modules/auth/auth-store"
 import { DemoEntry, linkedEntry, linkedNeeds, parseNeedsParam } from "~/modules/demo/DemoEntry"
 import { _resetDemoStore, demoWorkspace } from "~/modules/demo/demo-store"
+import { _setDoorWorlds } from "~/modules/demo/demo-world"
+import { DEMO_DOOR } from "~/modules/demo/door-company"
 import { needsAfterEntry } from "~/modules/demo/EntryQuestion"
 import { I18nProvider } from "~/modules/i18n/i18n-context"
 import { _resetBranding, ensureBrandingLoaded } from "~/modules/shell/branding-store"
+import kernelEn from "../../../../../packages/shared/src/i18n/locales/en/kernel.json"
 
 function jwt(): string {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }))
@@ -54,9 +58,10 @@ function serve(replies: Record<string, Reply>): { calls: { url: string; body: un
   return { calls }
 }
 
-/** Tiles sit in `DEMO_NEEDS` order, so the DOM lists picks in that order. */
+/** Tiles sit in `DEMO_WORLD_NEEDS.products` order, so the DOM lists picks in that order. */
 const cmpTile = (a: string, b: string) =>
-  DEMO_NEEDS.indexOf(a as DemoNeed) - DEMO_NEEDS.indexOf(b as DemoNeed)
+  DEMO_WORLD_NEEDS.products.indexOf(a as DemoNeed) -
+  DEMO_WORLD_NEEDS.products.indexOf(b as DemoNeed)
 
 function renderEntry(onSignedIn = vi.fn()) {
   render(() => (
@@ -519,7 +524,7 @@ describe("the company question", () => {
     serve({})
     window.history.replaceState(null, "", "/demo?needs=support")
     renderEntry()
-    expect(screen.getByTestId("demo-company-example").textContent).toBe(
+    expect(screen.getByTestId("demo-example-line").textContent).toBe(
       "This is an example company: Resonant Audio Labs, which makes field recorders. Your own workspace would hold your data.",
     )
   })
@@ -527,7 +532,7 @@ describe("the company question", () => {
 
 describe("needsAfterEntry", () => {
   it("sets a preset, whatever was picked", () => {
-    expect(needsAfterEntry(["chat"], null, "products")).toEqual([
+    expect(needsAfterEntry(["chat"], null, "products", ["products"])).toEqual([
       "support",
       "commerce",
       "knowledge",
@@ -535,13 +540,20 @@ describe("needsAfterEntry", () => {
   })
 
   it("clears an untouched preset for other or no answer", () => {
-    expect(needsAfterEntry(["support", "dev", "knowledge"], "software", "other")).toEqual([])
-    expect(needsAfterEntry(["support", "dev", "knowledge"], "software", null)).toEqual([])
+    expect(
+      needsAfterEntry(["support", "dev", "knowledge"], "software", "other", ["products"]),
+    ).toEqual([])
+    expect(
+      needsAfterEntry(["support", "dev", "knowledge"], "software", null, ["products"]),
+    ).toEqual([])
   })
 
   it("keeps what the visitor picked by hand for other or no answer", () => {
-    expect(needsAfterEntry(["support", "chat"], "software", "other")).toEqual(["support", "chat"])
-    expect(needsAfterEntry(["chat"], null, "other")).toEqual(["chat"])
+    expect(needsAfterEntry(["support", "chat"], "software", "other", ["products"])).toEqual([
+      "support",
+      "chat",
+    ])
+    expect(needsAfterEntry(["chat"], null, "other", ["products"])).toEqual(["chat"])
   })
 })
 
@@ -593,5 +605,117 @@ describe("the entry link parameter", () => {
     renderEntry()
     expect(screen.getByTestId("demo-pick-step")).toBeTruthy()
     expect(screen.queryAllByTestId(/^demo-needs-rank-/)).toEqual([])
+  })
+})
+
+describe("the door in a world", () => {
+  const door = (worlds: string[]) => ({ "/demo/door": { status: 200, body: { data: { worlds } } } })
+  const both = ["products", "saas"]
+
+  it("an entry link presets the answer, a needs link wins over it, an unknown entry is none and a need outside the world drops", async () => {
+    serve(door(both))
+    window.history.replaceState(null, "", "/demo?entry=software")
+    renderEntry()
+    // The software answer opens its own world once the door has said it runs.
+    await waitFor(() => expect(screen.getByTestId("demo-picked-money")).toBeTruthy())
+    expect(screen.queryByTestId("demo-picked-commerce")).toBeNull()
+    cleanup()
+    _resetDemoStore()
+
+    serve(door(both))
+    window.history.replaceState(null, "", "/demo?entry=software&needs=chat,commerce,money")
+    renderEntry()
+    // commerce is not one of the software world's seven: dropped, the rest kept in order.
+    await waitFor(() => expect(screen.getByTestId("demo-picked-money")).toBeTruthy())
+    expect(screen.getByTestId("demo-picked-chat")).toBeTruthy()
+    expect(screen.queryByTestId("demo-picked-commerce")).toBeNull()
+    expect(screen.queryByTestId("demo-picked-dev")).toBeNull()
+    cleanup()
+    _resetDemoStore()
+
+    serve(door(both))
+    window.history.replaceState(null, "", "/demo?entry=crm")
+    renderEntry()
+    expect(screen.getByTestId("demo-pick-step")).toBeTruthy()
+    expect(screen.queryAllByTestId(/^demo-needs-rank-/)).toEqual([])
+    expect(parseNeedsParam("money,support", "products")).toEqual(["support"])
+    expect(parseNeedsParam("all", "saas")).toEqual([...DEMO_WORLD_NEEDS.saas])
+    expect(linkedNeeds({ returnTo: "/?needs=money,client,dev" }, "saas")).toEqual(["money", "dev"])
+  })
+
+  it("the company step of the software world equals the shipped strings", () => {
+    _setDoorWorlds(both as ("products" | "saas")[])
+    serve(door(both))
+    window.history.replaceState(null, "", "/demo")
+    renderEntry()
+    fireEvent.click(screen.getByTestId("demo-entry-software"))
+    fireEvent.click(screen.getByTestId("demo-continue"))
+    const copy = kernelEn.demo.world.saas
+    const company = DEMO_DOOR.saas
+    expect(screen.getByTestId("demo-company-step").textContent).toContain(company.name)
+    expect(screen.getByText(copy.companyFacts)).toBeTruthy()
+    expect(screen.getByTestId("demo-example-line").textContent).toBe(copy.companyExample)
+    expect(screen.getByText(copy.companyAbout)).toBeTruthy()
+    for (const op of company.opsList) {
+      const row = screen.getByTestId(`demo-company-op-${op.key}`).textContent ?? ""
+      const entry = copy.companyOps[op.key as keyof typeof copy.companyOps]
+      expect(row).toContain(entry.title)
+      expect(row).toContain(entry.body)
+    }
+    expect(screen.getByText(copy.companyYou)).toBeTruthy()
+    const team = screen.getByTestId("demo-team").textContent ?? ""
+    for (const person of company.team) {
+      expect(team).toContain(person.name)
+      expect(team).toContain(copy.teamRole[person.key as keyof typeof copy.teamRole])
+    }
+    expect(screen.getByTestId("demo-company-simulated").textContent).toBe(copy.companySimulated)
+    // Nothing of the products company is on this page.
+    expect(screen.getByTestId("demo-company-step").textContent).not.toContain("Resonant")
+  })
+
+  it("a door whose config changed before Start returns to the company step", async () => {
+    let doorWorlds = both
+    const calls: string[] = []
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      calls.push(url)
+      if (url.includes("/demo/door")) {
+        return new Response(JSON.stringify({ data: { worlds: doorWorlds } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      return new Response(JSON.stringify({ error: { message: "unmapped" } }), { status: 404 })
+    })
+    window.history.replaceState(null, "", "/demo?entry=software")
+    renderEntry()
+    await waitFor(() => expect(screen.getByTestId("demo-picked-money")).toBeTruthy())
+    fireEvent.click(screen.getByTestId("demo-company-continue"))
+    fireEvent.input(screen.getByTestId("demo-name"), { target: { value: "Jane Doe" } })
+    fireEvent.input(screen.getByTestId("demo-email"), { target: { value: "v@example.com" } })
+    // The software company is switched off between the door's read and Start.
+    doorWorlds = ["products"]
+    fireEvent.click(screen.getByTestId("demo-create"))
+    await waitFor(() => expect(screen.getByTestId("demo-company-step")).toBeTruthy())
+    expect(screen.getByTestId("demo-example-line").textContent).toContain("Resonant Audio Labs")
+    expect(calls.some((url) => url.includes("/demo/orgs"))).toBe(false)
+    _setDoorWorlds(["products"])
+  })
+
+  it("other with or without text and no answer open the products world, the text rendered nowhere", () => {
+    _setDoorWorlds(both as ("products" | "saas")[])
+    serve(door(both))
+    window.history.replaceState(null, "", "/demo")
+    renderEntry()
+    expect(screen.getByTestId("demo-needs-commerce")).toBeTruthy()
+    fireEvent.click(screen.getByTestId("demo-entry-other"))
+    fireEvent.input(screen.getByTestId("demo-entry-other-text"), {
+      target: { value: "ZZFREE makes things" },
+    })
+    expect(screen.getByTestId("demo-needs-commerce")).toBeTruthy()
+    expect(screen.queryByTestId("demo-needs-money")).toBeNull()
+    fireEvent.click(screen.getByTestId("demo-explore"))
+    expect(screen.getByTestId("demo-example-line").textContent).toContain("Resonant Audio Labs")
+    expect(document.body.textContent).not.toContain("ZZFREE")
   })
 })
